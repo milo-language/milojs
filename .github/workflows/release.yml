@@ -1,0 +1,82 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: darwin-arm64
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install milo
+        run: |
+          curl -fsSL -o milo.tar.gz \
+            "https://github.com/milo-language/milo/releases/download/latest/milo-${{ matrix.target }}.tar.gz"
+          tar xzf milo.tar.gz
+          chmod +x milo
+          echo "$PWD" >> "$GITHUB_PATH"
+
+      # Two binaries by design: the engine runs raw .js with no host bindings
+      # (what an embedder wants), the runtime adds the module loader, event loop,
+      # and Node-compatible builtins.
+      - name: build engine and runtime
+        run: |
+          milo build milojs-engine.milo -o milojs-engine --release
+          milo build milojs.milo -o milojs --release
+
+      - name: smoke test
+        run: |
+          echo 'console.log("hello from milojs")' > /tmp/smoke.js
+          out=$(./milojs-engine /tmp/smoke.js)
+          test "$out" = "hello from milojs" || { echo "engine smoke failed: $out"; exit 1; }
+          out=$(./milojs /tmp/smoke.js)
+          test "$out" = "hello from milojs" || { echo "runtime smoke failed: $out"; exit 1; }
+          echo "both binaries run"
+
+      - name: package
+        run: tar czf "milojs-${{ matrix.target }}.tar.gz" milojs milojs-engine README.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: milojs-${{ matrix.target }}
+          path: milojs-${{ matrix.target }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - run: ls -lh milojs-*.tar.gz
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Build
+          body: |
+            Rolling release from the latest passing commit on main.
+
+            `milojs-engine` runs raw JavaScript with no host bindings.
+            `milojs` is the runtime: module loader, event loop, Node-compatible
+            builtins. Both are self-contained — no JSC, no V8.
+          prerelease: true
+          make_latest: true
+          files: milojs-*.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
