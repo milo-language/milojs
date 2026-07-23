@@ -1,8 +1,21 @@
 # milojs
 
-A JavaScript interpreter written in Milo. Long-term goal: replace the
-JavaScriptCore dependency in `examples/runtimes/minibun.milo` with a pure-Milo
-engine.
+<p align="center">
+  <img src="docs/images/repl.png" alt="The milojs REPL evaluating console.log('Woof!')" width="760">
+</p>
+
+A JavaScript **engine** and **runtime**, written from scratch in
+[Milo](https://github.com/milo-language/milo). No JavaScriptCore, no V8 — the
+lexer, parser, interpreter, garbage collector, and regex engine are all Milo.
+
+Two binaries:
+
+- **`milojs-engine`** — runs raw JavaScript with no host bindings. What an embedder wants.
+- **`milojs`** — the runtime: CommonJS/ESM module loader, event loop, and Node-compatible builtins.
+
+**[Documentation](https://milo-language.github.io/milo/)** ·
+**[Download a release](https://github.com/milo-language/milojs/releases/tag/latest)** ·
+[Built with Milo](https://milo-language.github.io/milo/demos)
 
 ## Node-API: real native addons
 
