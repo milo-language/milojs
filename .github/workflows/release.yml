@@ -16,13 +16,25 @@ jobs:
         include:
           - os: macos-latest
             target: darwin-arm64
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             target: linux-x64
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-22.04-arm
             target: linux-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
+      # Build on 22.04, not 24.04: a binary links against the build host's glibc,
+      # and 24.04's 2.39 floor makes releases refuse to start on Debian bookworm
+      # (2.36). 22.04 gives 2.35, which covers bookworm and Ubuntu 22.04+.
+      # That image defaults to clang 14, but milo emits opaque-pointer IR and
+      # needs 15+, so select it explicitly.
+      - name: select clang 15+ (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-15
+          echo "/usr/lib/llvm-15/bin" >> "$GITHUB_PATH"
 
       - name: install milo
         run: |
@@ -35,10 +47,29 @@ jobs:
       # Two binaries by design: the engine runs raw .js with no host bindings
       # (what an embedder wants), the runtime adds the module loader, event loop,
       # and Node-compatible builtins.
+      # The runtime's fetch/TLS path links OpenSSL, so a plain build leaves the
+      # binary needing libssl.so.3 at runtime — it will not start on a machine
+      # without it. --static-deps links the archives in instead.
+      - name: install openssl static archives
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y libssl-dev
+          else
+            brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
+          fi
+
       - name: build engine and runtime
         run: |
-          milo build milojs-engine.milo -o milojs-engine --release
-          milo build milojs.milo -o milojs --release
+          milo build milojs-engine.milo -o milojs-engine --release --static-deps
+          milo build milojs.milo -o milojs --release --static-deps
+
+      - name: verify no openssl runtime dependency
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then deps=$(otool -L milojs); else deps=$(ldd milojs); fi
+          if printf '%s' "$deps" | grep -qiE 'libssl|libcrypto'; then
+            echo "ERROR: milojs still needs OpenSSL at runtime"; printf '%s\n' "$deps"; exit 1
+          fi
+          echo "milojs is OpenSSL-free"
 
       - name: smoke test
         run: |
