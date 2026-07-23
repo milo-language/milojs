@@ -93,8 +93,13 @@ jobs:
           test "$out" = "hello from milojs" || { echo "runtime smoke failed: $out"; exit 1; }
           echo "both binaries run"
 
+      # Wrap in a directory: a flat tarball drops both binaries and a README into
+      # whatever directory the user happened to extract from.
       - name: package
-        run: tar czf "milojs-${{ matrix.target }}.tar.gz" milojs milojs-engine README.md
+        run: |
+          mkdir -p "pkg/milojs-${{ matrix.target }}"
+          cp milojs milojs-engine README.md "pkg/milojs-${{ matrix.target }}/"
+          tar czf "milojs-${{ matrix.target }}.tar.gz" -C pkg "milojs-${{ matrix.target }}"
 
       - uses: actions/upload-artifact@v4
         with:
