@@ -114,7 +114,7 @@ jobs:
             `milojs-engine` runs raw JavaScript with no host bindings.
             `milojs` is the runtime: module loader, event loop, Node-compatible
             builtins. Both are self-contained — no JSC, no V8.
-          prerelease: true
+          prerelease: false
           make_latest: true
           files: milojs-*.tar.gz
         env:
