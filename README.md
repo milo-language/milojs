@@ -17,6 +17,23 @@ Two binaries:
 **[Download a release](https://github.com/milo-language/milojs/releases/tag/latest)** ·
 [Built with Milo](https://milo-language.github.io/milo/demos)
 
+## Install
+
+```sh
+curl -fsSL https://github.com/milo-language/milojs/releases/download/latest/milojs-darwin-arm64.tar.gz | tar xz
+cd milojs-darwin-arm64
+./milojs --version
+./milojs script.js
+```
+
+Swap `darwin-arm64` for `linux-x64` or `linux-arm64`. Download through a browser
+instead and macOS quarantines the archive: the unsigned binary is killed on first run
+and moved to the Trash. Either install with `curl` as above, or clear the flag with
+`xattr -dr com.apple.quarantine <dir>` before running.
+
+`--version` prints the commit the binary was built from. Releases roll on the `latest`
+tag, so re-running the install command is the update path.
+
 ## Node-API: real native addons
 
 milojs implements enough of the Node-API (N-API) C ABI to load and run real

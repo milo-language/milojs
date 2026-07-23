@@ -34,6 +34,9 @@ from "std/env" import {
 from "std/args" import {
     args
 }
+from "./version" import {
+    versionText
+}
 from "./ast" import {
     Prog, gProg
 }
@@ -195,6 +198,9 @@ fn main(): i32 {
         } else if a == "--env-file" && ai + 1 < argv.len() {
             ai = ai + 1
             envFile = argv[ai].clone()
+        } else if a == "--version" || a == "-V" {
+            print(versionText())
+            return 0
         } else if path.len() == 0 {
             path = a
         }

@@ -1,0 +1,15 @@
+// Build identity. `.version` is committed as "dev" and overwritten by release CI
+// with the commit sha + build date. Without it a binary from the rolling `latest`
+// tag cannot say what it is, which makes bug reports unattributable.
+
+from "std/string" import {
+    trim
+}
+
+fn versionLine(): string {
+    return "milojs " + trim(embedFile(".version"))
+}
+
+fn versionText(): string {
+    return versionLine() + "\nhttps://github.com/milo-language/milojs/releases — rolling `latest`; re-run the install command to update"
+}

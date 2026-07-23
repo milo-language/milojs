@@ -66,6 +66,11 @@ jobs:
             brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
           fi
 
+      # Stamp build identity into the binary. `.version` is embedded via embedFile(),
+      # so this must happen before the build; the committed value is "dev".
+      - name: stamp version
+        run: printf '%s (%s)' "$(git rev-parse --short HEAD)" "$(date -u +%Y-%m-%d)" > .version
+
       - name: build engine and runtime
         run: |
           milo build milojs-engine.milo -o milojs-engine --release --static-deps
@@ -110,6 +115,14 @@ jobs:
           name: Latest Build
           body: |
             Rolling release from the latest passing commit on main.
+            `milojs --version` prints the commit a binary came from.
+
+            Install with curl, not the browser — a browser download carries
+            macOS's quarantine flag, which kills and trashes the unsigned binary:
+
+            ```
+            curl -fsSL https://github.com/milo-language/milojs/releases/download/latest/milojs-<platform>.tar.gz | tar xz
+            ```
 
             `milojs-engine` runs raw JavaScript with no host bindings.
             `milojs` is the runtime: module loader, event loop, Node-compatible
