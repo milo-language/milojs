@@ -121,7 +121,9 @@ jobs:
             macOS's quarantine flag, which kills and trashes the unsigned binary:
 
             ```
-            curl -fsSL https://github.com/milo-language/milojs/releases/download/latest/milojs-<platform>.tar.gz | tar xz
+            P=$(uname -s | tr A-Z a-z)-$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')
+            curl -fsSL https://github.com/milo-language/milojs/releases/download/latest/milojs-$P.tar.gz | tar xz
+            cd milojs-$P && ./milojs --version
             ```
 
             `milojs-engine` runs raw JavaScript with no host bindings.
