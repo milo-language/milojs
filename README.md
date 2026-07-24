@@ -11,7 +11,7 @@ The runtime is in the same family as node, deno, bun (though obviously less matu
 
 Unlike node, deno, and bun which use existing JavaScript engines like V8 and JavaScriptCore, milojs uses milojs-engine, a JavaScript engine written in Milo. 
 
-milojs-engine is a few thousand lines and executes code by parsing and running the parsed code directly, as opposed to a sophisticated JIT. This makes milojs-engine far simpler than V8 and JavaScriptCore, but slower.
+milojs-engine executes code by parsing and running the parsed code directly, as opposed to a sophisticated JIT. This makes milojs-engine far simpler than V8 and JavaScriptCore, but slower.
 
 There are two binaries in this repository:
 

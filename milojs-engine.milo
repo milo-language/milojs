@@ -126,6 +126,18 @@ fn preloadWithImports(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 
 }
 
 fn main(): i32 {
+    // Checked before argparse: `--version` is not a positional, so parse() would
+    // reject it as an unknown flag with no `file` argument.
+    let argv = args()
+    var ai: i64 = 1
+    while ai < argv.len() {
+        if argv[ai] == "--version" || argv[ai] == "-V" {
+            print(versionText("milojs-engine"))
+            return 0
+        }
+        ai = ai + 1
+    }
+
     var parser = newParser("milojs-engine", "the milojs JavaScript engine — runs a raw .js file")
     parser.addPositional("file", "the .js file to run")
     let parsed = parser.parse()
