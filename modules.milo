@@ -27,7 +27,7 @@ from "./runtime" import {
 }
 
 // Directory portion of a path ("" when there is no separator).
-fn dirOf(path: &string): string {
+pub fn dirOf(path: &string): string {
     var cut: i64 = -1
     var i: i64 = 0
     while i < path.len() {
@@ -219,7 +219,7 @@ fn hasJsonExt(path: &string): bool {
 
 // Each missing module is reported once; a package required from twenty places
 // otherwise produces twenty identical lines and buries the real failure.
-fn reportUnresolved(st: &mut Interp, spec: &string) {
+pub fn reportUnresolved(st: &mut Interp, spec: &string) {
     var i: i64 = 0
     while i < st.reportedMissing.len() {
         if st.reportedMissing[i] == spec {
@@ -245,7 +245,7 @@ fn builtinNameOf(path: &string): string {
     return out
 }
 
-fn fileExists(p: &string): bool {
+pub fn fileExists(p: &string): bool {
     match readFile(p.clone()) {
         Result.Ok(_s) => {
             return true
@@ -361,7 +361,7 @@ fn resolveBare(dir: &string, spec: &string): string {
 
 // Resolve a require specifier against the requiring module's directory.
 // Relative specifiers resolve as files/directories; bare names walk node_modules.
-fn resolveSpec(dir: &string, spec: &string): string {
+pub fn resolveSpec(dir: &string, spec: &string): string {
     if spec.len() == 0 {
         return ""
     }
@@ -412,7 +412,7 @@ fn scanRequires(toks: &Vec<Token>): Vec<string> {
     return out
 }
 
-fn findModule(st: &Interp, path: &string): i64 {
+pub fn findModule(st: &Interp, path: &string): i64 {
     var i: i64 = 0
     while i < st.modPaths.len() {
         if st.modPaths[i] == path {
@@ -426,7 +426,7 @@ fn findModule(st: &Interp, path: &string): i64 {
 // Parse `path` (and everything it requires, transitively) into `prog`, filling
 // the interpreter's module registry. Returns the entry module's registry index,
 // or -1 if the entry could not be read.
-fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
+pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
     var queue: Vec<string> = Vec.new()
     queue.push(entryPath.clone())
     var head: i64 = 0

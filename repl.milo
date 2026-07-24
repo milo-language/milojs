@@ -887,7 +887,7 @@ fn runLine(prog: &Prog, top: i64, st: &mut Interp): JSValue {
 }
 
 // The read-eval-print loop. `st` must already have globals + Node globals installed.
-fn repl(st: &mut Interp): i32 {
+pub fn repl(st: &mut Interp): i32 {
     banner()
 
     // one growing Prog: func indices stay valid across lines (see file header)

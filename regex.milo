@@ -59,7 +59,7 @@ struct ReInst {
     b: i64,
 }
 
-struct Regex {
+pub struct Regex {
     prog: Vec<ReInst>,
     classes: Vec<ReClass>,
     nGroups: i64,
@@ -701,7 +701,7 @@ fn reCloneNode(n: &ReNode): ReNode {
     }
 }
 
-fn regexCompile(source: string, flags: string): Regex {
+pub fn regexCompile(source: string, flags: string): Regex {
     var patBytes: Vec<u8> = Vec.new()
     var i: i64 = 0
     while i < source.len() {
@@ -964,7 +964,7 @@ fn reRun(re: &Regex, pc: i64, s: &string, sp: i64, saves: &mut Vec<i64>): bool {
 
 // Try to match anywhere at or after `startPos`. Returns a saves vector; saves[0] < 0
 // (and length 0) means no match. On success, saves has 2*(nGroups+1) entries.
-fn regexExec(re: &Regex, s: &string, startPos: i64): Vec<i64> {
+pub fn regexExec(re: &Regex, s: &string, startPos: i64): Vec<i64> {
     var start = startPos
     // one scratch slot past the captures, used by lookbehind to carry its target
     let slots = 2 * (re.nGroups + 1) + 1

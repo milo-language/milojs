@@ -456,7 +456,7 @@ fn napi_get_cb_info(_env: *u8, cbinfo: i64, argc: *u8, argv: *u8, thisArg: *u8, 
 
 // Invoke an addon-implemented function. Called by callValue when a JS call lands on
 // an object whose napiFn is set.
-fn napiInvoke(fnIdx: i64, args: Vec<JSValue>, thisVal: JSValue): JSValue {
+pub fn napiInvoke(fnIdx: i64, args: Vec<JSValue>, thisVal: JSValue): JSValue {
     if fnIdx < 0 || fnIdx >= gNapi.fns.len() {
         return JSValue.Undefined
     }
@@ -488,7 +488,7 @@ extern fn dlsym(_handle: *u8, _symbol: *u8): *u8
 // The real entry point is napi_register_module_v1(env, exports): we hand it a fresh
 // object and it populates it, but it may also return a DIFFERENT value, which then
 // becomes module.exports. Both shapes are legal and addons use both.
-fn napiLoadAddon(path: &string): Result<JSValue, string> {
+pub fn napiLoadAddon(path: &string): Result<JSValue, string> {
     unsafe {
         let h = dlopen(path as *u8, 2)
         if (h as i64) == 0 {
@@ -958,7 +958,7 @@ fn napiSettle(p: i64, state: i64, value: JSValue) {
 
 // True while an addon owes us a settlement. Keeps the event loop from exiting
 // before a worker thread replies.
-fn napiHasPendingWork(): bool {
+pub fn napiHasPendingWork(): bool {
     // A live threadsafe function counts: napi-rs resolves an async call by
     // invoking one from a tokio worker, without ever creating a deferred here,
     // so a registered tsfn means a settlement can still arrive from off-thread.
@@ -981,7 +981,7 @@ fn napiHasPendingWork(): bool {
 // functions (so they must not keep the process alive), yet they are exactly how
 // a query result comes back, so a blocked await still has to wait on them.
 // The await's own deadline is the backstop if the addon never answers.
-fn napiMayDeliver(): bool {
+pub fn napiMayDeliver(): bool {
     if gNapi.liveDeferred > 0 || gNapi.pending.len() > 0 {
         return true
     }
@@ -996,7 +996,7 @@ fn napiMayDeliver(): bool {
 }
 
 // Drained by the interpreter after any call into an addon.
-fn napiTakePending(): Vec<NapiPending> {
+pub fn napiTakePending(): Vec<NapiPending> {
     var out: Vec<NapiPending> = Vec.new()
     while gNapi.pending.len() > 0 {
         out.push(gNapi.pending.remove(0))
@@ -1163,7 +1163,7 @@ struct NapiTsfnCall {
 }
 
 // Non-blocking drain. Returns the calls that were waiting.
-fn napiPollTsfn(): Vec<NapiTsfnCall> {
+pub fn napiPollTsfn(): Vec<NapiTsfnCall> {
     var out: Vec<NapiTsfnCall> = Vec.new()
     if gNapi.tsfnR < 0 {
         return out
@@ -1189,7 +1189,7 @@ fn napiPollTsfn(): Vec<NapiTsfnCall> {
 // Run one queued call on the main thread. When the addon supplied a call_js_cb it
 // owns the dispatch entirely (that is where it converts `data` into JS values);
 // otherwise the spec says to invoke the JS function with no arguments.
-fn napiRunTsfnCall(c: &NapiTsfnCall): JSValue {
+pub fn napiRunTsfnCall(c: &NapiTsfnCall): JSValue {
     let i = c.tsfn - 1
     if i < 0 || i >= gNapi.tsfns.len() {
         return JSValue.Undefined
@@ -1210,12 +1210,12 @@ extern fn usleep(_usec: u32): i32
 
 // Yield the CPU while waiting on an addon's worker thread. Polling flat out would
 // burn a core for the whole duration of a query.
-fn napiWaitBriefly() {
+pub fn napiWaitBriefly() {
     unsafe {
         let _r = usleep(200 as u32)
     }
 }
 
-fn napiHasTsfn(): bool {
+pub fn napiHasTsfn(): bool {
     return gNapi.tsfns.len() > 0
 }

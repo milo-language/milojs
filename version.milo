@@ -12,6 +12,6 @@ fn versionLine(bin: &string): string {
     return bin.clone() + " " + trim(embedFile(".version"))
 }
 
-fn versionText(bin: &string): string {
+pub fn versionText(bin: &string): string {
     return versionLine(bin) + "\nhttps://github.com/milo-language/milojs/releases — rolling `latest`; re-run the install command to update"
 }

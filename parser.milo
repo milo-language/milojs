@@ -13,7 +13,7 @@ from "./value" import {
     i64ToStr, numToStr
 }
 
-struct PState {
+pub struct PState {
     toks: Vec<Token>,
     pos: i64,
     // source path, so a parse error names the module it came from
@@ -2143,7 +2143,7 @@ fn parseExport(p: &mut PState, prog: &mut Prog, list: &mut Vec<i64>) {
     }
 }
 
-fn parseProgram(p: &mut PState, prog: &mut Prog): i64 {
+pub fn parseProgram(p: &mut PState, prog: &mut Prog): i64 {
     var list: Vec<i64> = Vec.new()
     while peekKind(p) != T_EOF {
         if peekKind(p) == T_EXPORT {

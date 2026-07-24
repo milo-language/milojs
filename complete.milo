@@ -21,7 +21,7 @@ from "./eval" import {
     getMember, NATIVE_DATE, NATIVE_STRING
 }
 
-fn cmplIsIdentByte(b: u8): bool {
+pub fn cmplIsIdentByte(b: u8): bool {
     let c = b as i64
     if c >= 97 && c <= 122 {
         return true
@@ -35,7 +35,7 @@ fn cmplIsIdentByte(b: u8): bool {
     return c == 95 || c == 36 // _ $
 }
 
-fn cmplSlice(s: &string, from: i64, to: i64): string {
+pub fn cmplSlice(s: &string, from: i64, to: i64): string {
     var out = ""
     var i = from
     while i < to {
@@ -82,9 +82,9 @@ fn cmplContains(v: &Vec<string>, s: &string): bool {
 // Candidate kinds, in display order. Splitting them is the whole point of the
 // listing: with ~90 globals in scope, the two names *you* defined this session are
 // otherwise lost in the middle of the alphabet.
-let CMPL_SESSION: i64 = 0
+pub let CMPL_SESSION: i64 = 0
 let CMPL_BUILTIN: i64 = 1
-let CMPL_KEYWORD: i64 = 2
+pub let CMPL_KEYWORD: i64 = 2
 
 // push if it matches the prefix and isn't already present — property lookup walks
 // a proto chain, so a shadowed key would otherwise appear twice
@@ -268,7 +268,7 @@ fn cmplGlobals(st: &Interp, prefix: &string, out: &mut Vec<string>, kinds: &mut 
 // Fill `out` with sorted candidates for the word ending at the end of `line`, and
 // return the byte offset where that word starts (so the caller knows how much of
 // the line a chosen candidate replaces).
-fn completeAt(st: &Interp, line: &string, out: &mut Vec<string>, kinds: &mut Vec<i64>, builtinCount: i64): i64 {
+pub fn completeAt(st: &Interp, line: &string, out: &mut Vec<string>, kinds: &mut Vec<i64>, builtinCount: i64): i64 {
     var start = line.len()
     while start > 0 && cmplIsIdentByte(line[start - 1]) {
         start = start - 1
@@ -292,7 +292,7 @@ fn completeAt(st: &Interp, line: &string, out: &mut Vec<string>, kinds: &mut Vec
 
 // Longest byte prefix shared by every candidate — what tab expands to when the
 // match isn't unique.
-fn cmplCommonPrefix(cands: &Vec<string>): string {
+pub fn cmplCommonPrefix(cands: &Vec<string>): string {
     if cands.len() == 0 {
         return ""
     }

@@ -33,13 +33,16 @@ from "std/env" import {
     getEnv
 }
 from "std/runtime" import {
-    _spawnOsThreadDetached, schedulerCurrent, schedulerPark, schedulerUnpark, schedulerYield, Task
+    spawnOsThreadDetached, schedulerCurrent, schedulerPark, schedulerUnpark, schedulerYield, Task
 }
 from "std/sync" import {
     Channel
 }
 from "std/net" import {
-    TcpListener, TcpStream, TlsStream
+    TcpListener, TcpStream
+}
+from "std/fetch" import {
+    TlsStream
 }
 from "std/time" import {
     epochMillis, sleepMs
@@ -1042,7 +1045,7 @@ fn setMemberDyn(prog: &Prog, o: i64, key: string, v: JSValue, st: &mut Interp) {
     setMember(st, o, key, v)
 }
 
-fn getMember(st: &Interp, o: i64, key: &string): JSValue {
+pub fn getMember(st: &Interp, o: i64, key: &string): JSValue {
     // A DataView shares taBuf/taOffset/taLen with typed arrays but is not
     // index-accessible and its byteLength is already in bytes. Handle its props
     // here and skip the typed-array element path below.
@@ -1408,7 +1411,7 @@ let NATIVE_OBJECT_DEFINEPROPERTY: i64 = 19
 let NATIVE_OBJECT_KEYS: i64 = 20
 let NATIVE_OBJECT_ASSIGN: i64 = 21
 let NATIVE_NUMBER: i64 = 22
-let NATIVE_STRING: i64 = 23
+pub let NATIVE_STRING: i64 = 23
 let NATIVE_BOOLEAN: i64 = 24
 let NATIVE_READ_FILE_SYNC: i64 = 25
 let NATIVE_FILE_EXISTS: i64 = 26
@@ -1441,12 +1444,12 @@ let NATIVE_MAP: i64 = 47
 let NATIVE_SET: i64 = 48
 let NATIVE_OBJECT_GETOWNPROPNAMES: i64 = 49
 let NATIVE_ARRAY_FROM: i64 = 50
-let NATIVE_PROCESS_EXIT: i64 = 51
-let NATIVE_NOOP: i64 = 52
-let NATIVE_PROCESS_HRTIME: i64 = 53
-let NATIVE_PROCESS_CWD: i64 = 54
+pub let NATIVE_PROCESS_EXIT: i64 = 51
+pub let NATIVE_NOOP: i64 = 52
+pub let NATIVE_PROCESS_HRTIME: i64 = 53
+pub let NATIVE_PROCESS_CWD: i64 = 54
 let NATIVE_STRING_FROMCHARCODE: i64 = 55
-let NATIVE_DATE: i64 = 56
+pub let NATIVE_DATE: i64 = 56
 let NATIVE_DATE_NOW: i64 = 57
 // Date.UTC(year, month[, day, hours, minutes, seconds, ms]) — the fields are
 // interpreted as UTC and out-of-range values roll over (month 12 is January of
@@ -1465,7 +1468,7 @@ let NATIVE_SET_TIMEOUT: i64 = 62
 let NATIVE_SET_INTERVAL: i64 = 63
 let NATIVE_CLEAR_TIMER: i64 = 64
 let NATIVE_SET_IMMEDIATE: i64 = 65
-let NATIVE_QUEUE_MICROTASK: i64 = 66
+pub let NATIVE_QUEUE_MICROTASK: i64 = 66
 // queueMicrotask has its own native (distinct from process.nextTick, which
 // shares NATIVE_QUEUE_MICROTASK) so it can call the callback with zero
 // arguments per spec while nextTick's behaviour is left untouched.
@@ -1511,7 +1514,7 @@ let NATIVE_NAPI_LOAD: i64 = 105
 // `console.log(x)` call shape, but code that passes the method around — prisma's
 // runtime does `console.debug || console.log` — needs `console` to be a real
 // object whose properties are callable values.
-let NATIVE_CONSOLE_LOG: i64 = 106
+pub let NATIVE_CONSOLE_LOG: i64 = 106
 // new Proxy(target, handler)
 let NATIVE_PROXY: i64 = 107
 // Object.is — SameValue: like ===, except NaN equals itself and +0 differs
@@ -2311,7 +2314,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 // the OS main thread and never parks, so schedulerYield is a no-op
                 // and a green task would never be scheduled. The worker touches
                 // nothing but its own arguments and the channel.
-                _spawnOsThreadDetached(move(): void => {
+                spawnOsThreadDetached(move(): void => {
                     let r = doHttpFetch(method, url, headersRaw, body)
                     let _s = chForTask.send(r)
                 }
@@ -3857,7 +3860,7 @@ fn regexStrMatchAll(st: &mut Interp, s: &string, rid: i64): JSValue {
 // Execute a pre-loaded module in a fresh CommonJS scope and cache its exports.
 // A module already loading (a require cycle) returns its partial exports, which
 // is what Node does.
-fn runModule(prog: &Prog, idx: i64, st: &mut Interp): JSValue {
+pub fn runModule(prog: &Prog, idx: i64, st: &mut Interp): JSValue {
     if st.modState[idx] == 2 {
         return cloneValue(st.modExports[idx])
     }
@@ -4050,7 +4053,7 @@ fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
     }
 }
 
-fn setupGlobals(st: &mut Interp) {
+pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "Error", JSValue.Native(NATIVE_ERROR))
     scopeDefine(st, 0, "TypeError", JSValue.Native(NATIVE_TYPE_ERROR))
     scopeDefine(st, 0, "RangeError", JSValue.Native(NATIVE_RANGE_ERROR))
@@ -4494,7 +4497,7 @@ fn evalBigIntBin(op: &string, va: JSValue, vb: JSValue, st: &mut Interp): JSValu
     return JSValue.Undefined
 }
 
-fn evalExpr(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue {
+pub fn evalExpr(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue {
     // an exception is unwinding — stop evaluating, produce a placeholder
     if st.throwing {
         return JSValue.Undefined
@@ -5985,7 +5988,7 @@ fn inspectObj(st: &Interp, o: i64, depth: i64): string {
     return out
 }
 
-fn inspectTop(st: &Interp, v: &JSValue): string {
+pub fn inspectTop(st: &Interp, v: &JSValue): string {
     match v {
         JSValue.Obj(o) => {
             return inspectObj(st, o, 0)
@@ -6256,7 +6259,7 @@ fn proxyOwnEnumKeys(prog: &Prog, st: &mut Interp, o: i64): Vec<string> {
     return out
 }
 
-fn makeError(st: &mut Interp, kind: string, msg: string): JSValue {
+pub fn makeError(st: &mut Interp, kind: string, msg: string): JSValue {
     let o = newObject(st)
     st.objects[o].isError = true
     objSet(st, o, "name", JSValue.Str(kind.clone()))
@@ -6632,7 +6635,7 @@ fn parkOnPromise(st: &mut Interp, p: i64): bool {
 // task is parked forever. Such a task keeps the scheduler's task count > 0, which
 // would block main's final -1 poll and hang the process at exit — Node instead
 // drops an unfinished generator, so the entry point exits directly when this holds.
-fn anyGenParked(st: &Interp): bool {
+pub fn anyGenParked(st: &Interp): bool {
     var i: i64 = 0
     while i < st.genObj.len() {
         if st.genStarted[i] && !st.genDone[i] {
@@ -7161,7 +7164,7 @@ fn isParkedOnPromise(st: &Interp, t: *u8): bool {
     return false
 }
 
-fn runEventLoop(prog: &Prog, st: &mut Interp) {
+pub fn runEventLoop(prog: &Prog, st: &mut Interp) {
     var going = true
     while going {
         // Deliver anything an addon's worker threads queued. Runs before
@@ -10361,7 +10364,7 @@ fn execTry(prog: &Prog, tryB: i64, param: &string, catchB: i64, finallyB: i64, s
     return Flow.Normal
 }
 
-fn execStmt(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): Flow {
+pub fn execStmt(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): Flow {
     if st.throwing {
         return Flow.Normal
     }
@@ -10990,7 +10993,7 @@ fn execStmt(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): Flow {
 // before it runs. JS hoists both to the function scope through arbitrary
 // nesting, so this walks into blocks, loops, if/else, switch and try — unlike
 // let/const, which stay in the block they are written in.
-fn hoistBlock(prog: &Prog, blockIdx: i64, st: &mut Interp, scope: i64) {
+pub fn hoistBlock(prog: &Prog, blockIdx: i64, st: &mut Interp, scope: i64) {
     var i: i64 = 0
     let n = prog.blocks[blockIdx].len()
     while i < n {
@@ -11066,7 +11069,7 @@ fn hoistStmt(prog: &Prog, idx: i64, st: &mut Interp, scope: i64) {
     }
 }
 
-fn execBlock(prog: &Prog, blockIdx: i64, st: &mut Interp, scope: i64): Flow {
+pub fn execBlock(prog: &Prog, blockIdx: i64, st: &mut Interp, scope: i64): Flow {
     let n = prog.blocks[blockIdx].len()
     var j: i64 = 0
     while j < n {
