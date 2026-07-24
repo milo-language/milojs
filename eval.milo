@@ -6567,7 +6567,7 @@ fn spawnActivation(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSVal
 
 // Take back the execution belonging to `task`, wherever it sits in the parked
 // set. Parks and wakes interleave, so position says nothing about ownership.
-fn resumeExecCtx(st: &mut Interp, task: *u8) {
+pub fn resumeExecCtx(st: &mut Interp, task: *u8) {
     var i: i64 = 0
     while i < st.suspendedTask.len() {
         if st.suspendedTask[i] as i64 == task as i64 {
@@ -6603,7 +6603,7 @@ fn awaitYieldMicrotasks(prog: &Prog, st: &mut Interp) {
     }
 }
 
-fn parkOnPromise(st: &mut Interp, p: i64): bool {
+pub fn parkOnPromise(st: &mut Interp, p: i64): bool {
     let me = schedulerCurrent()
     if me as i64 == 0 || me as i64 == st.mainTask as i64 {
         return false
@@ -6902,7 +6902,7 @@ fn wakeAwaiters(st: &mut Interp, p: i64) {
     }
 }
 
-fn settlePromise(st: &mut Interp, p: i64, state: i64, value: JSValue) {
+pub fn settlePromise(st: &mut Interp, p: i64, state: i64, value: JSValue) {
     if p < 0 || !isPromise(st, p) {
         return
     }

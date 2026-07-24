@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # milo needs clang 16+ for the element-type-free intrinsic mangling
+      # (@llvm.memcpy.p0.p0.i64); ubuntu-latest's default is older.
+      - name: install clang 18
+        run: |
+          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 18
+          # milo probes /usr/bin/clang FIRST, so the symlink has to move.
+          sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
+          sudo ln -sf /usr/bin/clang++-18 /usr/bin/clang++
+
+      # The runtime's fetch/TLS path links OpenSSL.
+      - name: install openssl headers
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+
+      # Test against the released compiler, the same one users have. A milo
+      # change that breaks milojs shows up here on the next run, not silently.
+      - name: install milo
+        run: |
+          curl -fsSL -o milo.tar.gz \
+            https://github.com/milo-language/milo/releases/download/latest/milo-linux-x64.tar.gz
+          tar xzf milo.tar.gz
+          chmod +x milo
+          echo "$PWD" >> "$GITHUB_PATH"
+
+      # Built once and reused: run.sh compiles per-pass otherwise, and an LLVM
+      # build per fixture dwarfs the test time.
+      - name: build engine and runtime
+        run: |
+          milo build milojs-engine.milo -o /tmp/milojs-engine
+          milo build milojs.milo -o /tmp/milojs
+
+      # tests/*.js on the engine, tests/runtime/*.js on the runtime. The runtime
+      # pass is the guard on the async / fetch / event-loop machinery — it used
+      # to run out of the milo repo (tests/milojsRuntime.test.ts) and moved here
+      # with the source.
+      - name: js fixtures
+        run: MILOJS_ENGINE_BIN=/tmp/milojs-engine MILOJS_RUNTIME_BIN=/tmp/milojs ./tests/run.sh
+
+      # tests/milo/*.milo — milojs invariants asserted from Milo directly
+      # (async park/resume, exec-context identity, GC roots under a parked
+      # activation), also inherited from the milo repo's fixture suite.
+      - name: milo fixtures
+        run: ./tests/run-milo.sh
