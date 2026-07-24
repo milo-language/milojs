@@ -27,6 +27,9 @@ from "std/ansi" import {
 from "std/color" import {
     bold, gray, dim
 }
+from "std/string" import {
+    strTrim
+}
 from "./lexer" import {
     lex
 }
@@ -216,8 +219,8 @@ fn banner(): void {
 
     emit(buf, "\n")
     emit(buf, "  " + bold("a JavaScript engine written from scratch in Milo.") + "\n")
-    emit(buf, "  " + dim("github.com/milo-language/milo") + "\n\n")
-    emit(buf, "  " + dim("Tab complete · ↑/↓ history · Ctrl-C cancel line · Ctrl-D exit") + "\n\n")
+    emit(buf, "  " + dim("github.com/milo-language/milojs") + "\n\n")
+    emit(buf, "  " + dim("Tab complete · ↑/↓ history · Ctrl-C cancel line · exit / Ctrl-D to quit") + "\n\n")
     writeStdout(buf)
 }
 
@@ -922,6 +925,16 @@ fn repl(st: &mut Interp): i32 {
                 }
                 if source.len() == 0 {
                     continue
+                }
+
+                // Node exits the REPL only on `.exit`/Ctrl-D and treats a bare
+                // `exit` as a ReferenceError, which trips people up. Treat the
+                // obvious quit words as a REPL command rather than JS, mirroring
+                // the Eof path (history saved; terminal restored by the caller).
+                let cmd = strTrim(source)
+                if cmd == "exit" || cmd == "quit" || cmd == "exit()" || cmd == "quit()" || cmd == ".exit" || cmd == ".quit" {
+                    saveHistory(history)
+                    return 0
                 }
 
                 // Probe first: parsing appends to `prog`, and a half-finished
