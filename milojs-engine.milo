@@ -24,6 +24,12 @@ from "std/env" import {
 from "std/argparse" import {
     newParser
 }
+from "std/args" import {
+    args
+}
+from "./version" import {
+    versionText
+}
 from "./driver" import {
     makeInterp, bootInterp, describeThrown
 }

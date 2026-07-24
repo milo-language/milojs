@@ -6,10 +6,12 @@ from "std/string" import {
     trim
 }
 
-fn versionLine(): string {
-    return "milojs " + trim(embedFile(".version"))
+// `bin` names the binary asking: both ship from the same release tarball, so a
+// bug report has to say which one it came from.
+fn versionLine(bin: &string): string {
+    return bin.clone() + " " + trim(embedFile(".version"))
 }
 
-fn versionText(): string {
-    return versionLine() + "\nhttps://github.com/milo-language/milojs/releases — rolling `latest`; re-run the install command to update"
+fn versionText(bin: &string): string {
+    return versionLine(bin) + "\nhttps://github.com/milo-language/milojs/releases — rolling `latest`; re-run the install command to update"
 }

@@ -199,7 +199,7 @@ fn main(): i32 {
             ai = ai + 1
             envFile = argv[ai].clone()
         } else if a == "--version" || a == "-V" {
-            print(versionText())
+            print(versionText("milojs"))
             return 0
         } else if path.len() == 0 {
             path = a
