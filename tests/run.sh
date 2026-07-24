@@ -13,10 +13,19 @@
 # The binary for each pass is compiled ONCE and reused. `milo run` rebuilds on
 # every invocation, so a per-test build cost a full LLVM compile per file. Set
 # MILOJS_ENGINE_BIN / MILOJS_RUNTIME_BIN to reuse an existing build.
+#
+# MILO points at the compiler: a `milo` on PATH by default, or a checkout's
+# src/main.ts (invoked through bun).
 set -u
-cd "$(dirname "$0")/../../../.." || exit 1
-DIR="examples/runtimes/milojs/tests"
+cd "$(dirname "$0")/.." || exit 1
+DIR="tests"
 RUNTIME_DIR="$DIR/runtime"
+
+MILO="${MILO:-milo}"
+case "$MILO" in
+  *.ts) MILO_RUN="bun run $MILO" ;;
+  *)    MILO_RUN="$MILO" ;;
+esac
 
 PER_TEST_TIMEOUT="${MILOJS_TEST_TIMEOUT:-120}"
 TIMEOUT_CMD=""
@@ -88,7 +97,7 @@ if [ -n "${MILOJS_ENGINE_BIN:-}" ]; then
 else
   ENGINE_BIN="$(mktemp -t milojs-engine)"
   trap 'rm -f "$ENGINE_BIN"' EXIT
-  if ! bun run src/main.ts build examples/runtimes/milojs/milojs-engine.milo -o "$ENGINE_BIN" >/dev/null; then
+  if ! $MILO_RUN build milojs-engine.milo -o "$ENGINE_BIN" >/dev/null; then
     echo "FAIL: engine did not build"
     exit 1
   fi
@@ -109,7 +118,7 @@ if compgen -G "$RUNTIME_DIR/*.js" >/dev/null; then
   else
     RUNTIME_BIN="$(mktemp -t milojs-runtime)"
     trap 'rm -f "$ENGINE_BIN" "$RUNTIME_BIN"' EXIT
-    if ! bun run src/main.ts build examples/runtimes/milojs/milojs.milo -o "$RUNTIME_BIN" >/dev/null; then
+    if ! $MILO_RUN build milojs.milo -o "$RUNTIME_BIN" >/dev/null; then
       echo "FAIL: runtime did not build"
       exit 1
     fi
