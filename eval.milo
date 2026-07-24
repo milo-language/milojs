@@ -3379,13 +3379,24 @@ fn mathNative(id: i64, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     if id == NATIVE_MATH_EXP {
         return JSValue.Number(mathExp(x))
     }
-    if id == NATIVE_MATH_LOG {
-        return JSValue.Number(mathLog(x))
-    }
-    if id == NATIVE_MATH_LOG2 {
-        return JSValue.Number(mathLog2(x))
-    }
-    if id == NATIVE_MATH_LOG10 {
+    // std's mathLog* carry `requires x > 0.0`; JS defines the whole domain
+    // (ECMA-262 21.3.2.20-22: log(+-0) is -Infinity, log(x < 0) is NaN). Handle the
+    // non-positive cases here rather than calling out of contract — a contract
+    // violation aborts under --debug, and only survives -O2 because the check is
+    // compiled out and libc happens to return the right value.
+    if id == NATIVE_MATH_LOG || id == NATIVE_MATH_LOG2 || id == NATIVE_MATH_LOG10 {
+        if x < 0.0 {
+            return JSValue.Number(jsNan())
+        }
+        if x == 0.0 {
+            return JSValue.Number(0.0 - jsInf())
+        }
+        if id == NATIVE_MATH_LOG {
+            return JSValue.Number(mathLog(x))
+        }
+        if id == NATIVE_MATH_LOG2 {
+            return JSValue.Number(mathLog2(x))
+        }
         return JSValue.Number(mathLog10(x))
     }
     if id == NATIVE_MATH_SIN {
