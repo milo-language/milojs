@@ -8,7 +8,7 @@ from "std/unicode" import {
     encodeCodepoint
 }
 from "./value" import {
-    i64ToStr
+    i64ToStr, hexDigitVal
 }
 
 pub let T_NUM: i32 = 0
@@ -138,18 +138,9 @@ fn isSpace(c: u8): bool {
 }
 
 // digit value of a hex/oct/bin char, or -1
-pub fn hexDigitVal(c: u8): i64 {
-    if c >= '0' && c <= '9' {
-        return (c - '0') as i64
-    }
-    if c >= 'a' && c <= 'f' {
-        return (c - 'a') as i64 + 10
-    }
-    if c >= 'A' && c <= 'F' {
-        return (c - 'A') as i64 + 10
-    }
-    return -1
-}
+// hexDigitVal is imported from value.milo above. It used to be defined here too,
+// byte-identical: top-level names share one program-wide namespace, so the second
+// definition silently shadowed the first instead of being an error.
 
 // four hex digits starting at src[at], or -1
 fn hex4At(src: &string, at: i64): i64 {

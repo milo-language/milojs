@@ -439,17 +439,6 @@ fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue {
     return direct
 }
 
-fn isUndefinedValue(v: &JSValue): bool {
-    match v {
-        JSValue.Undefined => {
-            return true
-        }
-        _ => {
-            return false
-        }
-    }
-}
-
 fn makeBoundMethod(st: &mut Interp, recv: JSValue, name: string): JSValue {
     let bo = newObject(st)
     st.objects[bo].isBound = true
@@ -3364,20 +3353,6 @@ fn builtinConstructorOf(st: &Interp, o: i64): JSValue {
         return JSValue.Native(NATIVE_OBJECT_CTOR)
     }
     return JSValue.Undefined
-}
-
-fn propertyBagOf(st: &mut Interp, v: &JSValue): i64 {
-    match v {
-        JSValue.Obj(o) => {
-            return o
-        }
-        JSValue.Func(f, env) => {
-            return getFuncStatics(st, f, env)
-        }
-        _ => {
-            return -1
-        }
-    }
 }
 
 fn mathNative(id: i64, args: &Vec<JSValue>, st: &mut Interp): JSValue {

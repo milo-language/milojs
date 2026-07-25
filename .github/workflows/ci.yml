@@ -41,6 +41,14 @@ jobs:
           chmod +x milo
           echo "$PWD" >> "$GITHUB_PATH"
 
+      # Milo shares one program-wide namespace for top-level names and accepts a
+      # duplicate definition silently (last one wins). This repo shipped
+      # propertyBagOf twice with different bodies before anyone noticed, so the
+      # check is a gate, not advisory. Runs before the build: it is instant, and
+      # a duplicate makes everything after it untrustworthy.
+      - name: lint symbols
+        run: ./tools/lint-symbols.sh
+
       # Built once and reused: run.sh compiles per-pass otherwise, and an LLVM
       # build per fixture dwarfs the test time.
       - name: build engine and runtime
