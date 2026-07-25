@@ -649,6 +649,12 @@ pub struct Interp {
     // even though milojs fakes the prototype chain rather than linking it.
     objectProtoObj: i64,
     arrayProtoObj: i64,
+    // Cleared the moment anything writes to or deletes from Array.prototype.
+    // While false, arr.method() can dispatch straight to the native instead of
+    // walking the chain and building a bound method - the common case by far.
+    // Any user touch flips it and every later call takes the real chain, so the
+    // fast path can never serve a stale override.
+    arrayProtoPristine: bool,
     // monotonic counter behind Symbol(); symbols are unique strings here
     symbolCounter: i64,
     // the event loop: microtasks drain to empty before any timer fires
@@ -775,7 +781,7 @@ pub var gInterp: Interp = Interp {
     throwing: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 20,
     rngState: 88172645463325252,
-    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, nativeProps: Vec.new(), dateCtorProps: -1, iterProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, symbolCounter: 0, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actEnv: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, reportedMissing: Vec.new(), httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false
+    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, nativeProps: Vec.new(), dateCtorProps: -1, iterProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, symbolCounter: 0, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actEnv: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, reportedMissing: Vec.new(), httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false
 }
 
 fn allocObj(st: &mut Interp, isArray: bool): i64 {
@@ -832,7 +838,16 @@ pub fn newObject(st: &mut Interp): i64 {
 }
 
 pub fn newArray(st: &mut Interp): i64 {
-    return allocObj(st, true)
+    let o = allocObj(st, true)
+    // Link the REAL prototype rather than relying on the name-whitelist dispatch
+    // that used to fake it, so ordinary member lookup finds array methods and
+    // a user's `Array.prototype.foo = …` is reachable like it is in a real engine.
+    // -1 until setupGlobals has built it: arrays allocated during startup simply
+    // have no proto, exactly as before.
+    if st.arrayProtoObj >= 0 {
+        st.objects[o].proto = st.arrayProtoObj
+    }
+    return o
 }
 
 // Promises settle synchronously — there is no event loop, so `new Promise(cb)`
@@ -890,7 +905,17 @@ pub fn objSetNonEnumerable(st: &mut Interp, obj: i64, key: &string) {
     }
 }
 
+// Lowest-level mutators invalidate the Array.prototype fast path. Guarding here
+// rather than only at setMember means defineProperty, delete and accessor
+// installation are all covered without each remembering to do it.
+fn touchedArrayProto(st: &mut Interp, obj: i64) {
+    if obj == st.arrayProtoObj {
+        st.arrayProtoPristine = false
+    }
+}
+
 pub fn objSet(st: &mut Interp, obj: i64, key: string, value: JSValue) {
+    touchedArrayProto(st, obj)
     // private fields (#name, the only keys milojs stores with a leading '#') are
     // non-enumerable: they must not appear in JSON.stringify, Object.keys, for-in
     // or spread. Setting it here covers every enumeration site at once.
@@ -899,8 +924,13 @@ pub fn objSet(st: &mut Interp, obj: i64, key: string, value: JSValue) {
     let n = st.objects[obj].props.len()
     while i < n {
         if st.objects[obj].props[i].key == key {
+            // Assignment to an EXISTING property keeps its attributes; only a new
+            // one gets the defaults. Resetting enumerable here made
+            // `Array.prototype.join = f` turn a non-enumerable builtin into an
+            // enumerable one, after which `for (k in [1,2])` yielded "join".
+            let wasEnum = st.objects[obj].props[i].enumerable
             st.objects[obj].props[i] = Prop {
-                key: key, value: value, getter: JSValue.Undefined, setter: JSValue.Undefined, isAccessor: false, writable: true, enumerable: enumer, configurable: true
+                key: key, value: value, getter: JSValue.Undefined, setter: JSValue.Undefined, isAccessor: false, writable: true, enumerable: wasEnum, configurable: true
             }
             return
         }
@@ -961,6 +991,7 @@ pub fn mapPut(st: &mut Interp, o: i64, key: JSValue, value: JSValue) {
 
 // Define (or replace) an accessor property.
 pub fn objDefineAccessor(st: &mut Interp, obj: i64, key: string, getter: JSValue, setter: JSValue) {
+    touchedArrayProto(st, obj)
     var i: i64 = 0
     let n = st.objects[obj].props.len()
     while i < n {
@@ -1046,6 +1077,7 @@ pub fn setArrayLength(st: &mut Interp, obj: i64, n: i64) {
 // true if the key was removed or was absent, false if it is a non-configurable
 // own property (which stays). `delete` evaluates to this bool.
 pub fn objDeleteKey(st: &mut Interp, obj: i64, key: &string): bool {
+    touchedArrayProto(st, obj)
     if st.objects[obj].isArray {
         let ai = asArrayIndex(key)
         if ai >= 0 && ai < st.objects[obj].elems.len() {

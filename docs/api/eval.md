@@ -108,11 +108,12 @@ fn arrayMethodNames(): Vec<string>
 isArrayMethod's set as data, used to populate Array.prototype. Kept separate
 because isArrayMethod is on the property-access hot path and a Vec scan there
 would cost an allocation per lookup. Every name here MUST also be in
-isArrayMethod, or it resolves to a method that then refuses to run. The
-reverse is fine, and `toString` is deliberately omitted: Array.prototype
-.toString is join(","), but exposing it as a bound method would shadow the
-Object.prototype.toString type-tag path that inspect and the `[object X]`
-probes rely on.
+isArrayMethod, or it resolves to a method that then refuses to run.
+
+`toString` IS included: Array.prototype.toString is join(","), and it is a
+distinct function from Object.prototype.toString in the spec. It does not
+shadow the type-tag path, which travels under the private @@objProtoToString
+name precisely so the two cannot collide.
 
 ### `assignPattern`
 

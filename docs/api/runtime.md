@@ -581,3 +581,13 @@ pub fn taWidth(kind: i64): i64
 ```
 
 _Undocumented._
+
+### `touchedArrayProto`
+
+```milo
+fn touchedArrayProto(st: &mut Interp, obj: i64)
+```
+
+Lowest-level mutators invalidate the Array.prototype fast path. Guarding here
+rather than only at setMember means defineProperty, delete and accessor
+installation are all covered without each remembering to do it.

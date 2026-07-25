@@ -367,9 +367,10 @@ fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue {
         if st.objExtras[st.objects[o].extra].taBuf >= 0 && isTypedArrayMethodName(key) {
             return makeBoundMethod(st, JSValue.Obj(o), key.clone())
         }
-        if st.objects[o].isArray && isArrayMethod(key) {
-            return makeBoundMethod(st, JSValue.Obj(o), key.clone())
-        }
+        // NB: no array-method arm here. Arrays link Array.prototype as a real
+        // proto, so the chain walk below finds them — and only if the user has
+        // not replaced one, which is what makes `Array.prototype.map = …` take
+        // effect the way it does in a real engine.
         // every object inherits these from Object.prototype, including the
         // built-in constructors — `Object.hasOwnProperty.call(x, k)` is a common
         // way to borrow the method, and it read as undefined before
@@ -422,12 +423,6 @@ fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue {
         return callValue(prog, g, noArgs, JSValue.Obj(o), st)
     }
     let direct = getMember(st, o, key)
-    // Builtin methods are dispatched by name at the call site, so they have no
-    // value form. Reading one (var slice = [].slice) hands back a bound-method
-    // object that remembers the receiver, so .call/.apply still work.
-    if isUndefinedValue(direct) && st.objects[o].isArray && isArrayMethod(key) {
-        return makeBoundMethod(st, JSValue.Obj(o), key.clone())
-    }
     // `constructor` fallback for builtins whose faked prototype chain has none.
     // Only when the chain gave nothing, so a user constructor is never shadowed.
     if isUndefinedValue(direct) && key == "constructor" {
@@ -773,8 +768,10 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 return JSValue.Bool(objOwnIndex(st, o, key) >= 0 || (st.objects[o].isArray && asArrayIndex(key) >= 0 && asArrayIndex(key) < arrLen(st, o) && !arrIsHole(st, o, asArrayIndex(key))))
             }
             if name == "toString" {
+                // Array.prototype.toString is join(","), not the type tag. The
+                // tag path is @@objProtoToString, a different name entirely.
                 if st.objects[o].isArray {
-                    return JSValue.Str("[object Array]")
+                    return JSValue.Str(joinArray(st, o, ","))
                 }
                 // Error.prototype.toString is "Name: message", NOT the type tag —
                 // this is the path String(err) and `"" + err` take through
@@ -1142,6 +1139,12 @@ pub fn getMember(st: &Interp, o: i64, key: &string): JSValue {
 }
 
 fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
+    // Any write to Array.prototype retires the fast dispatch path for the rest of
+    // the run — after this, arr.map() has to resolve through the chain so a
+    // replaced method is the one that runs.
+    if o == st.arrayProtoObj {
+        st.arrayProtoPristine = false
+    }
     // sloppy mode drops writes to a frozen object rather than throwing
     if st.objects[o].frozen {
         return
@@ -4356,10 +4359,13 @@ pub fn setupGlobals(st: &mut Interp) {
     // Array.prototype.<m>.call(arrayLike) has to resolve for all of them. The
     // bound `this` is left unset so the call site's receiver wins (see
     // isBoundThisSet).
+    // Non-enumerable, which matters now that arrays link this as a real proto:
+    // `for (k in [1,2])` and Object.keys must yield indices only, not 36 methods.
     var apm: i64 = 0
     let apNames = arrayMethodNames()
     while apm < apNames.len() {
         objSet(st, arrayProto, apNames[apm].clone(), makeBoundMethod(st, JSValue.Undefined, apNames[apm].clone()))
+        objSetNonEnumerable(st, arrayProto, apNames[apm])
         apm = apm + 1
     }
     let arrayCtor = newObject(st)
@@ -4368,6 +4374,9 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, arrayCtor, "name", JSValue.Str("Array"))
     st.arrayCtorObj = arrayCtor
     st.arrayProtoObj = arrayProto
+    // Set only now that setup has finished writing the methods in, so the setup
+    // writes themselves do not count as a user touch.
+    st.arrayProtoPristine = true
     objSet(st, arrayCtor, "isArray", JSValue.Native(NATIVE_ARRAY_ISARRAY))
     objSet(st, arrayCtor, "from", JSValue.Native(NATIVE_ARRAY_FROM))
     scopeDefine(st, 0, "Array", JSValue.Obj(arrayCtor))
@@ -8907,11 +8916,12 @@ fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSVa
 // isArrayMethod's set as data, used to populate Array.prototype. Kept separate
 // because isArrayMethod is on the property-access hot path and a Vec scan there
 // would cost an allocation per lookup. Every name here MUST also be in
-// isArrayMethod, or it resolves to a method that then refuses to run. The
-// reverse is fine, and `toString` is deliberately omitted: Array.prototype
-// .toString is join(","), but exposing it as a bound method would shadow the
-// Object.prototype.toString type-tag path that inspect and the `[object X]`
-// probes rely on.
+// isArrayMethod, or it resolves to a method that then refuses to run.
+//
+// `toString` IS included: Array.prototype.toString is join(","), and it is a
+// distinct function from Object.prototype.toString in the spec. It does not
+// shadow the type-tag path, which travels under the private @@objProtoToString
+// name precisely so the two cannot collide.
 fn arrayMethodNames(): Vec<string> {
     var v: Vec<string> = Vec.new()
     v.push("map")
@@ -8950,6 +8960,7 @@ fn arrayMethodNames(): Vec<string> {
     v.push("toReversed")
     v.push("toSorted")
     v.push("toSpliced")
+    v.push("toString")
     return v
 }
 
@@ -10191,6 +10202,34 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: i64, st: &mut 
                 let exo = st.objects[o].extra
                 let mname = st.objExtras[exo].boundMethod.clone()
                 if name == "bind" {
+                    // An UNBOUND builtin method value (Array.prototype.sort, read
+                    // off an array or off the prototype) carries no `this` yet, so
+                    // this is its FIRST bind and the thisArg must stick. Only a
+                    // genuinely re-bound function falls through to the keep-the-
+                    // original rule below.
+                    if !isBoundThisSet(st, o) {
+                        var fb: Vec<JSValue> = Vec.new()
+                        var fi: i64 = 0
+                        while fi < st.objExtras[exo].boundArgs.len() {
+                            fb.push(cloneValue(st.objExtras[exo].boundArgs[fi]))
+                            fi = fi + 1
+                        }
+                        var fr: i64 = 0
+                        while fr < rest.len() {
+                            fb.push(cloneValue(rest[fr]))
+                            fr = fr + 1
+                        }
+                        let fTarget = cloneValue(st.objExtras[exo].boundTarget)
+                        let nf = newObject(st)
+                        st.objects[nf].isBound = true
+                        let exf = ensureExtra(st, nf)
+                        st.objExtras[exf].boundTarget = fTarget
+                        st.objExtras[exf].boundMethod = mname.clone()
+                        st.objExtras[exf].boundThis = newThis
+                        st.objExtras[exf].boundArgs = fb
+                        popTemp(st)
+                        return JSValue.Obj(nf)
+                    }
                     // re-binding an already-bound function: JS keeps the ORIGINAL
                     // this and only APPENDS args (the second bind's thisArg is
                     // ignored). The old code dropped to makeBoundMethod with the
@@ -10274,12 +10313,23 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: i64, st: &mut 
                 popTemp(st)
                 return r
             }
-            if st.objects[o].isArray && isArrayMethod(name) {
+            // Fast path: while nobody has touched Array.prototype and this array
+            // still has it as its proto and defines no own property of that name,
+            // the chain walk can only ever arrive back at the native — so call it
+            // directly. The moment a user writes to Array.prototype the flag
+            // clears for good and every call takes the real chain, which is what
+            // keeps an override authoritative. Worth the guard: without it, a
+            // tight arr.indexOf() loop ran ~30% slower.
+            if st.arrayProtoPristine && st.objects[o].isArray && st.objects[o].proto == st.arrayProtoObj && isArrayMethod(name) && objOwnIndex(st, o, name) < 0 {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
                 let r = arrayMethod(prog, o, name, argVals, st)
                 popTemp(st)
                 return r
             }
+            // Otherwise the lookup below walks Array.prototype and finds the
+            // native there, so a user who replaces Array.prototype.map actually
+            // gets their version called. Dispatching by name unconditionally made
+            // an override visible to a read but not to a call.
             // getMemberDyn so a property whose value comes from a getter is
             // callable, e.g. Object.defineProperty(o, "fn", { get: () => f })
             let m = getMemberDyn(prog, o, name, st)
