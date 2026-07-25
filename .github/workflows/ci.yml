@@ -49,6 +49,16 @@ jobs:
       - name: lint symbols
         run: ./tools/lint-symbols.sh
 
+      # z3 discharges the nonlinear/bitwise contracts the native std/smt prover can only
+      # mark unknown. Without it the gate still runs, just with weaker verdicts.
+      - name: install z3
+        run: sudo apt-get install -y z3
+
+      # Static contract gate. Fails on a refuted contract, and on a contract that quietly
+      # stopped being proven — see the header of the script for why those are separate.
+      - name: verify contracts
+        run: ./tools/verify-contracts.sh
+
       # Built once and reused: run.sh compiles per-pass otherwise, and an LLVM
       # build per fixture dwarfs the test time.
       - name: build engine and runtime

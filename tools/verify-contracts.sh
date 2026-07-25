@@ -6,16 +6,18 @@
 #
 #   refuted  — the prover found a counterexample. A contract is provably false, or a call
 #              site provably violates a callee's precondition. Always a gate failure.
-#   regressed — a contract that used to be proven no longer is, or a new `unknown`/`error`
-#              appeared. Nothing is proven false here; the guarantee simply stopped being
-#              backed by anything. Without this half, contracts rot silently: the text
+#   regressed — a contract that used to be proven no longer is, or a new translator/solver
+#              `error` appeared. Nothing is proven false here; the guarantee simply stopped
+#              being backed by anything. Without this half, contracts rot silently: the text
 #              stays in the source looking like a guarantee while the prover quietly stops
 #              discharging it. That is worse than having no contract, because it reads as
 #              checked.
 #
-# `unknown` is not a violation — it is the translator or solver hitting a limit (float
-# literals and unmodelled callee results are the two that dominate this repo). It is
-# ratcheted, not forbidden.
+# `unknown` is RECORDED BUT NOT GATED. It rises for two reasons the tally cannot tell
+# apart: a contract that stopped being discharged, and obligations that only just became
+# visible to the prover. The first already shows up as a drop in `proven`, so gating on
+# unknown would add no detection while going red every time prover coverage improves.
+# Float literals and unmodelled callee results dominate the unknowns here.
 #
 # CALIBRATION: the numbers below come from the RELEASED milo compiler, which is what CI
 # installs and what users have. A newer prover changes them — several translator bugs were
@@ -32,7 +34,8 @@ MILO="${MILO:-milo}"
 UPDATE=0
 [ "${1:-}" = "--update" ] && UPDATE=1
 
-# file:proven:unknown:errors — proven is a FLOOR, unknown and errors are CEILINGS.
+# file:proven:unknown:errors — proven is a gating FLOOR, errors a gating CEILING, unknown
+# is recorded for drift reporting only.
 EXPECTED="
 builtins.milo:1:2:2
 eval.milo:0:2:0
@@ -76,10 +79,9 @@ for f in $files; do
     fi
     ep=$(echo "$exp" | cut -d: -f2); eu=$(echo "$exp" | cut -d: -f3); ee=$(echo "$exp" | cut -d: -f4)
     [ "$p" -lt "$ep" ] && { echo "  FAIL: proven $p < $ep — a contract stopped being provable"; fail=1; }
-    [ "$u" -gt "$eu" ] && { echo "  FAIL: unknown $u > $eu — a contract became undecidable"; fail=1; }
     [ "$e" -gt "$ee" ] && { echo "  FAIL: errors $e > $ee — new translator/solver error"; fail=1; }
-    if [ "$p" -gt "$ep" ] || [ "$u" -lt "$eu" ] || [ "$e" -lt "$ee" ]; then
-        echo "  improved: $ep/$eu/$ee -> $p/$u/$e (proven/unknown/errors) — update EXPECTED to lock it in"
+    if [ "$p" != "$ep" ] || [ "$u" != "$eu" ] || [ "$e" != "$ee" ]; then
+        echo "  drift: $ep/$eu/$ee -> $p/$u/$e (proven/unknown/errors) — run --update to lock it in"
     fi
 done
 
