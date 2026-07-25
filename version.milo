@@ -9,7 +9,7 @@ from "std/string" import {
 // `bin` names the binary asking: both ship from the same release tarball, so a
 // bug report has to say which one it came from.
 fn versionLine(bin: &string): string {
-    return bin.clone() + " " + trim(embedFile(".version"))
+    return bin.clone() + " " + trim(@embedFile(".version"))
 }
 
 pub fn versionText(bin: &string): string {
