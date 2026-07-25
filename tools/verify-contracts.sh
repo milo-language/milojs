@@ -20,11 +20,15 @@
 # Float literals and unmodelled callee results dominate the unknowns here.
 #
 # CALIBRATION: the numbers below come from the RELEASED milo compiler, which is what CI
-# installs and what users have. A newer prover changes them — several translator bugs were
-# fixed after this release (`.len()` method calls, bool locals havoced as Int, callee
-# `ensures` dropped whenever the postcondition mentioned `result`), and every one of those
-# turns errors into verdicts and unknowns into proofs. When CI goes red with "improved",
-# that is the new compiler landing: re-run with --update and commit the new numbers.
+# installs and what users have. A prover change moves them, and the `latest` release tracks
+# milo's main — so the drift line is expected to fire the day a prover fix lands there.
+# When it does, re-run with --update and commit the new numbers, or the floor stays where
+# it was and a real regression can hide underneath it.
+#
+# Current numbers are post-fix: milo's prover stopped dropping `.len()` method calls,
+# stopped havocing bool locals as Int (which emitted invalid SMT), and stopped discarding
+# every callee `ensures` that mentioned `result`. builtins.milo went 1 -> 13 proven and
+# 2 -> 0 errors on exactly those.
 #
 # Usage: tools/verify-contracts.sh [--update]
 set -uo pipefail
@@ -37,8 +41,8 @@ UPDATE=0
 # file:proven:unknown:errors — proven is a gating FLOOR, errors a gating CEILING, unknown
 # is recorded for drift reporting only.
 EXPECTED="
-builtins.milo:1:2:2
-eval.milo:0:2:0
+builtins.milo:13:4:0
+eval.milo:0:24:0
 "
 
 fail=0
