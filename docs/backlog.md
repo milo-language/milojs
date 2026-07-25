@@ -10,7 +10,7 @@ run by hand rather than in CI:
 
 | sweep | score |
 |---|---|
-| test262, 1500-case deterministic sample | 470/1476 = **31.8%** |
+| test262, 1500-case deterministic sample | 473/1476 = **32.0%** |
 | QuickJS `tests/` | 93/149 = **62.4%** |
 
 Weakest areas: `built-ins/TypedArray` 0%, `ArrayBuffer` 0%, `Atomics` 0%,
@@ -20,55 +20,59 @@ Strongest: `language/block-scope` 100%, `literals` 77%, `identifiers` 75%.
 Stage 6 of the roadmap calls for a checked-in `test262-status.md` so the trend is
 visible. It does not exist yet — this table is the stopgap.
 
-## The dispatch model is the structural debt — fix before the bytecode VM
+## The dispatch model — Array and Error done, the rest still whitelisted
 
-Built-in methods are **not** real properties on real prototype objects. They are
-dispatched by a name whitelist (`isArrayMethod` in `eval.milo`, a 37-way string
-compare) checked at four gated sites on the property-access path, and
-`Array.prototype` is a hand-populated object of bound-method stubs.
+Built-in methods were **not** real properties on real prototype objects. They
+were dispatched by a name whitelist checked at gated sites on the property path.
+Two slices of this are now fixed; the pattern for the rest is established.
 
-Everything below is a symptom of that one design:
+**Done — arrays.** `newArray` links `st.arrayProtoObj`, which carries every method
+as a real non-enumerable property. Three of the four `isArrayMethod` gates are
+gone. `Array.prototype.foo = …` works (it was unreachable dead code before), an
+override wins on calls and not just reads, `[].map === Array.prototype.map`, and
+`Object.create(Array.prototype)` inherits.
 
-- `Error.prototype` and every subtype's `.prototype` are `undefined` (see below).
-- A method cannot be added from `lib/engine-prelude.js`, because member lookup on
-  an array never falls back to `Array.prototype` — prelude assignments there are
-  unreachable dead code.
-- Array methods needed a copy-in adapter to work on array-like receivers rather
-  than simply being generic (see below).
+The fourth gate survives deliberately, as a **guarded fast path**: while
+`arrayProtoPristine` holds, a call dispatches straight to the native; any write to
+`Array.prototype` clears it permanently and every later call takes the real chain.
+Without the guard a tight `arr.indexOf()` loop ran ~30% slower. This is the shape
+to copy for the remaining types — correctness by default, speed while untouched.
 
-Fixing it means: real prototype objects for `Object`/`Array`/`Function`/`String`/
-`Number`/`Boolean` and the Error family, populated with real native-fn
-properties; the four gated sites collapse into ordinary `getMemberDyn`; the
-whitelist goes away. `st.arrayProtoObj` and `st.objectProtoObj` already exist, so
-the singleton pattern is established.
+**Done — the Error family** (see below).
 
-**Do this before Stage 4.** A bytecode VM built on the whitelist inherits it
+**Still whitelisted:** `String` (`isStringMethodName`), Map/Set
+(`isMapSetMethodName`), RegExp, Date, DataView, typed arrays. Each has the same
+symptom: prototype assignment is dead code, overrides are ignored on calls.
+Strings are the most valuable next slice — `built-ins/String` is at 38%, and
+string methods are reached far more often than Map/Set ones.
+
+**Do the rest before Stage 4.** A bytecode VM built on the whitelist inherits it
 permanently.
 
-Risk to respect: those sites are hot, and `makeBoundMethod`'s late-binding is
+Risk to respect: these sites are hot, and `makeBoundMethod`'s late-binding is
 load-bearing — capturing `Promise.resolve` as a value re-entered itself forever
-without it (see the comment at the `__promiseResolveValue` definition). Worth its
-own slice with the full fixture suite as the guard.
+without it. Take one type per slice with the full fixture suite as the guard; the
+array slice surfaced three unrelated real bugs (`bind` dropping a receiver on a
+first bind of an unbound method value, `Array.prototype.toString` returning the
+type tag, and assignment resetting an existing property's attributes), and each
+was caught only by a fixture.
 
-## milojs: built-in constructors' `.prototype` — mostly fixed, Error family still open
+## milojs: built-in constructors' `.prototype` — DONE
 
-Re-probed against node. Most of this entry is now stale:
+Each error native carries a real prototype in its `getNativeProps` bag (already a
+GC root, so no new root was needed); subtypes chain to `Error.prototype`, and both
+construction paths — `callNative` and the internal `makeError` — link instances to
+it. So `getPrototypeOf(e) === TypeError.prototype` and `e.constructor` resolve
+whether the error was constructed or raised by the runtime.
 
-| expression | node | milojs |
-|---|---|---|
-| `new C().constructor === C` (user class) | true | **true** |
-| `({}).constructor === Object` | true | **true** |
-| `[].constructor === Array` | true | **true** |
-| `Object.getPrototypeOf([]) === Array.prototype` | true | **true** |
-| `e.constructor === TypeError` in a `catch` | true | **true** |
-| `typeof TypeError.prototype` | `"object"` | **`"undefined"`** |
-| `typeof Error.prototype` | `"object"` | **`"undefined"`** |
+Two pre-existing bugs surfaced while probing and were fixed with it: `String(err)`
+answered `"[object Object]"` instead of `"Name: message"`, and `name`/`message`/
+`stack` were enumerable, so `Object.keys(new TypeError("x"))` gave 3 entries where
+node gives 0. Locked by `tests/errorPrototype.js`.
 
-Only the Error family is left: those constructors are still natives with no
-prototype object behind them, so `TypeError.prototype.x` throws. test262 reaches
-for `<Ctor>.prototype` constantly, so this feeds a large share of the
-`cannot read property '…' of undefined` bucket — the single biggest one in the
-sweep. Folds naturally into the dispatch-model work above.
+Remaining divergence, minor: `name` and `message` are own properties on each
+instance as well as on the prototype. Node keeps `name` prototype-only. Observable
+only via `hasOwnProperty`.
 
 ## milojs: Array change-by-copy methods (ES2023) — DONE
 
@@ -101,6 +105,12 @@ the spec hands callbacks the *original* object as their 3rd argument. Locked by
 Moved `built-ins/Array` from 28.3% to 45.0%, and the whole-suite number from
 30.6% to 31.8%.
 
+The optional `thisArg` after the callback (`map`/`filter`/`forEach`/`some`/
+`every`/`find`/`findIndex`/`findLast`/`findLastIndex`/`flatMap`) was also ignored
+outright and is now honored — `reduce`/`reduceRight` stay excluded, since their
+second argument is the initial accumulator. Locked by
+`tests/arrayCallbackThisArg.js`.
+
 Still generic-unaware: typed-array receivers (`concat is not a function` on a
 typed array, 3 QuickJS cases) reach `callMember` on a path that never gets to
 `callBuiltinByName`.
@@ -115,9 +125,6 @@ put it.
 
 ## Smaller known gaps
 
-- `thisArg` — the optional 2nd argument to `map`/`filter`/`forEach`/`some`/
-  `every`/`find` is ignored outright; callbacks always run with
-  `this === undefined`. Cheap to fix, test262 checks it.
 - Generators are runtime-only: `function*` throws
   `generators require the milojs runtime (not the engine)` under
   `milojs-engine`, costing 42 test262 and 3 QuickJS cases. The runtime handles
