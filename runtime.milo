@@ -873,6 +873,23 @@ pub fn objGet(st: &Interp, obj: i64, key: &string): JSValue {
     return JSValue.Undefined
 }
 
+// Mark an existing own property non-enumerable, so it stays out of Object.keys,
+// for-in, spread and JSON.stringify. Used for the error surface (name/message/
+// stack), which the spec makes non-enumerable — `Object.keys(new TypeError("x"))`
+// is `[]` in a real engine, and code that spreads or serializes a caught error
+// otherwise picks up three fields that should not be there.
+pub fn objSetNonEnumerable(st: &mut Interp, obj: i64, key: &string) {
+    var i: i64 = 0
+    let n = st.objects[obj].props.len()
+    while i < n {
+        if st.objects[obj].props[i].key == key {
+            st.objects[obj].props[i].enumerable = false
+            return
+        }
+        i = i + 1
+    }
+}
+
 pub fn objSet(st: &mut Interp, obj: i64, key: string, value: JSValue) {
     // private fields (#name, the only keys milojs stores with a leading '#') are
     // non-enumerable: they must not appear in JSON.stringify, Object.keys, for-in

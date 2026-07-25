@@ -1,0 +1,17 @@
+object object
+function
+true
+true
+TypeError Error
+true
+true
+true TypeError
+true true
+TypeError true
+true
+RangeError boom true true
+true
+[object Error]
+RangeError: boom
+0
+MyErr custom true

@@ -787,8 +787,18 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 if st.objects[o].isArray {
                     return JSValue.Str("[object Array]")
                 }
+                // Error.prototype.toString is "Name: message", NOT the type tag —
+                // this is the path String(err) and `"" + err` take through
+                // ToPrimitive, and the tag made them print "[object Error]".
+                // Object.prototype.toString.call(err) is unaffected: it arrives
+                // under the private @@objProtoToString name.
                 if st.objects[o].isError {
-                    return JSValue.Str("[object Error]")
+                    let en = toStr(objGet(st, o, "name"))
+                    let em = toStr(objGet(st, o, "message"))
+                    if em.len() > 0 {
+                        return JSValue.Str(en + ": " + em)
+                    }
+                    return JSValue.Str(en)
                 }
                 if st.objects[o].isDate {
                     return JSValue.Str("[object Date]")
@@ -1597,6 +1607,26 @@ fn isErrorCtor(id: i64): bool {
     return id >= NATIVE_ERROR && id <= NATIVE_REFERENCE_ERROR
 }
 
+// Reverse of nativeErrorName: the constructor id for a kind string, so an error
+// raised internally by makeError links to the same prototype a constructed one
+// does. Unknown kinds (URIError, EvalError — thrown by name but with no native
+// constructor) fall back to Error.
+fn errorCtorIdFor(kind: &string): i64 {
+    if kind == "TypeError" {
+        return NATIVE_TYPE_ERROR
+    }
+    if kind == "RangeError" {
+        return NATIVE_RANGE_ERROR
+    }
+    if kind == "SyntaxError" {
+        return NATIVE_SYNTAX_ERROR
+    }
+    if kind == "ReferenceError" {
+        return NATIVE_REFERENCE_ERROR
+    }
+    return NATIVE_ERROR
+}
+
 // Invoke a native function/constructor. Error(msg) and new Error(msg) behave the
 // same (both mint an error object), matching JS.
 // Synchronous outbound HTTP/HTTPS. Milo has no coroutines and the event loop is
@@ -1750,6 +1780,16 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 objSet(st, o, "cause", cloneValue(getMember(st, oh, "cause")))
             }
         }
+        // link to the real prototype so getPrototypeOf(e) === TypeError.prototype
+        // and e.constructor resolve. -1 while setupGlobals is still running: an
+        // error thrown during startup just gets no proto, as before.
+        let ep = errorProtoFor(st, id)
+        if ep >= 0 {
+            st.objects[o].proto = ep
+        }
+        objSetNonEnumerable(st, o, "name")
+        objSetNonEnumerable(st, o, "message")
+        objSetNonEnumerable(st, o, "stack")
         return JSValue.Obj(o)
     }
     if id == NATIVE_JSON_STRINGIFY {
@@ -1864,6 +1904,18 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         let a0h = objHandle(argVals[0])
         if a0h >= 0 && st.objects[a0h].isArray {
             return JSValue.Str(joinArray(st, a0h, ","))
+        }
+        // an error coerces to "Name: message" the same way. Special-cased here
+        // for the same reason arrays are: callNative has no `prog`, so it cannot
+        // run the full ToPrimitive that `"" + err` goes through, and plain toStr
+        // would answer "[object Object]".
+        if a0h >= 0 && st.objects[a0h].isError {
+            let en = toStr(objGet(st, a0h, "name"))
+            let em = toStr(objGet(st, a0h, "message"))
+            if em.len() > 0 {
+                return JSValue.Str(en + ": " + em)
+            }
+            return JSValue.Str(en)
         }
         return JSValue.Str(toStr(argVals[0]))
     }
@@ -4085,6 +4137,45 @@ fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
     }
 }
 
+// Give the Error family real prototype objects. They are natives, so before
+// this `TypeError.prototype` was undefined and `TypeError.prototype.constructor`
+// threw — a common branch in library code, and the single largest failure
+// bucket in the test262 sweep.
+//
+// The objects live in each native's property bag (getNativeProps), which the
+// collector already walks, so they need no new GC root. Subtype prototypes chain
+// to Error.prototype the way the spec says, which is what makes
+// `Object.getPrototypeOf(TypeError.prototype) === Error.prototype` hold.
+fn setupErrorProtos(st: &mut Interp) {
+    let errorProto = newObject(st)
+    objSet(st, errorProto, "name", JSValue.Str("Error"))
+    objSet(st, errorProto, "message", JSValue.Str(""))
+    objSet(st, errorProto, "constructor", JSValue.Native(NATIVE_ERROR))
+    objSet(st, errorProto, "toString", makeBoundMethod(st, JSValue.Undefined, "toString"))
+    let errBag = getNativeProps(st, NATIVE_ERROR)
+    objSet(st, errBag, "prototype", JSValue.Obj(errorProto))
+    st.objects[errorProto].proto = st.objectProtoObj
+
+    var eid = NATIVE_ERROR + 1
+    while eid <= NATIVE_REFERENCE_ERROR {
+        let sub = newObject(st)
+        objSet(st, sub, "name", JSValue.Str(nativeErrorName(eid)))
+        objSet(st, sub, "message", JSValue.Str(""))
+        objSet(st, sub, "constructor", JSValue.Native(eid))
+        st.objects[sub].proto = errorProto
+        let bag = getNativeProps(st, eid)
+        objSet(st, bag, "prototype", JSValue.Obj(sub))
+        eid = eid + 1
+    }
+}
+
+// The prototype object a freshly constructed error of this kind should link to,
+// or -1 before setupErrorProtos has run (makeError is reachable during startup).
+fn errorProtoFor(st: &mut Interp, nativeId: i64): i64 {
+    let bag = getNativeProps(st, nativeId)
+    return objHandle(objGet(st, bag, "prototype"))
+}
+
 pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "Error", JSValue.Native(NATIVE_ERROR))
     scopeDefine(st, 0, "TypeError", JSValue.Native(NATIVE_TYPE_ERROR))
@@ -4173,6 +4264,8 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, objectProto, "propertyIsEnumerable", makeBoundMethod(st, JSValue.Undefined, "propertyIsEnumerable"))
     objSet(st, objectCtor, "prototype", JSValue.Obj(objectProto))
     st.objectProtoObj = objectProto
+    // after objectProtoObj exists: Error.prototype chains to it
+    setupErrorProtos(st)
     // Object is itself an object, so it carries the Object.prototype methods.
     // Code borrows them from the constructor — `Object.hasOwnProperty.call(o, k)`
     // is a common way to avoid a shadowed own property — and the native's bag
@@ -6305,6 +6398,15 @@ pub fn makeError(st: &mut Interp, kind: string, msg: string): JSValue {
         stackHead = stackHead + ": " + msg
     }
     objSet(st, o, "stack", JSValue.Str(stackHead))
+    // same prototype a constructed error of this kind gets, so a caught runtime
+    // TypeError answers e.constructor and getPrototypeOf the way a thrown one does
+    let ep = errorProtoFor(st, errorCtorIdFor(kind))
+    if ep >= 0 {
+        st.objects[o].proto = ep
+    }
+    objSetNonEnumerable(st, o, "name")
+    objSetNonEnumerable(st, o, "message")
+    objSetNonEnumerable(st, o, "stack")
     return JSValue.Obj(o)
 }
 
@@ -8998,8 +9100,18 @@ fn isCallableIn(st: &Interp, v: &JSValue): bool {
 // adapter throws instead — a loud, bounded failure beats a wedged process.
 let ARRAY_LIKE_MAX: i64 = 1 << 24
 
-// ToLength: NaN/negative clamp to 0, fractions truncate.
-fn arrayLikeLength(prog: &Prog, o: i64, st: &mut Interp): i64 {
+// ToLength: NaN/negative clamp to 0, fractions truncate. The postcondition is the
+// safety contract arrayLikeToArray relies on — it loops to this value and pushes
+// an element each time, so an unbounded or negative result is either a runaway
+// allocation or a malformed array.
+//
+// NOT currently provable: `milo prove --solver=z3` reports unknown because the
+// SMT translator has no rule for float literals and `toNum` declares no `ensures`
+// to model its result. Contracts are static-only — nothing checks this at run
+// time — so treat it as documentation until the translator learns f64.
+fn arrayLikeLength(prog: &Prog, o: i64, st: &mut Interp): i64
+ensures result >= -1 && result <= ARRAY_LIKE_MAX
+{
     let raw = toNum(getMemberDyn(prog, o, "length", st))
     if !(raw == raw) || raw <= 0.0 {
         return 0
@@ -9107,7 +9219,11 @@ fn writeBackArrayLike(st: &mut Interp, tmp: i64, o: i64) {
     objSet(st, o, "length", JSValue.Number(n as f64))
 }
 
-fn arrayLikeOwnLength(st: &Interp, o: i64): i64 {
+// The receiver's length BEFORE a mutating method ran, so write-back knows how far
+// to delete. Bounded for the same reason as arrayLikeLength: it drives a loop.
+fn arrayLikeOwnLength(st: &Interp, o: i64): i64
+ensures result >= 0 && result <= ARRAY_LIKE_MAX
+{
     let raw = toNum(objGet(st, o, "length"))
     if !(raw == raw) || raw <= 0.0 || raw > (ARRAY_LIKE_MAX as f64) {
         return 0
