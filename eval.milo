@@ -650,6 +650,13 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
             if isSymbolStr(sv) && name == "toString" {
                 return JSValue.Str(symbolDisplay(sv))
             }
+            // Array.prototype.map.call("abc", f) — an array method a string does
+            // NOT also define runs generically over the string's units. Names
+            // both sides share (slice, indexOf, concat, at…) stay with the
+            // string, which is what a bare "abc".slice() must keep doing.
+            if isArrayMethod(name) && !isStringMethodName(name) {
+                return arrayMethodGeneric(prog, JSValue.Str(sv.clone()), name, args, st)
+            }
             return stringMethod(name, sv, args, st)
         }
         JSValue.Obj(o) => {
@@ -821,6 +828,13 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 return arrayMethod(prog, o, name, args, st)
             }
             let m = getMemberDyn(prog, o, name, st)
+            // Array.prototype.<m>.call(arrayLike, …): the receiver has no such
+            // method of its own, so the spec's generic definition applies. Only
+            // reached when lookup came up empty, so ({map: f}).map() still calls
+            // the object's own map.
+            if isUndefinedValue(m) && isArrayMethod(name) {
+                return arrayMethodGeneric(prog, JSValue.Obj(o), name, args, st)
+            }
             return callValue(prog, m, args, JSValue.Obj(o), st)
         }
         JSValue.Func(bf, benv) => {
@@ -940,6 +954,13 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
             }
             if name == "valueOf" {
                 return cloneValue(recv)
+            }
+            // Array.prototype.<m>.call(null) must throw the spec's ToObject
+            // TypeError, and .call(42) must behave as an empty array — both
+            // handled by the generic adapter rather than silently answering
+            // undefined here
+            if isArrayMethod(name) {
+                return arrayMethodGeneric(prog, cloneValue(recv), name, args, st)
             }
             return primitiveMethod(name, recv, args)
         }
@@ -4263,14 +4284,16 @@ pub fn setupGlobals(st: &mut Interp) {
     // Array.prototype.<m> as a bound-method value, so the ES5 idiom
     // Array.prototype.slice.call(arguments) resolves
     let arrayProto = newObject(st)
-    objSet(st, arrayProto, "slice", makeBoundMethod(st, JSValue.Undefined, "slice"))
-    objSet(st, arrayProto, "map", makeBoundMethod(st, JSValue.Undefined, "map"))
-    objSet(st, arrayProto, "filter", makeBoundMethod(st, JSValue.Undefined, "filter"))
-    objSet(st, arrayProto, "forEach", makeBoundMethod(st, JSValue.Undefined, "forEach"))
-    objSet(st, arrayProto, "indexOf", makeBoundMethod(st, JSValue.Undefined, "indexOf"))
-    objSet(st, arrayProto, "join", makeBoundMethod(st, JSValue.Undefined, "join"))
-    objSet(st, arrayProto, "push", makeBoundMethod(st, JSValue.Undefined, "push"))
-    objSet(st, arrayProto, "concat", makeBoundMethod(st, JSValue.Undefined, "concat"))
+    // Every whitelisted method, not a hand-picked few: each is generic in ES, so
+    // Array.prototype.<m>.call(arrayLike) has to resolve for all of them. The
+    // bound `this` is left unset so the call site's receiver wins (see
+    // isBoundThisSet).
+    var apm: i64 = 0
+    let apNames = arrayMethodNames()
+    while apm < apNames.len() {
+        objSet(st, arrayProto, apNames[apm].clone(), makeBoundMethod(st, JSValue.Undefined, apNames[apm].clone()))
+        apm = apm + 1
+    }
     let arrayCtor = newObject(st)
     st.objects[arrayCtor].isFunctionLike = true
     objSet(st, arrayCtor, "prototype", JSValue.Obj(arrayProto))
@@ -8250,7 +8273,14 @@ fn makeCbArgs(st: &Interp, o: i64, i: i64): Vec<JSValue> {
     var v: Vec<JSValue> = Vec.new()
     v.push(arrGet(st, o, i))
     v.push(JSValue.Number(i as f64))
-    v.push(JSValue.Obj(o))
+    // on a scratch array adapting an array-like receiver, the spec hands the
+    // callback the ORIGINAL object, not the copy the method is walking
+    let orig = st.objExtras[st.objects[o].extra].arrayLikeOrig
+    if orig >= 0 {
+        v.push(JSValue.Obj(orig))
+    } else {
+        v.push(JSValue.Obj(o))
+    }
     return v
 }
 
@@ -8786,6 +8816,55 @@ fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSVa
     return JSValue.Undefined
 }
 
+// isArrayMethod's set as data, used to populate Array.prototype. Kept separate
+// because isArrayMethod is on the property-access hot path and a Vec scan there
+// would cost an allocation per lookup. Every name here MUST also be in
+// isArrayMethod, or it resolves to a method that then refuses to run. The
+// reverse is fine, and `toString` is deliberately omitted: Array.prototype
+// .toString is join(","), but exposing it as a bound method would shadow the
+// Object.prototype.toString type-tag path that inspect and the `[object X]`
+// probes rely on.
+fn arrayMethodNames(): Vec<string> {
+    var v: Vec<string> = Vec.new()
+    v.push("map")
+    v.push("filter")
+    v.push("forEach")
+    v.push("reduce")
+    v.push("join")
+    v.push("indexOf")
+    v.push("includes")
+    v.push("slice")
+    v.push("reverse")
+    v.push("concat")
+    v.push("push")
+    v.push("pop")
+    v.push("find")
+    v.push("findIndex")
+    v.push("some")
+    v.push("every")
+    v.push("shift")
+    v.push("unshift")
+    v.push("splice")
+    v.push("sort")
+    v.push("lastIndexOf")
+    v.push("flat")
+    v.push("fill")
+    v.push("at")
+    v.push("findLast")
+    v.push("findLastIndex")
+    v.push("copyWithin")
+    v.push("reduceRight")
+    v.push("flatMap")
+    v.push("values")
+    v.push("keys")
+    v.push("entries")
+    v.push("with")
+    v.push("toReversed")
+    v.push("toSorted")
+    v.push("toSpliced")
+    return v
+}
+
 fn isArrayMethod(name: &string): bool {
     return name == "map" || name == "filter" || name == "forEach" || name == "reduce" || name == "join" || name == "toString" || name == "indexOf" || name == "includes" || name == "slice" || name == "reverse" || name == "concat" || name == "push" || name == "pop" || name == "find" || name == "findIndex" || name == "some" || name == "every" || name == "shift" || name == "unshift" || name == "splice" || name == "sort" || name == "lastIndexOf" || name == "flat" || name == "fill" || name == "at" || name == "findLast" || name == "findLastIndex" || name == "copyWithin" || name == "reduceRight" || name == "flatMap" || name == "values" || name == "keys" || name == "entries" || name == "with" || name == "toReversed" || name == "toSorted" || name == "toSpliced"
 }
@@ -8885,6 +8964,162 @@ fn isCallableIn(st: &Interp, v: &JSValue): bool {
         return st.objects[h].isBound || st.objExtras[st.objects[h].extra].napiFn >= 0
     }
     return false
+}
+
+// ── generic (array-like) receivers ───────────────────────────────────────────
+//
+// Every Array.prototype method is *generic* in ES: the spec defines it over any
+// object with a `length` and indexed properties, and over strings. But the
+// natives in `arrayMethod` read `elems` directly, so they only ever worked on a
+// real array — `Array.prototype.join.call({length:3, 0:"a"})` silently returned
+// undefined rather than "a,,".
+//
+// So a non-array receiver is ADAPTED: its indexed properties are copied into a
+// scratch array, the method runs on that, and the mutating methods write the
+// result back. The copy is observable in exactly one place — the 3rd callback
+// argument, which the spec says is the ORIGINAL object — so the scratch array
+// records where it came from in `arrayLikeOrig` and `makeCbArgs` hands that out
+// instead. Storing it on the scratch array rather than on Interp is what makes
+// nesting work: a callback that itself calls a generic method gets its own.
+
+// Materializing a length this large would hang long before it OOMs, and the
+// spec limit (2^53-1) is not representable as an allocation. Past this the
+// adapter throws instead — a loud, bounded failure beats a wedged process.
+let ARRAY_LIKE_MAX: i64 = 1 << 24
+
+// ToLength: NaN/negative clamp to 0, fractions truncate.
+fn arrayLikeLength(prog: &Prog, o: i64, st: &mut Interp): i64 {
+    let raw = toNum(getMemberDyn(prog, o, "length", st))
+    if !(raw == raw) || raw <= 0.0 {
+        return 0
+    }
+    if raw > (ARRAY_LIKE_MAX as f64) {
+        return -1
+    }
+    return raw as i64
+}
+
+// Copy an array-like receiver into a scratch array. Returns -1 if the receiver
+// is not adaptable or its length is out of range (with the error already
+// thrown). The result is NOT temp-rooted — the caller owns that.
+fn arrayLikeToArray(prog: &Prog, recv: &JSValue, st: &mut Interp): i64 {
+    let tmp = newArray(st)
+    pushTemp(st, JSValue.Obj(tmp))
+    match recv {
+        // a string receiver indexes as its UTF-16 units and has no own props
+        JSValue.Str(sv) => {
+            let slen = utf16Length(sv)
+            var ci: i64 = 0
+            while ci < slen {
+                arrPush(st, tmp, JSValue.Str(utf16Slice(sv, ci, ci + 1)))
+                ci = ci + 1
+            }
+            popTemp(st)
+            return tmp
+        }
+        JSValue.Obj(o) => {
+            let n = arrayLikeLength(prog, o, st)
+            if n < 0 {
+                popTemp(st)
+                st.throwing = true
+                st.thrownValue = makeError(st, "RangeError", "array-like length exceeds this engine's limit")
+                return -1
+            }
+            var i: i64 = 0
+            while i < n {
+                let key = numToStr(i as f64)
+                // absent index → a hole, so forEach/map/filter skip it the way
+                // they skip a hole in a sparse array
+                if objOwnIndex(st, o, key) >= 0 || st.objects[o].isArray || st.objects[o].proto >= 0 {
+                    let v = getMemberDyn(prog, o, key, st)
+                    arrPush(st, tmp, v)
+                    if st.throwing {
+                        popTemp(st)
+                        return -1
+                    }
+                } else {
+                    arrMarkHole(st, tmp, arrLen(st, tmp))
+                    arrPush(st, tmp, JSValue.Undefined)
+                }
+                i = i + 1
+            }
+            let ex = ensureExtra(st, tmp)
+            st.objExtras[ex].arrayLikeOrig = o
+            popTemp(st)
+            return tmp
+        }
+        _ => {
+            // undefined/null/number/bool: the spec's ToObject throws on the
+            // first two and yields a lengthless wrapper for the rest, which
+            // every method then treats as empty
+            popTemp(st)
+            match recv {
+                JSValue.Undefined => {
+                    st.throwing = true
+                    st.thrownValue = makeError(st, "TypeError", "Array.prototype method called on null or undefined")
+                    return -1
+                }
+                JSValue.Null => {
+                    st.throwing = true
+                    st.thrownValue = makeError(st, "TypeError", "Array.prototype method called on null or undefined")
+                    return -1
+                }
+                _ => {
+                    return tmp
+                }
+            }
+        }
+    }
+}
+
+// The methods that mutate their receiver in place: after running on the scratch
+// array their result has to be copied back, or the call looks like a no-op.
+fn arrayMethodMutates(name: &string): bool {
+    return name == "push" || name == "pop" || name == "shift" || name == "unshift" || name == "splice" || name == "sort" || name == "reverse" || name == "fill" || name == "copyWithin"
+}
+
+fn writeBackArrayLike(st: &mut Interp, tmp: i64, o: i64) {
+    let before = arrayLikeOwnLength(st, o)
+    let n = arrLen(st, tmp)
+    var i: i64 = 0
+    while i < n {
+        objSet(st, o, numToStr(i as f64), arrGet(st, tmp, i))
+        i = i + 1
+    }
+    // shrinking methods (pop/shift/splice) must DELETE the trailing indices,
+    // not leave the old values visible past the new length
+    var d = n
+    while d < before {
+        let _ = objDeleteKey(st, o, numToStr(d as f64))
+        d = d + 1
+    }
+    objSet(st, o, "length", JSValue.Number(n as f64))
+}
+
+fn arrayLikeOwnLength(st: &Interp, o: i64): i64 {
+    let raw = toNum(objGet(st, o, "length"))
+    if !(raw == raw) || raw <= 0.0 || raw > (ARRAY_LIKE_MAX as f64) {
+        return 0
+    }
+    return raw as i64
+}
+
+// Run an Array.prototype method against a receiver that is not a real array.
+fn arrayMethodGeneric(prog: &Prog, recv: &JSValue, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    let tmp = arrayLikeToArray(prog, recv, st)
+    if tmp < 0 {
+        return JSValue.Undefined
+    }
+    pushTemp(st, JSValue.Obj(tmp))
+    let r = arrayMethod(prog, tmp, name, args, st)
+    if !st.throwing && arrayMethodMutates(name) {
+        let o = objHandle(recv)
+        if o >= 0 && !st.objects[o].frozen {
+            writeBackArrayLike(st, tmp, o)
+        }
+    }
+    popTemp(st)
+    return r
 }
 
 fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {

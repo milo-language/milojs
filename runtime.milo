@@ -459,6 +459,11 @@ struct JSObjExtra {
     regexId: i64,
     napiFn: i64,
     napiWrap: i64,
+    // Set only on the scratch array that adapts an array-like receiver for a
+    // generic Array.prototype method (see arrayLikeToArray): the handle of the
+    // ORIGINAL receiver, which the spec says callbacks get as their 3rd
+    // argument. Its own -1 discriminator, so no bool in JSObj.
+    arrayLikeOrig: i64,
 }
 
 pub fn defaultExtra(): JSObjExtra {
@@ -483,6 +488,7 @@ pub fn defaultExtra(): JSObjExtra {
         regexId: -1,
         napiFn: -1,
         napiWrap: 0,
+        arrayLikeOrig: -1,
     }
 }
 
@@ -1520,6 +1526,12 @@ fn markObject(st: &mut Interp, i: i64) {
     // a typed-array view keeps its backing ArrayBuffer alive
     if st.objExtras[st.objects[i].extra].taBuf >= 0 {
         objs.push(st.objExtras[st.objects[i].extra].taBuf)
+    }
+    // an array-like adapter keeps the receiver it copied from alive: callbacks
+    // still hand that handle out, and a GC mid-callback would otherwise reuse
+    // its slot
+    if st.objExtras[st.objects[i].extra].arrayLikeOrig >= 0 {
+        objs.push(st.objExtras[st.objects[i].extra].arrayLikeOrig)
     }
     // an object keeps its prototype alive
     if proto >= 0 {
