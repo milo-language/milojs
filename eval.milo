@@ -8269,6 +8269,17 @@ fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSValue,
 }
 
 // The (element, index, array) triple JS array-iteration callbacks receive.
+// The optional `thisArg` that map/filter/forEach/some/every/find/flatMap take
+// after their callback, and which the callback then runs with as `this`.
+// reduce/reduceRight are deliberately NOT in that group: their second argument
+// is the initial accumulator, so they always call with `this === undefined`.
+fn cbThisArg(args: &Vec<JSValue>): JSValue {
+    if args.len() > 1 {
+        return cloneValue(args[1])
+    }
+    return JSValue.Undefined
+}
+
 fn makeCbArgs(st: &Interp, o: i64, i: i64): Vec<JSValue> {
     var v: Vec<JSValue> = Vec.new()
     v.push(arrGet(st, o, i))
@@ -9189,13 +9200,15 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         }
         let cb = cloneValue(args[0])
         pushTemp(st, cloneValue(cb))
+        let thisArg = cbThisArg(args)
+        pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
         var found = -1
         var allTrue = true
         var anyTrue = false
         while i < arrLen(st, o) && found < 0 {
             let cbArgs = makeCbArgs(st, o, i)
-            let r = callValue(prog, cb, cbArgs, JSValue.Undefined, st)
+            let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             let t = truthy(r)
             if t {
                 anyTrue = true
@@ -9213,6 +9226,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
             }
             i = i + 1
         }
+        popTemp(st)
         popTemp(st)
         if name == "every" {
             return JSValue.Bool(allTrue)
@@ -9381,16 +9395,19 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         }
         let cb = cloneValue(args[0])
         pushTemp(st, cloneValue(cb))
+        let thisArg = cbThisArg(args)
+        pushTemp(st, cloneValue(thisArg))
         var i = n - 1
         var found: i64 = -1
         while i >= 0 && found < 0 {
             let cbArgs = makeCbArgs(st, o, i)
-            let r = callValue(prog, cb, cbArgs, JSValue.Undefined, st)
+            let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             if truthy(r) || st.throwing {
                 found = i
             }
             i = i - 1
         }
+        popTemp(st)
         popTemp(st)
         if name == "findLastIndex" {
             return JSValue.Number(found as f64)
@@ -9700,13 +9717,16 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
     if name == "map" {
         let mapped = newArray(st)
         pushTemp(st, JSValue.Obj(mapped))
+        let thisArg = cbThisArg(args)
+        pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
         while i < n {
             let cbArgs = makeCbArgs(st, o, i)
-            let r = callValue(prog, cb, cbArgs, JSValue.Undefined, st)
+            let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             arrPush(st, mapped, r)
             i = i + 1
         }
+        popTemp(st)
         popTemp(st)
         popTemp(st)
         return JSValue.Obj(mapped)
@@ -9714,11 +9734,13 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
     if name == "filter" {
         let kept = newArray(st)
         pushTemp(st, JSValue.Obj(kept))
+        let thisArg = cbThisArg(args)
+        pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
         while i < n {
             let elem = arrGet(st, o, i)
             let cbArgs = makeCbArgs(st, o, i)
-            let keep = callValue(prog, cb, cbArgs, JSValue.Undefined, st)
+            let keep = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             if truthy(keep) {
                 arrPush(st, kept, elem)
             }
@@ -9726,15 +9748,19 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         }
         popTemp(st)
         popTemp(st)
+        popTemp(st)
         return JSValue.Obj(kept)
     }
     if name == "forEach" {
+        let thisArg = cbThisArg(args)
+        pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
         while i < n {
             let cbArgs = makeCbArgs(st, o, i)
-            let _ = callValue(prog, cb, cbArgs, JSValue.Undefined, st)
+            let _ = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             i = i + 1
         }
+        popTemp(st)
         popTemp(st)
         return JSValue.Undefined
     }
@@ -9791,10 +9817,12 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
     if name == "flatMap" {
         let out = newArray(st)
         pushTemp(st, JSValue.Obj(out))
+        let thisArg = cbThisArg(args)
+        pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
         while i < arrLen(st, o) && !st.throwing {
             let cbArgs = makeCbArgs(st, o, i)
-            let r = callValue(prog, cb, cbArgs, JSValue.Undefined, st)
+            let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             // one level of flattening, and only for array results
             let rh = objHandle(r)
             if rh >= 0 && st.objects[rh].isArray {
@@ -9808,6 +9836,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
             }
             i = i + 1
         }
+        popTemp(st)
         popTemp(st)
         popTemp(st)
         return JSValue.Obj(out)
