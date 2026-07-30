@@ -50,9 +50,9 @@ APIs accept only the matching ID.
    Acceptance: swapping an expression and statement ID is a compile failure;
    malformed/out-of-range construction is tested at the boundary; fixture speed
    does not regress materially.
-   **Progress:** `StmtId`, `ExprId`, `BlockId`, and `ArgListId` now cover the
-   primary AST arenas, function/module bodies, evaluator entry points, recursive
-   children, call arguments, and array/object literal expression links. Optional
+   **Progress:** `StmtId`, `ExprId`, `BlockId`, `ArgListId`, `ArrLitId`, and
+   `ObjLitId` now cover the primary AST arenas, function/module bodies, evaluator
+   entry points, recursive children, calls, and literal descriptor tables. Optional
    statement links, try regions, array holes, computed object keys, switch
    defaults, and `for` condition/update links use `Option<Id>`. Compile-fail
    fixtures lock the index-family separation. Five alternating `loopNoDecl`

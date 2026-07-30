@@ -3,7 +3,7 @@
 // execution returns a Flow so `return` can unwind out of nested blocks.
 
 from "./ast" import {
-    ArgListId, BlockId, ExprId, Prog, StmtId, gProg
+    ArgListId, ArrLitId, BlockId, ExprId, ObjLitId, Prog, StmtId, gProg
 }
 from "./value" import {
     JSValue, i64ToStr, daysFromCivil
@@ -1263,8 +1263,8 @@ fn assignPattern(prog: &Prog, patId: ExprId, value: JSValue, st: &mut Interp, sc
         Expr.ArrLit(litIdx) => {
             pushTemp(st, cloneValue(value))
             var i: i64 = 0
-            while i < prog.arrLits[litIdx].len() {
-                match prog.arrLits[litIdx][i] {
+            while i < prog.arrLits[litIdx.index].len() {
+                match prog.arrLits[litIdx.index][i] {
                     Option.Some(e) => {
                     match prog.exprs[e.index] {
                         Expr.Spread(target) => {
@@ -1301,9 +1301,9 @@ fn assignPattern(prog: &Prog, patId: ExprId, value: JSValue, st: &mut Interp, sc
             pushTemp(st, cloneValue(value))
             let vh = objHandle(value)
             var i: i64 = 0
-            while i < prog.objLits[litIdx].len() {
-                let key = prog.objLits[litIdx][i].key.clone()
-                let target = prog.objLits[litIdx][i].val
+            while i < prog.objLits[litIdx.index].len() {
+                let key = prog.objLits[litIdx.index][i].key.clone()
+                let target = prog.objLits[litIdx.index][i].val
                 var pv = JSValue.Undefined
                 if vh >= 0 {
                     pv = getMemberDyn(prog, vh, key, st)
@@ -5532,19 +5532,19 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             // values (a value may be a call) can't reclaim it
             pushTemp(st, JSValue.Obj(obj))
             var i: i64 = 0
-            let n = prog.objLits[litIdx].len()
+            let n = prog.objLits[litIdx.index].len()
             while i < n {
-                var key = prog.objLits[litIdx][i].key.clone()
-                match prog.objLits[litIdx][i].keyExpr {
+                var key = prog.objLits[litIdx.index][i].key.clone()
+                match prog.objLits[litIdx.index][i].keyExpr {
                     Option.Some(keyExprId) => {
                         key = toStr(evalExpr(prog, keyExprId, st, scope))
                     }
                     Option.None => {
                     }
                 }
-                let valIdx = prog.objLits[litIdx][i].val
+                let valIdx = prog.objLits[litIdx.index][i].val
                 let v = evalExpr(prog, valIdx, st, scope)
-                let propKind = prog.objLits[litIdx][i].kind
+                let propKind = prog.objLits[litIdx.index][i].kind
                 if propKind > 0 {
                     // a getter and setter for the same key share one property
                     let existing = objOwnIndex(st, obj, key)
@@ -5610,8 +5610,8 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             let rawArr = newArray(st)
             pushTemp(st, JSValue.Obj(rawArr))
             var ti: i64 = 0
-            while ti < prog.arrLits[litIdx].len() {
-                let v = evalExpr(prog, prog.arrLits[litIdx][ti]!, st, scope)
+            while ti < prog.arrLits[litIdx.index].len() {
+                let v = evalExpr(prog, prog.arrLits[litIdx.index][ti]!, st, scope)
                 arrPush(st, arr, cloneValue(v))
                 arrPush(st, rawArr, v)
                 ti = ti + 1
@@ -5627,9 +5627,9 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             // (an element may be a call) can't reclaim it
             pushTemp(st, JSValue.Obj(arr))
             var i: i64 = 0
-            let n = prog.arrLits[litIdx].len()
+            let n = prog.arrLits[litIdx.index].len()
             while i < n {
-                match prog.arrLits[litIdx][i] {
+                match prog.arrLits[litIdx.index][i] {
                     Option.None => {
                     let at = arrLen(st, arr)
                     arrPush(st, arr, JSValue.Undefined)

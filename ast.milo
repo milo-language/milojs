@@ -23,18 +23,18 @@ pub enum Expr {
     Member(ExprId, string),
     FuncExpr(i64),
     // object literal: index into prog.objLits (a list of key/value-expr pairs)
-    ObjLit(i64),
+    ObjLit(ObjLitId),
     // computed member read: obj[keyExpr]
     Index(ExprId, ExprId),
     // property write: obj, keyExpr, valExpr — backs both obj.x = v and obj[k] = v
     SetMember(ExprId, ExprId, ExprId),
     // array literal: index into prog.arrLits (a list of element-expr indices)
-    ArrLit(i64),
+    ArrLit(ArrLitId),
     // the strings array a tagged template hands its tag function: an array of
     // the literal chunks that also carries a `raw` property. Libraries detect
     // tagged-template usage by looking for `raw` (prisma's $executeRaw rejects
     // the call without it), so a plain ArrLit is not enough.
-    TemplateStrings(i64),
+    TemplateStrings(ArrLitId),
     // new Ctor(args): constructor expr, arg-list index
     New(ExprId, ArgListId),
     // ++/-- on an lvalue: target expr, isIncrement, isPrefix
@@ -91,6 +91,18 @@ pub struct BlockId {
 // Append-only call-argument-list slot.
 @derive(Eq)
 pub struct ArgListId {
+    index: i64,
+}
+
+// Append-only object-literal descriptor slot.
+@derive(Eq)
+pub struct ObjLitId {
+    index: i64,
+}
+
+// Append-only array/template-literal descriptor slot.
+@derive(Eq)
+pub struct ArrLitId {
     index: i64,
 }
 
@@ -441,5 +453,21 @@ pub fn addArgList(prog: &mut Prog, arguments: Vec<ExprId>): ArgListId {
     prog.argLists.push(arguments)
     return ArgListId {
         index: prog.argLists.len() - 1
+    }
+}
+
+// Append an object-literal descriptor list and publish its typed ID.
+pub fn addObjLit(prog: &mut Prog, properties: Vec<PropInit>): ObjLitId {
+    prog.objLits.push(properties)
+    return ObjLitId {
+        index: prog.objLits.len() - 1
+    }
+}
+
+// Append an array/template-literal descriptor list and publish its typed ID.
+pub fn addArrLit(prog: &mut Prog, elements: Vec<Option<ExprId>>): ArrLitId {
+    prog.arrLits.push(elements)
+    return ArrLitId {
+        index: prog.arrLits.len() - 1
     }
 }

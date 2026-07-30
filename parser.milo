@@ -7,7 +7,7 @@ from "./lexer" import {
     Token
 }
 from "./ast" import {
-    ArgListId, BlockId, ExprId, Prog, StmtId
+    ArgListId, ArrLitId, BlockId, ExprId, ObjLitId, Prog, StmtId
 }
 from "./value" import {
     i64ToStr, numToStr
@@ -191,8 +191,8 @@ fn parseTaggedTemplate(p: &mut PState, prog: &mut Prog, tagExpr: ExprId): ExprId
     if peekKind(p) == T_TEMPLATE_END {
         advance(p)
     }
-    prog.arrLits.push(chunks)
-    let stringsArr = addExpr(prog, Expr.TemplateStrings(prog.arrLits.len() - 1))
+    let chunksId = addArrLit(prog, chunks)
+    let stringsArr = addExpr(prog, Expr.TemplateStrings(chunksId))
     var args: Vec<ExprId> = Vec.new()
     args.push(stringsArr)
     var h: i64 = 0
@@ -311,8 +311,8 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
                     keyEls.push(Option.Some(addExpr(prog, Expr.StrLit(seenKeys[ki].clone()))))
                     ki = ki + 1
                 }
-                prog.arrLits.push(keyEls)
-                let keysArr = addExpr(prog, Expr.ArrLit(prog.arrLits.len() - 1))
+                let keyElsId = addArrLit(prog, keyEls)
+                let keysArr = addExpr(prog, Expr.ArrLit(keyElsId))
                 var restArgs: Vec<ExprId> = Vec.new()
                 restArgs.push(srcIdx)
                 restArgs.push(keysArr)
@@ -728,9 +728,8 @@ fn parseArrayLiteral(p: &mut PState, prog: &mut Prog): ExprId {
         }
     }
     expect(p, T_RBRACKET)
-    prog.arrLits.push(elems)
-    let idx = prog.arrLits.len() - 1
-    return addExpr(prog, Expr.ArrLit(idx))
+    let literalId = addArrLit(prog, elems)
+    return addExpr(prog, Expr.ArrLit(literalId))
 }
 
 // { key: expr, key: expr, ... } — keys are identifiers or string literals
@@ -847,9 +846,8 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
         }
     }
     expect(p, T_RBRACE)
-    prog.objLits.push(props)
-    let idx = prog.objLits.len() - 1
-    return addExpr(prog, Expr.ObjLit(idx))
+    let literalId = addObjLit(prog, props)
+    return addExpr(prog, Expr.ObjLit(literalId))
 }
 
 fn parsePostfix(p: &mut PState, prog: &mut Prog): ExprId {

@@ -1,0 +1,12 @@
+// @error: expected ExprId, got ArrLitId
+
+from "../../ast" import {
+    ExprId, addArrLit, getExpr, newProg
+}
+
+fn confuseArrayLiteralAndExpression(): void {
+    var prog = newProg()
+    var elements: Vec<Option<ExprId>> = Vec.new()
+    let literalId = addArrLit(prog, elements)
+    let _ = getExpr(prog, literalId)
+}

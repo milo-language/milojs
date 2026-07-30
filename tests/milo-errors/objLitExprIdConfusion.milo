@@ -1,0 +1,12 @@
+// @error: expected ExprId, got ObjLitId
+
+from "../../ast" import {
+    PropInit, addObjLit, getExpr, newProg
+}
+
+fn confuseObjectLiteralAndExpression(): void {
+    var prog = newProg()
+    var properties: Vec<PropInit> = Vec.new()
+    let literalId = addObjLit(prog, properties)
+    let _ = getExpr(prog, literalId)
+}
