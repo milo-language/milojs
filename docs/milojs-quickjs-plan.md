@@ -8,7 +8,13 @@ last-verified: 2026-07-30
 
 # milojs QuickJS-parity plan
 
-Last measured: **93/149 cases (62.4%)** on 2026-07-24.
+Last measured: **94/166 cases (56.6%)** on 2026-07-30 against QuickJS
+`fced162932e36eb3b2889bd30c8f127a2bf8cf34`. A repeated full run produced the
+same result.
+
+The previous 93/149 (62.4%) result used an older, smaller corpus. The passing
+count increased by one while the corpus added 17 scored cases, so the lower
+percentage is not an engine regression.
 
 That number is a development signal, not a compatibility claim. The QuickJS
 suite mixes ECMAScript behavior with QuickJS host facilities, and the corpus is
@@ -54,21 +60,20 @@ First reduce a current failing case and identify the narrower semantic bug.
 
 ## Active lanes
 
-### 1. Rebaseline and classify
+### 1. Rebaseline and classify — done
 
-The score predates several shipped features. Run the full suite before selecting
-another implementation lane, save the verbose result, and classify every failure
-as one of:
+The 2026-07-30 full sweep reports 72 failures. Exact repeated buckets account
+for 48: 27 assertion mismatches, 4 undefined-property reads, 4 engine/runtime
+generator-factor cases, 3 missing `concat` dispatches, 3 timeouts, 3 calls of a
+non-function value, 2 missing `BigInt64Array` cases, and 2 module-fixture
+`exports` failures. The remaining 24 are distinct one-case buckets spanning
+parser/evaluator semantics and missing or divergent builtins. The verbose report
+is retained as review evidence outside Git per `docs/conformance-reports.md`.
 
-- parse or early-error semantics;
-- evaluator semantics;
-- missing or divergent builtin;
-- engine/runtime factoring (notably generators);
-- QuickJS-only host facility;
-- harness error or timeout.
-
-Record counts and exact case names. Error-message text is secondary unless the
-test asserts it; silent wrong values and false-success stubs are highest priority.
+One failure is a native `SIGSEGV` in `bug776.js`, where the suite expects a
+catchable `RangeError`. Treat that as the first correctness lane before improving
+the percentage. Three other cases time out and need reductions that distinguish
+engine loops from legitimate slow paths.
 
 ### 2. Real builtin prototype dispatch
 

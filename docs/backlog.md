@@ -1,7 +1,7 @@
 # milojs backlog
 
 Work items carried over from the milo repo's backlog when milojs moved to its own
-repo, re-verified against the engine on 2026-07-24.
+repo, re-verified against the engine through 2026-07-30.
 
 ## Native evaluator frame on the normal stack — DONE
 
@@ -13,17 +13,21 @@ about 5.7 KB; the full dispatcher is reached only for less common expression
 shapes. The unchanged recursion fixtures pass on the normal stack, and the whole
 Gate 0 suite is green without `ulimit` changes. A differential fixture now also
 requires 100 successful recursive calls before checking that runaway recursion
-still becomes a catchable `RangeError`; the engine guard is 108 frames.
+still becomes a catchable `RangeError`; the engine guard is 104 frames.
 
-## Measured conformance (2026-07-24)
+## Measured conformance
 
 Both sweeps need a local corpus (`TEST262=`, `~/git/quickjs/tests`), so these are
 run by hand rather than in CI:
 
-| sweep | score |
-|---|---|
-| test262, 1500-case deterministic sample | 473/1476 = **32.0%** |
-| QuickJS `tests/` | 93/149 = **62.4%** |
+| sweep | score | measured |
+|---|---:|---|
+| test262, 1500-case deterministic sample | 473/1476 = **32.0%** | 2026-07-24 |
+| QuickJS `tests/` at `fced162` | 94/166 = **56.6%** | 2026-07-30 |
+
+The prior QuickJS result was 93/149 (62.4%). The current checkout adds 17
+scored cases; MiloJS passes one more case, but the larger denominator lowers the
+percentage. Two consecutive full runs produced the current result.
 
 Weakest areas: `built-ins/TypedArray` 0%, `ArrayBuffer` 0%, `Atomics` 0%,
 `language/eval-code` 0%, `Temporal` 1%, `TypedArrayConstructors` 5%, `Map` 14%.

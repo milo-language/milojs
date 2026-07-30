@@ -32,19 +32,21 @@ language engine and embedding contract are unstable.
 
 ## Evidence
 
-Last full conformance sweep: 2026-07-24.
+Last QuickJS sweep: 2026-07-30. The test262 sample was last run on 2026-07-24.
 
 | measure | result | interpretation |
 |---|---:|---|
 | deterministic test262 sample | 473/1476 (32.0%) | broad language and builtin coverage is still early |
-| QuickJS `tests/` cases | 93/149 (62.4%) | useful subset, with a substantial semantic long tail |
+| QuickJS `tests/` at `fced162` | 94/166 (56.6%) | useful subset, with a substantial semantic long tail |
 | locked engine fixtures | 142 | byte-exact differential output |
 | locked runtime fixtures | 27 | module, async, fetch, HTTP, and host behavior |
 | Milo invariant fixtures | 3 | scheduler/context and GC-root invariants |
 
-The conformance corpora are local rather than vendored, so the two sweep numbers
-are informative but not yet a reproducible release artifact. Fixture counts are
-not conformance percentages.
+The QuickJS numerator rose from 93 to 94 while its current corpus added 17
+scored cases, changing 62.4% to 56.6%; this is not an engine regression. Two
+consecutive full runs reproduced 94/166. The conformance corpora are local
+rather than vendored, so the two sweep numbers are informative but not yet a
+reproducible release artifact. Fixture counts are not conformance percentages.
 
 ### Native stack status
 
