@@ -79,8 +79,56 @@ jobs:
       - name: milo fixtures
         run: ./tests/run-milo.sh
 
-      - name: embedding C ABI
-        run: ./tests/run-embed.sh
-
       - name: Node-API addon callback
         run: MILOJS_RUNTIME_BIN=/tmp/milojs ./tests/run-napi.sh
+
+  # The embedding story (build-lib -> libmilojs.a/.h -> compile & run the C
+  # example) is the one path users hit on both platforms, so it gets its own
+  # cross-OS matrix instead of riding the Linux-only test job. run-embed.sh
+  # already selects the right link libs and OpenSSL paths per uname.
+  embed:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            milo_asset: milo-linux-x64
+          - os: macos-latest
+            milo_asset: milo-darwin-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: install clang 18 (linux)
+        if: runner.os == 'Linux'
+        run: |
+          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 18
+          sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
+          sudo ln -sf /usr/bin/clang++-18 /usr/bin/clang++
+
+      - name: install openssl headers (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+
+      # Preinstalled on the runner image, but keep it explicit so the keg prefix
+      # run-embed.sh points -I/-L at is guaranteed present.
+      - name: install openssl (macos)
+        if: runner.os == 'macOS'
+        run: brew install openssl@3 || true
+
+      - name: install milo
+        run: |
+          curl -fsSL -o milo.tar.gz \
+            https://github.com/milo-language/milo/releases/download/latest/${{ matrix.milo_asset }}.tar.gz
+          tar xzf milo.tar.gz
+          chmod +x milo
+          echo "$PWD" >> "$GITHUB_PATH"
+
+      - name: embedding C ABI
+        run: ./tests/run-embed.sh

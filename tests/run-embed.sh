@@ -27,12 +27,22 @@ if [ -z "${MILOJS_EMBED_LIBS:-}" ]; then
     *)      MILOJS_EMBED_LIBS="-lm -lssl -lcrypto -ldl -pthread" ;;
   esac
 fi
+# macOS OpenSSL is keg-only under Homebrew — its headers/libs are off the default
+# search path, so -lssl fails to resolve without pointing the compiler at the keg.
+if [ -z "${MILOJS_EMBED_CFLAGS:-}" ]; then
+  case "$(uname -s)" in
+    Darwin)
+      OPENSSL_PREFIX="$(brew --prefix openssl@3 2>/dev/null || brew --prefix openssl 2>/dev/null || echo /opt/homebrew/opt/openssl@3)"
+      MILOJS_EMBED_CFLAGS="-I$OPENSSL_PREFIX/include -L$OPENSSL_PREFIX/lib" ;;
+    *) MILOJS_EMBED_CFLAGS="" ;;
+  esac
+fi
 
 "${MILO_RUN[@]}" build-lib libmilojs.milo -o "$TMP/libmilojs.a"
 cp include/milojs.h "$TMP/milojs.h"
-"$CC" -std=c11 -Wall -Wextra -Werror -I"$TMP" \
+"$CC" -std=c11 -Wall -Wextra -Werror -I"$TMP" $MILOJS_EMBED_CFLAGS \
   tests/embed/context.c "$TMP/libmilojs.a" $MILOJS_EMBED_LIBS -o "$TMP/context"
 "$TMP/context"
-"$CC" -std=c11 -Wall -Wextra -Werror -I"$TMP" \
+"$CC" -std=c11 -Wall -Wextra -Werror -I"$TMP" $MILOJS_EMBED_CFLAGS \
   examples/embed/hello.c "$TMP/libmilojs.a" $MILOJS_EMBED_LIBS -o "$TMP/hello"
 test "$("$TMP/hello")" = "hello from embedded milo, woof! the answer is 42"
