@@ -38,7 +38,7 @@ Last full conformance sweep: 2026-07-24.
 |---|---:|---|
 | deterministic test262 sample | 473/1476 (32.0%) | broad language and builtin coverage is still early |
 | QuickJS `tests/` cases | 93/149 (62.4%) | useful subset, with a substantial semantic long tail |
-| locked engine fixtures | 140 | byte-exact differential output |
+| locked engine fixtures | 141 | byte-exact differential output |
 | locked runtime fixtures | 27 | module, async, fetch, HTTP, and host behavior |
 | Milo invariant fixtures | 3 | scheduler/context and GC-root invariants |
 
@@ -143,5 +143,5 @@ published gate. Keep the tree walker as a differential oracle if the VM lands.
 1. Restore Gate 0 whenever Milo's released standard library changes.
 2. Replace the stale conformance summaries with generated, checked-in reports.
 3. Implement the smallest complete C embedding vertical slice.
-4. Finish real builtin prototype dispatch, starting with String.
+4. Finish real builtin prototype dispatch, continuing with Map/Set.
 5. Grow conformance and runtime application gates in separate, measured lanes.

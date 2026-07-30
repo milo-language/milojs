@@ -72,7 +72,7 @@ test asserts it; silent wrong values and false-success stubs are highest priorit
 
 ### 2. Real builtin prototype dispatch
 
-Array and the Error family now use real prototype objects. String, Map/Set,
+Array, String, and the Error family now use real prototype objects. Map/Set,
 RegExp, Date, DataView, and typed arrays still have whitelist-dispatched methods
 in parts of the property/call path. This causes overrides, extraction, identity,
 and inheritance to disagree with JavaScript even when direct calls work.

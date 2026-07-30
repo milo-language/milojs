@@ -30,11 +30,11 @@ Strongest: `language/block-scope` 100%, `literals` 77%, `identifiers` 75%.
 Stage 6 of the roadmap calls for a checked-in `test262-status.md` so the trend is
 visible. It does not exist yet — this table is the stopgap.
 
-## The dispatch model — Array and Error done, the rest still whitelisted
+## The dispatch model — Array, String, and Error done
 
 Built-in methods were **not** real properties on real prototype objects. They
 were dispatched by a name whitelist checked at gated sites on the property path.
-Two slices of this are now fixed; the pattern for the rest is established.
+Three slices of this are now fixed; the pattern for the rest is established.
 
 **Done — arrays.** `newArray` links `st.arrayProtoObj`, which carries every method
 as a real non-enumerable property. Three of the four `isArrayMethod` gates are
@@ -50,11 +50,15 @@ to copy for the remaining types — correctness by default, speed while untouche
 
 **Done — the Error family** (see below).
 
-**Still whitelisted:** `String` (`isStringMethodName`), Map/Set
-(`isMapSetMethodName`), RegExp, Date, DataView, typed arrays. Each has the same
-symptom: prototype assignment is dead code, overrides are ignored on calls.
-Strings are the most valuable next slice — `built-ins/String` is at 38%, and
-string methods are reached far more often than Map/Set ones.
+**Done — strings.** Primitive property reads now resolve through the real,
+non-enumerable `String.prototype` properties. While that prototype is pristine,
+calls retain direct native dispatch; any write, accessor definition, or deletion
+permanently moves calls to ordinary lookup. Extensions and warmed-up overrides
+therefore work, and `"x".slice === String.prototype.slice` matches Node.
+
+**Still whitelisted:** Map/Set (`isMapSetMethodName`), RegExp, Date, DataView,
+and typed arrays. Each has the same symptom: prototype assignment is dead code
+and overrides are ignored on calls. Map/Set is the next slice.
 
 **Do the rest before Stage 4.** A bytecode VM built on the whitelist inherits it
 permanently.

@@ -1140,11 +1140,14 @@ pub fn getMember(st: &Interp, o: i64, key: &string): JSValue {
 }
 
 fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
-    // Any write to Array.prototype retires the fast dispatch path for the rest of
-    // the run — after this, arr.map() has to resolve through the chain so a
-    // replaced method is the one that runs.
+    // Any write to a builtin prototype retires its fast dispatch path for the
+    // rest of the run. Calls then resolve through the real chain so a replaced
+    // method remains authoritative even if the original is restored later.
     if o == st.arrayProtoObj {
         st.arrayProtoPristine = false
+    }
+    if o == st.stringProtoObj {
+        st.stringProtoPristine = false
     }
     // sloppy mode drops writes to a frozen object rather than throwing
     if st.objects[o].frozen {
@@ -4271,9 +4274,15 @@ pub fn setupGlobals(st: &mut Interp) {
     let stringProto = newObject(st)
     for sm in strProtoMethodNames() {
         objSet(st, stringProto, sm.clone(), makeBoundMethod(st, JSValue.Undefined, sm.clone()))
+        objSetNonEnumerable(st, stringProto, sm)
     }
+    objSet(st, stringProto, "constructor", JSValue.Native(NATIVE_STRING))
+    objSetNonEnumerable(st, stringProto, "constructor")
+    st.objects[stringProto].proto = objectProto
     objSet(st, stringCtorObj, "prototype", JSValue.Obj(stringProto))
     st.stringCtorProps = stringCtorObj
+    st.stringProtoObj = stringProto
+    st.stringProtoPristine = true
     scopeDefine(st, 0, "String", JSValue.Native(NATIVE_STRING))
     scopeDefine(st, 0, "Boolean", JSValue.Native(NATIVE_BOOLEAN))
     scopeDefine(st, 0, "NaN", JSValue.Number(jsNan()))
@@ -5311,16 +5320,7 @@ fn evalExprFallback(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue
                     return JSValue.Undefined
                 }
                 JSValue.Str(s) => {
-                    if name == "length" {
-                        return JSValue.Number(utf16Length(s) as f64)
-                    }
-                    if name == "description" && isSymbolStr(s) {
-                        return JSValue.Str(symbolDescription(s))
-                    }
-                    if isStringMethodName(name) {
-                        return makeBoundMethod(st, JSValue.Str(s.clone()), name.clone())
-                    }
-                    return JSValue.Undefined
+                    return stringPrimitiveMember(st, s, name)
                 }
                 JSValue.Func(fIdx, fe) => {
                     if name == "prototype" {
@@ -5418,13 +5418,7 @@ fn evalExprFallback(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue
                     // s["slice"] is the METHOD, not s[NaN] — asArrayIndex rejects
                     // non-numeric keys, which toNum would have coerced to 0
                     if asArrayIndex(key) < 0 {
-                        if key == "length" {
-                            return JSValue.Number(utf16Length(s) as f64)
-                        }
-                        if isStringMethodName(key) {
-                            return makeBoundMethod(st, JSValue.Str(s.clone()), key.clone())
-                        }
-                        return JSValue.Undefined
+                        return stringPrimitiveMember(st, s, key)
                     }
                     // s[i] → the i-th UTF-16 code unit as a string (charAt
                     // semantics), or undefined out of range — not a raw byte
@@ -5961,16 +5955,7 @@ fn evalExprFallback(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue
                     return JSValue.Undefined
                 }
                 JSValue.Str(s) => {
-                    if name == "length" {
-                        return JSValue.Number(utf16Length(s) as f64)
-                    }
-                    if name == "description" && isSymbolStr(s) {
-                        return JSValue.Str(symbolDescription(s))
-                    }
-                    if isStringMethodName(name) {
-                        return makeBoundMethod(st, JSValue.Str(s.clone()), name.clone())
-                    }
-                    return JSValue.Undefined
+                    return stringPrimitiveMember(st, s, name)
                 }
                 JSValue.Func(fIdx, fe) => {
                     // a non-nullish function base reads like `.` does: a function
@@ -7824,6 +7809,19 @@ fn isPrimitiveMethodName(n: &string): bool {
 
 fn isStringMethodName(n: &string): bool {
     return n == "charAt" || n == "charCodeAt" || n == "codePointAt" || n == "at" || n == "indexOf" || n == "lastIndexOf" || n == "includes" || n == "startsWith" || n == "endsWith" || n == "slice" || n == "substring" || n == "substr" || n == "split" || n == "replace" || n == "replaceAll" || n == "toUpperCase" || n == "toLowerCase" || n == "trim" || n == "trimStart" || n == "trimEnd" || n == "trimLeft" || n == "trimRight" || n == "padStart" || n == "padEnd" || n == "repeat" || n == "concat" || n == "localeCompare" || n == "normalize" || n == "match" || n == "matchAll" || n == "search" || n == "toString" || n == "valueOf"
+}
+
+fn stringPrimitiveMember(st: &mut Interp, value: &string, key: &string): JSValue {
+    if key == "length" {
+        return JSValue.Number(utf16Length(value) as f64)
+    }
+    if key == "description" && isSymbolStr(value) {
+        return JSValue.Str(symbolDescription(value))
+    }
+    if st.stringProtoObj >= 0 {
+        return getMember(st, st.stringProtoObj, key)
+    }
+    return JSValue.Undefined
 }
 
 fn isMapSetMethodName(n: &string): bool {
@@ -10318,8 +10316,15 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: i64, st: &mut 
     // Methods every primitive answers to. JS boxes the receiver for these; here
     // they are answered directly, which covers the cases real code uses.
     if name == "toString" || name == "valueOf" || name == "toFixed" || name == "toPrecision" || name == "toExponential" || name == "toLocaleString" {
-        let isPrimitive = objHandle(recv) < 0 && funcHandle(recv) < 0
-        if isPrimitive {
+        var useDirectPrimitive = objHandle(recv) < 0 && funcHandle(recv) < 0
+        match recv {
+            JSValue.Str(_) => {
+                useDirectPrimitive = useDirectPrimitive && st.stringProtoPristine
+            }
+            _ => {
+            }
+        }
+        if useDirectPrimitive {
             let argVals = evalArgs(prog, argsIdx, st, scope)
             return primitiveMethod(name, recv, argVals)
         }
@@ -10327,6 +10332,15 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: i64, st: &mut 
     match recv {
         JSValue.Str(s) => {
             let argVals = evalArgs(prog, argsIdx, st, scope)
+            if !st.stringProtoPristine {
+                let method = getMember(st, st.stringProtoObj, name)
+                if isCallableIn(st, method) {
+                    return callValue(prog, method, argVals, JSValue.Str(s.clone()), st)
+                }
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", name.clone() + " is not a function" + currentModule(st))
+                return JSValue.Undefined
+            }
             // regex-based string ops when the first arg is a RegExp
             if argVals.len() > 0 && regexIdOf(st, argVals[0]) >= 0 {
                 let rid = regexIdOf(st, argVals[0])
