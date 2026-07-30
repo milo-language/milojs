@@ -11,7 +11,9 @@ The evaluator now routes literals, identifiers, binary expressions, and calls
 through a small front dispatcher. `evalExpr` is 824 bytes and its binary helper
 about 5.7 KB; the full dispatcher is reached only for less common expression
 shapes. The unchanged recursion fixtures pass on the normal stack, and the whole
-Gate 0 suite is green without `ulimit` changes.
+Gate 0 suite is green without `ulimit` changes. A differential fixture now also
+requires 100 successful recursive calls before checking that runaway recursion
+still becomes a catchable `RangeError`; the engine guard is 108 frames.
 
 ## Measured conformance (2026-07-24)
 

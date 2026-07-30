@@ -38,7 +38,7 @@ Last full conformance sweep: 2026-07-24.
 |---|---:|---|
 | deterministic test262 sample | 473/1476 (32.0%) | broad language and builtin coverage is still early |
 | QuickJS `tests/` cases | 93/149 (62.4%) | useful subset, with a substantial semantic long tail |
-| locked engine fixtures | 141 | byte-exact differential output |
+| locked engine fixtures | 142 | byte-exact differential output |
 | locked runtime fixtures | 27 | module, async, fetch, HTTP, and host behavior |
 | Milo invariant fixtures | 3 | scheduler/context and GC-root invariants |
 
@@ -52,6 +52,8 @@ Gate 0 is green on the normal 8 MB Linux process stack. Splitting hot recursive
 nodes from the full expression dispatcher reduced `evalExpr`'s native frame from
 about 250 KB to 824 bytes; binary evaluation uses about 5.7 KB. The unchanged
 closure and catchable-recursion fixtures now pass without a stack override.
+The engine and embedding default now permits 100 ordinary recursive calls and
+guards at 108; the runtime retains a 500-frame limit on its green task.
 
 ## Shipped engine surface
 
