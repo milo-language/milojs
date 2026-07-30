@@ -54,6 +54,7 @@ opening several.
 | doc | when to read it |
 |---|---|
 | `docs/status.md` | canonical current capabilities, evidence, product gates, and immediate order |
+| `docs/conformance-reports.md` | how to produce revision-attributed test262 and QuickJS reports |
 | `docs/backlog.md` | what to work on next, measured conformance numbers, known gaps |
 | `docs/milojs-roadmap.md` | staged plan, what "done" means, scope decisions |
 | `docs/milojs-async-suspension.md` | await/park/resume, green tasks, the event loop |

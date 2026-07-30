@@ -10,6 +10,7 @@
 //   bun scripts/test262-sweep.ts --sample 3000      # random sample, whole suite
 //   bun scripts/test262-sweep.ts --dir built-ins/Array
 //   bun scripts/test262-sweep.ts --sample 2000 -v   # also list failing files
+//   bun scripts/test262-sweep.ts --sample 1500 --json test262-status.json
 import { readdirSync, readFileSync, writeFileSync, statSync, mkdtempSync } from "fs";
 import { execFileSync } from "child_process";
 import { join } from "path";
@@ -23,6 +24,17 @@ const arg = (name: string) => { const i = process.argv.indexOf(name); return i >
 const sampleN = arg("--sample") ? parseInt(arg("--sample")!) : null;
 const subDir = arg("--dir") ?? "";
 const limit = arg("--limit") ? parseInt(arg("--limit")!) : Infinity;
+const jsonPath = arg("--json");
+
+function revision(dir: string): string | null {
+  try {
+    return execFileSync("git", ["-C", dir, "rev-parse", "HEAD"], {
+      encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
 
 // deterministic sampling so a number is reproducible across runs
 let seed = 0x2f6e2b1;
@@ -148,4 +160,28 @@ console.log("\ntop failure buckets:");
 for (const [b, cs] of [...buckets.entries()].sort((x, y) => y[1].length - x[1].length).slice(0, verbose ? 999 : 20)) {
   console.log(`  ${String(cs.length).padStart(4)}  ${b}`);
   if (verbose) console.log(`        ${cs.slice(0, 8).join(", ")}${cs.length > 8 ? " …" : ""}`);
+}
+
+if (jsonPath) {
+  const report = {
+    schemaVersion: 1,
+    suite: "test262",
+    corpus: { path: T262, revision: revision(T262) },
+    engine: ENGINE,
+    selection: {
+      directory: subDir || null,
+      sample: sampleN,
+      limit: Number.isFinite(limit) ? limit : null,
+      seed: sampleN ? "0x2f6e2b1" : null,
+    },
+    totals: { pass, fail, skip, scored, selected: files.length },
+    areas: [...areaTotals.entries()]
+      .map(([area, t]) => ({ area, pass: t.p, fail: t.f, total: t.p + t.f }))
+      .sort((a, b) => b.total - a.total || a.area.localeCompare(b.area)),
+    failureBuckets: [...buckets.entries()]
+      .map(([reason, cases]) => ({ reason, count: cases.length, cases }))
+      .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)),
+  };
+  writeFileSync(jsonPath, JSON.stringify(report, null, 2) + "\n");
+  console.log(`\nwrote ${jsonPath}`);
 }

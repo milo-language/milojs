@@ -10,16 +10,29 @@
 //   bun scripts/quickjs-sweep.ts            # summary + top error buckets
 //   bun scripts/quickjs-sweep.ts -v         # also list every failing case
 //   bun scripts/quickjs-sweep.ts -f loop    # only files whose name matches
+//   bun scripts/quickjs-sweep.ts --json quickjs-status.json
 import { readdirSync, readFileSync, writeFileSync, mkdtempSync, copyFileSync } from "fs";
 import { execFileSync } from "child_process";
 import { join } from "path";
 import { tmpdir } from "os";
 
-const QJS = join(process.env.HOME!, "git/quickjs/tests");
+const QJS = process.env.QUICKJS_TESTS ?? join(process.env.HOME!, "git/quickjs/tests");
 const ENGINE = process.env.MILOJS_ENGINE ?? "/tmp/milojs-engine";
 const verbose = process.argv.includes("-v");
 const filterIdx = process.argv.indexOf("-f");
 const filter = filterIdx >= 0 ? process.argv[filterIdx + 1] : null;
+const arg = (name: string) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : null; };
+const jsonPath = arg("--json");
+
+function revision(dir: string): string | null {
+  try {
+    return execFileSync("git", ["-C", dir, "rev-parse", "HEAD"], {
+      encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
 
 // Tests that need host facilities the engine deliberately does not provide
 // (std/os modules, workers, bjson) — out of scope, not conformance gaps.
@@ -124,4 +137,18 @@ console.log("top causes:");
 for (const [b, cases] of ranked.slice(0, verbose ? 999 : 25)) {
   console.log(`  ${String(cases.length).padStart(3)}  ${b}`);
   if (verbose) console.log(`       ${cases.join(", ")}`);
+}
+
+if (jsonPath) {
+  const report = {
+    schemaVersion: 1,
+    suite: "quickjs",
+    corpus: { path: QJS, revision: revision(QJS) },
+    engine: ENGINE,
+    selection: { filter, skippedFiles: [...SKIP_FILES].sort() },
+    totals: { pass, fail, total, files: files.length },
+    failureBuckets: ranked.map(([reason, cases]) => ({ reason, count: cases.length, cases })),
+  };
+  writeFileSync(jsonPath, JSON.stringify(report, null, 2) + "\n");
+  console.log(`\nwrote ${jsonPath}`);
 }
