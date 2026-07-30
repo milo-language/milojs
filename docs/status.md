@@ -55,13 +55,22 @@ closure and catchable-recursion fixtures now pass without a stack override.
 The engine and embedding default now permits 100 ordinary recursive calls and
 guards at 108; the runtime retains a 500-frame limit on its green task.
 
+### Arena safety status
+
+MiloJS still stores AST, scope, and object references as raw `i64` indices. The
+staged migration is specified in `docs/milojs-arena-safety.md`; no engine arena
+has migrated yet. Its upstream blocker is resolved: Milo `9a0bfa4e` provides
+release-checked live-handle snapshots, stale/free rejection, slot retirement at
+generation exhaustion, and the method-oriented `Arena<T>` API needed by a
+mark-sweep collector. Typed AST IDs are the next implementation step.
+
 ## Shipped engine surface
 
 - Tree-walking evaluator with lexical closures, classes, generators on the
   runtime, async functions, promises, exceptions, modules, and common modern
   syntax.
-- Stable-handle mark-sweep GC for scopes and objects, including suspended async
-  and generator activation roots.
+- Stable-slot mark-sweep GC for scopes and objects, including suspended async
+  and generator activation roots. These slots are not generational handles yet.
 - Objects, arrays, prototype chains, Proxy, symbols, Map/Set, Date, RegExp,
   ArrayBuffer/DataView, integer typed arrays, and arbitrary-precision BigInt.
 - Common builtins implemented partly in Milo and partly in the embedded

@@ -23,6 +23,14 @@ prevents cross-type use. `get`/`with` return `Option`, mutations and frees rejec
 stale handles, and callback-scoped `&T`/`&mut T` references cannot escape. Its
 `live >= 0` invariant is proved.
 
+Upstream Milo commit `9a0bfa4e` adds `Arena<T>.handles()`: an allocated snapshot
+of the currently live generational handles. Freeing a returned handle makes that
+snapshot entry stale; later allocations do not appear in the snapshot. Free
+slots use negative generation state, exhausted generations retire at zero, and
+all checks remain active in release builds. This is the enumeration primitive a
+mark-sweep collector needs without exposing raw slot reconstruction or invoking
+caller code while an arena element is borrowed.
+
 The append-only AST has different needs: it never frees or reuses slots, so a
 generation check on every expression dispatch buys nothing. Use distinct small
 newtypes (`ExprId`, `StmtId`, `BlockId`, `FuncId`, and the remaining arena IDs)
@@ -31,6 +39,12 @@ APIs accept only the matching ID.
 
 ## Migration order
 
+0. **Provide safe recyclable-heap enumeration.** Completed upstream by Milo
+   `9a0bfa4e`. MiloJS sweeps a `handles()` snapshot, clears internal owned state
+   through `modifyMut`, then calls `free`. Native or user finalizers are never
+   invoked inside that structural sweep: enqueue them and drain the queue only
+   after collection has finished. A finalizer must not re-enter the active
+   collection or allocate through an invalidated collector capability.
 1. **Type the AST indices.** Introduce one ID family at a time, starting with
    `ExprId` and `StmtId`. Remove `-1` from those APIs in favor of `Option<Id>`.
    Acceptance: swapping an expression and statement ID is a compile failure;
@@ -44,10 +58,13 @@ APIs accept only the matching ID.
 3. **Move scopes to `Arena<Scope>`.** Replace parent/environment `i64` values
    with `Option<Handle<Scope>>`. GC uses `free`, so a stale closure environment
    becomes a detected invalid handle rather than aliasing a reused scope slot.
+   This step depends on the Step 0 snapshot API.
 4. **Move objects to `Arena<JSObj>`.** Replace `JSValue.Obj(i64)` and object
    side-table indices with typed handles. Do this last: property access is the
    hottest path, and generation-check cost plus `JSObjExtra` ownership must be
-   measured against representative engine and runtime workloads.
+   measured against representative engine and runtime workloads. Structural
+   payload cleanup occurs during sweep; Node-API/external finalizers use the
+   deferred queue defined in Step 0.
 5. **Type-enforce GC safepoints.** An unrooted transient JS value must prevent
    allocation/collection. Model evaluation phases or an allocation capability so
    operations that may collect require proof that temporaries are rooted. This
@@ -55,10 +72,10 @@ APIs accept only the matching ID.
 
 ## Required evidence
 
-- Compile-fail fixtures for cross-arena IDs, stale handles, and mutation through
-  `FrozenProg`.
-- Milo invariant fixtures for free/reuse, closure environments, host roots, and
-  collection during nested calls.
+- Compile-fail fixtures for cross-arena IDs and mutation through `FrozenProg`.
+- Milo invariant fixtures for stale-handle rejection, free/reuse, closure
+  environments, host roots, finalizer deferral, and collection during nested
+  calls.
 - The normal and collect-at-every-safepoint JavaScript suites remain identical.
 - Before/after startup, fixture throughput, and peak memory measurements for
   scope and object migrations. Safety checks stay enabled in release builds;
