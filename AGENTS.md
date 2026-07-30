@@ -59,6 +59,7 @@ opening several.
 | `docs/milojs-roadmap.md` | staged plan, what "done" means, scope decisions |
 | `docs/milojs-async-suspension.md` | await/park/resume, green tasks, the event loop |
 | `docs/milojs-generators.md` | generator objects and how they suspend |
+| `docs/milojs-embedding.md` | public C ABI, ownership, and the current single-context constraint |
 | `docs/milojs-object-footprint.md` | JSObj layout, the JSObjExtra side table |
 | `docs/milojs-quickjs-plan.md` | QuickJS as an architecture reference |
 | `docs/api/*.md` | generated symbol reference for this project |

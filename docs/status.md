@@ -92,6 +92,10 @@ interop are the highest-impact missing groups.
 - A C example and ABI-level tests build outside the MiloJS implementation.
 - Pinned test262 and QuickJS reports are checked in and reproducible.
 
+The initial ABI is explicitly single-context because async/generator and
+Node-API re-entry currently use process-global interpreter state. The migration
+to isolated contexts is specified in `docs/milojs-embedding.md`.
+
 ### Gate 2: credible QuickJS alternative
 
 - Core `language/` and non-Intl builtins have explicit conformance targets and
