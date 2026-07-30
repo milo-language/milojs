@@ -8,6 +8,10 @@ last-verified: 2026-07-22
 
 # milojs roadmap — a JavaScript engine written in Milo
 
+> Current status, evidence, and product gates live in `docs/status.md`. This
+> document preserves the staged architecture and implementation history; older
+> “next” paragraphs below are not a current backlog.
+
 ## Current snapshot (2026-07-20)
 
 The detailed stage notes below preserve the implementation history, but several

@@ -9,7 +9,10 @@ update-when: a lane lands (update the score, delete the lane) or the sweep harne
 
 Working plan for driving `scripts/quickjs-sweep.ts` toward 100%. Written for agents
 picking up individual lanes; each lane is independent and lists exact anchors.
-Current: **74/149 cases (49.7%)**. Delete lanes here as they land.
+The last measured score is **93/149 cases (62.4%)** (2026-07-24). This document
+contains useful lane archaeology, including stale “still open” notes below; use
+`docs/status.md` for current product status and `docs/backlog.md` for the active
+gap list. Delete or reconcile old notes when their lane is touched.
 
 Engine-level spec builtins now live in `lib/engine-prelude.js` (loaded by
 `milojs-engine.milo` into the shared `Prog` before the entry runs) — distinct from
