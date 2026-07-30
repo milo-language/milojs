@@ -29,8 +29,9 @@ from "./runtime" import {
 }
 
 // napi_status — only the values this surface can actually produce.
-let NAPI_OK: i32 = 0
-let NAPI_INVALID_ARG: i32 = 1
+pub let NAPI_OK: i32 = 0
+pub let NAPI_INVALID_ARG: i32 = 1
+pub let NAPI_PENDING_EXCEPTION: i32 = 10
 
 // A function implemented by the addon. `fnPtr` is a napi_callback:
 //   napi_value (*)(napi_env, napi_callback_info)
@@ -96,18 +97,24 @@ var gNapi: NapiState = NapiState {
 
 // Wrap a value in a fresh handle. Handles are never reused within a run: the addon
 // may hold one indefinitely, and recycling a slot would silently retarget it.
-fn napiHandle(v: JSValue): i64 {
+pub fn napiHandle(v: JSValue): i64 {
     if gNapi.handles.len() == 0 {
         // slot 0 reserved so a returned handle is never the null pointer
         gNapi.handles.push(JSValue.Undefined)
     }
+    let root = cloneValue(v)
     gNapi.handles.push(v)
+    // Node-API handles may outlive the callback that created them. Mirror each
+    // one into the interpreter's foreign-host root set so collection cannot
+    // recycle its object while the addon still owns the handle.
+    gInterp.hostRoots.push(root)
+    gInterp.hostRootLive.push(true)
     return gNapi.handles.len() - 1
 }
 
 // Resolve a handle back to its value. Out-of-range yields Undefined rather than
 // trapping — a misbehaving addon must not take the process down.
-fn napiValueOf(h: i64): JSValue {
+pub fn napiValueOf(h: i64): JSValue {
     if h <= 0 || h >= gNapi.handles.len() {
         return JSValue.Undefined
     }
@@ -125,7 +132,7 @@ fn napiReadHandle(p: *u8): i64 {
     }
 }
 
-fn napiWriteHandle(p: *u8, h: i64) {
+pub fn napiWriteHandle(p: *u8, h: i64) {
     unsafe {
         var buf: [i64; 1] = [h; 1]
         memcpy(p, buf as *u8, 8)
@@ -523,11 +530,6 @@ fn napi_add_env_cleanup_hook(_a0: *u8, _a1: *u8, _a2: *u8): i32 {
 }
 
 @export
-fn napi_call_function(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8, _a5: *u8): i32 {
-    return NAPI_OK
-}
-
-@export
 fn napi_coerce_to_object(_a0: *u8, _a1: *u8, _a2: *u8): i32 {
     return NAPI_OK
 }
@@ -599,7 +601,7 @@ let NAPI_PD_VALUE: i64 = 40
 let NAPI_STATIC: i32 = 1024
 let NAPI_PD_ATTRIBUTES: i64 = 48
 
-fn napiLoadI64(p: *u8): i64 {
+pub fn napiLoadI64(p: *u8): i64 {
     unsafe {
         var b: [i64; 1] = [0; 1]
         memcpy(b as *u8, p, 8)

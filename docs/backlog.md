@@ -130,23 +130,23 @@ put it.
   `milojs-engine`, costing 42 test262 and 3 QuickJS cases. The runtime handles
   them, so this is engine/runtime factoring, not a missing feature.
 
-## Node-API: 14 of 64 entry points are stubs
+## Node-API: 13 of 64 entry points are stubs
 
 `napi.milo` marks them honestly in-source (they exist only so `dlopen`, which
 resolves eagerly, does not fail the whole module). Each returns `napi_ok` without
 doing anything, which is a lie an addon can act on. Ranked by what a real addon
 hits:
 
-1. `napi_call_function` — an addon calling back into JS gets silence. Highest
-   impact by far.
-2. The Buffer family: `napi_get_buffer_info`, `napi_create_buffer`,
+1. The Buffer family: `napi_get_buffer_info`, `napi_create_buffer`,
    `napi_create_buffer_copy`, `napi_create_external_buffer`. Any addon moving
    bytes is dead.
-3. `napi_get_and_clear_last_exception`, `napi_fatal_exception` — errors vanish
+2. `napi_get_and_clear_last_exception`, `napi_fatal_exception` — errors vanish
    instead of propagating.
-4. `napi_create_bigint_words` and the three `napi_get_value_bigint_*`.
+3. `napi_create_bigint_words` and the three `napi_get_value_bigint_*`.
    `bigint.milo` already exists, so this is wiring, not new work.
-5. `napi_coerce_to_object`, `napi_add_env_cleanup_hook`, `napi_fatal_error`.
+4. `napi_coerce_to_object`, `napi_add_env_cleanup_hook`, `napi_fatal_error`.
 
 Already real: `napi_define_class`, `napi_wrap`/`unwrap`, references, promises and
-deferreds, and the full threadsafe-function set.
+deferreds, synchronous calls back into JavaScript, and the full
+threadsafe-function set. Node-API handles are collector roots, including while a
+native callback re-enters JavaScript.

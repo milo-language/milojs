@@ -81,3 +81,6 @@ jobs:
 
       - name: embedding C ABI
         run: ./tests/run-embed.sh
+
+      - name: Node-API addon callback
+        run: MILOJS_RUNTIME_BIN=/tmp/milojs ./tests/run-napi.sh

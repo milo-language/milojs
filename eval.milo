@@ -54,6 +54,7 @@ from "std/fs" import {
     currentDir, writeFile, appendFile, readDir, removeFile, makeDir, removeDir, renameFile, isDir
 }
 from "./napi" import {
+    NAPI_OK, NAPI_INVALID_ARG, NAPI_PENDING_EXCEPTION, napiHandle, napiValueOf, napiWriteHandle, napiLoadI64,
     napiInvoke, napiLoadAddon, napiTakePending, napiPollTsfn, napiRunTsfnCall, napiHasTsfn, napiHasPendingWork, napiMayDeliver, napiWaitBriefly
 }
 from "std/math" import {
@@ -8356,6 +8357,38 @@ fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSValue,
             return JSValue.Undefined
         }
     }
+}
+
+// Node-API's synchronous callback into JavaScript. This adapter lives beside
+// callValue rather than in napi.milo because the evaluator already imports the
+// Node-API layer; importing the evaluator back from there would create a cycle.
+@export
+fn napi_call_function(_env: *u8, recv: i64, func: i64, argc: i64, argv: *u8, result: *u8): i32 {
+    if argc < 0 || (argc > 0 && argv as i64 == 0) {
+        return NAPI_INVALID_ARG
+    }
+    let fnVal = napiValueOf(func)
+    if !isCallableIn(gInterp, fnVal) {
+        return NAPI_INVALID_ARG
+    }
+    var args: Vec<JSValue> = Vec.new()
+    var i: i64 = 0
+    while i < argc {
+        var handle: i64 = 0
+        unsafe {
+            handle = napiLoadI64(((argv as i64) + i * 8) as *u8)
+        }
+        args.push(napiValueOf(handle))
+        i = i + 1
+    }
+    let returned = callValue(gProg, fnVal, args, napiValueOf(recv), gInterp)
+    if gInterp.throwing {
+        return NAPI_PENDING_EXCEPTION
+    }
+    if result as i64 != 0 {
+        napiWriteHandle(result, napiHandle(returned))
+    }
+    return NAPI_OK
 }
 
 // The (element, index, array) triple JS array-iteration callbacks receive.

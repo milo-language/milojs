@@ -75,6 +75,7 @@ milo build milojs.milo -o /tmp/mj-runtime
 MILOJS_ENGINE_BIN=/tmp/mj-engine MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run.sh
 ./tests/run-milo.sh
 ./tests/run-embed.sh
+MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run-napi.sh
 ```
 
 Build once and reuse the binaries — `run.sh` otherwise compiles per fixture and

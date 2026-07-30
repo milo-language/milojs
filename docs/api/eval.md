@@ -1,5 +1,14 @@
 ## eval
 
+### `napi_call_function`
+
+```milo
+fn napi_call_function(_env: *u8, recv: i64, func: i64, argc: i64, argv: *u8, result: *u8): i32
+```
+
+Node-API's synchronous callback into JavaScript. This adapter lives beside
+`callValue` to avoid an evaluator/Node-API import cycle.
+
 ### `adoptPromise`
 
 ```milo

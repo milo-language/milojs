@@ -16,14 +16,6 @@ fn napi_add_env_cleanup_hook(_a0: *u8, _a1: *u8, _a2: *u8): i32
 
 _Undocumented._
 
-### `napi_call_function`
-
-```milo
-fn napi_call_function(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8, _a5: *u8): i32
-```
-
-_Undocumented._
-
 ### `napi_call_threadsafe_function`
 
 ```milo
@@ -533,7 +525,7 @@ _Undocumented._
 ### `napiHandle`
 
 ```milo
-fn napiHandle(v: JSValue): i64
+pub fn napiHandle(v: JSValue): i64
 ```
 
 Wrap a value in a fresh handle. Handles are never reused within a run: the addon
@@ -596,7 +588,7 @@ _Undocumented._
 ### `napiLoadI64`
 
 ```milo
-fn napiLoadI64(p: *u8): i64
+pub fn napiLoadI64(p: *u8): i64
 ```
 
 _Undocumented._
@@ -694,7 +686,7 @@ Drained by the interpreter after any call into an addon.
 ### `napiValueOf`
 
 ```milo
-fn napiValueOf(h: i64): JSValue
+pub fn napiValueOf(h: i64): JSValue
 ```
 
 Resolve a handle back to its value. Out-of-range yields Undefined rather than
@@ -728,7 +720,7 @@ _Undocumented._
 ### `napiWriteHandle`
 
 ```milo
-fn napiWriteHandle(p: *u8, h: i64)
+pub fn napiWriteHandle(p: *u8, h: i64)
 ```
 
 _Undocumented._
