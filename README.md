@@ -52,8 +52,8 @@ Use the `milojs-engine` CLI to evaluate raw JavaScript without built-in host API
 Building from source requires the latest released [Milo compiler](https://github.com/milo-language/milo/releases), Clang 16 or newer, and OpenSSL development libraries. The complete test suite also uses Z3 for static contract verification.
 
 ```sh
-milo build milojs-engine.milo -o /tmp/mj-engine
-milo build milojs.milo -o /tmp/mj-runtime
+milo build src/milojs-engine.milo -o /tmp/mj-engine
+milo build src/milojs.milo -o /tmp/mj-runtime
 MILOJS_ENGINE_BIN=/tmp/mj-engine MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run.sh
 ./tests/run-milo.sh
 MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run-repl.sh
@@ -77,7 +77,7 @@ On Linux:
 
 ```sh
 # Linux
-milo build-lib libmilojs.milo -o libmilojs.a &&
+milo build-lib src/libmilojs.milo -o libmilojs.a &&
 cc -std=c11 -I. -Iinclude examples/embed/hello.c libmilojs.a -lm -lssl -lcrypto -ldl -pthread -o hello &&
 ./hello
 ```
@@ -86,7 +86,7 @@ On macOS (drop `-lm`/`-ldl`; point at Homebrew's OpenSSL):
 
 ```sh
 # macOS
-milo build-lib libmilojs.milo -o libmilojs.a &&
+milo build-lib src/libmilojs.milo -o libmilojs.a &&
 cc -std=c11 -I. -Iinclude \
   -I"$(brew --prefix openssl)/include" -L"$(brew --prefix openssl)/lib" \
   examples/embed/hello.c libmilojs.a -lssl -lcrypto -pthread -o hello &&

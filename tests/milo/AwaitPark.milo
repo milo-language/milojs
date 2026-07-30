@@ -11,16 +11,16 @@
 //
 // The main task is excluded on purpose — it runs the event loop, so parking it
 // would stop the very machinery that settles promises.
-from "../../runtime" import {
+from "../../src/runtime" import {
     Interp, gInterp, isPromise, newPromise
 }
-from "../../eval" import {
+from "../../src/eval" import {
     parkOnPromise, settlePromise
 }
-from "../../driver" import {
+from "../../src/driver" import {
     bootInterp, makeInterp
 }
-from "../../value" import {
+from "../../src/value" import {
     JSValue
 }
 from "std/runtime" import {

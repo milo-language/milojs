@@ -63,8 +63,8 @@ jobs:
       # build per fixture dwarfs the test time.
       - name: build engine and runtime
         run: |
-          milo build milojs-engine.milo -o /tmp/milojs-engine
-          milo build milojs.milo -o /tmp/milojs
+          milo build src/milojs-engine.milo -o /tmp/milojs-engine
+          milo build src/milojs.milo -o /tmp/milojs
 
       # tests/*.js on the engine, tests/runtime/*.js on the runtime. The runtime
       # pass is the guard on the async / fetch / event-loop machinery — it used

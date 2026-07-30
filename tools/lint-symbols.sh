@@ -29,7 +29,7 @@ status=0
 # separate programs, never compiled together.
 ALLOWED_DUPES="main"
 
-defs=$(grep -nHoE '^(pub )?fn [a-zA-Z0-9_]+' ./*.milo \
+defs=$(grep -nHoE '^(pub )?fn [a-zA-Z0-9_]+' src/*.milo \
        | sed -E 's/:(pub )?fn /:/' )
 
 dupes=$(echo "$defs" | awk -F: '{print $3}' | sort | uniq -d)

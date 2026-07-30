@@ -1,6 +1,6 @@
 // @error: expected ExprId, got ArgListId
 
-from "../../ast" import {
+from "../../src/ast" import {
     ExprId, addArgList, getExpr, newProg
 }
 

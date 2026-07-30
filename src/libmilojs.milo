@@ -99,7 +99,7 @@ pub fn milojs_context_new(outContext: *i64): i32 {
     gInterp = makeInterp(false, 1024, 2)
     gProg = newProg()
     bootInterp(gInterp)
-    let _prelude = evalSourceValue(@embedFile("lib/engine-prelude.js"), gProg, gInterp)
+    let _prelude = evalSourceValue(@embedFile("../lib/engine-prelude.js"), gProg, gInterp)
     if gInterp.throwing {
         mjEmbedException = describeThrown(gInterp, gInterp.thrownValue)
         gInterp = makeInterp(false, 1024, 2)

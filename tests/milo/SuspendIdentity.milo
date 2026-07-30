@@ -17,13 +17,13 @@
 //
 // Here A parks first and wakes first, so a position-based reclaim hands A the
 // context B parked second.
-from "../../runtime" import {
+from "../../src/runtime" import {
     Interp, gInterp, restoreExecCtx, saveExecCtx
 }
-from "../../eval" import {
+from "../../src/eval" import {
     resumeExecCtx
 }
-from "../../driver" import {
+from "../../src/driver" import {
     bootInterp, makeInterp
 }
 from "std/runtime" import {

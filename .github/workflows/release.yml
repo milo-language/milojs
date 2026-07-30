@@ -73,8 +73,8 @@ jobs:
 
       - name: build engine and runtime
         run: |
-          milo build milojs-engine.milo -o milojs-engine --release --static-deps
-          milo build milojs.milo -o milojs --release --static-deps
+          milo build src/milojs-engine.milo -o milojs-engine --release --static-deps
+          milo build src/milojs.milo -o milojs --release --static-deps
 
       - name: verify no openssl runtime dependency
         run: |

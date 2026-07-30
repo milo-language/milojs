@@ -71,8 +71,8 @@ the same commit and bump its `last-verified`.
 ## Tests — always run them
 
 ```sh
-milo build milojs-engine.milo -o /tmp/mj-engine
-milo build milojs.milo -o /tmp/mj-runtime
+milo build src/milojs-engine.milo -o /tmp/mj-engine
+milo build src/milojs.milo -o /tmp/mj-runtime
 MILOJS_ENGINE_BIN=/tmp/mj-engine MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run.sh
 ./tests/run-milo.sh
 MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run-repl.sh

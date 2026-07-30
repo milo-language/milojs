@@ -1,6 +1,6 @@
 // @error: expected StmtId, got ExprId
 
-from "../../ast" import {
+from "../../src/ast" import {
     Expr, addExpr, getStmt, newProg
 }
 

@@ -26,7 +26,7 @@ The suite expects a QuickJS checkout at `~/git/quickjs/tests` unless
 `QUICKJS_TESTS` points elsewhere.
 
 ```bash
-milo build milojs-engine.milo -o /tmp/milojs-engine
+milo build src/milojs-engine.milo -o /tmp/milojs-engine
 MILOJS_ENGINE=/tmp/milojs-engine bun scripts/quickjs-sweep.ts
 MILOJS_ENGINE=/tmp/milojs-engine bun scripts/quickjs-sweep.ts -v
 MILOJS_ENGINE=/tmp/milojs-engine bun scripts/quickjs-sweep.ts -f loop

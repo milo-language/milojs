@@ -38,7 +38,7 @@ if [ -z "${MILOJS_EMBED_CFLAGS:-}" ]; then
   esac
 fi
 
-"${MILO_RUN[@]}" build-lib libmilojs.milo -o "$TMP/libmilojs.a"
+"${MILO_RUN[@]}" build-lib src/libmilojs.milo -o "$TMP/libmilojs.a"
 cp include/milojs.h "$TMP/milojs.h"
 "$CC" -std=c11 -Wall -Wextra -Werror -I"$TMP" $MILOJS_EMBED_CFLAGS \
   tests/embed/context.c "$TMP/libmilojs.a" $MILOJS_EMBED_LIBS -o "$TMP/context"

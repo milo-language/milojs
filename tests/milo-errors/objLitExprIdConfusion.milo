@@ -1,6 +1,6 @@
 // @error: expected ExprId, got ObjLitId
 
-from "../../ast" import {
+from "../../src/ast" import {
     PropInit, addObjLit, getExpr, newProg
 }
 

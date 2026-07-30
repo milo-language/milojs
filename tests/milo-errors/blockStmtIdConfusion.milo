@@ -1,6 +1,6 @@
 // @error: expected StmtId, got BlockId
 
-from "../../ast" import {
+from "../../src/ast" import {
     StmtId, addBlock, getStmt, newProg
 }
 

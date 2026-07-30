@@ -97,7 +97,7 @@ if [ -n "${MILOJS_ENGINE_BIN:-}" ]; then
 else
   ENGINE_BIN="$(mktemp -t milojs-engine)"
   trap 'rm -f "$ENGINE_BIN"' EXIT
-  if ! $MILO_RUN build milojs-engine.milo -o "$ENGINE_BIN" >/dev/null; then
+  if ! $MILO_RUN build src/milojs-engine.milo -o "$ENGINE_BIN" >/dev/null; then
     echo "FAIL: engine did not build"
     exit 1
   fi
@@ -118,7 +118,7 @@ if compgen -G "$RUNTIME_DIR/*.js" >/dev/null; then
   else
     RUNTIME_BIN="$(mktemp -t milojs-runtime)"
     trap 'rm -f "$ENGINE_BIN" "$RUNTIME_BIN"' EXIT
-    if ! $MILO_RUN build milojs.milo -o "$RUNTIME_BIN" >/dev/null; then
+    if ! $MILO_RUN build src/milojs.milo -o "$RUNTIME_BIN" >/dev/null; then
       echo "FAIL: runtime did not build"
       exit 1
     fi
