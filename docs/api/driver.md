@@ -1,5 +1,15 @@
 ## driver
 
+### `evalSourceValue`
+
+```milo
+pub fn evalSourceValue(src: &string, prog: &mut Prog, st: &mut Interp): JSValue
+```
+
+Evaluate one script into a persistent program and return its completion value.
+Unlike the CLI path, this never prints an uncaught exception: callers inspect
+the interpreter exception state.
+
 ### `bootInterp`
 
 ```milo

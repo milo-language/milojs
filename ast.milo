@@ -196,6 +196,7 @@ pub struct Prog {
     switches: Vec<Vec<SwitchCase>>,
 }
 
+// Create an empty program arena.
 pub fn newProg(): Prog {
     return Prog {
         exprs: Vec.new(), stmts: Vec.new(), blocks: Vec.new(), argLists: Vec.new(), funcs: Vec.new(), objLits: Vec.new(), arrLits: Vec.new(), declLists: Vec.new(), classes: Vec.new(), switches: Vec.new()

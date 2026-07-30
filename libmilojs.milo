@@ -14,7 +14,10 @@ from "./ast" import {
     gProg, newProg
 }
 from "./value" import {
-    JSValue
+    JSValue, objHandle
+}
+from "./eval" import {
+    getMemberDyn
 }
 
 pub let MILOJS_STATUS_OK: i32 = 0
@@ -227,6 +230,32 @@ pub fn milojs_value_release(context: i64, value: i64): i32 {
     }
     gInterp.hostRoots[idx] = JSValue.Undefined
     gInterp.hostRootLive[idx] = false
+    return MILOJS_STATUS_OK
+}
+
+// Read a property with ordinary JavaScript getter/Proxy/prototype semantics and
+// retain the result as a new host value.
+pub fn milojs_value_get(context: i64, value: i64, key: *u8, keyLength: i64, outValue: *i64): i32 {
+    if keyLength < 0 || (keyLength > 0 && key as i64 == 0) || outValue as i64 == 0 {
+        return MILOJS_STATUS_INVALID_ARGUMENT
+    }
+    let idx = mjEmbedValueIndex(context, value)
+    if idx < 0 {
+        return MILOJS_STATUS_INVALID_ARGUMENT
+    }
+    let obj = objHandle(gInterp.hostRoots[idx])
+    if obj < 0 {
+        return MILOJS_STATUS_WRONG_TYPE
+    }
+    *outValue = 0
+    mjEmbedException = ""
+    let name = mjEmbedReadBytes(key, keyLength)
+    let result = getMemberDyn(gProg, obj, name, gInterp)
+    if gInterp.throwing {
+        mjEmbedException = describeThrown(gInterp, gInterp.thrownValue)
+        return MILOJS_STATUS_JS_EXCEPTION
+    }
+    *outValue = mjEmbedRetain(result)
     return MILOJS_STATUS_OK
 }
 

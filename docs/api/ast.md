@@ -1,5 +1,13 @@
 ## ast
 
+### `newProg`
+
+```milo
+pub fn newProg(): Prog
+```
+
+Create an empty program arena.
+
 ### `addExpr`
 
 ```milo

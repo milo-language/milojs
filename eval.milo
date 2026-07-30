@@ -312,7 +312,7 @@ fn toPrimitiveDefault(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     return JSValue.Str("[object Object]")
 }
 
-fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue {
+pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue {
     if st.objects[o].isProxy {
         let trap = proxyTrap(st, o, "get")
         let target = cloneValue(st.objExtras[st.objects[o].extra].proxyTarget)

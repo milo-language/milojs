@@ -120,11 +120,11 @@ lifetimes and Node-API environment lifetimes are different contracts.
 3. **Done:** C evaluates arithmetic and reads a number.
 4. **Done:** C evaluates a string containing an embedded NUL and copies its exact bytes.
 5. **Done:** C evaluates a throwing script and reads the exception without library output.
-6. **Root set implemented; behavioral probe pending:** a retained object survives
-   forced GC; after release it is no longer rooted.
+6. **Done:** a retained object survives forced GC; release removes it from the
+   host root set and invalidates the handle.
 7. Sanitizer or repeated create/eval/free coverage catches teardown leaks and
    stale handles.
 8. Register and invoke one C callback from JavaScript.
 
-Each step lands with its C test. The API is not advertised as an embedding
-preview until steps 1-6 pass.
+Each step lands with its C test. Steps 1-6 now form the embedding preview on
+Linux; macOS CI and native callbacks remain before the API is broadly useful.

@@ -49,6 +49,15 @@ pub fn milojs_value_bool(context: i64, value: i64, out: *bool): i32
 
 _Undocumented._
 
+### `milojs_value_get`
+
+```milo
+pub fn milojs_value_get(context: i64, value: i64, key: *u8, keyLength: i64, outValue: *i64): i32
+```
+
+Read a property with ordinary JavaScript getter/Proxy/prototype semantics and
+retain the result as a new host value.
+
 ### `milojs_value_kind`
 
 ```milo

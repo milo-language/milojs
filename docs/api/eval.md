@@ -605,7 +605,7 @@ _Undocumented._
 ### `getMemberDyn`
 
 ```milo
-fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
+pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
 ```
 
 _Undocumented._
