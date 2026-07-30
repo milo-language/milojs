@@ -42,7 +42,7 @@ UPDATE=0
 # is recorded for drift reporting only.
 EXPECTED="
 builtins.milo:13:4:0
-eval.milo:0:24:0
+eval.milo:7:35:0
 "
 
 fail=0
