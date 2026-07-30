@@ -15,9 +15,16 @@ host can drive without depending on Milo data layouts. The ABI uses fixed-width
 scalars and opaque integer handles; Milo strings, vectors, enums, references,
 and structs never cross the boundary.
 
-`milo build-lib libmilojs.milo -o libmilojs.a` generates the companion
-`libmilojs.h`. A C smoke test is the acceptance gate, not merely successful Milo
-compilation.
+`milo build-lib libmilojs.milo -o libmilojs.a` generates the low-level function
+declarations in `libmilojs.h`. Consumers include the checked-in `milojs.h`, which
+adds stable status constants and includes that generated file. A C smoke test is
+the acceptance gate, not merely successful Milo compilation.
+
+The preview static archive currently requires the host link to include its
+transitive system libraries (`libm`, OpenSSL, dynamic loading, and pthreads on
+Linux). `tests/run-embed.sh` is the executable link recipe and accepts
+`MILOJS_EMBED_LIBS` for nonstandard toolchains. Release packaging should replace
+this manual list with `pkg-config` metadata.
 
 ## Current architectural constraint
 
@@ -69,8 +76,9 @@ int64_t milojs_exception_copy(int64_t context,
                               uint8_t *out, int64_t capacity);
 ```
 
-The generated header is authoritative; this sketch fixes semantics and naming
-while implementation details are still being added.
+The generated header is authoritative for function signatures; `milojs.h` is the
+public include and owns constants. This sketch fixes semantics and naming while
+implementation details are still being added.
 
 ## Evaluation semantics
 
@@ -119,4 +127,3 @@ lifetimes and Node-API environment lifetimes are different contracts.
 
 Each step lands with its C test. The API is not advertised as an embedding
 preview until steps 1-6 pass.
-

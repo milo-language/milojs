@@ -78,3 +78,6 @@ jobs:
       # activation), also inherited from the milo repo's fixture suite.
       - name: milo fixtures
         run: ./tests/run-milo.sh
+
+      - name: embedding C ABI
+        run: ./tests/run-embed.sh

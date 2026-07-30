@@ -1,0 +1,57 @@
+// libmilojs — C ABI for embedding the MiloJS engine.
+//
+// The evaluator currently has process-global async/generator re-entry state, so
+// this preview exposes one live context at a time. Handles are generation tokens,
+// not pointers to Milo-managed data. See docs/milojs-embedding.md.
+
+from "./runtime" import {
+    gInterp
+}
+from "./driver" import {
+    makeInterp, bootInterp
+}
+
+pub let MILOJS_STATUS_OK: i32 = 0
+pub let MILOJS_STATUS_INVALID_ARGUMENT: i32 = -1
+pub let MILOJS_STATUS_BUSY: i32 = -2
+pub let MILOJS_STATUS_INVALID_CONTEXT: i32 = -3
+
+var mjEmbedActive: bool = false
+var mjEmbedGeneration: i64 = 0
+
+fn mjEmbedValid(context: i64): bool {
+    return mjEmbedActive && context != 0 && context == mjEmbedGeneration
+}
+
+// Create the process's single live engine context.
+pub fn milojs_context_new(outContext: *i64): i32 {
+    if outContext as i64 == 0 {
+        return MILOJS_STATUS_INVALID_ARGUMENT
+    }
+    if mjEmbedActive {
+        return MILOJS_STATUS_BUSY
+    }
+
+    mjEmbedGeneration = mjEmbedGeneration + 1
+    if mjEmbedGeneration == 0 {
+        mjEmbedGeneration = 1
+    }
+    gInterp = makeInterp(false, 1024, 2)
+    bootInterp(gInterp)
+    mjEmbedActive = true
+    *outContext = mjEmbedGeneration
+    return MILOJS_STATUS_OK
+}
+
+// Destroy `context`. A stale/wrong handle is rejected without affecting the
+// live context; callers can therefore make cleanup idempotent at their layer.
+pub fn milojs_context_free(context: i64): i32 {
+    if !mjEmbedValid(context) {
+        return MILOJS_STATUS_INVALID_CONTEXT
+    }
+    // Assignment drops every arena/vector/socket owned by the previous state.
+    // Keep a valid empty value in the global because Milo globals cannot be null.
+    gInterp = makeInterp(false, 1024, 2)
+    mjEmbedActive = false
+    return MILOJS_STATUS_OK
+}
