@@ -10,7 +10,10 @@
 // every index valid for the session's lifetime.
 
 from "std/io" import {
-    writeStdout, readFd
+    writeStdout
+}
+from "std/os" import {
+    readFd
 }
 from "std/fs" import {
     readFile, writeFile
@@ -19,7 +22,7 @@ from "std/env" import {
     Env
 }
 from "std/term" import {
-    TermState, enableRawModeBlocking, restoreTerminal
+    TermState, enableRawModeBlocking, restoreTerminal, terminalSize
 }
 from "std/ansi" import {
     Ansi
@@ -176,6 +179,14 @@ fn wordmarkRow(tr: i64): string {
 // buffers through libc stdout, so mixing the two would reorder the output.
 fn banner(): void {
     var buf = ""
+    // The sprite plus wordmark needs 79 visible columns. Leave a little margin
+    // so the terminal never wraps an ANSI-painted row into visual corruption.
+    if terminalSize().cols < 82 {
+        emit(buf, "\n  " + Color.bold("milojs") + " - JavaScript engine written in Milo.\n")
+        emit(buf, "  " + Color.dim("Tab completes; Ctrl-D exits.") + "\n\n")
+        writeStdout(buf)
+        return
+    }
     var tcol: [i64; 4] = [0; 4]
     var bcol: [i64; 4] = [0; 4]
     let hc = SPR_ROWS / 2
@@ -630,7 +641,14 @@ fn readLineEdited(prompt: &string, history: &Vec<string>, st: &Interp, builtinCo
 
     while true {
         let n = readFd(0, buf, 1)
-        if n <= 0 {
+        // A raw terminal may legally return zero when VTIME expires. Treating
+        // that as EOF made the REPL disappear after its first prompt with the
+        // current std/term implementation. Actual interactive EOF arrives as
+        // byte 4 below; a negative result is the read failure case.
+        if n == 0 {
+            continue
+        }
+        if n < 0 {
             restoreTerminal(ts)
             return LineResult.Eof
         }
