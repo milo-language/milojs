@@ -17,6 +17,9 @@ from "./value" import {
 from "./regex" import {
     Regex
 }
+from "./ast" import {
+    BlockId
+}
 from "std/math" import {
     Math
 }
@@ -606,7 +609,7 @@ pub struct Interp {
     // these parallel arrays map a resolved path to its top-level block and, once
     // run, its cached module.exports. modState: 0 unloaded, 1 loading, 2 loaded.
     modPaths: Vec<string>,
-    modBlocks: Vec<i64>,
+    modBlocks: Vec<BlockId>,
     modExports: Vec<JSValue>,
     modState: Vec<i64>,
     // directory of the module currently executing, for relative resolution

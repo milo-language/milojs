@@ -37,7 +37,7 @@ from "./parser" import {
     PState, parseProgram
 }
 from "./ast" import {
-    Prog, Stmt, getStmt
+    BlockId, Prog, Stmt, getStmt
 }
 from "./value" import {
     JSValue, toStr
@@ -874,12 +874,12 @@ fn readLineEdited(prompt: &string, history: &Vec<string>, st: &Interp, builtinCo
 
 // Run one already-parsed top block: execute every statement, and if the last one
 // is a bare expression, return its value for echoing.
-fn runLine(prog: &Prog, top: i64, st: &mut Interp): JSValue {
+fn runLine(prog: &Prog, top: BlockId, st: &mut Interp): JSValue {
     var result = JSValue.Undefined
-    let n = prog.blocks[top].len()
+    let n = prog.blocks[top.index].len()
     var i: i64 = 0
     while i < n {
-        let sIdx = prog.blocks[top][i]
+        let sIdx = prog.blocks[top.index][i]
         let isLast = i == n - 1
         match getStmt(prog, sIdx) {
             Stmt.ExprStmt(e) => {

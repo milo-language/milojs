@@ -1,0 +1,12 @@
+// @error: expected StmtId, got BlockId
+
+from "../../ast" import {
+    StmtId, addBlock, getStmt, newProg
+}
+
+fn confuseBlockAndStatement(): void {
+    var prog = newProg()
+    var statements: Vec<StmtId> = Vec.new()
+    let blockId = addBlock(prog, statements)
+    let _ = getStmt(prog, blockId)
+}

@@ -489,7 +489,7 @@ _Undocumented._
 ### `execBlock`
 
 ```milo
-pub fn execBlock(prog: &Prog, blockIdx: i64, st: &mut Interp, scope: i64): Flow
+pub fn execBlock(prog: &Prog, blockId: BlockId, st: &mut Interp, scope: i64): Flow
 ```
 
 _Undocumented._
@@ -655,7 +655,7 @@ _Undocumented._
 ### `hoistBlock`
 
 ```milo
-pub fn hoistBlock(prog: &Prog, blockIdx: i64, st: &mut Interp, scope: i64)
+pub fn hoistBlock(prog: &Prog, blockId: BlockId, st: &mut Interp, scope: i64)
 ```
 
 Bind `var` declarations and function declarations for a whole function body

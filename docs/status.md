@@ -60,14 +60,15 @@ ASLR variation.
 ### Arena safety status
 
 MiloJS still stores auxiliary AST, scope, and object references as raw `i64`
-indices. Primary expression and statement slots now use `ExprId`/`StmtId`, with
-absence represented by `Option<Id>` and retained bidirectional compile-fail
-fixtures. No recyclable engine arena has migrated yet. The staged migration is specified in
+indices. Expression, statement, and block slots now use
+`ExprId`/`StmtId`/`BlockId`, with absence represented by `Option<Id>` and retained
+compile-fail fixtures. No recyclable engine arena has migrated yet. The staged
+migration is specified in
 `docs/milojs-arena-safety.md`. Its upstream blocker is resolved: Milo `9a0bfa4e`
 provides release-checked live-handle snapshots, stale/free rejection, slot
 retirement at generation exhaustion, and the method-oriented `Arena<T>` API
-needed by a mark-sweep collector. Block, function, class, and literal-table IDs
-remain before the AST phase is complete.
+needed by a mark-sweep collector. Function, class, and literal-table IDs remain
+before the AST phase is complete.
 
 ## Shipped engine surface
 

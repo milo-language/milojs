@@ -6,7 +6,7 @@ from "./lexer" import {
     lex
 }
 from "./ast" import {
-    Prog, Stmt, getStmt, newProg
+    BlockId, Prog, Stmt, getStmt, newProg
 }
 from "./parser" import {
     PState, parseProgram
@@ -92,9 +92,9 @@ pub fn evalSourceValue(src: &string, prog: &mut Prog, st: &mut Interp): JSValue 
     hoistBlock(prog, top, st, 0)
     var completion = JSValue.Undefined
     var i: i64 = 0
-    let n = prog.blocks[top].len()
+    let n = prog.blocks[top.index].len()
     while i < n && !st.throwing {
-        let stmtIdx = prog.blocks[top][i]
+        let stmtIdx = prog.blocks[top.index][i]
         if i == n - 1 {
             match getStmt(prog, stmtIdx) {
                 Stmt.ExprStmt(e) => {

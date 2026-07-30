@@ -81,6 +81,13 @@ pub struct ExprId {
     index: i64,
 }
 
+// Append-only block slot. Blocks own ordered statement IDs and are shared by
+// function bodies, switch cases, try regions, modules, and top-level programs.
+@derive(Eq)
+pub struct BlockId {
+    index: i64,
+}
+
 // Append-only statement slot. Construction stays in addStmt so every published
 // ID is in bounds for its owning Prog; optional statement links use Option.
 @derive(Eq)
@@ -104,7 +111,7 @@ pub enum Stmt {
     If(ExprId, StmtId, Option<StmtId>),
     While(ExprId, StmtId),
     Ret(ExprId),
-    Block(i64),
+    Block(BlockId),
     FuncDecl(i64),
     Empty,
     // for (init; cond; update) body — cond/update remain expression indices;
@@ -130,14 +137,14 @@ pub enum Stmt {
     // switch (discr) { ... } — index into prog.switches
     Switch(ExprId, i64),
     // try block, catch-param name ("" if none), catch block idx (-1 if none),
-    // finally block idx (-1 if none). Block idxs index prog.blocks.
-    Try(i64, string, i64, i64),
+    // finally block links are absent when the corresponding clause is omitted.
+    Try(BlockId, string, Option<BlockId>, Option<BlockId>),
 }
 
 pub struct FuncDef {
     name: string,
     params: Vec<string>,
-    body: i64,
+    body: BlockId,
     // arrows don't bind their own `this` (it stays lexical)
     isArrow: bool,
     // async functions wrap their return value in a resolved promise
@@ -195,7 +202,7 @@ pub struct ClassDef {
 // blocks but fall through to the next arm unless a break intervenes.
 pub struct SwitchCase {
     test: Option<ExprId>,
-    body: i64,
+    body: BlockId,
 }
 
 pub struct Prog {
@@ -412,5 +419,13 @@ pub fn addStmt(prog: &mut Prog, s: Stmt): StmtId {
     prog.stmts.push(s)
     return StmtId {
         index: prog.stmts.len() - 1
+    }
+}
+
+// Append a statement list and publish its typed block ID.
+pub fn addBlock(prog: &mut Prog, statements: Vec<StmtId>): BlockId {
+    prog.blocks.push(statements)
+    return BlockId {
+        index: prog.blocks.len() - 1
     }
 }

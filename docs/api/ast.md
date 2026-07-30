@@ -8,6 +8,14 @@ pub fn newProg(): Prog
 
 Create an empty program arena.
 
+### `addBlock`
+
+```milo
+pub fn addBlock(prog: &mut Prog, statements: Vec<StmtId>): BlockId
+```
+
+Append a statement list and publish its typed block ID.
+
 ### `addExpr`
 
 ```milo

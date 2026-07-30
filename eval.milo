@@ -3,7 +3,7 @@
 // execution returns a Flow so `return` can unwind out of nested blocks.
 
 from "./ast" import {
-    ExprId, Prog, StmtId, gProg
+    BlockId, ExprId, Prog, StmtId, gProg
 }
 from "./value" import {
     JSValue, i64ToStr, daysFromCivil
@@ -10954,32 +10954,45 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: i64, st: &mut Interp, scope:
     }
 }
 
-// try/catch/finally. The catch binding and both the pending throw value and any
-// pending return value are rooted across the finally block (which can allocate
-// and collect). finally overrides: its own throw or return wins; otherwise the
-// try/catch's pending throw or return is restored.
-fn execTry(prog: &Prog, tryB: i64, param: &string, catchB: i64, finallyB: i64, st: &mut Interp, scope: i64): Flow {
+// Run the try/catch portion independently so execTry can decide whether a
+// finally block exists before it creates a Flow that later code must inspect.
+fn execTryBody(prog: &Prog, tryB: BlockId, param: &string, catchB: Option<BlockId>, st: &mut Interp, scope: i64): Flow {
     let tryScope = newScope(st, scope)
     pushActive(st, tryScope)
     var flow = execBlock(prog, tryB, st, tryScope)
     popActive(st)
 
-    if st.throwing && catchB >= 0 {
-        let caught = cloneValue(st.thrownValue)
-        st.throwing = false
-        st.thrownValue = JSValue.Undefined
-        let catchScope = newScope(st, scope)
-        pushActive(st, catchScope)
-        if param.len() > 0 {
-            scopeDefine(st, catchScope, param.clone(), caught)
+    if st.throwing {
+        match catchB {
+            Option.Some(catchBlock) => {
+                let caught = cloneValue(st.thrownValue)
+                st.throwing = false
+                st.thrownValue = JSValue.Undefined
+                let catchScope = newScope(st, scope)
+                pushActive(st, catchScope)
+                if param.len() > 0 {
+                    scopeDefine(st, catchScope, param.clone(), caught)
+                }
+                flow = execBlock(prog, catchBlock, st, catchScope)
+                popActive(st)
+            }
+            Option.None => {
+            }
         }
-        flow = execBlock(prog, catchB, st, catchScope)
-        popActive(st)
     }
+    return flow
+}
 
-    if finallyB < 0 {
-        return flow
+// try/catch/finally. The catch binding and both the pending throw value and any
+// pending return value are rooted across the finally block (which can allocate
+// and collect). finally overrides: its own throw or return wins; otherwise the
+// try/catch's pending throw or return is restored.
+fn execTry(prog: &Prog, tryB: BlockId, param: &string, catchB: Option<BlockId>, finallyB: Option<BlockId>, st: &mut Interp, scope: i64): Flow {
+    if finallyB is Option.None {
+        return execTryBody(prog, tryB, param, catchB, st, scope)
     }
+    let finallyBlock = finallyB!
+    let flow = execTryBody(prog, tryB, param, catchB, st, scope)
 
     // capture what try/catch left pending, then run finally with a clean slate
     let hadThrow = st.throwing
@@ -11002,7 +11015,7 @@ fn execTry(prog: &Prog, tryB: i64, param: &string, catchB: i64, finallyB: i64, s
     pushTemp(st, savedRet)
     let finScope = newScope(st, scope)
     pushActive(st, finScope)
-    let finFlow = execBlock(prog, finallyB, st, finScope)
+    let finFlow = execBlock(prog, finallyBlock, st, finScope)
     popActive(st)
     savedRet = st.tempRoots.pop()!
     savedThrow = st.tempRoots.pop()!
@@ -11677,11 +11690,11 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
 // before it runs. JS hoists both to the function scope through arbitrary
 // nesting, so this walks into blocks, loops, if/else, switch and try — unlike
 // let/const, which stay in the block they are written in.
-pub fn hoistBlock(prog: &Prog, blockIdx: i64, st: &mut Interp, scope: i64) {
+pub fn hoistBlock(prog: &Prog, blockId: BlockId, st: &mut Interp, scope: i64) {
     var i: i64 = 0
-    let n = prog.blocks[blockIdx].len()
+    let n = prog.blocks[blockId.index].len()
     while i < n {
-        hoistStmt(prog, prog.blocks[blockIdx][i], st, scope)
+        hoistStmt(prog, prog.blocks[blockId.index][i], st, scope)
         i = i + 1
     }
 }
@@ -11743,11 +11756,19 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64) {
         }
         Stmt.Try(tryB, _p, catchB, finallyB) => {
             hoistBlock(prog, tryB, st, scope)
-            if catchB >= 0 {
-                hoistBlock(prog, catchB, st, scope)
+            match catchB {
+                Option.Some(catchBlock) => {
+                    hoistBlock(prog, catchBlock, st, scope)
+                }
+                Option.None => {
+                }
             }
-            if finallyB >= 0 {
-                hoistBlock(prog, finallyB, st, scope)
+            match finallyB {
+                Option.Some(finallyBlock) => {
+                    hoistBlock(prog, finallyBlock, st, scope)
+                }
+                Option.None => {
+                }
             }
         }
         Stmt.Switch(_d, casesIdx) => {
@@ -11762,14 +11783,14 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64) {
     }
 }
 
-pub fn execBlock(prog: &Prog, blockIdx: i64, st: &mut Interp, scope: i64): Flow {
-    let n = prog.blocks[blockIdx].len()
+pub fn execBlock(prog: &Prog, blockId: BlockId, st: &mut Interp, scope: i64): Flow {
+    let n = prog.blocks[blockId.index].len()
     var j: i64 = 0
     while j < n {
         // statement boundary = the only GC safepoint (no closure in-flight, all
         // live values rooted in scopes)
         maybeGc(st)
-        let sIdx = prog.blocks[blockIdx][j]
+        let sIdx = prog.blocks[blockId.index][j]
         let flow = execStmt(prog, sIdx, st, scope)
         match flow {
             Flow.Ret(v) => {
