@@ -4614,7 +4614,173 @@ fn evalBigIntBin(op: &string, va: JSValue, vb: JSValue, st: &mut Interp): JSValu
     return JSValue.Undefined
 }
 
+// Binary evaluation is separated from the full expression dispatcher because a
+// tree-walk keeps this frame live while evaluating either operand. Keeping only
+// binary locals here prevents rare expression arms from inflating every
+// recursive JavaScript call's native stack usage.
+fn evalBinaryExpr(prog: &Prog, op: &string, a: i64, b: i64, st: &mut Interp, scope: i64): JSValue {
+    if op == "&&" {
+        let va = evalExpr(prog, a, st, scope)
+        if !truthy(va) {
+            return va
+        }
+        return evalExpr(prog, b, st, scope)
+    }
+    if op == "||" {
+        let va = evalExpr(prog, a, st, scope)
+        if truthy(va) {
+            return va
+        }
+        return evalExpr(prog, b, st, scope)
+    }
+    if op == "??" {
+        let va = evalExpr(prog, a, st, scope)
+        match va {
+            JSValue.Null => {
+                return evalExpr(prog, b, st, scope)
+            }
+            JSValue.Undefined => {
+                return evalExpr(prog, b, st, scope)
+            }
+            _ => {
+                return va
+            }
+        }
+    }
+    if op == "in" {
+        let kv = evalExpr(prog, a, st, scope)
+        let ov = evalExpr(prog, b, st, scope)
+        let key = toStr(kv)
+        match ov {
+            JSValue.Obj(o) => {
+                if st.objects[o].isProxy {
+                    let trap = proxyTrap(st, o, "has")
+                    if isCallableIn(st, trap) {
+                        var hargs: Vec<JSValue> = Vec.new()
+                        hargs.push(cloneValue(st.objExtras[st.objects[o].extra].proxyTarget))
+                        hargs.push(JSValue.Str(key.clone()))
+                        return JSValue.Bool(truthy(callValue(prog, trap, hargs, cloneValue(st.objExtras[st.objects[o].extra].proxyHandler), st)))
+                    }
+                    var pcur = objHandle(st.objExtras[st.objects[o].extra].proxyTarget)
+                    while pcur >= 0 {
+                        if objHas(st, pcur, key) {
+                            return JSValue.Bool(true)
+                        }
+                        pcur = st.objects[pcur].proto
+                    }
+                    return JSValue.Bool(false)
+                }
+                if st.objects[o].isArray {
+                    let ai = asArrayIndex(key)
+                    if ai >= 0 && ai < arrLen(st, o) {
+                        return JSValue.Bool(!arrIsHole(st, o, ai))
+                    }
+                }
+                var cur = o
+                while cur >= 0 {
+                    if objHas(st, cur, key) {
+                        return JSValue.Bool(true)
+                    }
+                    cur = st.objects[cur].proto
+                }
+                return JSValue.Bool(false)
+            }
+            _ => {
+                return JSValue.Bool(false)
+            }
+        }
+    }
+    if op == "instanceof" {
+        let lv = evalExpr(prog, a, st, scope)
+        pushTemp(st, cloneValue(lv))
+        let rv = evalExpr(prog, b, st, scope)
+        popTemp(st)
+        return JSValue.Bool(instanceOf(st, lv, rv))
+    }
+    let va = evalExpr(prog, a, st, scope)
+    pushTemp(st, cloneValue(va))
+    let vb = evalExpr(prog, b, st, scope)
+    popTemp(st)
+    if isBigIntVal(va) || isBigIntVal(vb) {
+        return evalBigIntBin(op, va, vb, st)
+    }
+    let coerces = op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "<" || op == ">" || op == "<=" || op == ">="
+    if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0) {
+        pushTemp(st, cloneValue(va))
+        pushTemp(st, cloneValue(vb))
+        var pa = JSValue.Undefined
+        var pb = JSValue.Undefined
+        if op == "+" {
+            pa = toPrimitiveDefault(prog, va, st)
+            pushTemp(st, cloneValue(pa))
+            pb = toPrimitiveDefault(prog, vb, st)
+            popTemp(st)
+        } else {
+            pa = toPrimitiveNumber(prog, va, st)
+            pushTemp(st, cloneValue(pa))
+            pb = toPrimitiveNumber(prog, vb, st)
+            popTemp(st)
+        }
+        popTemp(st)
+        popTemp(st)
+        return evalBin(op, pa, pb)
+    }
+    return evalBin(op, va, vb)
+}
+
+// Hot recursive nodes bypass the full dispatcher. The fallback contains large
+// await/literal/construction arms whose locals otherwise reserve stack space on
+// every simple call, even when those arms are not selected.
 pub fn evalExpr(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue {
+    if st.throwing {
+        return JSValue.Undefined
+    }
+    match prog.exprs[idx] {
+        Expr.Num(n) => {
+            return JSValue.Number(n)
+        }
+        Expr.StrLit(s) => {
+            return JSValue.Str(s.clone())
+        }
+        Expr.BigIntLit(s) => {
+            return JSValue.BigInt(bigNormalizeDec(s))
+        }
+        Expr.BoolLit(b) => {
+            return JSValue.Bool(b)
+        }
+        Expr.NullLit => {
+            return JSValue.Null
+        }
+        Expr.UndefLit => {
+            return JSValue.Undefined
+        }
+        Expr.Ident(name) => {
+            match scopeTryLookup(st, scope, name) {
+                Option.Some(v) => {
+                    return v
+                }
+                Option.None => {
+                    if name != "this" {
+                        st.throwing = true
+                        st.thrownValue = makeError(st, "ReferenceError", name.clone() + " is not defined")
+                    }
+                    return JSValue.Undefined
+                }
+            }
+        }
+        Expr.Bin(op, a, b) => {
+            return evalBinaryExpr(prog, op, a, b, st, scope)
+        }
+        Expr.Call(callee, argsIdx) => {
+            return evalCall(prog, callee, argsIdx, st, scope)
+        }
+        _ => {
+            return evalExprFallback(prog, idx, st, scope)
+        }
+    }
+}
+
+fn evalExprFallback(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue {
     // an exception is unwinding — stop evaluating, produce a placeholder
     if st.throwing {
         return JSValue.Undefined

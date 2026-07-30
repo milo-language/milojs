@@ -46,17 +46,12 @@ The conformance corpora are local rather than vendored, so the two sweep numbers
 are informative but not yet a reproducible release artifact. Fixture counts are
 not conformance percentages.
 
-### Current build blocker
+### Native stack status
 
-Milo compiler commit `a9c2a5b8` produces an `evalExpr` native frame of roughly
-250 KB on x86-64. On the normal 8 MB Linux process stack, both binaries segfault
-around 14 recursive JavaScript calls; `tests/closures.js` and the recursion guard
-in `tests/semantics.js` therefore fail before MiloJS's catchable depth limit.
-Both pass unchanged with a 12 MB stack, as does the complete fixture suite.
-
-Do not raise the test runner's stack limit to hide this. Gate 0 requires either a
-compiler stack-allocation repair or a measured evaluator split that restores the
-normal-stack behavior.
+Gate 0 is green on the normal 8 MB Linux process stack. Splitting hot recursive
+nodes from the full expression dispatcher reduced `evalExpr`'s native frame from
+about 250 KB to 824 bytes; binary evaluation uses about 5.7 KB. The unchanged
+closure and catchable-recursion fixtures now pass without a stack override.
 
 ## Shipped engine surface
 
@@ -92,6 +87,8 @@ callbacks into JavaScript.
 ## Product gates
 
 ### Gate 0: green and measurable
+
+**Satisfied on 2026-07-30.**
 
 - Both binaries build against the released Milo compiler.
 - All engine, runtime, Milo invariant, symbol, docs, and contract guards pass.

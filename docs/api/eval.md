@@ -1,5 +1,22 @@
 ## eval
 
+### `evalBinaryExpr`
+
+```milo
+fn evalBinaryExpr(prog: &Prog, op: &string, a: i64, b: i64, st: &mut Interp, scope: i64): JSValue
+```
+
+Binary evaluation is separated from the full expression dispatcher so recursive
+operand evaluation does not retain the fallback dispatcher's large native frame.
+
+### `evalExprFallback`
+
+```milo
+fn evalExprFallback(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue
+```
+
+Handles expression shapes outside the small recursive front dispatcher.
+
 ### `napi_call_function`
 
 ```milo
