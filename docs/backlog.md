@@ -129,8 +129,6 @@ put it.
   `generators require the milojs runtime (not the engine)` under
   `milojs-engine`, costing 42 test262 and 3 QuickJS cases. The runtime handles
   them, so this is engine/runtime factoring, not a missing feature.
-- `milojs-engine.milo:207` calls `embedFile(...)` where the compiler expects
-  `@embedFile` — a warning on every build of both binaries.
 
 ## Node-API: 14 of 64 entry points are stubs
 
