@@ -175,8 +175,8 @@ fn findGetter(st: &Interp, o: i64, key: &string): JSValue {
     while cur >= 0 {
         let idx = objOwnIndex(st, cur, key)
         if idx >= 0 {
-            if st.objects[cur].props[idx].isAccessor {
-                return cloneValue(st.objects[cur].props[idx].getter)
+            if propIsAccessor(st, cur, idx) {
+                return accGetter(st, st.objects[cur].props[idx].acc)
             }
             return JSValue.Undefined
         }
@@ -190,8 +190,8 @@ fn findSetter(st: &Interp, o: i64, key: &string): JSValue {
     while cur >= 0 {
         let idx = objOwnIndex(st, cur, key)
         if idx >= 0 {
-            if st.objects[cur].props[idx].isAccessor {
-                return cloneValue(st.objects[cur].props[idx].setter)
+            if propIsAccessor(st, cur, idx) {
+                return accSetter(st, st.objects[cur].props[idx].acc)
             }
             return JSValue.Undefined
         }
@@ -1063,7 +1063,7 @@ fn setMemberDyn(prog: &Prog, o: i64, key: string, v: JSValue, st: &mut Interp) {
     // a getter with no setter: writing is a silent no-op in sloppy mode, and
     // must not replace the accessor with a plain data property
     let own = objOwnIndex(st, o, key)
-    if own >= 0 && st.objects[o].props[own].isAccessor {
+    if own >= 0 && propIsAccessor(st, o, own) {
         return
     }
     setMember(st, o, key, v)
@@ -1182,7 +1182,7 @@ fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
     }
     // a non-writable data property silently ignores assignment in sloppy mode
     let own = objOwnIndex(st, o, key)
-    if own >= 0 && !st.objects[o].props[own].isAccessor && !st.objects[o].props[own].writable {
+    if own >= 0 && !propIsAccessor(st, o, own) && !st.objects[o].props[own].writable {
         return
     }
     if st.objExtras[st.objects[o].extra].taBuf >= 0 && !st.objects[o].isDataView {
@@ -3311,7 +3311,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                         // invoke a getter rather than copying its unused value slot
                         // (gProg: natives reach user code through the global program)
                         var v = JSValue.Undefined
-                        if st.objects[src].props[k].isAccessor {
+                        if propIsAccessor(st, src, k) {
                             v = getMemberDyn(gProg, src, key, st)
                         } else {
                             v = cloneValue(st.objects[src].props[k].value)
@@ -3577,10 +3577,10 @@ fn applyDescriptor(st: &mut Interp, o: i64, key: &string, d: i64) {
 // configurable for own property `idx` of `h`. Shared by getOwnPropertyDescriptor
 // and getOwnPropertyDescriptors.
 fn buildPropDescriptor(st: &mut Interp, h: i64, idx: i64): i64 {
-    let isAcc = st.objects[h].props[idx].isAccessor
+    let isAcc = propIsAccessor(st, h, idx)
     let pv = cloneValue(st.objects[h].props[idx].value)
-    let pg = cloneValue(st.objects[h].props[idx].getter)
-    let ps = cloneValue(st.objects[h].props[idx].setter)
+    let pg = accGetter(st, st.objects[h].props[idx].acc)
+    let ps = accSetter(st, st.objects[h].props[idx].acc)
     let d = newObject(st)
     pushTemp(st, JSValue.Obj(d))
     if isAcc {
@@ -5561,9 +5561,9 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     let existing = objOwnIndex(st, obj, key)
                     var g = JSValue.Undefined
                     var sfn = JSValue.Undefined
-                    if existing >= 0 && st.objects[obj].props[existing].isAccessor {
-                        g = cloneValue(st.objects[obj].props[existing].getter)
-                        sfn = cloneValue(st.objects[obj].props[existing].setter)
+                    if existing >= 0 && propIsAccessor(st, obj, existing) {
+                        g = accGetter(st, st.objects[obj].props[existing].acc)
+                        sfn = accSetter(st, st.objects[obj].props[existing].acc)
                     }
                     if propKind == 1 {
                         g = v
@@ -5594,7 +5594,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                             // spread copies the VALUE of an accessor, so invoke the
                             // getter rather than copying the (unused) value slot
                             var pv = JSValue.Undefined
-                            if st.objects[src].props[k].isAccessor {
+                            if propIsAccessor(st, src, k) {
                                 pv = getMemberDyn(prog, src, pk, st)
                             } else {
                                 pv = cloneValue(st.objects[src].props[k].value)
@@ -8474,9 +8474,9 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
             let existing = objOwnIndex(st, target, mName)
             var g = JSValue.Undefined
             var sfn = JSValue.Undefined
-            if existing >= 0 && st.objects[target].props[existing].isAccessor {
-                g = cloneValue(st.objects[target].props[existing].getter)
-                sfn = cloneValue(st.objects[target].props[existing].setter)
+            if existing >= 0 && propIsAccessor(st, target, existing) {
+                g = accGetter(st, st.objects[target].props[existing].acc)
+                sfn = accSetter(st, st.objects[target].props[existing].acc)
             }
             if mKind == 1 {
                 g = mv

@@ -5,6 +5,9 @@
 // boundaries — the single point where every live value sits in a scope binding
 // and no closure is in-flight mid-expression.
 
+from "std/arena" import {
+    Arena, Handle, arenaNew, arenaAlloc, arenaFree, arenaGet
+}
 from "std/net" import {
     TcpListener, TcpStream
 }
@@ -266,15 +269,25 @@ struct Scope {
 // reclaimed slot the sweep skips and newObject can reuse. When `isArray`, `elems`
 // holds the integer-indexed elements (JS arrays are objects, so a JSObj can carry
 // both — string props and dense elements).
+// Getter/setter pair for an accessor property. Kept in a side table
+// (Interp.accessors) rather than inline in Prop: two JSValues are 64 bytes that
+// every ordinary data property would otherwise pay for, and most properties are
+// data properties.
+struct Accessor {
+    getter: JSValue,
+    setter: JSValue,
+}
+
 struct Prop {
     key: string,
     value: JSValue,
-    // accessor property (Object.defineProperty with get/set): `value` is unused
-    // and the getter is invoked on read instead. Express builds req/res almost
-    // entirely out of these.
-    getter: JSValue,
-    setter: JSValue,
-    isAccessor: bool,
+    // accessor property (Object.defineProperty with get/set): a generational
+    // handle into Interp.accessors, or None for a data property. `value` is
+    // unused when it is set and the getter is invoked on read instead. Express
+    // builds req/res almost entirely out of these. The handle is generational,
+    // so a property that outlives its accessor slot reads as absent instead of
+    // silently picking up whichever getter later reused that slot.
+    acc: Option<Handle<Accessor>>,
     // property attributes. Default true everywhere (a plain assignment creates a
     // writable/enumerable/configurable property); Object.defineProperty is what
     // turns them off.
@@ -602,6 +615,13 @@ pub struct Interp {
     // reaches an extra only through its live owning object (see markObject).
     objExtras: Vec<JSObjExtra>,
     objExtraFree: Vec<i64>,
+    // side table of accessor (getter/setter) pairs, keyed by Prop.acc. Freed
+    // when the owning property is deleted/overwritten or its object is swept;
+    // like objExtras it is not a root set of its own, the collector reaches an
+    // entry only through the live property that names it. A generational arena
+    // rather than a Vec + free-list: stale reuse is the failure this table is
+    // most exposed to, and the arena turns it into a checked None.
+    accessors: Arena<Accessor>,
     // fnIdx → its `.prototype` object (index), created lazily; a GC root
     funcProtos: Vec<i64>,
     // fnIdx → its static-property object, created lazily; also a GC root
@@ -800,7 +820,7 @@ pub struct Interp {
 // that main() overwrites with makeInterp().
 pub var gInterp: Interp = Interp {
     scopes: Vec.new(), freeList: Vec.new(), active: Vec.new(),
-    objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), hostRoots: Vec.new(), hostRootLive: Vec.new(),
+    objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: Arena { id: 0, data: Vec.new(), gens: Vec.new(), freeList: Vec.new(), live: 0 }, funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), hostRoots: Vec.new(), hostRootLive: Vec.new(),
     modPaths: Vec.new(), modBlocks: Vec.new(), modExports: Vec.new(), modState: Vec.new(), modDirStack: Vec.new(), modPathStack: Vec.new(),
     throwing: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 104,
@@ -843,6 +863,89 @@ pub fn ensureExtra(st: &mut Interp, o: i64): i64 {
     let idx = st.objExtras.len() - 1
     st.objects[o].extra = idx
     return idx
+}
+
+// Reserve an accessor slot for a getter/setter pair. Every accessor property
+// owns exactly one slot: never hand the same AccId to two properties, or
+// freeing one would strand the other on a recycled entry.
+fn allocAccessor(st: &mut Interp, getter: JSValue, setter: JSValue): Handle<Accessor> {
+    return arenaAlloc(st.accessors, Accessor { getter: getter, setter: setter })
+}
+
+// Release the slot a property held, if it was an accessor. Clearing the pair
+// here (rather than at reuse) keeps a freed slot from pinning JSValues.
+fn freeAccessor(st: &mut Interp, acc: Option<Handle<Accessor>>) {
+    match acc {
+        Option.Some(h) => {
+            // a stale handle returns false rather than recycling someone else's
+            // live slot, so a double free is refused instead of aliasing
+            arenaFree(st.accessors, h)
+        }
+        Option.None => {
+        }
+    }
+}
+
+// Free the accessor slots of every property on `obj` (object sweep, or any path
+// that drops the whole property bag at once).
+fn freeObjAccessors(st: &mut Interp, obj: i64) {
+    var i: i64 = 0
+    while i < st.objects[obj].props.len() {
+        let acc = st.objects[obj].props[i].acc
+        freeAccessor(st, acc)
+        i = i + 1
+    }
+}
+
+// Getter of an accessor property (undefined if the property is a data property
+// or the accessor has no getter).
+pub fn accGetter(st: &Interp, acc: Option<Handle<Accessor>>): JSValue {
+    match acc {
+        Option.Some(h) => {
+            match arenaGet(st.accessors, h) {
+                Option.Some(pair) => {
+                    return cloneValue(pair.getter)
+                }
+                Option.None => {
+                    return JSValue.Undefined
+                }
+            }
+        }
+        Option.None => {
+            return JSValue.Undefined
+        }
+    }
+}
+
+pub fn accSetter(st: &Interp, acc: Option<Handle<Accessor>>): JSValue {
+    match acc {
+        Option.Some(h) => {
+            match arenaGet(st.accessors, h) {
+                Option.Some(pair) => {
+                    return cloneValue(pair.setter)
+                }
+                Option.None => {
+                    return JSValue.Undefined
+                }
+            }
+        }
+        Option.None => {
+            return JSValue.Undefined
+        }
+    }
+}
+
+// Whether property `idx` on `obj` is an accessor (the read every property path
+// used to make against an inline `isAccessor` bool).
+pub fn propIsAccessor(st: &Interp, obj: i64, idx: i64): bool {
+    match st.objects[obj].props[idx].acc {
+        Option.Some(_) => {
+            return true
+        }
+        Option.None => {
+            return false
+        }
+    }
 }
 
 // Return an object's private extra slot to the free list (called by the sweep).
@@ -961,15 +1064,17 @@ pub fn objSet(st: &mut Interp, obj: i64, key: string, value: JSValue) {
             // `Array.prototype.join = f` turn a non-enumerable builtin into an
             // enumerable one, after which `for (k in [1,2])` yielded "join".
             let wasEnum = st.objects[obj].props[i].enumerable
+            // overwriting an accessor with a data property drops its pair
+            freeAccessor(st, st.objects[obj].props[i].acc)
             st.objects[obj].props[i] = Prop {
-                key: key, value: value, getter: JSValue.Undefined, setter: JSValue.Undefined, isAccessor: false, writable: true, enumerable: wasEnum, configurable: true
+                key: key, value: value, acc: Option.None, writable: true, enumerable: wasEnum, configurable: true
             }
             return
         }
         i = i + 1
     }
     st.objects[obj].props.push(Prop {
-        key: key, value: value, getter: JSValue.Undefined, setter: JSValue.Undefined, isAccessor: false, writable: true, enumerable: enumer, configurable: true
+        key: key, value: value, acc: Option.None, writable: true, enumerable: enumer, configurable: true
     }
     )
 }
@@ -1028,15 +1133,19 @@ pub fn objDefineAccessor(st: &mut Interp, obj: i64, key: string, getter: JSValue
     let n = st.objects[obj].props.len()
     while i < n {
         if st.objects[obj].props[i].key == key {
+            // redefining reuses nothing: the old pair (if any) is released first
+            freeAccessor(st, st.objects[obj].props[i].acc)
+            let id = allocAccessor(st, getter, setter)
             st.objects[obj].props[i] = Prop {
-                key: key, value: JSValue.Undefined, getter: getter, setter: setter, isAccessor: true, writable: true, enumerable: true, configurable: true
+                key: key, value: JSValue.Undefined, acc: Option.Some(id), writable: true, enumerable: true, configurable: true
             }
             return
         }
         i = i + 1
     }
+    let id = allocAccessor(st, getter, setter)
     st.objects[obj].props.push(Prop {
-        key: key, value: JSValue.Undefined, getter: getter, setter: setter, isAccessor: true, writable: true, enumerable: true, configurable: true
+        key: key, value: JSValue.Undefined, acc: Option.Some(id), writable: true, enumerable: true, configurable: true
     }
     )
 }
@@ -1108,18 +1217,17 @@ pub fn setArrayLength(st: &mut Interp, obj: i64, n: i64) {
     // Truncation removes sparse numeric properties too; otherwise growing the
     // array again would incorrectly resurrect elements above the old length.
     if target < oldLen {
-        var keptProps: Vec<Prop> = Vec.new()
-        var p: i64 = 0
-        while p < st.objects[obj].props.len() {
+        // Drop the sparse numeric props at or past the new length in place (back
+        // to front), rather than rebuilding the whole bag by cloning survivors.
+        var p: i64 = st.objects[obj].props.len() - 1
+        while p >= 0 {
             let keyIndex = asArrayIndex(st.objects[obj].props[p].key)
-            if keyIndex < 0 || keyIndex < target {
-                keptProps.push(Prop {
-                    key: st.objects[obj].props[p].key.clone(), value: cloneValue(st.objects[obj].props[p].value), getter: cloneValue(st.objects[obj].props[p].getter), setter: cloneValue(st.objects[obj].props[p].setter), isAccessor: st.objects[obj].props[p].isAccessor, writable: st.objects[obj].props[p].writable, enumerable: st.objects[obj].props[p].enumerable, configurable: st.objects[obj].props[p].configurable
-                })
+            if keyIndex >= target {
+                freeAccessor(st, st.objects[obj].props[p].acc)
+                st.objects[obj].props.remove(p)
             }
-            p = p + 1
+            p = p - 1
         }
-        st.objects[obj].props = keptProps
     }
     if target == st.objects[obj].elems.len() {
         st.objects[obj].logicalLen = -1
@@ -1148,18 +1256,18 @@ pub fn objDeleteKey(st: &mut Interp, obj: i64, key: &string): bool {
     if idx >= 0 && !st.objects[obj].props[idx].configurable {
         return false
     }
-    var kept: Vec<Prop> = Vec.new()
-    var i: i64 = 0
-    while i < st.objects[obj].props.len() {
-        if st.objects[obj].props[i].key != key {
-            kept.push(Prop {
-                key: st.objects[obj].props[i].key.clone(), value: cloneValue(st.objects[obj].props[i].value), getter: cloneValue(st.objects[obj].props[i].getter), setter: cloneValue(st.objects[obj].props[i].setter), isAccessor: st.objects[obj].props[i].isAccessor, writable: st.objects[obj].props[i].writable, enumerable: st.objects[obj].props[i].enumerable, configurable: st.objects[obj].props[i].configurable
-            }
-            )
+    // Remove in place: `Vec.remove` moves the element out, so deleting one key
+    // costs a memmove instead of deep-cloning every surviving property (a key
+    // string plus a JSValue each). Back to front so earlier indices stay valid
+    // while the scan continues.
+    var i: i64 = st.objects[obj].props.len() - 1
+    while i >= 0 {
+        if st.objects[obj].props[i].key == key {
+            freeAccessor(st, st.objects[obj].props[i].acc)
+            st.objects[obj].props.remove(i)
         }
-        i = i + 1
+        i = i - 1
     }
-    st.objects[obj].props = kept
     return true
 }
 
@@ -1477,7 +1585,7 @@ pub fn linkProtoConstructor(st: &mut Interp, proto: i64, fnIdx: i64, envIdx: i64
         i = i + 1
     }
     st.objects[proto].props.push(Prop {
-        key: "constructor", value: JSValue.Func(fnIdx, envIdx), getter: JSValue.Undefined, setter: JSValue.Undefined, isAccessor: false, writable: true, enumerable: false, configurable: true
+        key: "constructor", value: JSValue.Func(fnIdx, envIdx), acc: Option.None, writable: true, enumerable: false, configurable: true
     }
     )
 }
@@ -1638,9 +1746,19 @@ fn markObject(st: &mut Interp, i: i64) {
     while k < n {
         pushMarkTargets(st.objects[i].props[k].value, objs, scopes)
         // an accessor property keeps its getter/setter alive
-        if st.objects[i].props[k].isAccessor {
-            pushMarkTargets(st.objects[i].props[k].getter, objs, scopes)
-            pushMarkTargets(st.objects[i].props[k].setter, objs, scopes)
+        match st.objects[i].props[k].acc {
+            Option.Some(h) => {
+                match arenaGet(st.accessors, h) {
+                    Option.Some(pair) => {
+                        pushMarkTargets(pair.getter, objs, scopes)
+                        pushMarkTargets(pair.setter, objs, scopes)
+                    }
+                    Option.None => {
+                    }
+                }
+            }
+            Option.None => {
+            }
         }
         k = k + 1
     }
@@ -1971,6 +2089,9 @@ pub fn collect(st: &mut Interp) {
     while os < st.objects.len() {
         if !st.objects[os].free && !st.objects[os].mark {
             releaseExtra(st, os)
+            // the object's accessor slots die with it, or the side table grows
+            // without bound across a long-running server's request objects
+            freeObjAccessors(st, os)
             st.objects[os].props = Vec.new()
             st.objects[os].elems = Vec.new()
             st.objects[os].free = true

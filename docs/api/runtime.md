@@ -1,5 +1,22 @@
 ## runtime
 
+### `accGetter`
+
+```milo
+pub fn accGetter(st: &Interp, acc: Option<Handle<Accessor>>): JSValue
+```
+
+Getter of an accessor property (undefined if the property is a data property
+or the accessor has no getter).
+
+### `accSetter`
+
+```milo
+pub fn accSetter(st: &Interp, acc: Option<Handle<Accessor>>): JSValue
+```
+
+_Undocumented._
+
 ### `arrGet`
 
 ```milo
@@ -386,6 +403,15 @@ pub fn popTemp(st: &mut Interp)
 ```
 
 _Undocumented._
+
+### `propIsAccessor`
+
+```milo
+pub fn propIsAccessor(st: &Interp, obj: i64, idx: i64): bool
+```
+
+Whether property `idx` on `obj` is an accessor (the read every property path
+used to make against an inline `isAccessor` bool).
 
 ### `pushActive`
 

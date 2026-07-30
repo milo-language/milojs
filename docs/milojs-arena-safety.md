@@ -37,6 +37,15 @@ newtypes (`ExprId`, `StmtId`, `BlockId`, `FuncId`, and the remaining arena IDs)
 around the index. Constructors validate bounds at the parser boundary; evaluator
 APIs accept only the matching ID.
 
+**First recycled table on it.** The property-accessor side table
+(`Interp.accessors`) is an `Arena<Accessor>`: `Prop.acc` is
+`Option<Handle<Accessor>>`, allocation and free go through `arenaAlloc`/
+`arenaFree`, and the sweep releases a dead object's slots. Reading a stale handle
+returns `None` rather than another property's getter, and a double free is
+refused instead of recycling a live slot. Cost is 16 bytes per property key over
+a raw index. The object heap, scope arena and `JSObjExtra` table are still
+`Vec` + free-list.
+
 ## Migration order
 
 0. **Provide safe recyclable-heap enumeration.** Completed upstream by Milo

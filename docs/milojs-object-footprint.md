@@ -332,3 +332,32 @@ verification that the milojs session cannot do alone.
    the table. This is a language/compiler change gated by second-class-reference
    rules — the biggest investment, but it's the only path to the original target
    and it helps every Milo program, not just milojs.
+
+## Measured 2026-07-30, after the extra table and the accessor split
+
+Both side tables have landed. `JSObjExtra` holds the rare object capabilities
+(`JSObj.extra` indexes it), and getter/setter pairs moved out of `Prop` into
+`Interp.accessors`, a generational `std/arena` — an accessor property now stores
+a `Handle<Accessor>`, and a property that outlives its slot reads as `None`
+instead of picking up whichever accessor recycled the slot.
+
+`/usr/bin/time -l`, maximum resident set, 50k iterations, deltas over a 50k-number
+array baseline (17.8 MB):
+
+| what | before | after | note |
+|---|---:|---:|---|
+| per empty object `{}` | 1279 B → 328 B | **328 B** | `JSObjExtra` split, already landed |
+| per property `{a:1}` | 145 B | **113 B** | getter/setter (64 B) out of `Prop` |
+
+The accessor split measures 97 B/property with a plain index key; the
+generational handle costs the extra 16 B. Worth it: a recycled accessor slot is
+exactly the failure a raw index cannot detect, and the property bag is copied
+around by the evaluator.
+
+`objDeleteKey` and the `array.length` truncation path also stopped rebuilding the
+property bag by deep-cloning every survivor (a key string plus three JSValues
+each) — they use `Vec.remove`, which moves the element out.
+
+Next, in ROI order: `holes` (24 B, rare) into `JSObjExtra`, then the 19 inline
+bools into one bitfield (~16 B). Neither is worth breaking the object header's
+hot path for; re-measure before starting.
