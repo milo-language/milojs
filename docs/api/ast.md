@@ -1,5 +1,13 @@
 ## ast
 
+### `addArgList`
+
+```milo
+pub fn addArgList(prog: &mut Prog, arguments: Vec<ExprId>): ArgListId
+```
+
+Append an argument list and publish its typed ID.
+
 ### `addBlock`
 
 ```milo

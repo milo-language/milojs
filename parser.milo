@@ -7,7 +7,7 @@ from "./lexer" import {
     Token
 }
 from "./ast" import {
-    BlockId, ExprId, Prog, StmtId
+    ArgListId, BlockId, ExprId, Prog, StmtId
 }
 from "./value" import {
     i64ToStr, numToStr
@@ -200,8 +200,8 @@ fn parseTaggedTemplate(p: &mut PState, prog: &mut Prog, tagExpr: ExprId): ExprId
         args.push(holes[h])
         h = h + 1
     }
-    prog.argLists.push(args)
-    return addExpr(prog, Expr.Call(tagExpr, prog.argLists.len() - 1))
+    let argsId = addArgList(prog, args)
+    return addExpr(prog, Expr.Call(tagExpr, argsId))
 }
 
 // One call-argument or array element, possibly a `...spread`.
@@ -316,10 +316,10 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
                 var restArgs: Vec<ExprId> = Vec.new()
                 restArgs.push(srcIdx)
                 restArgs.push(keysArr)
-                prog.argLists.push(restArgs)
+                let restArgsId = addArgList(prog, restArgs)
                 let callee = addExpr(prog, Expr.Ident("__objRest"))
                 out.push(DeclItem {
-                    name: restName, init: addExpr(prog, Expr.Call(callee, prog.argLists.len() - 1)), isVar: false
+                    name: restName, init: addExpr(prog, Expr.Call(callee, restArgsId)), isVar: false
                 }
                 )
                 if peekKind(p) == T_COMMA {
@@ -385,10 +385,10 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
             let srcIdx = addExpr(prog, Expr.Ident(srcName.clone()))
             var sliceArgs: Vec<ExprId> = Vec.new()
             sliceArgs.push(addExpr(prog, Expr.Num(i as f64)))
-            prog.argLists.push(sliceArgs)
+            let sliceArgsId = addArgList(prog, sliceArgs)
             let callee = addExpr(prog, Expr.Member(srcIdx, "slice"))
             out.push(DeclItem {
-                name: restName, init: addExpr(prog, Expr.Call(callee, prog.argLists.len() - 1)), isVar: false
+                name: restName, init: addExpr(prog, Expr.Call(callee, sliceArgsId)), isVar: false
             }
             )
             if peekKind(p) == T_COMMA {
@@ -706,9 +706,8 @@ fn parseNew(p: &mut PState, prog: &mut Prog): ExprId {
         }
         expect(p, T_RPAREN)
     }
-    prog.argLists.push(argIdxs)
-    let listIdx = prog.argLists.len() - 1
-    return addExpr(prog, Expr.New(callee, listIdx))
+    let listId = addArgList(prog, argIdxs)
+    return addExpr(prog, Expr.New(callee, listId))
 }
 
 // [ expr, expr, ... ] — element expressions, trailing comma tolerated
@@ -870,9 +869,8 @@ fn parsePostfix(p: &mut PState, prog: &mut Prog): ExprId {
                 }
             }
             expect(p, T_RPAREN)
-            prog.argLists.push(argIdxs)
-            let listIdx = prog.argLists.len() - 1
-            e = addExpr(prog, Expr.Call(e, listIdx))
+            let listId = addArgList(prog, argIdxs)
+            e = addExpr(prog, Expr.Call(e, listId))
         } else if k == T_DOT {
             advance(p)
             var name = ""
@@ -898,9 +896,8 @@ fn parsePostfix(p: &mut PState, prog: &mut Prog): ExprId {
                     }
                 }
                 expect(p, T_RPAREN)
-                prog.argLists.push(callArgs)
-                let clistIdx = prog.argLists.len() - 1
-                e = addExpr(prog, Expr.OptCall(e, clistIdx))
+                let callListId = addArgList(prog, callArgs)
+                e = addExpr(prog, Expr.OptCall(e, callListId))
             } else if peekKind(p) == T_LBRACKET {
                 // a?.[k]
                 advance(p)
@@ -1893,8 +1890,8 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
         let spread = addExpr(prog, Expr.Spread(argsRef))
         var callArgs: Vec<ExprId> = Vec.new()
         callArgs.push(spread)
-        prog.argLists.push(callArgs)
-        let superCall = addExpr(prog, Expr.Call(superRef, prog.argLists.len() - 1))
+        let callArgsId = addArgList(prog, callArgs)
+        let superCall = addExpr(prog, Expr.Call(superRef, callArgsId))
         defaultBody.push(addStmt(prog, Stmt.ExprStmt(superCall)))
     }
     // no declared ctor: the instance-field inits ARE (most of) the ctor body,
@@ -1924,8 +1921,8 @@ fn requireCall(prog: &mut Prog, spec: string): ExprId {
     let callee = addExpr(prog, Expr.Ident("require"))
     var args: Vec<ExprId> = Vec.new()
     args.push(addExpr(prog, Expr.StrLit(spec)))
-    prog.argLists.push(args)
-    return addExpr(prog, Expr.Call(callee, prog.argLists.len() - 1))
+    let argsId = addArgList(prog, args)
+    return addExpr(prog, Expr.Call(callee, argsId))
 }
 
 // ESM `import` desugared onto the CommonJS loader:

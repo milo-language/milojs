@@ -19,7 +19,7 @@ pub enum Expr {
     Bin(string, ExprId, ExprId),
     Un(string, ExprId),
     Assign(string, ExprId),
-    Call(ExprId, i64),
+    Call(ExprId, ArgListId),
     Member(ExprId, string),
     FuncExpr(i64),
     // object literal: index into prog.objLits (a list of key/value-expr pairs)
@@ -36,7 +36,7 @@ pub enum Expr {
     // the call without it), so a plain ArrLit is not enough.
     TemplateStrings(i64),
     // new Ctor(args): constructor expr, arg-list index
-    New(ExprId, i64),
+    New(ExprId, ArgListId),
     // ++/-- on an lvalue: target expr, isIncrement, isPrefix
     Update(ExprId, bool, bool),
     // x op= y on an lvalue: target expr, op ("+","-","*","/","%"), rhs expr
@@ -71,7 +71,7 @@ pub enum Expr {
     OptChainRoot(ExprId),
     // f?.(args) — optional call: if the callee is nullish the call is skipped and
     // the result is undefined, else it is called. (callee expr, argList index)
-    OptCall(ExprId, i64),
+    OptCall(ExprId, ArgListId),
 }
 
 // Append-only expression slot. Like StmtId, this is intentionally distinct
@@ -85,6 +85,12 @@ pub struct ExprId {
 // function bodies, switch cases, try regions, modules, and top-level programs.
 @derive(Eq)
 pub struct BlockId {
+    index: i64,
+}
+
+// Append-only call-argument-list slot.
+@derive(Eq)
+pub struct ArgListId {
     index: i64,
 }
 
@@ -427,5 +433,13 @@ pub fn addBlock(prog: &mut Prog, statements: Vec<StmtId>): BlockId {
     prog.blocks.push(statements)
     return BlockId {
         index: prog.blocks.len() - 1
+    }
+}
+
+// Append an argument list and publish its typed ID.
+pub fn addArgList(prog: &mut Prog, arguments: Vec<ExprId>): ArgListId {
+    prog.argLists.push(arguments)
+    return ArgListId {
+        index: prog.argLists.len() - 1
     }
 }

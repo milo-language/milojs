@@ -3,7 +3,7 @@
 // execution returns a Flow so `return` can unwind out of nested blocks.
 
 from "./ast" import {
-    BlockId, ExprId, Prog, StmtId, gProg
+    ArgListId, BlockId, ExprId, Prog, StmtId, gProg
 }
 from "./value" import {
     JSValue, i64ToStr, daysFromCivil
@@ -6138,13 +6138,13 @@ fn spreadBuiltin(out: &mut Vec<JSValue>, v: &JSValue, st: &Interp) {
 // argument can run user code and therefore collect — so each finished argument is
 // temp-rooted until the whole list is built. Without this, f([1,2], g()) can see
 // the array swept and its slot reused while g() runs.
-fn evalArgs(prog: &Prog, argsIdx: i64, st: &mut Interp, scope: i64): Vec<JSValue> {
+fn evalArgs(prog: &Prog, argsIdx: ArgListId, st: &mut Interp, scope: i64): Vec<JSValue> {
     var out: Vec<JSValue> = Vec.new()
     var rooted: i64 = 0
     var j: i64 = 0
-    let n = prog.argLists[argsIdx].len()
+    let n = prog.argLists[argsIdx.index].len()
     while j < n {
-        let eIdx = prog.argLists[argsIdx][j]
+        let eIdx = prog.argLists[argsIdx.index][j]
         match prog.exprs[eIdx.index] {
             Expr.Spread(inner) => {
                 let v = evalExpr(prog, inner, st, scope)
@@ -10343,7 +10343,7 @@ fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>): JSValue 
     return JSValue.Str(toStr(recv))
 }
 
-fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: i64, st: &mut Interp, scope: i64): JSValue {
+fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {
     // Methods every primitive answers to. JS boxes the receiver for these; here
     // they are answered directly, which covers the cases real code uses.
     if name == "toString" || name == "valueOf" || name == "toFixed" || name == "toPrecision" || name == "toExponential" || name == "toLocaleString" {
@@ -10736,7 +10736,7 @@ fn throwNullMember(st: &mut Interp, name: &string, base: &string): JSValue {
     return JSValue.Undefined
 }
 
-fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: i64, st: &mut Interp, scope: i64): JSValue {
+fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {
     // builtin: console.log(...)
     match prog.exprs[calleeId.index] {
         Expr.Ident(fname) => {

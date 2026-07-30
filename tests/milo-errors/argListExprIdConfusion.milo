@@ -1,0 +1,12 @@
+// @error: expected ExprId, got ArgListId
+
+from "../../ast" import {
+    ExprId, addArgList, getExpr, newProg
+}
+
+fn confuseArgumentListAndExpression(): void {
+    var prog = newProg()
+    var arguments: Vec<ExprId> = Vec.new()
+    let argsId = addArgList(prog, arguments)
+    let _ = getExpr(prog, argsId)
+}
