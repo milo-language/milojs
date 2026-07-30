@@ -23,11 +23,12 @@ run by hand rather than in CI:
 | sweep | score | measured |
 |---|---:|---|
 | test262, 1500-case deterministic sample | 473/1476 = **32.0%** | 2026-07-24 |
-| QuickJS `tests/` at `fced162` | 94/166 = **56.6%** | 2026-07-30 |
+| QuickJS `tests/` at `fced162` | 95/166 = **57.2%** | 2026-07-30 |
 
 The prior QuickJS result was 93/149 (62.4%). The current checkout adds 17
-scored cases; MiloJS passes one more case, but the larger denominator lowers the
-percentage. Two consecutive full runs produced the current result.
+scored cases; MiloJS passes two more cases, but the larger denominator lowers the
+percentage. The current result includes `bug776.js`, whose recursive `.apply`
+now throws the expected `RangeError` instead of crashing the process.
 
 Weakest areas: `built-ins/TypedArray` 0%, `ArrayBuffer` 0%, `Atomics` 0%,
 `language/eval-code` 0%, `Temporal` 1%, `TypedArrayConstructors` 5%, `Map` 14%.

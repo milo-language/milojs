@@ -37,16 +37,17 @@ Last QuickJS sweep: 2026-07-30. The test262 sample was last run on 2026-07-24.
 | measure | result | interpretation |
 |---|---:|---|
 | deterministic test262 sample | 473/1476 (32.0%) | broad language and builtin coverage is still early |
-| QuickJS `tests/` at `fced162` | 94/166 (56.6%) | useful subset, with a substantial semantic long tail |
-| locked engine fixtures | 142 | byte-exact differential output |
+| QuickJS `tests/` at `fced162` | 95/166 (57.2%) | useful subset, with a substantial semantic long tail |
+| locked engine fixtures | 143 | byte-exact differential output |
 | locked runtime fixtures | 27 | module, async, fetch, HTTP, and host behavior |
 | Milo invariant fixtures | 3 | scheduler/context and GC-root invariants |
 
-The QuickJS numerator rose from 93 to 94 while its current corpus added 17
-scored cases, changing 62.4% to 56.6%; this is not an engine regression. Two
-consecutive full runs reproduced 94/166. The conformance corpora are local
-rather than vendored, so the two sweep numbers are informative but not yet a
-reproducible release artifact. Fixture counts are not conformance percentages.
+The QuickJS numerator rose from 93 to 95 while its current corpus added 17
+scored cases, changing 62.4% to 57.2%; this is not an engine regression. The
+current run also verifies that recursive `.call`/`.apply` throws a catchable
+`RangeError` instead of the prior native `SIGSEGV`. The conformance corpora are
+local rather than vendored, so the two sweep numbers are informative but not yet
+a reproducible release artifact. Fixture counts are not conformance percentages.
 
 ### Native stack status
 

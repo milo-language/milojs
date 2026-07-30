@@ -879,7 +879,7 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                         ai = ai + 1
                     }
                 }
-                return callFunction(prog, bf, benv, rest, thisArg, st)
+                return callFunctionViaMethod(prog, bf, benv, rest, thisArg, st)
             }
             if name == "bind" {
                 let bo = newObject(st)
@@ -6429,6 +6429,16 @@ fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, this
     return result
 }
 
+// Function.prototype.call/apply keeps a method-dispatch frame live around the
+// ordinary JS call. Charge that extra native frame to the recursion budget so a
+// recursive adapter path cannot reach the C stack before callFunction's guard.
+fn callFunctionViaMethod(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
+    st.callDepth = st.callDepth + 1
+    let result = callFunction(prog, fIdx, envIdx, argVals, thisVal, st)
+    st.callDepth = st.callDepth - 1
+    return result
+}
+
 // Invoke any callable JSValue (user function or native).
 // Build a class: the constructor becomes the class value, instance methods go on
 // its prototype, statics on its own property bag. `extends` chains the prototype
@@ -10703,7 +10713,7 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                         ai = ai + 1
                     }
                 }
-                return callFunction(prog, bf, benv, rest, thisArg, st)
+                return callFunctionViaMethod(prog, bf, benv, rest, thisArg, st)
             }
             let statics = getFuncStatics(st, bf, benv)
             let m = getMember(st, statics, name)

@@ -8,12 +8,11 @@ last-verified: 2026-07-30
 
 # milojs QuickJS-parity plan
 
-Last measured: **94/166 cases (56.6%)** on 2026-07-30 against QuickJS
-`fced162932e36eb3b2889bd30c8f127a2bf8cf34`. A repeated full run produced the
-same result.
+Last measured: **95/166 cases (57.2%)** on 2026-07-30 against QuickJS
+`fced162932e36eb3b2889bd30c8f127a2bf8cf34`.
 
 The previous 93/149 (62.4%) result used an older, smaller corpus. The passing
-count increased by one while the corpus added 17 scored cases, so the lower
+count increased by two while the corpus added 17 scored cases, so the lower
 percentage is not an engine regression.
 
 That number is a development signal, not a compatibility claim. The QuickJS
@@ -62,18 +61,18 @@ First reduce a current failing case and identify the narrower semantic bug.
 
 ### 1. Rebaseline and classify — done
 
-The 2026-07-30 full sweep reports 72 failures. Exact repeated buckets account
+The 2026-07-30 full sweep reports 71 failures. Exact repeated buckets account
 for 48: 27 assertion mismatches, 4 undefined-property reads, 4 engine/runtime
 generator-factor cases, 3 missing `concat` dispatches, 3 timeouts, 3 calls of a
 non-function value, 2 missing `BigInt64Array` cases, and 2 module-fixture
-`exports` failures. The remaining 24 are distinct one-case buckets spanning
+`exports` failures. The remaining 23 are distinct one-case buckets spanning
 parser/evaluator semantics and missing or divergent builtins. The verbose report
 is retained as review evidence outside Git per `docs/conformance-reports.md`.
 
-One failure is a native `SIGSEGV` in `bug776.js`, where the suite expects a
-catchable `RangeError`. Treat that as the first correctness lane before improving
-the percentage. Three other cases time out and need reductions that distinguish
-engine loops from legitimate slow paths.
+Recursive `Function.prototype.call`/`apply` now charges its adapter frame to the
+native-stack budget. That changed `bug776.js` from a process `SIGSEGV` to its
+expected catchable `RangeError`. Three cases still time out and need reductions
+that distinguish engine loops from legitimate slow paths.
 
 ### 2. Real builtin prototype dispatch
 
