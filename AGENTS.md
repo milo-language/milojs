@@ -61,6 +61,7 @@ opening several.
 | `docs/milojs-generators.md` | generator objects and how they suspend |
 | `docs/milojs-embedding.md` | public C ABI, ownership, and the current single-context constraint |
 | `docs/milojs-object-footprint.md` | JSObj layout, the JSObjExtra side table |
+| `docs/milojs-arena-safety.md` | typed/generational handles, frozen AST, GC safepoint typing |
 | `docs/milojs-quickjs-plan.md` | QuickJS as an architecture reference |
 | `docs/api/*.md` | generated symbol reference for this project |
 

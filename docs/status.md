@@ -121,6 +121,9 @@ to isolated contexts is specified in `docs/milojs-embedding.md`.
   a second execution engine.
 - Memory limits, interruption, stack limits, and deterministic teardown are
   exposed through the embedding API.
+- Raw arena indices are replaced by typed AST IDs and generational object/scope
+  handles; evaluation consumes frozen program state and stale handles are
+  detected in release builds.
 - Benchmarks publish startup, execution, allocation, and peak-memory results.
 
 ### Gate 3: Node runtime preview

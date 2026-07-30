@@ -3,7 +3,7 @@ system: roadmap
 purpose: staged plan to grow milojs into a JavaScript engine AND runtime that stands on its own
 key-files: milojs.milo, milojs-engine.milo
 update-when: a stage lands (check the box, note the commit) or the acceptance target changes
-last-verified: 2026-07-22
+last-verified: 2026-07-30
 -->
 
 # milojs roadmap — a JavaScript engine written in Milo
@@ -35,6 +35,16 @@ every GC safepoint. The remaining roadmap is:
 
 The source and locked fixtures are authoritative when an older stage narrative
 below conflicts with this snapshot.
+
+### Safety architecture
+
+The original raw-index arenas are not the end state. Migrate append-only AST
+indices to distinct ID newtypes, recyclable scopes and objects to Milo's existing
+generational `std/arena.Handle<T>`, parsed programs through a
+`BuildingProg -> FrozenProg` phase boundary, and GC safepoints toward an
+allocation capability that cannot coexist with unrooted transient values. The
+migration order, acceptance evidence, and performance constraints live in
+`docs/milojs-arena-safety.md`.
 
 **Scope decision (2026-07-22):** milojs is **our own engine and our own runtime** — a destination,
 not a means to an end. It is *not* a JavaScriptCore replacement for minibun. `minibun` and the
