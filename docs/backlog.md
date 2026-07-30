@@ -3,6 +3,19 @@
 Work items carried over from the milo repo's backlog when milojs moved to its own
 repo, re-verified against the engine on 2026-07-24.
 
+## Gate 0 blocker: native evaluator frame exceeds the normal stack
+
+Against Milo `a9c2a5b8`, `evalExpr` reserves about 250 KB per native frame on
+x86-64. A simple non-tail recursive JavaScript function crashes around depth 14
+with the normal 8 MB Linux stack; `tests/closures.js` and `tests/semantics.js`
+reproduce it. Both pass at 12 MB, and the whole suite passes with an unlimited
+diagnostic stack.
+
+This must be fixed in compiler stack allocation or by splitting the tree-walker
+dispatcher. Do not change `tests/run.sh` to raise `ulimit`: embedders and ordinary
+shell users have the same stack constraint, and MiloJS's JS-level recursion
+guard cannot catch a native segfault that happens first.
+
 ## Measured conformance (2026-07-24)
 
 Both sweeps need a local corpus (`TEST262=`, `~/git/quickjs/tests`), so these are
