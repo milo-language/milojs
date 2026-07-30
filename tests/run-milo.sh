@@ -4,7 +4,8 @@
 # order). Same contract as the milo repo's own fixture harness — these tests
 # came from there when milojs moved out, because they assert milojs invariants
 # (async park/resume, exec-context identity, GC roots under a parked activation)
-# rather than compiler behaviour.
+# rather than compiler behaviour. Then check tests/milo-errors/*.milo fixtures:
+# each must fail to build with its `// @error: <substring>` diagnostic.
 #
 # MILO points at the compiler: a `milo` on PATH by default, or a checkout's
 # src/main.ts (invoked through bun).
@@ -51,6 +52,30 @@ for src in tests/milo/*.milo; do
   else
     echo "FAIL $name"
     diff <(printf '%s\n' "$expected") <(printf '%s\n' "$got") | head -20
+    fail=$((fail + 1))
+  fi
+done
+
+shopt -s nullglob
+for src in tests/milo-errors/*.milo; do
+  name="$(basename "$src" .milo)"
+  expected_error="$(sed -n 's|^// @error: ||p' "$src")"
+  if [ -z "$expected_error" ]; then
+    echo "FAIL $name (missing @error annotation)"
+    fail=$((fail + 1))
+    continue
+  fi
+  if check_err="$($MILO_RUN build "$src" -o "$TMP/$name-negative" 2>&1)"; then
+    echo "FAIL $name (unexpectedly compiled)"
+    fail=$((fail + 1))
+    continue
+  fi
+  if printf '%s\n' "$check_err" | grep -Fq "$expected_error"; then
+    echo "ok   $name (compile fail)"
+    pass=$((pass + 1))
+  else
+    echo "FAIL $name (wrong diagnostic)"
+    printf '%s\n' "$check_err" | tail -20
     fail=$((fail + 1))
   fi
 done

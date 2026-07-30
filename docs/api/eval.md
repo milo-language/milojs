@@ -497,7 +497,7 @@ _Undocumented._
 ### `execStmt`
 
 ```milo
-pub fn execStmt(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): Flow
+pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow
 ```
 
 _Undocumented._

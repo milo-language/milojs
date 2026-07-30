@@ -19,7 +19,7 @@ _Undocumented._
 ### `addStmt`
 
 ```milo
-pub fn addStmt(prog: &mut Prog, s: Stmt): i64
+pub fn addStmt(prog: &mut Prog, s: Stmt): StmtId
 ```
 
 _Undocumented._
@@ -51,7 +51,7 @@ _Undocumented._
 ### `getStmt`
 
 ```milo
-pub fn getStmt(prog: &Prog, i: i64): Stmt
+pub fn getStmt(prog: &Prog, id: StmtId): Stmt
 ```
 
 _Undocumented._

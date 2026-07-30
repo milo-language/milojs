@@ -7,7 +7,7 @@ from "./lexer" import {
     Token
 }
 from "./ast" import {
-    Prog
+    Prog, StmtId
 }
 from "./value" import {
     i64ToStr, numToStr
@@ -226,7 +226,7 @@ fn makeArrow(p: &mut PState, prog: &mut Prog, params: Vec<string>, isAsync: bool
     } else {
         let e = parseExpr(p, prog)
         let ret = addStmt(prog, Stmt.Ret(e))
-        var list: Vec<i64> = Vec.new()
+        var list: Vec<StmtId> = Vec.new()
         list.push(ret)
         prog.blocks.push(list)
         body = prog.blocks.len() - 1
@@ -504,15 +504,15 @@ fn isPatternStart(p: &PState): bool {
 }
 
 // Wrap desugared declarators into one statement.
-fn declsToStmt(prog: &mut Prog, items: Vec<DeclItem>): i64 {
+fn declsToStmt(prog: &mut Prog, items: Vec<DeclItem>): StmtId {
     prog.declLists.push(items)
     return addStmt(prog, Stmt.MultiDecl(prog.declLists.len() - 1))
 }
 
 // Put a statement at the front of an already-parsed block (used to unpack
 // destructured parameters and for-of bindings before the body runs).
-fn prependStmt(prog: &mut Prog, blockIdx: i64, stmtIdx: i64) {
-    var merged: Vec<i64> = Vec.new()
+fn prependStmt(prog: &mut Prog, blockIdx: i64, stmtIdx: StmtId) {
+    var merged: Vec<StmtId> = Vec.new()
     merged.push(stmtIdx)
     var i: i64 = 0
     while i < prog.blocks[blockIdx].len() {
@@ -1368,7 +1368,7 @@ fn parseFunction(p: &mut PState, prog: &mut Prog, isAsync: bool): i64 {
 // { stmt* } — returns index into prog.blocks
 fn parseBraceBlock(p: &mut PState, prog: &mut Prog): i64 {
     expect(p, T_LBRACE)
-    var list: Vec<i64> = Vec.new()
+    var list: Vec<StmtId> = Vec.new()
     while peekKind(p) != T_RBRACE && peekKind(p) != T_EOF {
         list.push(parseStmt(p, prog))
     }
@@ -1377,7 +1377,7 @@ fn parseBraceBlock(p: &mut PState, prog: &mut Prog): i64 {
     return prog.blocks.len() - 1
 }
 
-fn parseStmt(p: &mut PState, prog: &mut Prog): i64 {
+fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
     let k = peekKind(p)
     if k == T_SEMI {
         advance(p)
@@ -1524,7 +1524,7 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): i64 {
             if peekKind(p) == T_COLON {
                 advance(p)
             }
-            var stmts: Vec<i64> = Vec.new()
+            var stmts: Vec<StmtId> = Vec.new()
             while peekKind(p) != T_CASE && peekKind(p) != T_DEFAULT && peekKind(p) != T_RBRACE && peekKind(p) != T_EOF {
                 stmts.push(parseStmt(p, prog))
             }
@@ -1552,10 +1552,10 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): i64 {
         let cond = parseCommaSeq(p, prog)
         expect(p, T_RPAREN)
         let thenS = parseStmt(p, prog)
-        var elseS = -1
+        var elseS: Option<StmtId> = Option.None
         if peekKind(p) == T_ELSE {
             advance(p)
-            elseS = parseStmt(p, prog)
+            elseS = Option.Some(parseStmt(p, prog))
         }
         return addStmt(prog, Stmt.If(cond, thenS, elseS))
     }
@@ -1597,7 +1597,7 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): i64 {
             expect(p, T_RPAREN)
             let inner = parseStmt(p, prog)
             let unpack = declsToStmt(prog, pat)
-            var wrapped: Vec<i64> = Vec.new()
+            var wrapped: Vec<StmtId> = Vec.new()
             wrapped.push(unpack)
             wrapped.push(inner)
             prog.blocks.push(wrapped)
@@ -1629,14 +1629,14 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): i64 {
         }
         p.pos = savedPos
         // init clause (consumes its own terminating ;)
-        var init = -1
+        var init: Option<StmtId> = Option.None
         if peekKind(p) == T_SEMI {
             advance(p)
         } else if peekKind(p) == T_LET || peekKind(p) == T_VAR || peekKind(p) == T_CONST {
-            init = parseStmt(p, prog)
+            init = Option.Some(parseStmt(p, prog))
         } else {
             let ie = parseCommaSeq(p, prog)
-            init = addStmt(prog, Stmt.ExprStmt(ie))
+            init = Option.Some(addStmt(prog, Stmt.ExprStmt(ie)))
             expect(p, T_SEMI)
         }
         var cond = -1
@@ -1781,7 +1781,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     var members: Vec<ClassMember> = Vec.new()
     // instance-field init statements (this.name = init), in declaration order,
     // and static-field (name, init) pairs collected while scanning the body
-    var fieldStmts: Vec<i64> = Vec.new()
+    var fieldStmts: Vec<StmtId> = Vec.new()
     var staticFieldNames: Vec<string> = Vec.new()
     var staticFieldInits: Vec<i64> = Vec.new()
     while peekKind(p) != T_RBRACE && peekKind(p) != T_EOF {
@@ -1890,7 +1890,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     // parent: `constructor(...args) { super(...args) }`. Without this, a subclass
     // that only inherits (ZodString extends ZodType) never runs the base
     // constructor and its instance fields (this._def) stay unset.
-    var defaultBody: Vec<i64> = Vec.new()
+    var defaultBody: Vec<StmtId> = Vec.new()
     if superName.len() > 0 {
         let superRef = addExpr(prog, Expr.Ident("__super$" + superKey.clone()))
         let argsRef = addExpr(prog, Expr.Ident("arguments"))
@@ -1942,7 +1942,7 @@ fn requireCall(prog: &mut Prog, spec: string): i64 {
 // One MultiDecl covers every form, which keeps this a single statement and so
 // avoids threading extra statements out of parseStmt. Default imports are not
 // used by the QuickJS suite and are not supported.
-fn parseImport(p: &mut PState, prog: &mut Prog): i64 {
+fn parseImport(p: &mut PState, prog: &mut Prog): StmtId {
     advance(p)
     var items: Vec<DeclItem> = Vec.new()
     // unique per import so two imports in one file can't collide
@@ -2058,7 +2058,7 @@ fn isSyntheticTemp(name: &string): bool {
 
 // `exports.name = local` as a statement — the desugaring target for every
 // `export` form.
-fn exportAssign(prog: &mut Prog, name: string, local: string): i64 {
+fn exportAssign(prog: &mut Prog, name: string, local: string): StmtId {
     let obj = addExpr(prog, Expr.Ident("exports"))
     let key = addExpr(prog, Expr.StrLit(name))
     let val = addExpr(prog, Expr.Ident(local))
@@ -2069,7 +2069,7 @@ fn exportAssign(prog: &mut Prog, name: string, local: string): i64 {
 // in parseStmt: the declaration is parsed normally and the matching
 // `exports.x = x` statements are appended to the same statement list. Bindings
 // are therefore snapshots, not ESM live bindings — see docs/milojs-quickjs-plan.md.
-fn parseExport(p: &mut PState, prog: &mut Prog, list: &mut Vec<i64>) {
+fn parseExport(p: &mut PState, prog: &mut Prog, list: &mut Vec<StmtId>) {
     advance(p)
     let k = peekKind(p)
 
@@ -2115,7 +2115,7 @@ fn parseExport(p: &mut PState, prog: &mut Prog, list: &mut Vec<i64>) {
     // export <decl> — emit the declaration, then export every name it bound
     let s = parseStmt(p, prog)
     list.push(s)
-    match prog.stmts[s] {
+    match prog.stmts[s.index] {
         Stmt.FuncDecl(f) => {
             let n = prog.funcs[f].name.clone()
             if n.len() > 0 {
@@ -2144,7 +2144,7 @@ fn parseExport(p: &mut PState, prog: &mut Prog, list: &mut Vec<i64>) {
 }
 
 pub fn parseProgram(p: &mut PState, prog: &mut Prog): i64 {
-    var list: Vec<i64> = Vec.new()
+    var list: Vec<StmtId> = Vec.new()
     while peekKind(p) != T_EOF {
         if peekKind(p) == T_EXPORT {
             parseExport(p, prog, list)

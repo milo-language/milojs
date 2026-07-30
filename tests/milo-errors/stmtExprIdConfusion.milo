@@ -1,0 +1,11 @@
+// @error: expected StmtId, got i64
+
+from "../../ast" import {
+    Expr, addExpr, getStmt, newProg
+}
+
+fn confuseStatementAndExpression(): void {
+    var prog = newProg()
+    let exprId = addExpr(prog, Expr.NullLit)
+    let _ = getStmt(prog, exprId)
+}

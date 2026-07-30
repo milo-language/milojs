@@ -1,10 +1,11 @@
-// AST node types plus the Prog arena that owns them. Every child link is an i64
-// index into one of Prog's flat Vecs (-1 means "none"), so the recursive tree is
-// expressed without recursive owned types. The evaluator matches arena slots in
-// place (match prog.exprs[i] borrows the payloads); getExpr/getStmt clone a node
+// AST node types plus the Prog arena that owns them. Recursive child links are
+// typed IDs into Prog's flat Vecs; index families migrate independently so an
+// expression slot cannot be confused with a statement slot. The evaluator
+// matches arena slots in place (match prog.exprs[i] borrows the payloads);
+// getExpr/getStmt clone a node
 // out by index for the few callers that mutate prog while inspecting a node
 // (parser lvalue rewriting) — cloning per visit in the evaluator was the
-// dominant interpreter cost. addExpr/addStmt append and return the new index.
+// dominant interpreter cost. addExpr/addStmt append and return the matching ID.
 
 pub enum Expr {
     Num(f64),
@@ -73,6 +74,13 @@ pub enum Expr {
     OptCall(i64, i64),
 }
 
+// Append-only statement slot. Construction stays in addStmt so every published
+// ID is in bounds for its owning Prog; optional statement links use Option.
+@derive(Eq)
+pub struct StmtId {
+    index: i64,
+}
+
 // One key/value pair in an object literal; val is an expr index.
 pub struct PropInit {
     key: string,
@@ -86,32 +94,32 @@ pub struct PropInit {
 pub enum Stmt {
     Decl(string, i64),
     ExprStmt(i64),
-    If(i64, i64, i64),
-    While(i64, i64),
+    If(i64, StmtId, Option<StmtId>),
+    While(i64, StmtId),
     Ret(i64),
     Block(i64),
     FuncDecl(i64),
     Empty,
-    // for (init; cond; update) body — init is a stmt idx, cond/update expr idxs
-    // (-1 when absent), body a stmt idx
-    For(i64, i64, i64, i64),
+    // for (init; cond; update) body — cond/update remain expression indices;
+    // init is optional and body is always a statement ID.
+    For(Option<StmtId>, i64, i64, StmtId),
     Throw(i64),
     // let/var/const with one or more declarators: index into prog.declLists
     MultiDecl(i64),
     // for (name in objExpr) body
-    ForIn(string, i64, i64),
+    ForIn(string, i64, StmtId),
     // for (name of iterExpr) body
-    ForOf(string, i64, i64),
+    ForOf(string, i64, StmtId),
     // break/continue carry their target label, "" when unlabeled
     Break(string),
     Continue(string),
     // label: stmt — a labeled statement. break/continue naming this label
     // target the statement it wraps (a loop, or a block for break).
-    Labeled(string, i64),
+    Labeled(string, StmtId),
     // class declaration: index into prog.classes
     ClassDecl(i64),
     // do body while (cond) — body runs before the first test
-    DoWhile(i64, i64),
+    DoWhile(StmtId, i64),
     // switch (discr) { ... } — index into prog.switches
     Switch(i64, i64),
     // try block, catch-param name ("" if none), catch block idx (-1 if none),
@@ -186,7 +194,7 @@ pub struct SwitchCase {
 pub struct Prog {
     exprs: Vec<Expr>,
     stmts: Vec<Stmt>,
-    blocks: Vec<Vec<i64>>,
+    blocks: Vec<Vec<StmtId>>,
     argLists: Vec<Vec<i64>>,
     funcs: Vec<FuncDef>,
     objLits: Vec<Vec<PropInit>>,
@@ -382,8 +390,8 @@ pub fn getExpr(prog: &Prog, i: i64): Expr {
     return cloneExpr(prog.exprs[i])
 }
 
-pub fn getStmt(prog: &Prog, i: i64): Stmt {
-    return cloneStmt(prog.stmts[i])
+pub fn getStmt(prog: &Prog, id: StmtId): Stmt {
+    return cloneStmt(prog.stmts[id.index])
 }
 
 pub fn addExpr(prog: &mut Prog, e: Expr): i64 {
@@ -391,7 +399,9 @@ pub fn addExpr(prog: &mut Prog, e: Expr): i64 {
     return prog.exprs.len() - 1
 }
 
-pub fn addStmt(prog: &mut Prog, s: Stmt): i64 {
+pub fn addStmt(prog: &mut Prog, s: Stmt): StmtId {
     prog.stmts.push(s)
-    return prog.stmts.len() - 1
+    return StmtId {
+        index: prog.stmts.len() - 1
+    }
 }

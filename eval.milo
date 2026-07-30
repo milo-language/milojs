@@ -3,7 +3,7 @@
 // execution returns a Flow so `return` can unwind out of nested blocks.
 
 from "./ast" import {
-    Prog, gProg
+    Prog, StmtId, gProg
 }
 from "./value" import {
     JSValue, i64ToStr, daysFromCivil
@@ -11024,7 +11024,7 @@ fn execTry(prog: &Prog, tryB: i64, param: &string, catchB: i64, finallyB: i64, s
     return Flow.Normal
 }
 
-pub fn execStmt(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): Flow {
+pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
     if st.throwing {
         return Flow.Normal
     }
@@ -11034,7 +11034,7 @@ pub fn execStmt(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): Flow {
     // before it recurses, so it cannot leak into a nested loop.
     let myLabel = st.pendingLabel.clone()
     st.pendingLabel = ""
-    match prog.stmts[idx] {
+    match prog.stmts[id.index] {
         Stmt.Decl(name, e) => {
             let v = evalExpr(prog, e, st, scope)
             scopeDefine(st, scope, name.clone(), v)
@@ -11457,8 +11457,12 @@ pub fn execStmt(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): Flow {
             if truthy(vc) {
                 return execStmt(prog, t, st, scope)
             }
-            if f >= 0 {
-                return execStmt(prog, f, st, scope)
+            match f {
+                Option.Some(elseStmt) => {
+                    return execStmt(prog, elseStmt, st, scope)
+                }
+                Option.None => {
+                }
             }
             return Flow.Normal
         }
@@ -11501,11 +11505,12 @@ pub fn execStmt(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): Flow {
             let loopScope = newScope(st, scope)
             pushActive(st, loopScope)
             var letNames: Vec<string> = Vec.new()
-            if init >= 0 {
-                execStmt(prog, init, st, loopScope)
+            match init {
+                Option.Some(initStmt) => {
+                execStmt(prog, initStmt, st, loopScope)
                 // names the init clause declared with let/const need re-binding
                 // per iteration
-                match prog.stmts[init] {
+                match prog.stmts[initStmt.index] {
                     Stmt.MultiDecl(listIdx) => {
                         var di: i64 = 0
                         while di < prog.declLists[listIdx].len() {
@@ -11517,6 +11522,9 @@ pub fn execStmt(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): Flow {
                     }
                     _ => {
                     }
+                }
+                }
+                Option.None => {
                 }
             }
             var looping = true
@@ -11662,11 +11670,8 @@ pub fn hoistBlock(prog: &Prog, blockIdx: i64, st: &mut Interp, scope: i64) {
     }
 }
 
-fn hoistStmt(prog: &Prog, idx: i64, st: &mut Interp, scope: i64) {
-    if idx < 0 {
-        return
-    }
-    match prog.stmts[idx] {
+fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64) {
+    match prog.stmts[id.index] {
         Stmt.FuncDecl(fIdx) => {
             let fname = prog.funcs[fIdx].name.clone()
             if fname.len() > 0 {
@@ -11690,7 +11695,13 @@ fn hoistStmt(prog: &Prog, idx: i64, st: &mut Interp, scope: i64) {
         }
         Stmt.If(_c, thenS, elseS) => {
             hoistStmt(prog, thenS, st, scope)
-            hoistStmt(prog, elseS, st, scope)
+            match elseS {
+                Option.Some(elseStmt) => {
+                    hoistStmt(prog, elseStmt, st, scope)
+                }
+                Option.None => {
+                }
+            }
         }
         Stmt.While(_c, body) => {
             hoistStmt(prog, body, st, scope)
@@ -11699,7 +11710,13 @@ fn hoistStmt(prog: &Prog, idx: i64, st: &mut Interp, scope: i64) {
             hoistStmt(prog, body, st, scope)
         }
         Stmt.For(init, _c, _u, body) => {
-            hoistStmt(prog, init, st, scope)
+            match init {
+                Option.Some(initStmt) => {
+                    hoistStmt(prog, initStmt, st, scope)
+                }
+                Option.None => {
+                }
+            }
             hoistStmt(prog, body, st, scope)
         }
         Stmt.ForIn(_nm, _o, body) => {

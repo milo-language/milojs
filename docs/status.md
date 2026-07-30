@@ -57,12 +57,14 @@ guards at 108; the runtime retains a 500-frame limit on its green task.
 
 ### Arena safety status
 
-MiloJS still stores AST, scope, and object references as raw `i64` indices. The
-staged migration is specified in `docs/milojs-arena-safety.md`; no engine arena
-has migrated yet. Its upstream blocker is resolved: Milo `9a0bfa4e` provides
-release-checked live-handle snapshots, stale/free rejection, slot retirement at
-generation exhaustion, and the method-oriented `Arena<T>` API needed by a
-mark-sweep collector. Typed AST IDs are the next implementation step.
+MiloJS still stores most AST, scope, and object references as raw `i64` indices.
+Statement slots and recursive statement links now use `StmtId`, with optional
+links represented by `Option<StmtId>` and a retained compile-fail fixture. No
+recyclable engine arena has migrated yet. The staged migration is specified in
+`docs/milojs-arena-safety.md`. Its upstream blocker is resolved: Milo `9a0bfa4e`
+provides release-checked live-handle snapshots, stale/free rejection, slot
+retirement at generation exhaustion, and the method-oriented `Arena<T>` API
+needed by a mark-sweep collector. `ExprId` is the next AST implementation slice.
 
 ## Shipped engine surface
 
