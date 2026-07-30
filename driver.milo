@@ -6,7 +6,7 @@ from "./lexer" import {
     lex
 }
 from "./ast" import {
-    Prog
+    Prog, Stmt, getStmt, newProg
 }
 from "./parser" import {
     PState, parseProgram
@@ -15,10 +15,10 @@ from "./value" import {
     toStr, i64ToStr, JSValue
 }
 from "./runtime" import {
-    Interp, newScope, collect
+    Interp, newScope, collect, pushTemp, popTemp
 }
 from "./eval" import {
-    execBlock, hoistBlock, runEventLoop, setupGlobals
+    execBlock, execStmt, evalExpr, hoistBlock, makeError, runEventLoop, setupGlobals
 }
 
 // gcThreshold is the allocation count that triggers a collection. Lowering it to
@@ -52,7 +52,7 @@ pub fn describeThrown(st: &Interp, v: &JSValue): string {
 pub fn makeInterp(gcStats: bool, gcThreshold: i64, gcGrowth: i64): Interp {
     return Interp {
         scopes: Vec.new(), freeList: Vec.new(), active: Vec.new(),
-        objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(),
+        objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), hostRoots: Vec.new(), hostRootLive: Vec.new(),
         modPaths: Vec.new(), modBlocks: Vec.new(), modExports: Vec.new(), modState: Vec.new(), modDirStack: Vec.new(), modPathStack: Vec.new(),
         throwing: false, thrownValue: JSValue.Undefined,
         optShort: false, pendingLabel: "", callDepthLimit: 20,
@@ -71,13 +71,59 @@ pub fn bootInterp(st: &mut Interp) {
     setupGlobals(st)
 }
 
+// Evaluate one script into a persistent program and return its completion value.
+// Unlike the CLI path, this never prints an uncaught exception: callers inspect
+// st.throwing/st.thrownValue. Keeping `prog` alive is required because functions
+// retain indices into its arenas after evaluation returns.
+pub fn evalSourceValue(src: &string, prog: &mut Prog, st: &mut Interp): JSValue {
+    st.throwing = false
+    st.thrownValue = JSValue.Undefined
+    let toks = lex(src)
+    var p = PState {
+        toks: toks, pos: 0, curClass: "", file: "<embed>", errored: false, eofError: false, quiet: true
+    }
+    let top = parseProgram(p, prog)
+    if p.errored {
+        st.throwing = true
+        st.thrownValue = makeError(st, "SyntaxError", "failed to parse script")
+        return JSValue.Undefined
+    }
+
+    hoistBlock(prog, top, st, 0)
+    var completion = JSValue.Undefined
+    var i: i64 = 0
+    let n = prog.blocks[top].len()
+    while i < n && !st.throwing {
+        let stmtIdx = prog.blocks[top][i]
+        if i == n - 1 {
+            match getStmt(prog, stmtIdx) {
+                Stmt.ExprStmt(e) => {
+                    completion = evalExpr(prog, e, st, 0)
+                }
+                _ => {
+                    execStmt(prog, stmtIdx, st, 0)
+                }
+            }
+        } else {
+            execStmt(prog, stmtIdx, st, 0)
+        }
+        i = i + 1
+    }
+    if !st.throwing {
+        // Event-loop work can allocate and collect before the C host receives
+        // the completion value. Keep it rooted across that drain.
+        pushTemp(st, cloneValue(completion))
+        runEventLoop(prog, st)
+        popTemp(st)
+    }
+    return completion
+}
+
 // Lex, parse, and execute a source string in the given interpreter's globals.
 // Returns 0 on success, 1 if an uncaught exception escaped.
 fn runSource(src: &string, st: &mut Interp): i32 {
     let toks = lex(src)
-    var prog = Prog {
-        exprs: Vec.new(), stmts: Vec.new(), blocks: Vec.new(), argLists: Vec.new(), funcs: Vec.new(), objLits: Vec.new(), arrLits: Vec.new(), declLists: Vec.new(), classes: Vec.new(), switches: Vec.new()
-    }
+    var prog = newProg()
     var p = PState {
         toks: toks, pos: 0, curClass: "", file: "<entry>", errored: false, eofError: false, quiet: false
     }

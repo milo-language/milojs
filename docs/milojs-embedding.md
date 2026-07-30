@@ -115,12 +115,13 @@ lifetimes and Node-API environment lifetimes are different contracts.
 
 ## Acceptance sequence
 
-1. Build the library and generated header on Linux and macOS.
-2. C creates and frees a context; a second simultaneous context is rejected.
-3. C evaluates arithmetic and reads a number.
-4. C evaluates a string containing an embedded NUL and copies its exact bytes.
-5. C evaluates a throwing script and reads the exception without library output.
-6. A retained object survives forced GC; after release it is no longer rooted.
+1. **Linux done:** build the library and generated header on Linux and macOS.
+2. **Done:** C creates and frees a context; a second simultaneous context is rejected.
+3. **Done:** C evaluates arithmetic and reads a number.
+4. **Done:** C evaluates a string containing an embedded NUL and copies its exact bytes.
+5. **Done:** C evaluates a throwing script and reads the exception without library output.
+6. **Root set implemented; behavioral probe pending:** a retained object survives
+   forced GC; after release it is no longer rooted.
 7. Sanitizer or repeated create/eval/free coverage catches teardown leaks and
    stale handles.
 8. Register and invoke one C callback from JavaScript.

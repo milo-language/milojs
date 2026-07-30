@@ -8,19 +8,76 @@ from "./runtime" import {
     gInterp
 }
 from "./driver" import {
-    makeInterp, bootInterp
+    makeInterp, bootInterp, describeThrown, evalSourceValue
+}
+from "./ast" import {
+    gProg, newProg
+}
+from "./value" import {
+    JSValue
 }
 
 pub let MILOJS_STATUS_OK: i32 = 0
 pub let MILOJS_STATUS_INVALID_ARGUMENT: i32 = -1
 pub let MILOJS_STATUS_BUSY: i32 = -2
 pub let MILOJS_STATUS_INVALID_CONTEXT: i32 = -3
+pub let MILOJS_STATUS_JS_EXCEPTION: i32 = -4
+pub let MILOJS_STATUS_WRONG_TYPE: i32 = -5
+pub let MILOJS_STATUS_INIT_FAILED: i32 = -6
 
 var mjEmbedActive: bool = false
 var mjEmbedGeneration: i64 = 0
+var mjEmbedException: string = ""
 
 fn mjEmbedValid(context: i64): bool {
     return mjEmbedActive && context != 0 && context == mjEmbedGeneration
+}
+
+fn mjEmbedValueIndex(context: i64, value: i64): i64 {
+    if !mjEmbedValid(context) || value <= 0 {
+        return -1
+    }
+    let idx = value - 1
+    if idx >= gInterp.hostRoots.len() || !gInterp.hostRootLive[idx] {
+        return -1
+    }
+    return idx
+}
+
+fn mjEmbedRetain(value: JSValue): i64 {
+    gInterp.hostRoots.push(value)
+    gInterp.hostRootLive.push(true)
+    return gInterp.hostRoots.len()
+}
+
+fn mjEmbedReadBytes(source: *u8, sourceLength: i64): string {
+    var out = ""
+    var i: i64 = 0
+    while i < sourceLength {
+        unsafe {
+            out.push(*(((source as i64) + i) as *u8))
+        }
+        i = i + 1
+    }
+    return out
+}
+
+fn mjEmbedCopyBytes(text: &string, out: *u8, capacity: i64): i64 {
+    if out as i64 == 0 || capacity <= 0 {
+        return 0
+    }
+    var n = text.len()
+    if n > capacity {
+        n = capacity
+    }
+    var i: i64 = 0
+    while i < n {
+        unsafe {
+            *(((out as i64) + i) as *u8) = text[i]
+        }
+        i = i + 1
+    }
+    return n
 }
 
 // Create the process's single live engine context.
@@ -37,8 +94,17 @@ pub fn milojs_context_new(outContext: *i64): i32 {
         mjEmbedGeneration = 1
     }
     gInterp = makeInterp(false, 1024, 2)
+    gProg = newProg()
     bootInterp(gInterp)
+    let _prelude = evalSourceValue(@embedFile("lib/engine-prelude.js"), gProg, gInterp)
+    if gInterp.throwing {
+        mjEmbedException = describeThrown(gInterp, gInterp.thrownValue)
+        gInterp = makeInterp(false, 1024, 2)
+        gProg = newProg()
+        return MILOJS_STATUS_INIT_FAILED
+    }
     mjEmbedActive = true
+    mjEmbedException = ""
     *outContext = mjEmbedGeneration
     return MILOJS_STATUS_OK
 }
@@ -52,6 +118,128 @@ pub fn milojs_context_free(context: i64): i32 {
     // Assignment drops every arena/vector/socket owned by the previous state.
     // Keep a valid empty value in the global because Milo globals cannot be null.
     gInterp = makeInterp(false, 1024, 2)
+    gProg = newProg()
     mjEmbedActive = false
+    mjEmbedException = ""
     return MILOJS_STATUS_OK
+}
+
+// Execute a complete script and retain its completion value for the C host.
+pub fn milojs_eval(context: i64, source: *u8, sourceLength: i64, outValue: *i64): i32 {
+    if !mjEmbedValid(context) {
+        return MILOJS_STATUS_INVALID_CONTEXT
+    }
+    if sourceLength < 0 || (sourceLength > 0 && source as i64 == 0) || outValue as i64 == 0 {
+        return MILOJS_STATUS_INVALID_ARGUMENT
+    }
+    *outValue = 0
+    mjEmbedException = ""
+    let text = mjEmbedReadBytes(source, sourceLength)
+    let result = evalSourceValue(text, gProg, gInterp)
+    if gInterp.throwing {
+        mjEmbedException = describeThrown(gInterp, gInterp.thrownValue)
+        return MILOJS_STATUS_JS_EXCEPTION
+    }
+    *outValue = mjEmbedRetain(result)
+    return MILOJS_STATUS_OK
+}
+
+// 0 undefined, 1 null, 2 bool, 3 number, 4 string, 5 object,
+// 6 function/native, 7 bigint.
+pub fn milojs_value_kind(context: i64, value: i64): i32 {
+    let idx = mjEmbedValueIndex(context, value)
+    if idx < 0 {
+        return MILOJS_STATUS_INVALID_ARGUMENT
+    }
+    match gInterp.hostRoots[idx] {
+        JSValue.Undefined => { return 0 }
+        JSValue.Null => { return 1 }
+        JSValue.Bool(_v) => { return 2 }
+        JSValue.Number(_v) => { return 3 }
+        JSValue.Str(_v) => { return 4 }
+        JSValue.Obj(_v) => { return 5 }
+        JSValue.Func(_f, _e) => { return 6 }
+        JSValue.Native(_n) => { return 6 }
+        JSValue.BigInt(_v) => { return 7 }
+    }
+}
+
+pub fn milojs_value_bool(context: i64, value: i64, out: *bool): i32 {
+    if out as i64 == 0 {
+        return MILOJS_STATUS_INVALID_ARGUMENT
+    }
+    let idx = mjEmbedValueIndex(context, value)
+    if idx < 0 {
+        return MILOJS_STATUS_INVALID_ARGUMENT
+    }
+    match gInterp.hostRoots[idx] {
+        JSValue.Bool(v) => {
+            *out = v
+            return MILOJS_STATUS_OK
+        }
+        _ => { return MILOJS_STATUS_WRONG_TYPE }
+    }
+}
+
+pub fn milojs_value_number(context: i64, value: i64, out: *f64): i32 {
+    if out as i64 == 0 {
+        return MILOJS_STATUS_INVALID_ARGUMENT
+    }
+    let idx = mjEmbedValueIndex(context, value)
+    if idx < 0 {
+        return MILOJS_STATUS_INVALID_ARGUMENT
+    }
+    match gInterp.hostRoots[idx] {
+        JSValue.Number(v) => {
+            *out = v
+            return MILOJS_STATUS_OK
+        }
+        _ => { return MILOJS_STATUS_WRONG_TYPE }
+    }
+}
+
+pub fn milojs_value_string_length(context: i64, value: i64): i64 {
+    let idx = mjEmbedValueIndex(context, value)
+    if idx < 0 {
+        return -1
+    }
+    match gInterp.hostRoots[idx] {
+        JSValue.Str(v) => { return v.len() }
+        _ => { return -1 }
+    }
+}
+
+pub fn milojs_value_string_copy(context: i64, value: i64, out: *u8, capacity: i64): i64 {
+    let idx = mjEmbedValueIndex(context, value)
+    if idx < 0 || capacity < 0 {
+        return -1
+    }
+    match gInterp.hostRoots[idx] {
+        JSValue.Str(v) => { return mjEmbedCopyBytes(v, out, capacity) }
+        _ => { return -1 }
+    }
+}
+
+pub fn milojs_value_release(context: i64, value: i64): i32 {
+    let idx = mjEmbedValueIndex(context, value)
+    if idx < 0 {
+        return MILOJS_STATUS_INVALID_ARGUMENT
+    }
+    gInterp.hostRoots[idx] = JSValue.Undefined
+    gInterp.hostRootLive[idx] = false
+    return MILOJS_STATUS_OK
+}
+
+pub fn milojs_exception_length(context: i64): i64 {
+    if !mjEmbedValid(context) {
+        return -1
+    }
+    return mjEmbedException.len()
+}
+
+pub fn milojs_exception_copy(context: i64, out: *u8, capacity: i64): i64 {
+    if !mjEmbedValid(context) || capacity < 0 {
+        return -1
+    }
+    return mjEmbedCopyBytes(mjEmbedException, out, capacity)
 }

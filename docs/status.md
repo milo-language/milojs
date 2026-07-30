@@ -86,10 +86,12 @@ interop are the highest-impact missing groups.
 
 ### Gate 1: embeddable engine preview
 
-- A real `libmilojs` C ABI exists with opaque runtime/context/value handles.
+- A real `libmilojs` C ABI now builds with opaque context/value handles; the
+  preview gate remains open until object-root and callback coverage land.
 - An embedder can evaluate source, inspect exceptions, exchange primitive
-  values, retain/release handles, and register a native function.
-- A C example and ABI-level tests build outside the MiloJS implementation.
+  values, and release handles. Native-function registration is still missing.
+- A C ABI test builds and links outside the MiloJS implementation on Linux;
+  macOS coverage remains.
 - Pinned test262 and QuickJS reports are checked in and reproducible.
 
 The initial ABI is explicitly single-context because async/generator and

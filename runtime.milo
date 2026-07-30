@@ -606,6 +606,10 @@ pub struct Interp {
     // method receiver while its arguments — which can themselves be calls — are
     // evaluated). Rooted by collect so an in-flight object/closure isn't swept.
     tempRoots: Vec<JSValue>,
+    // Values retained by the public embedding ABI. A live slot is an explicit
+    // root until the C host releases its handle or destroys the context.
+    hostRoots: Vec<JSValue>,
+    hostRootLive: Vec<bool>,
     // exception state: `throwing` is set while an exception unwinds toward the
     // nearest try/catch; evalExpr/execStmt/execBlock/loops bail while it is set.
     // (A flag, not a Flow variant, because exceptions cross function-call
@@ -776,7 +780,7 @@ pub struct Interp {
 // that main() overwrites with makeInterp().
 pub var gInterp: Interp = Interp {
     scopes: Vec.new(), freeList: Vec.new(), active: Vec.new(),
-    objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(),
+    objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), hostRoots: Vec.new(), hostRootLive: Vec.new(),
     modPaths: Vec.new(), modBlocks: Vec.new(), modExports: Vec.new(), modState: Vec.new(), modDirStack: Vec.new(), modPathStack: Vec.new(),
     throwing: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 20,
@@ -1661,6 +1665,14 @@ pub fn collect(st: &mut Interp) {
         let tv = cloneValue(st.tempRoots[t])
         markValue(st, tv)
         t = t + 1
+    }
+    var hr: i64 = 0
+    while hr < st.hostRoots.len() {
+        if st.hostRootLive[hr] {
+            let hv = cloneValue(st.hostRoots[hr])
+            markValue(st, hv)
+        }
+        hr = hr + 1
     }
     if st.throwing {
         let tv = cloneValue(st.thrownValue)
