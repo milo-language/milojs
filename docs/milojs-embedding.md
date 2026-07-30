@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: milojs-embedding
 purpose: design and acceptance contract for the public C embedding API
-key-files: libmilojs.milo, driver.milo, runtime.milo, eval.milo, ast.milo
+key-files: src/libmilojs.milo, src/driver.milo, src/runtime.milo, src/eval.milo, src/ast.milo
 update-when: an ABI function lands, ownership changes, or multi-context constraints change
 last-verified: 2026-07-30
 -->
@@ -15,7 +15,7 @@ host can drive without depending on Milo data layouts. The ABI uses fixed-width
 scalars and opaque integer handles; Milo strings, vectors, enums, references,
 and structs never cross the boundary.
 
-`milo build-lib libmilojs.milo -o libmilojs.a` generates the low-level function
+`milo build-lib src/libmilojs.milo -o libmilojs.a` generates the low-level function
 declarations in `libmilojs.h`. Consumers include the checked-in `milojs.h`, which
 adds stable status constants and includes that generated file. A C smoke test is
 the acceptance gate, not merely successful Milo compilation.

@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: roadmap
 purpose: staged plan to grow milojs into a JavaScript engine AND runtime that stands on its own
-key-files: milojs.milo, milojs-engine.milo
+key-files: src/milojs.milo, src/milojs-engine.milo
 update-when: a stage lands (check the box, note the commit) or the acceptance target changes
 last-verified: 2026-07-30
 -->
@@ -88,7 +88,7 @@ for-loops, ternary, exceptions, bytecode.
 **Proves:** the value model and eval loop on the subset that needs no heap.
 **Gate:** a `.js` demo (arithmetic, string concat, if/while, a closure counter) compiles and
 prints correct output under `milo run`.
-**Landed:** `milojs.milo` (~1480 LOC). Value model
+**Landed:** `src/milojs.milo` (~1480 LOC). Value model
 `enum JSValue { Undefined, Null, Bool, Number(f64), Str, Func(fnIdx, scopeIdx) }` — `Func`'s
 scope index *is* the closure. AST is index-based enums into flat `Vec` arenas (std/json cursor
 pattern), scopes an append-only parent-linked `Vec<Scope>` (chosen so Stage 2 marking is an
@@ -149,7 +149,7 @@ Error family (`Error`/`TypeError`/`RangeError`/`SyntaxError`/`ReferenceError`) +
 big one — String methods (`length`/index/`toUpperCase`/`trim`/`slice`/`split`/`indexOf`/
 `includes`/`replace`/…) and Array methods (`map`/`filter`/`reduce`/`forEach`/`join`/`indexOf`/
 `slice`/`reverse`/`concat`/…), all byte-identical to bun, including `.split().map().join()`
-chaining. String helpers live in a new `builtins.milo`; callback array methods stay in `eval.milo`
+chaining. String helpers live in a new `src/builtins.milo`; callback array methods stay in `src/eval.milo`
 (they need `callFunction`). *Hazard found:* Milo flat-compiles all files into one namespace, so
 milojs helper names must not collide with std (mine shadowed `std/string`'s `strIndexOf` and broke
 std internally until renamed).
@@ -167,7 +167,7 @@ class pattern works. This was the last core *language* gap.
 (byte-identical to bun — no FFI), `sqrt`/`pow` via the hardware/libc extern (IEEE
 correctly-rounded), `random` via a pure-Milo xorshift64 PRNG, plus `PI`/`E`. `Math` is a global
 object with native-fn methods.
-**Regex landed (4481b3f):** a pure-Milo backtracking engine in `regex.milo` (pattern → node tree
+**Regex landed (4481b3f):** a pure-Milo backtracking engine in `src/regex.milo` (pattern → node tree
 → bytecode → recursive backtracking VM). Char classes/ranges/negation, `\d\w\s`, quantifiers
 `*+?{n,m}` greedy+lazy, groups/`(?:)`, alternation, anchors `^$`, `\b\B`, flags `i/g/m`.
 `new RegExp` + `re.test`/`re.exec` + `str.replace(re,$1)`/`str.match`. Byte-identical to bun (incl.
@@ -248,7 +248,7 @@ demoable: Stage 1 runs closures; Stage 3 runs OO JS; Stage 5 runs real npm packa
 
 ## Embedding — how others FFI in (the "like bun/QuickJS" surface)
 Milo exposes a **stable C ABI**: top-level `fn`s use the C calling convention, and
-`milo build-lib libmilojs.milo -o libmilojs.a` emits the archive **+ a companion `libmilojs.h`**.
+`milo build-lib src/libmilojs.milo -o libmilojs.a` emits the archive **+ a companion `libmilojs.h`**.
 The public embedding API is opaque-pointer + scalar (`MiloJSContext*`, handle-based values) —
 exactly QuickJS's `JSContext*`/`JSValue` shape, and exactly what minibun already does when it
 hands Milo function pointers to JSC as C callbacks. So milojs is embeddable from C/C++/Rust

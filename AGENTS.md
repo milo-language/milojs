@@ -33,9 +33,9 @@ has `utf16Slice`.
 definition of the same name is accepted silently — the LAST one wins, with no
 warning. This has bitten this repo three times:
 
-- `propertyBagOf` was defined twice in `eval.milo` with **different bodies**; the
+- `propertyBagOf` was defined twice in `src/eval.milo` with **different bodies**; the
   dead one returned -1 for native receivers.
-- `hexDigitVal` was defined in both `lexer.milo` and `value.milo`.
+- `hexDigitVal` was defined in both `src/lexer.milo` and `src/value.milo`.
 - A milojs helper once shadowed `std/string`'s `strIndexOf` and broke std
   internally.
 

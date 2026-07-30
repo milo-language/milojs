@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: milojs-object-footprint
 purpose: measured per-object memory cost in milojs and the plan to shrink JSObj by moving rare capabilities to a side table
-key-files: runtime.milo
+key-files: src/runtime.milo
 update-when: JSObj gains or loses fields, or the side-table split lands
 last-verified: 2026-07-21
 -->
@@ -102,7 +102,7 @@ broke the real app, so the order that actually catches things is: change, then
 ## Execution design (added 2026-07-20, for the fresh session that lands this)
 
 Concrete finding: the Map/Set group alone is **73 accessor sites** (63 in
-eval.milo, 10 in runtime.milo). Every rare field is like this — moving one to a
+src/eval.milo, 10 in src/runtime.milo). Every rare field is like this — moving one to a
 side table is a mechanical but large rewrite of its access sites. Milo has no
 property getters, so `st.objects[o].mapKeys` cannot transparently redirect; each
 site must change. Budget for it; don't expect a small diff.

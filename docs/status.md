@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: status
 purpose: canonical current capability, evidence, and next-milestone dashboard for milojs
-key-files: milojs-engine.milo, milojs.milo, tests/run.sh, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts
+key-files: src/milojs-engine.milo, src/milojs.milo, tests/run.sh, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts
 update-when: a product gate lands, a conformance sweep is rerun, or the supported host surface changes
 last-verified: 2026-07-30
 -->

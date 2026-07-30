@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: milojs-async-suspension
 purpose: plan of record for making await suspend in milojs — requirements, design, per-requirement status, and test plan
-key-files: eval.milo, runtime.milo, std/runtime.milo, tests/fixtures/asyncCallOrdering.milo
+key-files: src/eval.milo, src/runtime.milo, std/runtime.milo, tests/fixtures/asyncCallOrdering.milo
 update-when: a requirement is implemented, dropped, or revised, or the suspension mechanism changes
 last-verified: 2026-07-21
 -->
@@ -21,7 +21,7 @@ document, and the document changes first if the plan changes.
 | R1 async call returns at first await | done in the **runtime** for a pending awaited promise — matches node; 71/71 fixtures, integration app green (0 errors, ~34ms) |
 | R1b same in the engine binary | **still not landed**, but the cause is now narrowed: the engine running on `gProg` alone is SAFE (landed independently for proxy traps, `adae042`, CI green). The unkillable hang came from `gProg` **plus** running the whole program on a green task — that combination, not `gProg` itself, is what wedged. So R1b needs the green-task part done differently |
 | R1a `await` of a non-thenable / settled value yields a microtask tick | **met** — a settled/non-thenable await runs the microtasks pending AT the await point (a snapshot) INLINE via `awaitYieldMicrotasks` (drainMicrotasks with a `limit`), then continues. No park, so the activation's ExecCtx stays live in the Interp and rooted — which is why this is safe where the reverted bare-`schedulerYield` was not. Covered by `tests/runtime/awaitMicrotaskYield.js`; app stays clean (0 errors, ~3ms/route) and run.sh 119/119, GC-stress clean |
-| R2 suspension is per-activation | done — park/wake on a promise (`ceb9aea`), wired into the `await` path (`parkOnPromise` at eval.milo:3619, taken on an activation task). Covered by `tests/runtime/r2r3Barrier.js` (both participants suspend on a pending barrier) + `r2TimerDuringSuspend.js` (a self-rescheduling timer chain keeps firing while an activation is parked) |
+| R2 suspension is per-activation | done — park/wake on a promise (`ceb9aea`), wired into the `await` path (`parkOnPromise` at src/eval.milo:3619, taken on an activation task). Covered by `tests/runtime/r2r3Barrier.js` (both participants suspend on a pending barrier) + `r2TimerDuringSuspend.js` (a self-rescheduling timer chain keeps firing while an activation is parked) |
 | R3 resume order | **revised to best-effort** — `wakeAwaiters` registers and unparks waiters front-to-back, but the green scheduler does not guarantee they *resume* in that order (a cross-thread unpark drains its transfer list LIFO, and there are other interleaving points), so the observable resume order flaked ~1/15. Dropped to best-effort per the "candidates to drop" note below: it is observable but nothing depends on it — `Promise.all` preserves value order by index regardless of resume order (verified stable). `tests/runtime/r2r3Barrier.js` now asserts both participants resume (R2) without pinning their order |
 | R4 settle/reject semantics | done — already held; locked in by `tests/asyncSettleReject.js`, clean under GC stress |
 | R4a async body returns a pending promise | done (`0391271`) — an activation returning a pending promise adopts it, not reads its state; guarded by `tests/runtime/asyncReturnsPendingPromise.js` (new runtime harness pass) |
@@ -297,8 +297,8 @@ This matters for the plan of record for two reasons:
 
 ## R1b: R1 is runtime-only — the engine does not run on a green task
 
-`milojs.milo` runs the program on a green task, so `schedulerCurrent()` is
-non-zero and an async call can spawn an activation. `milojs-engine.milo` calls
+`src/milojs.milo` runs the program on a green task, so `schedulerCurrent()` is
+non-zero and an async call can spawn an activation. `src/milojs-engine.milo` calls
 `runModule`/`runEventLoop` directly on the main thread, so R1 is simply dormant
 there — the engine still runs an async body to completion at its first await.
 

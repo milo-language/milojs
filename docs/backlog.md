@@ -153,7 +153,7 @@ put it.
 
 ## Node-API: 10 of 64 entry points are stubs
 
-`napi.milo` marks them honestly in-source (they exist only so `dlopen`, which
+`src/napi.milo` marks them honestly in-source (they exist only so `dlopen`, which
 resolves eagerly, does not fail the whole module). Each returns `napi_ok` without
 doing anything, which is a lie an addon can act on. Ranked by what a real addon
 hits:
@@ -164,7 +164,7 @@ hits:
 2. `napi_get_and_clear_last_exception`, `napi_fatal_exception` — errors vanish
    instead of propagating.
 3. `napi_create_bigint_words` and the three `napi_get_value_bigint_*`.
-   `bigint.milo` already exists, so this is wiring, not new work.
+   `src/bigint.milo` already exists, so this is wiring, not new work.
 4. `napi_coerce_to_object`, `napi_add_env_cleanup_hook`, `napi_fatal_error`.
 
 Already real: `napi_define_class`, `napi_wrap`/`unwrap`, references, promises and
