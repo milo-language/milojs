@@ -271,10 +271,8 @@ fn napi_create_array(_env: *u8, result: *u8): i32 {
 @export
 fn napi_create_array_with_length(_env: *u8, length: i64, result: *u8): i32 {
     let o = newArray(gInterp)
-    var i: i64 = 0
-    while i < length {
-        gInterp.objects[o].elems.push(JSValue.Undefined)
-        i = i + 1
+    if length > 0 {
+        setArrayLength(gInterp, o, length)
     }
     napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
     return NAPI_OK
@@ -386,7 +384,7 @@ fn napi_is_array(_env: *u8, value: i64, result: *u8): i32 {
 fn napi_get_array_length(_env: *u8, value: i64, result: *u8): i32 {
     match napiValueOf(value) {
         JSValue.Obj(o) => {
-            napiWriteI32(result, gInterp.objects[o].elems.len() as i32)
+            napiWriteI32(result, arrLen(gInterp, o) as i32)
             return NAPI_OK
         }
         _ => {
@@ -705,8 +703,8 @@ fn napi_get_element(_env: *u8, object: i64, index32: i32, result: *u8): i32 {
     let index = index32 as i64
     match napiValueOf(object) {
         JSValue.Obj(o) => {
-            if index >= 0 && index < gInterp.objects[o].elems.len() {
-                napiWriteHandle(result, napiHandle(cloneValue(gInterp.objects[o].elems[index])))
+            if index >= 0 && index < arrLen(gInterp, o) {
+                napiWriteHandle(result, napiHandle(arrGet(gInterp, o, index)))
             } else {
                 napiWriteHandle(result, napiHandle(JSValue.Undefined))
             }
@@ -723,10 +721,7 @@ fn napi_set_element(_env: *u8, object: i64, index32: i32, value: i64): i32 {
     let index = index32 as i64
     match napiValueOf(object) {
         JSValue.Obj(o) => {
-            while gInterp.objects[o].elems.len() <= index {
-                gInterp.objects[o].elems.push(JSValue.Undefined)
-            }
-            gInterp.objects[o].elems[index] = napiValueOf(value)
+            arrSet(gInterp, o, index, napiValueOf(value))
             return NAPI_OK
         }
         _ => {

@@ -1204,7 +1204,14 @@ fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
             return
         }
         if key == "length" {
-            setArrayLength(st, o, toNum(value) as i64)
+            let rawLength = toNum(value)
+            let arrayLength = rawLength as i64
+            if !(rawLength == rawLength) || rawLength < 0.0 || rawLength > 4294967295.0 || (arrayLength as f64) != rawLength {
+                st.throwing = true
+                st.thrownValue = makeError(st, "RangeError", "Invalid array length")
+                return
+            }
+            setArrayLength(st, o, arrayLength)
             return
         }
     }
@@ -3164,8 +3171,12 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 JSValue.Obj(o) => {
                     if st.objects[o].isArray {
                         var i: i64 = 0
-                        let n = arrLen(st, o)
+                        let n = st.objects[o].elems.len()
                         while i < n {
+                            if arrIsHole(st, o, i) {
+                                i = i + 1
+                                continue
+                            }
                             let v = arrGet(st, o, i)
                             if wantPairs {
                                 let pair = newArray(st)
@@ -3251,7 +3262,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                     }
                     if st.objects[o].isArray {
                         var i: i64 = 0
-                        let n = arrLen(st, o)
+                        let n = st.objects[o].elems.len()
                         while i < n {
                             if !arrIsHole(st, o, i) {
                                 arrPush(st, arr, JSValue.Str(i64ToStr(i)))
@@ -6513,7 +6524,7 @@ fn proxyOwnEnumKeys(prog: &Prog, st: &mut Interp, o: i64): Vec<string> {
         if th >= 0 {
             if st.objects[th].isArray {
                 var e: i64 = 0
-                while e < arrLen(st, th) {
+                while e < st.objects[th].elems.len() {
                     if !arrIsHole(st, th, e) {
                         out.push(i64ToStr(e))
                     }
@@ -9487,6 +9498,11 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         }
     }
     if name == "push" {
+        if n > 4294967295 - args.len() {
+            st.throwing = true
+            st.thrownValue = makeError(st, "RangeError", "Invalid array length")
+            return JSValue.Undefined
+        }
         var j: i64 = 0
         while j < args.len() {
             arrPush(st, o, cloneValue(args[j]))
@@ -9498,7 +9514,9 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         if n == 0 {
             return JSValue.Undefined
         }
-        return st.objects[o].elems.pop()!
+        let result = arrGet(st, o, n - 1)
+        setArrayLength(st, o, n - 1)
+        return result
     }
     if name == "shift" {
         if n == 0 {
@@ -11392,7 +11410,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                     }
                     if st.objects[o].isArray {
                         var e: i64 = 0
-                        let ne = arrLen(st, o)
+                        let ne = st.objects[o].elems.len()
                         while e < ne {
                             if !arrIsHole(st, o, e) {
                                 keys.push(i64ToStr(e))

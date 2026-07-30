@@ -12,7 +12,7 @@ from "std/sync" import {
     Channel
 }
 from "./value" import {
-    JSValue, roundHalfAwayFromZero
+    JSValue, i64ToStr, roundHalfAwayFromZero
 }
 from "./regex" import {
     Regex
@@ -514,6 +514,10 @@ struct JSObj {
     // the dense elems slot reads as undefined. Empty for normal arrays, so the
     // fast paths never scan it.
     holes: Vec<i64>,
+    // -1 means the logical length is elems.len(). A larger value represents an
+    // implicit sparse tail without allocating one JSValue and hole entry per
+    // absent index; far-out elements live as numeric keys in props.
+    logicalLen: i64,
     isArray: bool,
     // the user-function index that `new`'d this object (for instanceof), or -1
     ctor: i64,
@@ -807,7 +811,7 @@ pub var gInterp: Interp = Interp {
 fn allocObj(st: &mut Interp, isArray: bool): i64 {
     st.allocSinceGc = st.allocSinceGc + 1
     let obj = JSObj {
-        props: Vec.new(), elems: Vec.new(), holes: Vec.new(), isArray: isArray, ctor: -1, proto: -1, isError: false, frozen: false, noExtend: false, sealed: false, isGlobal: false, isArrayBuffer: false, abDetached: false, isDataView: false, promiseState: -1, isBound: false, isEnv: false, isFunctionLike: false, isDate: false, isMap: false, isSet: false, isProxy: false, isGenerator: false, extra: 0, mark: false, free: false
+        props: Vec.new(), elems: Vec.new(), holes: Vec.new(), logicalLen: -1, isArray: isArray, ctor: -1, proto: -1, isError: false, frozen: false, noExtend: false, sealed: false, isGlobal: false, isArrayBuffer: false, abDetached: false, isDataView: false, promiseState: -1, isBound: false, isEnv: false, isFunctionLike: false, isDate: false, isMap: false, isSet: false, isProxy: false, isGenerator: false, extra: 0, mark: false, free: false
     }
     // reuse a freed slot if one exists (indices are stable — handles hold them),
     // otherwise grow the arena
@@ -1042,6 +1046,12 @@ pub fn objDefineAccessor(st: &mut Interp, obj: i64, key: string, getter: JSValue
 // Writing array.length truncates or extends with holes; JS treats it as a real
 // operation, and `arr.length = 0` is the standard way to clear an array.
 pub fn arrIsHole(st: &Interp, obj: i64, idx: i64): bool {
+    if idx < 0 || idx >= arrLen(st, obj) {
+        return true
+    }
+    if idx >= st.objects[obj].elems.len() {
+        return objOwnIndex(st, obj, i64ToStr(idx)) < 0
+    }
     var i: i64 = 0
     let n = st.objects[obj].holes.len()
     while i < n {
@@ -1079,6 +1089,7 @@ pub fn setArrayLength(st: &mut Interp, obj: i64, n: i64) {
     if target < 0 {
         target = 0
     }
+    let oldLen = arrLen(st, obj)
     while st.objects[obj].elems.len() > target {
         let _ = st.objects[obj].elems.pop()
     }
@@ -1094,10 +1105,26 @@ pub fn setArrayLength(st: &mut Interp, obj: i64, n: i64) {
         }
         st.objects[obj].holes = kept
     }
-    // grow: the padded slots are holes, not own elements
-    while st.objects[obj].elems.len() < target {
-        arrMarkHole(st, obj, st.objects[obj].elems.len())
-        st.objects[obj].elems.push(JSValue.Undefined)
+    // Truncation removes sparse numeric properties too; otherwise growing the
+    // array again would incorrectly resurrect elements above the old length.
+    if target < oldLen {
+        var keptProps: Vec<Prop> = Vec.new()
+        var p: i64 = 0
+        while p < st.objects[obj].props.len() {
+            let keyIndex = asArrayIndex(st.objects[obj].props[p].key)
+            if keyIndex < 0 || keyIndex < target {
+                keptProps.push(Prop {
+                    key: st.objects[obj].props[p].key.clone(), value: cloneValue(st.objects[obj].props[p].value), getter: cloneValue(st.objects[obj].props[p].getter), setter: cloneValue(st.objects[obj].props[p].setter), isAccessor: st.objects[obj].props[p].isAccessor, writable: st.objects[obj].props[p].writable, enumerable: st.objects[obj].props[p].enumerable, configurable: st.objects[obj].props[p].configurable
+                })
+            }
+            p = p + 1
+        }
+        st.objects[obj].props = keptProps
+    }
+    if target == st.objects[obj].elems.len() {
+        st.objects[obj].logicalLen = -1
+    } else {
+        st.objects[obj].logicalLen = target
     }
 }
 
@@ -1323,27 +1350,39 @@ pub fn enumOrder(st: &Interp, o: i64): Vec<i64> {
 }
 
 pub fn arrGet(st: &Interp, obj: i64, idx: i64): JSValue {
-    if idx < 0 || idx >= st.objects[obj].elems.len() {
+    if idx < 0 || idx >= arrLen(st, obj) {
         return JSValue.Undefined
     }
-    return cloneValue(st.objects[obj].elems[idx])
+    if idx < st.objects[obj].elems.len() {
+        return cloneValue(st.objects[obj].elems[idx])
+    }
+    let sparse = objOwnIndex(st, obj, i64ToStr(idx))
+    if sparse >= 0 {
+        return cloneValue(st.objects[obj].props[sparse].value)
+    }
+    return JSValue.Undefined
 }
 
-// Assigning past the end grows the array with holes (undefined), matching JS.
+// Sequential writes stay dense. Far writes use the ordinary numeric property
+// bag so a sparse index cannot force allocation of every preceding hole.
 pub fn arrSet(st: &mut Interp, obj: i64, idx: i64, value: JSValue) {
     if idx < 0 {
         return
     }
-    // sparse write (a[4]=x on a shorter array): the skipped slots are holes
-    while st.objects[obj].elems.len() < idx {
-        arrMarkHole(st, obj, st.objects[obj].elems.len())
-        st.objects[obj].elems.push(JSValue.Undefined)
-    }
-    if st.objects[obj].elems.len() == idx {
-        st.objects[obj].elems.push(value)
-    } else {
+    let oldLen = arrLen(st, obj)
+    if idx < st.objects[obj].elems.len() {
         st.objects[obj].elems[idx] = value
         arrClearHole(st, obj, idx)
+    } else if st.objects[obj].elems.len() == idx {
+        st.objects[obj].elems.push(value)
+    } else {
+        objSet(st, obj, i64ToStr(idx), value)
+    }
+    if idx >= oldLen {
+        st.objects[obj].logicalLen = idx + 1
+        if st.objects[obj].logicalLen == st.objects[obj].elems.len() {
+            st.objects[obj].logicalLen = -1
+        }
     }
 }
 
@@ -1444,11 +1483,14 @@ pub fn linkProtoConstructor(st: &mut Interp, proto: i64, fnIdx: i64, envIdx: i64
 }
 
 pub fn arrLen(st: &Interp, obj: i64): i64 {
+    if st.objects[obj].logicalLen >= 0 {
+        return st.objects[obj].logicalLen
+    }
     return st.objects[obj].elems.len()
 }
 
 pub fn arrPush(st: &mut Interp, obj: i64, value: JSValue) {
-    st.objects[obj].elems.push(value)
+    arrSet(st, obj, arrLen(st, obj), value)
 }
 
 pub fn newScope(st: &mut Interp, parent: i64): i64 {

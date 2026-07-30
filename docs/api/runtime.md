@@ -49,7 +49,8 @@ _Undocumented._
 pub fn arrSet(st: &mut Interp, obj: i64, idx: i64, value: JSValue)
 ```
 
-Assigning past the end grows the array with holes (undefined), matching JS.
+Sequential writes stay dense. Far writes use the ordinary numeric property
+bag so a sparse index cannot force allocation of every preceding hole.
 
 ### `asArrayIndex`
 

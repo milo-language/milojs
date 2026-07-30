@@ -3,7 +3,7 @@ system: milojs-object-footprint
 purpose: measured per-object memory cost in milojs and the plan to shrink JSObj by moving rare capabilities to a side table
 key-files: src/runtime.milo
 update-when: JSObj gains or loses fields, or the side-table split lands
-last-verified: 2026-07-21
+last-verified: 2026-07-30
 -->
 
 # milojs: object footprint
@@ -52,6 +52,11 @@ Move the 28 rare fields into a side table keyed by object index, leaving the hot
 header: `props`, `elems`, `proto`, `ctor`, and the flags a plain object needs.
 Objects that never become a promise, a proxy, a Map, a typed array or a bound
 function then pay ~74 bytes plus arena headroom instead of ~465.
+
+The current hot header also carries one `logicalLen` integer. It is `-1` for an
+ordinary dense array and records only an implicit sparse tail, preventing a huge
+`array.length` assignment from allocating one value and hole record per index.
+Far-out elements use numeric entries in the already traced property bag.
 
 Expected: roughly 3-4× less per empty object. Verify by re-running the
 measurements above rather than by inspection.
