@@ -10,25 +10,22 @@
 // every index valid for the session's lifetime.
 
 from "std/io" import {
-    writeStdout, readFd, readFile
+    writeStdout, readFd
 }
 from "std/fs" import {
-    writeFile
+    readFile, writeFile
 }
 from "std/env" import {
-    getEnv
+    Env
 }
 from "std/term" import {
     TermState, enableRawModeBlocking, restoreTerminal
 }
 from "std/ansi" import {
-    clearLine, fg24, ansiReset, pushFg24, pushBg24
+    Ansi
 }
 from "std/color" import {
-    bold, gray, dim
-}
-from "std/string" import {
-    strTrim
+    Color
 }
 from "./lexer" import {
     lex
@@ -158,17 +155,17 @@ fn emit(buf: &mut string, s: &string): void {
 fn wordmarkRow(tr: i64): string {
     // gradient runs light-tan → dark-brown, pulled from the sprite's own palette
     if tr == 1 {
-        return fg24(240, 226, 206) + "███╗   ███╗██╗██╗      ██████╗      ██╗███████╗"
+        return Ansi.fg24(240, 226, 206) + "███╗   ███╗██╗██╗      ██████╗      ██╗███████╗"
     } else if tr == 2 {
-        return fg24(226, 192, 150) + "████╗ ████║██║██║     ██╔═══██╗     ██║██╔════╝"
+        return Ansi.fg24(226, 192, 150) + "████╗ ████║██║██║     ██╔═══██╗     ██║██╔════╝"
     } else if tr == 3 {
-        return fg24(212, 170, 122) + "██╔████╔██║██║██║     ██║   ██║     ██║███████╗"
+        return Ansi.fg24(212, 170, 122) + "██╔████╔██║██║██║     ██║   ██║     ██║███████╗"
     } else if tr == 4 {
-        return fg24(200, 152, 104) + "██║╚██╔╝██║██║██║     ██║   ██║██   ██║╚════██║"
+        return Ansi.fg24(200, 152, 104) + "██║╚██╔╝██║██║██║     ██║   ██║██   ██║╚════██║"
     } else if tr == 5 {
-        return fg24(172, 124, 81) + "██║ ╚═╝ ██║██║███████╗╚██████╔╝╚█████╔╝███████║"
+        return Ansi.fg24(172, 124, 81) + "██║ ╚═╝ ██║██║███████╗╚██████╔╝╚█████╔╝███████║"
     } else if tr == 6 {
-        return fg24(145, 96, 58) + "╚═╝     ╚═╝╚═╝╚══════╝ ╚═════╝  ╚════╝ ╚══════╝"
+        return Ansi.fg24(145, 96, 58) + "╚═╝     ╚═╝╚═╝╚══════╝ ╚═════╝  ╚════╝ ╚══════╝"
     }
     return ""
 }
@@ -194,40 +191,40 @@ fn banner(): void {
             let topOp = tcol[3] == 1
             let botOp = bcol[3] == 1
             if topOp && botOp {
-                pushFg24(buf, tcol[0], tcol[1], tcol[2])
-                pushBg24(buf, bcol[0], bcol[1], bcol[2])
+                Ansi.pushFg24(buf, tcol[0], tcol[1], tcol[2])
+                Ansi.pushBg24(buf, bcol[0], bcol[1], bcol[2])
                 emit(buf, "▀")
             } else if topOp {
                 emit(buf, "\x1b[49m") // default bg for the empty lower half
-                pushFg24(buf, tcol[0], tcol[1], tcol[2])
+                Ansi.pushFg24(buf, tcol[0], tcol[1], tcol[2])
                 emit(buf, "▀")
             } else if botOp {
                 emit(buf, "\x1b[49m")
-                pushFg24(buf, bcol[0], bcol[1], bcol[2])
+                Ansi.pushFg24(buf, bcol[0], bcol[1], bcol[2])
                 emit(buf, "▄")
             } else {
                 emit(buf, "\x1b[49m")
                 buf.push(32 as u8)
             }
         }
-        emit(buf, ansiReset())
+        emit(buf, Ansi.reset())
         emit(buf, "  ")
         emit(buf, wordmarkRow(tr))
-        emit(buf, ansiReset())
+        emit(buf, Ansi.reset())
         emit(buf, "\n")
     }
 
     emit(buf, "\n")
-    emit(buf, "  " + bold("a JavaScript engine written from scratch in Milo.") + "\n")
-    emit(buf, "  " + dim("github.com/milo-language/milojs") + "\n\n")
-    emit(buf, "  " + dim("Tab complete · ↑/↓ history · Ctrl-C cancel line · exit / Ctrl-D to quit") + "\n\n")
+    emit(buf, "  " + Color.bold("a JavaScript engine written from scratch in Milo.") + "\n")
+    emit(buf, "  " + Color.dim("github.com/milo-language/milojs") + "\n\n")
+    emit(buf, "  " + Color.dim("Tab complete · ↑/↓ history · Ctrl-C cancel line · exit / Ctrl-D to quit") + "\n\n")
     writeStdout(buf)
 }
 
 let HISTORY_MAX: i64 = 1000
 
 fn historyPath(): string {
-    match getEnv("HOME") {
+    match Env.get("HOME") {
         Option.Some(h) => {
             return h + "/.milojs_history"
         }
@@ -362,7 +359,7 @@ fn isUndefined(v: &JSValue): bool {
 // to an absolute column) keeps this correct without having to know how wide the
 // prompt renders — it is full of escape bytes that occupy no columns.
 fn redraw(prompt: &string, line: &string, cur: i64): void {
-    var s = "\r" + prompt + line + clearLine()
+    var s = "\r" + prompt + line + Ansi.clearLine()
     let back = line.len() - cur
     if back > 0 {
         s = s + "\x1b[" + back.toString() + "D"
@@ -557,10 +554,10 @@ fn padTo(s: &string, w: i64): string {
 fn paintCandidate(name: &string, kind: i64, w: i64): string {
     let cell = padTo(name, w + 2)
     if kind == CMPL_SESSION {
-        return fg24(226, 192, 150) + cell + ansiReset()
+        return Ansi.fg24(226, 192, 150) + cell + Ansi.reset()
     }
     if kind == CMPL_KEYWORD {
-        return gray(cell)
+        return Color.gray(cell)
     }
     return cell
 }
@@ -608,7 +605,7 @@ fn formatCandidates(cands: &Vec<string>, kinds: &Vec<i64>): string {
         out = out + "\r\n"
     }
     if shown < cands.len() {
-        out = out + gray("… " + (cands.len() - shown).toString() + " more") + "\r\n"
+        out = out + Color.gray("… " + (cands.len() - shown).toString() + " more") + "\r\n"
     }
     return out
 }
@@ -680,7 +677,7 @@ fn readLineEdited(prompt: &string, history: &Vec<string>, st: &Interp, builtinCo
                     return LineResult.Eof
                 }
                 ctrlcArmed = true
-                writeStdout("\r\n" + gray("(To exit, press Ctrl-C again or Ctrl-D)") + "\r\n")
+                writeStdout("\r\n" + Color.gray("(To exit, press Ctrl-C again or Ctrl-D)") + "\r\n")
                 writeStdout(prompt)
                 continue
             }
@@ -900,8 +897,8 @@ pub fn repl(st: &mut Interp): i32 {
     // everything already in the global scope is a builtin; anything appended past
     // this point was defined by the user, and completion highlights it as such
     let builtinCount = st.scopes[0].vars.len()
-    let prompt = fg24(226, 192, 150) + "milojs> " + ansiReset()
-    let contPrompt = gray("... ") + ansiReset()
+    let prompt = Ansi.fg24(226, 192, 150) + "milojs> " + Ansi.reset()
+    let contPrompt = Color.gray("... ") + Ansi.reset()
     // lines of a block that is not syntactically finished yet
     var pending = ""
 
@@ -931,7 +928,7 @@ pub fn repl(st: &mut Interp): i32 {
                 // `exit` as a ReferenceError, which trips people up. Treat the
                 // obvious quit words as a REPL command rather than JS, mirroring
                 // the Eof path (history saved; terminal restored by the caller).
-                let cmd = strTrim(source)
+                let cmd = source.trim()
                 if cmd == "exit" || cmd == "quit" || cmd == "exit()" || cmd == "quit()" || cmd == ".exit" || cmd == ".quit" {
                     saveHistory(history)
                     return 0

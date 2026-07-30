@@ -12,17 +12,17 @@
 //   eval.milo     the tree-walking evaluator
 //   driver.milo   makeInterp / bootInterp / runSource (shared with the runtime)
 
-from "std/io" import {
+from "std/fs" import {
     readFile
 }
 from "std/strconv" import {
     parseInt
 }
 from "std/env" import {
-    getEnv
+    Env
 }
 from "std/argparse" import {
-    newParser
+    ArgParser
 }
 from "std/args" import {
     args
@@ -138,7 +138,7 @@ fn main(): i32 {
         ai = ai + 1
     }
 
-    var parser = newParser("milojs-engine", "the milojs JavaScript engine — runs a raw .js file")
+    var parser = ArgParser.new("milojs-engine", "the milojs JavaScript engine — runs a raw .js file")
     parser.addPositional("file", "the .js file to run")
     let parsed = parser.parse()
     let path = parsed.getString("file")
@@ -150,7 +150,7 @@ fn main(): i32 {
             // same knob the runtime honours, so the GC-stress pass reaches the
             // engine binary too
             var gcThreshold: i64 = 1024
-            match getEnv("MILOJS_GC_THRESHOLD") {
+            match Env.get("MILOJS_GC_THRESHOLD") {
                 Option.Some(tv) => {
                     match parseInt(tv) {
                         Option.Some(n) => {
@@ -165,7 +165,7 @@ fn main(): i32 {
                 Option.None => {
                 }
             }
-            match getEnv("MILOJS_GC_STATS") {
+            match Env.get("MILOJS_GC_STATS") {
                 Option.Some(_v) => {
                     gcStats = true
                 }

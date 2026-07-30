@@ -18,7 +18,7 @@ from "./runtime" import {
     Interp, newObject, objSet
 }
 from "std/math" import {
-    mathSqrt, mathPow, mathExp, mathLog, mathLog2, mathLog10, mathSin, mathCos, mathTan, mathAtan2
+    Math
 }
 from "std/unicode" import {
     decodeCodepoint, utf16UnitCount, highSurrogate, lowSurrogate, isSupplementary, encodeCodepoint

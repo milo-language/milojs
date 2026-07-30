@@ -9,7 +9,7 @@ from "std/os" import {
     snprintf
 }
 from "std/math" import {
-    mathFloor, mathAbs, mathMod
+    Math
 }
 
 // libm: needed for half-ulp precision bound in numToRadix (no bit-level f64
@@ -232,7 +232,7 @@ pub fn numToStr(n: f64): string {
         }
         return "-Infinity"
     }
-    if mathFloor(n) == n && mathAbs(n) < 1000000000000000.0 {
+    if Math.floor(n) == n && Math.abs(n) < 1000000000000000.0 {
         return i64ToStr(n as i64)
     }
     var p: i32 = 1
@@ -297,7 +297,7 @@ pub fn toInt32(v: &JSValue): i64 {
     if n != n || n > 1000000000000000000.0 || n < -1000000000000000000.0 {
         return 0
     }
-    var t = mathFloor(mathAbs(n)) as i64
+    var t = Math.floor(Math.abs(n)) as i64
     if n < 0.0 {
         t = -t
     }
@@ -350,7 +350,7 @@ fn fracToLimbs(x0: f64, nLimbs: i64): Vec<i64> {
     var i: i64 = 0
     while i < nLimbs {
         x = x * 4294967296.0
-        let hi = mathFloor(x)
+        let hi = Math.floor(x)
         x = x - hi
         out.push(hi as i64)
         i = i + 1
@@ -420,7 +420,7 @@ pub fn numToRadix(n: f64, radix: i64): string {
         v = -v
     }
     let radixF = radix as f64
-    var integer = mathFloor(v)
+    var integer = Math.floor(v)
     let fraction = v - integer
     // digits beyond half the gap to the next double are noise, stop there
     var delta = 0.5 * (nextafter(v, jsInf()) - v)
@@ -527,7 +527,7 @@ pub fn numToRadix(n: f64, radix: i64): string {
         // double's exact value, matching V8)
         var digits = String.withCapacity(1100)
         while integer > 0.0 {
-            let rem = mathMod(integer, radixF)
+            let rem = Math.mod(integer, radixF)
             digits.push(radixDigitChar(rem as i64))
             integer = (integer - rem) / radixF
         }

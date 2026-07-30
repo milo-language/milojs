@@ -20,7 +20,7 @@ from "./bigint" import {
 from "./regex" import {
     regexCompile, regexExec
 }
-from "std/io" import {
+from "std/fs" import {
     readFile
 }
 from "./modules" import {
@@ -30,7 +30,7 @@ from "std/os" import {
     exit
 }
 from "std/env" import {
-    getEnv
+    Env
 }
 from "std/runtime" import {
     spawnOsThreadDetached, schedulerCurrent, schedulerPark, schedulerUnpark, schedulerYield, Task
@@ -48,7 +48,7 @@ from "std/time" import {
     epochMillis, sleepMs
 }
 from "std/datetime" import {
-    dateTimeFromEpoch, dateTimeFromEpochLocal
+    DateTime
 }
 from "std/fs" import {
     currentDir, writeFile, appendFile, readDir, removeFile, makeDir, removeDir, renameFile, isDir
@@ -57,7 +57,7 @@ from "./napi" import {
     napiInvoke, napiLoadAddon, napiTakePending, napiPollTsfn, napiRunTsfnCall, napiHasTsfn, napiHasPendingWork, napiMayDeliver, napiWaitBriefly
 }
 from "std/math" import {
-    mathMod, mathPow
+    Math
 }
 
 enum Flow {
@@ -88,10 +88,10 @@ fn evalBin(op: &string, a: &JSValue, b: &JSValue): JSValue {
         return JSValue.Number(toNum(a) / toNum(b))
     }
     if op == "%" {
-        return JSValue.Number(mathMod(toNum(a), toNum(b)))
+        return JSValue.Number(Math.mod(toNum(a), toNum(b)))
     }
     if op == "**" {
-        return JSValue.Number(mathPow(toNum(a), toNum(b)))
+        return JSValue.Number(Math.pow(toNum(a), toNum(b)))
     }
     if op == "&" {
         return JSValue.Number((toInt32(a) & toInt32(b)) as f64)
@@ -403,7 +403,7 @@ fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue {
         }
     }
     if st.objects[o].isEnv && objOwnIndex(st, o, key) < 0 {
-        match getEnv(key.clone()) {
+        match Env.get(key.clone()) {
             Option.Some(v) => {
                 let val = JSValue.Str(v)
                 objSet(st, o, key.clone(), cloneValue(val))
@@ -2374,7 +2374,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         let p = newPromise(st, 0, JSValue.Undefined)
         match Channel<string>.new(1) {
             Result.Ok(ch) => {
-                let chForTask = ch
+                let chForTask = ch.clone()
                 // A real OS thread, not a green task: the interpreter loop runs on
                 // the OS main thread and never parks, so schedulerYield is a no-op
                 // and a green task would never be scheduled. The worker touches
@@ -2445,7 +2445,12 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if argVals.len() < 1 {
             return JSValue.Null
         }
-        let entries = readDir(toStr(argVals[0]))
+        let entries = match readDir(toStr(argVals[0])) {
+            Result.Ok(items) => items
+            Result.Err(_e) => {
+                return JSValue.Null
+            }
+        }
         let arr = newArray(st)
         pushTemp(st, JSValue.Obj(arr))
         var i: i64 = 0
@@ -3428,7 +3433,7 @@ fn mathNative(id: i64, args: &Vec<JSValue>, st: &mut Interp): JSValue {
         return JSValue.Number(mjSign(x))
     }
     if id == NATIVE_MATH_EXP {
-        return JSValue.Number(mathExp(x))
+        return JSValue.Number(Math.exp(x))
     }
     // std's mathLog* carry `requires x > 0.0`; JS defines the whole domain
     // (ECMA-262 21.3.2.20-22: log(+-0) is -Infinity, log(x < 0) is NaN). Handle the
@@ -3443,47 +3448,47 @@ fn mathNative(id: i64, args: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Number(0.0 - jsInf())
         }
         if id == NATIVE_MATH_LOG {
-            return JSValue.Number(mathLog(x))
+            return JSValue.Number(Math.log(x))
         }
         if id == NATIVE_MATH_LOG2 {
-            return JSValue.Number(mathLog2(x))
+            return JSValue.Number(Math.log2(x))
         }
-        return JSValue.Number(mathLog10(x))
+        return JSValue.Number(Math.log10(x))
     }
     if id == NATIVE_MATH_SIN {
-        return JSValue.Number(mathSin(x))
+        return JSValue.Number(Math.sin(x))
     }
     if id == NATIVE_MATH_COS {
-        return JSValue.Number(mathCos(x))
+        return JSValue.Number(Math.cos(x))
     }
     if id == NATIVE_MATH_TAN {
-        return JSValue.Number(mathTan(x))
+        return JSValue.Number(Math.tan(x))
     }
     if id == NATIVE_MATH_ASIN {
-        return JSValue.Number(mathAtan2(x, mathSqrt(1.0 - x * x)))
+        return JSValue.Number(Math.atan2(x, Math.sqrt(1.0 - x * x)))
     }
     if id == NATIVE_MATH_ACOS {
-        return JSValue.Number(mathAtan2(mathSqrt(1.0 - x * x), x))
+        return JSValue.Number(Math.atan2(Math.sqrt(1.0 - x * x), x))
     }
     if id == NATIVE_MATH_ATAN {
-        return JSValue.Number(mathAtan2(x, 1.0))
+        return JSValue.Number(Math.atan2(x, 1.0))
     }
     if id == NATIVE_MATH_ATAN2 {
         var y2 = 0.0
         if args.len() > 1 {
             y2 = toNum(args[1])
         }
-        return JSValue.Number(mathAtan2(x, y2))
+        return JSValue.Number(Math.atan2(x, y2))
     }
     if id == NATIVE_MATH_SQRT {
-        return JSValue.Number(sqrt(x))
+        return JSValue.Number(Math.sqrt(x))
     }
     if id == NATIVE_MATH_POW {
         var y = 0.0
         if args.len() > 1 {
             y = toNum(args[1])
         }
-        return JSValue.Number(pow(x, y))
+        return JSValue.Number(Math.pow(x, y))
     }
     return JSValue.Undefined
 }
@@ -6485,7 +6490,6 @@ fn serviceFetches(st: &mut Interp) {
         }
         if done {
             let p = st.fetches[i].promise
-            st.fetches[i].chan.destroy()
             st.fetches.remove(i)
             settlePromise(st, p, 1, JSValue.Str(payload))
         } else {
@@ -8759,8 +8763,8 @@ fn isoFromMillis(ms: f64): string {
         return "Invalid Date"
     }
     let total = (ms / 1000.0) as i64
-    let dt = dateTimeFromEpoch(total)
-    var frac = mathMod(ms, 1000.0) as i64
+    let dt = DateTime.fromEpoch(total)
+    var frac = Math.mod(ms, 1000.0) as i64
     if frac < 0 {
         frac = frac + 1000
     }
@@ -8793,8 +8797,8 @@ fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSVa
     }
     if sname == "setFullYear" || sname == "setMonth" || sname == "setDate" || sname == "setHours" || sname == "setMinutes" || sname == "setSeconds" || sname == "setMilliseconds" {
         let secs = (ms / 1000.0) as i64
-        let dt = dateTimeFromEpoch(secs)
-        var frac = mathMod(ms, 1000.0) as i64
+        let dt = DateTime.fromEpoch(secs)
+        var frac = Math.mod(ms, 1000.0) as i64
         if frac < 0 {
             frac = frac + 1000
         }
@@ -8876,9 +8880,9 @@ fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSVa
         gname = "get" + strSlice(gname, 6, gname.len())
     }
     if gname == "getFullYear" || gname == "getMonth" || gname == "getDate" || gname == "getHours" || gname == "getMinutes" || gname == "getSeconds" || gname == "getMilliseconds" || gname == "getDay" {
-        var dt = dateTimeFromEpochLocal((ms / 1000.0) as i64)
+        var dt = DateTime.fromEpochLocal((ms / 1000.0) as i64)
         if isUtc {
-            dt = dateTimeFromEpoch((ms / 1000.0) as i64)
+            dt = DateTime.fromEpoch((ms / 1000.0) as i64)
         }
         if gname == "getFullYear" {
             return JSValue.Number(dt.year as f64)
@@ -8902,7 +8906,7 @@ fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSVa
         if gname == "getDay" {
             return JSValue.Number(dt.weekday as f64)
         }
-        return JSValue.Number(mathMod(ms, 1000.0))
+        return JSValue.Number(Math.mod(ms, 1000.0))
     }
     if name == "toString" || name == "toUTCString" || name == "toLocaleString" || name == "toLocaleDateString" || name == "toLocaleTimeString" || name == "toDateString" {
         return JSValue.Str(isoFromMillis(ms))

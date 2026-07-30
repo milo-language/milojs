@@ -6,15 +6,13 @@
 //
 //   milojs app.js            run app.js as a Node-style program
 //
-// Status: the engine + built-in globals are in place; process is wired. The
-// module loader (require) and the fs/http/stream/Buffer shims are the next build
-// — until require lands, a real npm bundle stops at "require is not defined".
+// Status: CommonJS/ESM loading, the event loop, async suspension, fs/http,
+// streams, Buffer, fetch, and Node-API loading are present. This remains a
+// compatibility slice rather than a general Node replacement; docs/status.md is
+// the maintained capability and product-gate dashboard.
 
-from "std/io" import {
+from "std/fs" import {
     readFile
-}
-from "std/string" import {
-    strSplit, strTrim, strSlice
 }
 from "std/environ" import {
     envVars
@@ -29,7 +27,7 @@ from "std/strconv" import {
     parseInt
 }
 from "std/env" import {
-    getEnv
+    Env
 }
 from "std/args" import {
     args
@@ -49,6 +47,9 @@ from "./runtime" import {
 from "./driver" import {
     makeInterp, bootInterp
 }
+from "./builtins" import {
+    strSlice
+}
 from "./modules" import {
     preloadGraph, dirOf, fileExists
 }
@@ -66,7 +67,7 @@ from "./repl" import {
 }
 
 fn addEnvVar(st: &mut Interp, envObj: i64, name: string) {
-    match getEnv(name.clone()) {
+    match Env.get(name.clone()) {
         Option.Some(v) => {
             objSet(st, envObj, name, JSValue.Str(v))
         }
@@ -153,8 +154,8 @@ fn loadEnvFile(st: &mut Interp, envPath: &string) {
             if envObj < 0 {
                 return
             }
-            for line in strSplit(text, "\n") {
-                let trimmed = strTrim(line)
+            for line in text.split("\n") {
+                let trimmed = line.trim()
                 if trimmed.len() > 0 && trimmed[0] != '#' {
                     var eq: i64 = -1
                     var i: i64 = 0
@@ -165,8 +166,8 @@ fn loadEnvFile(st: &mut Interp, envPath: &string) {
                         i = i + 1
                     }
                     if eq > 0 {
-                        let key = strTrim(strSlice(trimmed, 0, eq))
-                        var value = strTrim(strSlice(trimmed, eq + 1, trimmed.len()))
+                        let key = strSlice(trimmed, 0, eq).trim()
+                        var value = strSlice(trimmed, eq + 1, trimmed.len()).trim()
                         // strip one layer of matching quotes
                         if value.len() >= 2 {
                             let q = value[0]
@@ -215,7 +216,7 @@ fn main(): i32 {
     }
 
     var gcStats = false
-    match getEnv("MILOJS_GC_STATS") {
+    match Env.get("MILOJS_GC_STATS") {
         Option.Some(_v) => {
             gcStats = true
         }
@@ -225,7 +226,7 @@ fn main(): i32 {
     // MILOJS_GC_THRESHOLD=1 collects at every safepoint — used by the GC-stress
     // test pass to catch values left unrooted across a nested call
     var gcThreshold: i64 = 1024
-    match getEnv("MILOJS_GC_THRESHOLD") {
+    match Env.get("MILOJS_GC_THRESHOLD") {
         Option.Some(v) => {
             match parseInt(v) {
                 Option.Some(n) => {
@@ -242,7 +243,7 @@ fn main(): i32 {
     }
     // Headroom multiple over the live set between collections (see collect).
     var gcGrowth: i64 = 2
-    match getEnv("MILOJS_GC_GROWTH") {
+    match Env.get("MILOJS_GC_GROWTH") {
         Option.Some(gv) => {
             match parseInt(gv) {
                 Option.Some(n) => {
@@ -269,7 +270,7 @@ fn main(): i32 {
     // needs.
     gInterp.callDepthLimit = 500
     // MILOJS_AWAIT_BUDGET_MS shortens the stuck-await deadline for debugging
-    match getEnv("MILOJS_AWAIT_BUDGET_MS") {
+    match Env.get("MILOJS_AWAIT_BUDGET_MS") {
         Option.Some(bv) => {
             match parseInt(bv) {
                 Option.Some(n) => {

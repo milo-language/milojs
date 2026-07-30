@@ -7,7 +7,7 @@
 // Requires are found by scanning the token stream for `require("literal")`, so
 // computed requires (require(someVar)) are not discovered — a known limit.
 
-from "std/io" import {
+from "std/fs" import {
     readFile
 }
 from "./lexer" import {

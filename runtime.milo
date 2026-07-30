@@ -18,7 +18,7 @@ from "./regex" import {
     Regex
 }
 from "std/math" import {
-    mathFloor
+    Math
 }
 
 struct Binding {
@@ -214,7 +214,7 @@ pub fn taStore(bytes: &mut Vec<u8>, kind: i64, at: i64, v: f64) {
             if c > 255.0 {
                 c = 255.0
             }
-            let lo = mathFloor(c)
+            let lo = Math.floor(c)
             let frac = c - lo
             var r = lo as i64
             if frac > 0.5 {
