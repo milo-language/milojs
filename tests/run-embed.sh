@@ -33,3 +33,6 @@ cp include/milojs.h "$TMP/milojs.h"
 "$CC" -std=c11 -Wall -Wextra -Werror -I"$TMP" \
   tests/embed/context.c "$TMP/libmilojs.a" $MILOJS_EMBED_LIBS -o "$TMP/context"
 "$TMP/context"
+"$CC" -std=c11 -Wall -Wextra -Werror -I"$TMP" \
+  examples/embed/hello.c "$TMP/libmilojs.a" $MILOJS_EMBED_LIBS -o "$TMP/hello"
+test "$("$TMP/hello")" = "hello from embedded milo, woof! the answer is 42"

@@ -98,7 +98,7 @@ jobs:
       - name: package
         run: |
           mkdir -p "pkg/milojs-${{ matrix.target }}"
-          cp milojs milojs-engine README.md "pkg/milojs-${{ matrix.target }}/"
+          cp milojs milojs-engine README.md LICENSE "pkg/milojs-${{ matrix.target }}/"
           tar czf "milojs-${{ matrix.target }}.tar.gz" -C pkg "milojs-${{ matrix.target }}"
 
       - uses: actions/upload-artifact@v4
