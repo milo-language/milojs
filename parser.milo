@@ -722,7 +722,7 @@ fn parseArrayLiteral(p: &mut PState, prog: &mut Prog): i64 {
         if peekKind(p) == T_COMMA {
             // elision [1, , 3]: a HOLE, recorded as sentinel -1 (a real slot in
             // length terms, but `in`/hasOwnProperty/keys say absent)
-            elems.push(0 - 1)
+            elems.push(-1)
             advance(p)
         } else {
             elems.push(parseArg(p, prog))

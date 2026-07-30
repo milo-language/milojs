@@ -167,7 +167,7 @@ fn jsExpandExpForm(s: &string): string {
         j = j + 1
     }
     if expNeg {
-        exp = 0 - exp
+        exp = -exp
     }
     // point position after the first digit: n = exp + 1 (per the spec's k/n)
     let pointAt = exp + 1
@@ -299,7 +299,7 @@ pub fn toInt32(v: &JSValue): i64 {
     }
     var t = mathFloor(mathAbs(n)) as i64
     if n < 0.0 {
-        t = 0 - t
+        t = -t
     }
     var m = t & 4294967295
     if m >= 2147483648 {
@@ -417,7 +417,7 @@ pub fn numToRadix(n: f64, radix: i64): string {
     var neg = false
     if v < 0.0 {
         neg = true
-        v = 0.0 - v
+        v = -v
     }
     let radixF = radix as f64
     var integer = mathFloor(v)
@@ -562,7 +562,7 @@ pub fn numToPrecision(n: f64, digits: i64): string {
     }
     var mag = n
     if mag < 0.0 {
-        mag = 0.0 - mag
+        mag = -mag
     }
     if mag == 0.0 {
         return numToFixed(n, digits - 1)
@@ -650,7 +650,7 @@ pub fn numToExponential(n: f64, digits: i64, haveDigits: bool): string {
     var mag = n
     if mag < 0.0 {
         neg = true
-        mag = 0.0 - mag
+        mag = -mag
     }
     var exp: i64 = 0
     if mag != 0.0 {
@@ -687,7 +687,7 @@ pub fn numToExponential(n: f64, digits: i64, haveDigits: bool): string {
         out = "-" + out
     }
     if exp < 0 {
-        return out + "e-" + i64ToStr(0 - exp)
+        return out + "e-" + i64ToStr(-exp)
     }
     return out + "e+" + i64ToStr(exp)
 }
@@ -718,7 +718,7 @@ pub fn numToFixed(n: f64, digits: i64): string {
     var v = scaled
     if v < 0 {
         neg = true
-        v = 0 - v
+        v = -v
     }
     if scaled == 0 && signNeg {
         neg = true

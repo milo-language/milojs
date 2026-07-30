@@ -3364,7 +3364,7 @@ fn mathNative(id: i64, args: &Vec<JSValue>, st: &mut Interp): JSValue {
         st.rngState = next
         var bits = next
         if bits < 0 {
-            bits = 0 - bits
+            bits = -bits
         }
         let m = bits % 9007199254740992
         return JSValue.Number((m as f64) / 9007199254740992.0)
@@ -10004,7 +10004,7 @@ fn numToLocale(n: f64): string {
     let neg = n < 0.0
     var abs = n
     if neg {
-        abs = 0.0 - n
+        abs = -n
     }
     // round to 3 fraction digits, then split on the '.'
     let fixed = numToFixed(abs, 3)
