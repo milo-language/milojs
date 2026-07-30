@@ -25,12 +25,18 @@ from "./value" import {
     JSValue, cloneValue, toNum, truthy
 }
 from "./runtime" import {
-    Interp, gInterp, newObject, newArray, objGet, objSet
+    Interp, gInterp, newObject, newArray, objGet, objSet, objSetNonEnumerable,
+    ensureExtra, scopeLookup, getFuncProto, bufferBytesHandle,
+    bufferNativeViewHandle, nativeBufferLen, nativeBufferPtr, nativeBufferSet
+}
+from "std/os" import {
+    malloc, memset
 }
 
 // napi_status — only the values this surface can actually produce.
 pub let NAPI_OK: i32 = 0
 pub let NAPI_INVALID_ARG: i32 = 1
+pub let NAPI_GENERIC_FAILURE: i32 = 9
 pub let NAPI_PENDING_EXCEPTION: i32 = 10
 
 // A function implemented by the addon. `fnPtr` is a napi_callback:
@@ -540,16 +546,6 @@ fn napi_create_bigint_words(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8): i
 }
 
 @export
-fn napi_create_buffer(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8): i32 {
-    return NAPI_OK
-}
-
-@export
-fn napi_create_buffer_copy(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8): i32 {
-    return NAPI_OK
-}
-
-@export
 fn napi_create_external_buffer(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8, _a5: *u8): i32 {
     return NAPI_OK
 }
@@ -565,11 +561,6 @@ fn napi_fatal_exception(_a0: *u8, _a1: *u8): i32 {
 
 @export
 fn napi_get_and_clear_last_exception(_a0: *u8, _a1: *u8): i32 {
-    return NAPI_OK
-}
-
-@export
-fn napi_get_buffer_info(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8): i32 {
     return NAPI_OK
 }
 
@@ -894,6 +885,142 @@ fn napi_get_property_names(_env: *u8, object: i64, result: *u8): i32 {
 
 // ── buffers and references ──
 
+// Allocate the stable native view used as a Buffer's `.bytes`. Keeping ownership
+// on the view means `const bytes = buf.bytes` also keeps the allocation alive.
+fn napiNewBufferView(length: i64, source: *u8): i64 {
+    if length < 0 {
+        return -1
+    }
+    var allocLen = length
+    if allocLen == 0 {
+        allocLen = 1
+    }
+    var ptr: *u8 = 0 as *u8
+    unsafe {
+        ptr = malloc(allocLen)
+        if (ptr as i64) == 0 {
+            return -1
+        }
+        if length > 0 {
+            if (source as i64) != 0 {
+                memcpy(ptr, source, length)
+            } else {
+                memset(ptr, 0, length)
+            }
+        }
+    }
+    let view = newObject(gInterp)
+    gInterp.objects[view].proto = gInterp.arrayProtoObj
+    let ex = ensureExtra(gInterp, view)
+    gInterp.objExtras[ex].nativeBufPtr = ptr as i64
+    gInterp.objExtras[ex].nativeBufLen = length
+    gInterp.objExtras[ex].nativeBufOwned = true
+    return view
+}
+
+fn napiBufferPrototype(): i64 {
+    match scopeLookup(gInterp, 0, "Buffer") {
+        JSValue.Func(fnIdx, _env) => {
+            return getFuncProto(gInterp, fnIdx)
+        }
+        _ => {
+            return -1
+        }
+    }
+}
+
+fn napiWrapBufferView(view: i64): i64 {
+    let buf = newObject(gInterp)
+    let proto = napiBufferPrototype()
+    if proto >= 0 {
+        gInterp.objects[buf].proto = proto
+    }
+    objSet(gInterp, buf, "bytes", JSValue.Obj(view))
+    objSet(gInterp, buf, "length", JSValue.Number(nativeBufferLen(gInterp, view) as f64))
+    objSet(gInterp, buf, "__isBuf", JSValue.Bool(true))
+    objSetNonEnumerable(gInterp, buf, "__isBuf")
+    return buf
+}
+
+// JavaScript-created Buffers use a JS array. Promote it once when native code
+// asks for a pointer so later C and JS mutations share the stable allocation.
+fn napiEnsureBufferView(buf: i64): i64 {
+    let existing = bufferNativeViewHandle(gInterp, buf)
+    if existing >= 0 {
+        return existing
+    }
+    let bytes = bufferBytesHandle(gInterp, buf)
+    if bytes < 0 {
+        return -1
+    }
+    let n = gInterp.objects[bytes].elems.len()
+    let view = napiNewBufferView(n, 0 as *u8)
+    if view < 0 {
+        return -1
+    }
+    var i: i64 = 0
+    while i < n {
+        let _ = nativeBufferSet(gInterp, view, i, toNum(gInterp.objects[bytes].elems[i]))
+        i = i + 1
+    }
+    objSet(gInterp, buf, "bytes", JSValue.Obj(view))
+    return view
+}
+
+@export
+fn napi_create_buffer(_env: *u8, length: i64, data: *u8, result: *u8): i32 {
+    if (result as i64) == 0 || (data as i64) == 0 || length < 0 {
+        return NAPI_INVALID_ARG
+    }
+    let view = napiNewBufferView(length, 0 as *u8)
+    if view < 0 {
+        return NAPI_GENERIC_FAILURE
+    }
+    let buf = napiWrapBufferView(view)
+    napiWriteHandle(data, nativeBufferPtr(gInterp, view))
+    napiWriteHandle(result, napiHandle(JSValue.Obj(buf)))
+    return NAPI_OK
+}
+
+@export
+fn napi_create_buffer_copy(_env: *u8, length: i64, source: *u8, data: *u8, result: *u8): i32 {
+    if (result as i64) == 0 || length < 0 || (length > 0 && (source as i64) == 0) {
+        return NAPI_INVALID_ARG
+    }
+    let view = napiNewBufferView(length, source)
+    if view < 0 {
+        return NAPI_GENERIC_FAILURE
+    }
+    let buf = napiWrapBufferView(view)
+    if (data as i64) != 0 {
+        napiWriteHandle(data, nativeBufferPtr(gInterp, view))
+    }
+    napiWriteHandle(result, napiHandle(JSValue.Obj(buf)))
+    return NAPI_OK
+}
+
+@export
+fn napi_get_buffer_info(_env: *u8, value: i64, data: *u8, length: *u8): i32 {
+    match napiValueOf(value) {
+        JSValue.Obj(buf) => {
+            let view = napiEnsureBufferView(buf)
+            if view < 0 {
+                return NAPI_INVALID_ARG
+            }
+            if (data as i64) != 0 {
+                napiWriteHandle(data, nativeBufferPtr(gInterp, view))
+            }
+            if (length as i64) != 0 {
+                napiWriteHandle(length, nativeBufferLen(gInterp, view))
+            }
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
 // Every predicate MUST write its out-param. Returning napi_ok without doing so
 // leaves the caller reading an uninitialized bool off its own stack — napi-rs then
 // took a plain string for a Buffer and the whole deserialize failed with a bare
@@ -902,7 +1029,7 @@ fn napi_get_property_names(_env: *u8, object: i64, result: *u8): i32 {
 fn napi_is_buffer(_env: *u8, value: i64, result: *u8): i32 {
     match napiValueOf(value) {
         JSValue.Obj(o) => {
-            napiWriteBool(result, gInterp.objects[o].isArrayBuffer)
+            napiWriteBool(result, bufferBytesHandle(gInterp, o) >= 0 || bufferNativeViewHandle(gInterp, o) >= 0)
         }
         _ => {
             napiWriteBool(result, false)

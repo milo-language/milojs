@@ -86,6 +86,6 @@ and ownership contract are documented in
 
 The runtime loads real `.node` shared libraries. Promise, reference, class,
 wrapping, threadsafe-function, and synchronous JavaScript-callback paths are
-implemented and exercised with a compiled differential addon. Thirteen of 64
-entry points remain explicit compatibility stubs; Buffer interop is the most
+implemented and exercised with a compiled differential addon. Ten of 64 entry
+points remain explicit compatibility stubs; external-Buffer finalization is the
 important missing group.

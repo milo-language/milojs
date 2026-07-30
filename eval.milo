@@ -760,6 +760,12 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
             if st.objExtras[st.objects[o].extra].taBuf >= 0 && isTypedArrayMethodName(name) {
                 return typedArrayMethod(prog, o, name, args, st)
             }
+            // A Node-API Buffer's `.bytes` is an array-like native view with
+            // Array.prototype in its chain. Re-looking up that same bound method
+            // here recurses forever; apply the generic operation to the view.
+            if nativeBufferLen(st, o) >= 0 && isArrayMethod(name) {
+                return arrayMethodGeneric(prog, JSValue.Obj(o), name, args, st)
+            }
 
             if name == "hasOwnProperty" {
                 var key = ""
@@ -1064,6 +1070,16 @@ fn setMemberDyn(prog: &Prog, o: i64, key: string, v: JSValue, st: &mut Interp) {
 }
 
 pub fn getMember(st: &Interp, o: i64, key: &string): JSValue {
+    let nativeLen = nativeBufferLen(st, o)
+    if nativeLen >= 0 {
+        if key == "length" {
+            return JSValue.Number(nativeLen as f64)
+        }
+        let ni = asArrayIndex(key)
+        if ni >= 0 {
+            return nativeBufferGet(st, o, ni)
+        }
+    }
     // A DataView shares taBuf/taOffset/taLen with typed arrays but is not
     // index-accessible and its byteLength is already in bytes. Handle its props
     // here and skip the typed-array element path below.
@@ -1140,6 +1156,13 @@ pub fn getMember(st: &Interp, o: i64, key: &string): JSValue {
 }
 
 fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
+    if nativeBufferLen(st, o) >= 0 {
+        let ni = asArrayIndex(key)
+        if ni >= 0 {
+            let _ = nativeBufferSet(st, o, ni, toNum(value))
+            return
+        }
+    }
     // Any write to a builtin prototype retires its fast dispatch path for the
     // rest of the run. Calls then resolve through the real chain so a replaced
     // method remains authoritative even if the original is restored later.
@@ -5382,6 +5405,10 @@ fn evalExprFallback(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue
                     // Uint8Array, so the numeric property is not otherwise present)
                     let bidx = asArrayIndex(key)
                     if bidx >= 0 {
+                        let nv = bufferNativeViewHandle(st, o)
+                        if nv >= 0 {
+                            return nativeBufferGet(st, nv, bidx)
+                        }
                         let bh = bufferBytesHandle(st, o)
                         if bh >= 0 {
                             return arrGet(st, bh, bidx)
@@ -5454,6 +5481,10 @@ fn evalExprFallback(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue
                     // Buffer's backing array, matching Uint8Array assignment
                     let bwidx = asArrayIndex(key)
                     if bwidx >= 0 {
+                        let nv = bufferNativeViewHandle(st, o)
+                        if nv >= 0 && nativeBufferSet(st, nv, bwidx, toNum(v)) {
+                            return cloneValue(v)
+                        }
                         let bh = bufferBytesHandle(st, o)
                         if bh >= 0 && bwidx < st.objects[bh].elems.len() {
                             let byte = (toNum(v) as i64) & 255

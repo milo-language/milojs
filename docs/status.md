@@ -81,10 +81,10 @@ builtin prototype dispatch. See `docs/backlog.md` for the maintained detail.
 
 This is an application-oriented compatibility slice, not general Node
 compatibility. Client `http.request`/`http.get`, TLS serving, child processes,
-computed module discovery, and significant package-facing edges remain. Thirteen
-of 64 Node-API entry points are honest stubs; Buffer interop is now the
-highest-impact missing group. A compiled-addon differential test locks native
-callbacks into JavaScript.
+computed module discovery, and significant package-facing edges remain. Ten of
+64 Node-API entry points are honest stubs; external-Buffer finalization remains
+from the Buffer family. A compiled-addon differential test locks native callbacks
+and shared Buffer mutation into JavaScript.
 
 ## Product gates
 

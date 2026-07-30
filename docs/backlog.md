@@ -146,16 +146,16 @@ put it.
   `milojs-engine`, costing 42 test262 and 3 QuickJS cases. The runtime handles
   them, so this is engine/runtime factoring, not a missing feature.
 
-## Node-API: 13 of 64 entry points are stubs
+## Node-API: 10 of 64 entry points are stubs
 
 `napi.milo` marks them honestly in-source (they exist only so `dlopen`, which
 resolves eagerly, does not fail the whole module). Each returns `napi_ok` without
 doing anything, which is a lie an addon can act on. Ranked by what a real addon
 hits:
 
-1. The Buffer family: `napi_get_buffer_info`, `napi_create_buffer`,
-   `napi_create_buffer_copy`, `napi_create_external_buffer`. Any addon moving
-   bytes is dead.
+1. `napi_create_external_buffer`: owned and copied Buffers now expose stable
+   shared memory in both C and JavaScript, but addon-owned memory still needs an
+   exactly-once finalizer before external buffers can be honest.
 2. `napi_get_and_clear_last_exception`, `napi_fatal_exception` — errors vanish
    instead of propagating.
 3. `napi_create_bigint_words` and the three `napi_get_value_bigint_*`.

@@ -21,7 +21,7 @@ case "$(uname -s)" in
   *)      "$CC" -shared -fPIC tests/napi/callback.c -o "$TMP/callback.node" ;;
 esac
 
-MILOJS_NAPI_ADDON="$TMP/callback.node" node tests/napi/callback.js >"$TMP/expected"
+MILOJS_NAPI_ADDON="$TMP/callback.node" node --expose-gc tests/napi/callback.js >"$TMP/expected"
 MILOJS_NAPI_ADDON="$TMP/callback.node" "$RUNTIME" tests/napi/callback.js >"$TMP/actual"
 diff -u "$TMP/expected" "$TMP/actual"
 echo "node-api callback ok"

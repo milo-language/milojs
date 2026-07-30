@@ -107,6 +107,15 @@ undefined. Gated on the non-enumerable `__isBuf` marker the Buffer constructor
 stamps (buffer.js) — NOT the mere shape — so a user object that happens to
 have `{ bytes, length }` is never mis-indexed as a buffer.
 
+### `bufferNativeViewHandle`
+
+```milo
+pub fn bufferNativeViewHandle(st: &Interp, o: i64): i64
+```
+
+Returns the native byte-view object stored in a Buffer's `.bytes`, or -1 for
+ordinary JavaScript-backed Buffers and unrelated objects.
+
 ### `collect`
 
 ```milo
@@ -337,6 +346,40 @@ pub fn newScope(st: &mut Interp, parent: i64): i64
 ```
 
 _Undocumented._
+
+### `nativeBufferGet`
+
+```milo
+pub fn nativeBufferGet(st: &Interp, o: i64, at: i64): JSValue
+```
+
+Reads one byte from a stable Node-API Buffer view, returning undefined outside
+the view.
+
+### `nativeBufferLen`
+
+```milo
+pub fn nativeBufferLen(st: &Interp, o: i64): i64
+```
+
+Returns the native view length, or -1 when the object is not a native view.
+
+### `nativeBufferPtr`
+
+```milo
+pub fn nativeBufferPtr(st: &Interp, o: i64): i64
+```
+
+Returns the stable native byte pointer for a native Buffer view.
+
+### `nativeBufferSet`
+
+```milo
+pub fn nativeBufferSet(st: &mut Interp, o: i64, at: i64, value: f64): bool
+```
+
+Writes one masked byte to a native Buffer view and reports whether the index was
+in bounds.
 
 ### `objDefineAccessor`
 
@@ -582,12 +625,12 @@ pub fn taWidth(kind: i64): i64
 
 _Undocumented._
 
-### `touchedArrayProto`
+### `touchedBuiltinProto`
 
 ```milo
-fn touchedArrayProto(st: &mut Interp, obj: i64)
+fn touchedBuiltinProto(st: &mut Interp, obj: i64)
 ```
 
-Lowest-level mutators invalidate the Array.prototype fast path. Guarding here
-rather than only at setMember means defineProperty, delete and accessor
-installation are all covered without each remembering to do it.
+Lowest-level mutators invalidate builtin-prototype fast paths. Guarding here
+rather than only at setMember covers assignment, defineProperty, deletion, and
+accessor installation.

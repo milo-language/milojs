@@ -20,6 +20,9 @@ from "./regex" import {
 from "std/math" import {
     Math
 }
+from "std/os" import {
+    free
+}
 
 struct Binding {
     name: string,
@@ -459,6 +462,11 @@ struct JSObjExtra {
     regexId: i64,
     napiFn: i64,
     napiWrap: i64,
+    // Stable native storage for Node-API Buffer byte views. A negative length
+    // means this is not a native view; the view owns the allocation when flagged.
+    nativeBufPtr: i64,
+    nativeBufLen: i64,
+    nativeBufOwned: bool,
     // Set only on the scratch array that adapts an array-like receiver for a
     // generic Array.prototype method (see arrayLikeToArray): the handle of the
     // ORIGINAL receiver, which the spec says callbacks get as their 3rd
@@ -488,6 +496,9 @@ pub fn defaultExtra(): JSObjExtra {
         regexId: -1,
         napiFn: -1,
         napiWrap: 0,
+        nativeBufPtr: 0,
+        nativeBufLen: -1,
+        nativeBufOwned: false,
         arrayLikeOrig: -1,
     }
 }
@@ -833,6 +844,11 @@ pub fn ensureExtra(st: &mut Interp, o: i64): i64 {
 fn releaseExtra(st: &mut Interp, o: i64) {
     let ex = st.objects[o].extra
     if ex != 0 {
+        if st.objExtras[ex].nativeBufOwned && st.objExtras[ex].nativeBufPtr != 0 {
+            unsafe {
+                free(st.objExtras[ex].nativeBufPtr as *u8)
+            }
+        }
         st.objExtras[ex] = defaultExtra()
         st.objExtraFree.push(ex)
         st.objects[o].extra = 0
@@ -1155,6 +1171,59 @@ pub fn bufferBytesHandle(st: &Interp, o: i64): i64 {
         }
     }
     return -1
+}
+
+// Return the native byte-view object stored in a Buffer's `.bytes`, or -1 for
+// ordinary JavaScript-backed Buffers and unrelated objects.
+pub fn bufferNativeViewHandle(st: &Interp, o: i64): i64 {
+    if objOwnIndex(st, o, "__isBuf") < 0 {
+        return -1
+    }
+    let bi = objOwnIndex(st, o, "bytes")
+    if bi < 0 {
+        return -1
+    }
+    match st.objects[o].props[bi].value {
+        JSValue.Obj(view) => {
+            if st.objExtras[st.objects[view].extra].nativeBufLen >= 0 {
+                return view
+            }
+        }
+        _ => {
+        }
+    }
+    return -1
+}
+
+pub fn nativeBufferLen(st: &Interp, o: i64): i64 {
+    return st.objExtras[st.objects[o].extra].nativeBufLen
+}
+
+pub fn nativeBufferPtr(st: &Interp, o: i64): i64 {
+    return st.objExtras[st.objects[o].extra].nativeBufPtr
+}
+
+pub fn nativeBufferGet(st: &Interp, o: i64, at: i64): JSValue {
+    let ex = st.objects[o].extra
+    if at < 0 || at >= st.objExtras[ex].nativeBufLen {
+        return JSValue.Undefined
+    }
+    unsafe {
+        let p = (st.objExtras[ex].nativeBufPtr + at) as *u8
+        return JSValue.Number((*p) as f64)
+    }
+}
+
+pub fn nativeBufferSet(st: &mut Interp, o: i64, at: i64, value: f64): bool {
+    let ex = st.objects[o].extra
+    if at < 0 || at >= st.objExtras[ex].nativeBufLen {
+        return false
+    }
+    unsafe {
+        let p = (st.objExtras[ex].nativeBufPtr + at) as *u8
+        *p = ((value as i64) & 255) as u8
+    }
+    return true
 }
 
 // A key names an array element only if it is a canonical non-negative integer

@@ -67,18 +67,20 @@ _Undocumented._
 ### `napi_create_buffer`
 
 ```milo
-fn napi_create_buffer(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8): i32
+fn napi_create_buffer(_env: *u8, length: i64, data: *u8, result: *u8): i32
 ```
 
-_Undocumented._
+Creates an owned Buffer with stable native storage and returns both its byte
+pointer and JavaScript handle.
 
 ### `napi_create_buffer_copy`
 
 ```milo
-fn napi_create_buffer_copy(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8): i32
+fn napi_create_buffer_copy(_env: *u8, length: i64, source: *u8, data: *u8, result: *u8): i32
 ```
 
-_Undocumented._
+Copies native bytes into a separately owned Buffer. The optional data out-param
+points at the copy rather than the source.
 
 ### `napi_create_double`
 
@@ -235,10 +237,11 @@ _Undocumented._
 ### `napi_get_buffer_info`
 
 ```milo
-fn napi_get_buffer_info(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8): i32
+fn napi_get_buffer_info(_env: *u8, value: i64, data: *u8, length: *u8): i32
 ```
 
-_Undocumented._
+Returns a stable shared byte pointer and length. JavaScript-backed Buffers are
+promoted once to native storage so later C and JavaScript writes remain coherent.
 
 ### `napi_get_cb_info`
 
@@ -408,7 +411,7 @@ _Undocumented._
 fn napi_is_buffer(_env: *u8, value: i64, result: *u8): i32
 ```
 
-_Undocumented._
+Writes true for both JavaScript-backed and native-backed MiloJS Buffers.
 
 ### `napi_ref_threadsafe_function`
 
