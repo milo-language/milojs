@@ -1,13 +1,5 @@
 ## ast
 
-### `newProg`
-
-```milo
-pub fn newProg(): Prog
-```
-
-Create an empty program arena.
-
 ### `addBlock`
 
 ```milo
@@ -32,22 +24,6 @@ pub fn addStmt(prog: &mut Prog, s: Stmt): StmtId
 
 _Undocumented._
 
-### `cloneExpr`
-
-```milo
-fn cloneExpr(e: &Expr): Expr
-```
-
-_Undocumented._
-
-### `cloneStmt`
-
-```milo
-fn cloneStmt(s: &Stmt): Stmt
-```
-
-_Undocumented._
-
 ### `getExpr`
 
 ```milo
@@ -63,3 +39,11 @@ pub fn getStmt(prog: &Prog, id: StmtId): Stmt
 ```
 
 _Undocumented._
+
+### `newProg`
+
+```milo
+pub fn newProg(): Prog
+```
+
+Create an empty program arena.

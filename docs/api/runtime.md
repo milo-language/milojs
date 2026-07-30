@@ -1,21 +1,5 @@
 ## runtime
 
-### `allocObj`
-
-```milo
-fn allocObj(st: &mut Interp, isArray: bool): i64
-```
-
-_Undocumented._
-
-### `arrClearHole`
-
-```milo
-fn arrClearHole(st: &mut Interp, obj: i64, idx: i64)
-```
-
-_Undocumented._
-
 ### `arrGet`
 
 ```milo
@@ -113,7 +97,7 @@ have `{ bytes, length }` is never mis-indexed as a buffer.
 pub fn bufferNativeViewHandle(st: &Interp, o: i64): i64
 ```
 
-Returns the native byte-view object stored in a Buffer's `.bytes`, or -1 for
+Return the native byte-view object stored in a Buffer's `.bytes`, or -1 for
 ordinary JavaScript-backed Buffers and unrelated objects.
 
 ### `collect`
@@ -215,24 +199,6 @@ pub fn isPromiseCtor(st: &Interp, o: i64): bool
 
 _Undocumented._
 
-### `isSymbolKey`
-
-```milo
-fn isSymbolKey(s: &string): bool
-```
-
-JS own-property enumeration order: integer-index keys ascending first, then
-the remaining string keys in insertion order. Returns prop indices into
-st.objects[o].props in that order. Symbol-keyed props (stored with the
-"@@sym:" prefix, including internal ones like Symbol.iterator) are omitted —
-string-key enumeration never yields symbols in JS. Enumeration sites
-(Object.keys/values/entries, for-in, spread, Object.assign) iterate these
-instead of 0..len so `{ 2:a, 1:b, 10:c, x:d }` enumerates 1,2,10,x and a
-symbol key never leaks into keys()/for-in/JSON — matching V8/node.
-A property key is a symbol iff it carries the "@@sym:" sentinel prefix that
-symbol values stringify to (see makeSymbol in eval.milo). Kept here so
-runtime.milo stays free of an eval.milo import cycle.
-
 ### `linkProtoConstructor`
 
 ```milo
@@ -259,52 +225,6 @@ pub fn mapPut(st: &mut Interp, o: i64, key: JSValue, value: JSValue)
 
 _Undocumented._
 
-### `markObject`
-
-```milo
-fn markObject(st: &mut Interp, i: i64)
-```
-
-The children are gathered into local Vecs before being marked because a borrow
-of st.objects[i] cannot be held across the recursive markObject(st, ..) call.
-Gather HANDLES, not values: this previously cloned every property and element
-into a Vec<JSValue>, so each collection deep-copied the whole live heap
-(strings included). That made marking, not tracing, the dominant cost of a
-GC — 43% of matmul.
-
-### `markScope`
-
-```milo
-fn markScope(st: &mut Interp, i: i64)
-```
-
-Mark a scope live, then everything it can reach: its lexical parent and every
-value bound in it (closures → their env, objects → their heap slot).
-
-### `markTargetOf`
-
-```milo
-fn markTargetOf(v: &JSValue): MarkTarget
-```
-
-Mirrors markValue's cases exactly, but yields handles instead of a value.
-
-### `markValue`
-
-```milo
-fn markValue(st: &mut Interp, v: &JSValue)
-```
-
-_Undocumented._
-
-### `markVia`
-
-```milo
-fn markVia(st: &mut Interp, t: MarkTarget)
-```
-
-Mark whatever the value at an already-borrowed slot references.
-
 ### `maybeGc`
 
 ```milo
@@ -313,6 +233,38 @@ pub fn maybeGc(st: &mut Interp)
 
 Run a collection if enough allocations happened since the last one. Called
 only from execBlock between statements (the GC safepoint).
+
+### `nativeBufferGet`
+
+```milo
+pub fn nativeBufferGet(st: &Interp, o: i64, at: i64): JSValue
+```
+
+_Undocumented._
+
+### `nativeBufferLen`
+
+```milo
+pub fn nativeBufferLen(st: &Interp, o: i64): i64
+```
+
+_Undocumented._
+
+### `nativeBufferPtr`
+
+```milo
+pub fn nativeBufferPtr(st: &Interp, o: i64): i64
+```
+
+_Undocumented._
+
+### `nativeBufferSet`
+
+```milo
+pub fn nativeBufferSet(st: &mut Interp, o: i64, at: i64, value: f64): bool
+```
+
+_Undocumented._
 
 ### `newArray`
 
@@ -346,40 +298,6 @@ pub fn newScope(st: &mut Interp, parent: i64): i64
 ```
 
 _Undocumented._
-
-### `nativeBufferGet`
-
-```milo
-pub fn nativeBufferGet(st: &Interp, o: i64, at: i64): JSValue
-```
-
-Reads one byte from a stable Node-API Buffer view, returning undefined outside
-the view.
-
-### `nativeBufferLen`
-
-```milo
-pub fn nativeBufferLen(st: &Interp, o: i64): i64
-```
-
-Returns the native view length, or -1 when the object is not a native view.
-
-### `nativeBufferPtr`
-
-```milo
-pub fn nativeBufferPtr(st: &Interp, o: i64): i64
-```
-
-Returns the stable native byte pointer for a native Buffer view.
-
-### `nativeBufferSet`
-
-```milo
-pub fn nativeBufferSet(st: &mut Interp, o: i64, at: i64, value: f64): bool
-```
-
-Writes one masked byte to a native Buffer view and reports whether the index was
-in bounds.
 
 ### `objDefineAccessor`
 
@@ -477,14 +395,6 @@ pub fn pushActive(st: &mut Interp, scope: i64)
 Roots pushed/popped around every call and block body. Popping makes a
 completed frame collectable at the next GC safepoint.
 
-### `pushMarkTargets`
-
-```milo
-fn pushMarkTargets(v: &JSValue, objs: &mut Vec<i64>, scopes: &mut Vec<i64>)
-```
-
-Append a value's reference targets to pending work lists.
-
 ### `pushTemp`
 
 ```milo
@@ -492,16 +402,6 @@ pub fn pushTemp(st: &mut Interp, v: JSValue)
 ```
 
 _Undocumented._
-
-### `releaseExtra`
-
-```milo
-fn releaseExtra(st: &mut Interp, o: i64)
-```
-
-Return an object's private extra slot to the free list (called by the sweep).
-A no-op for the shared default (0). Clearing the payload here rather than at
-reuse keeps freed slots from pinning JSValues the collector already released.
 
 ### `restoreExecCtx`
 
@@ -624,13 +524,3 @@ pub fn taWidth(kind: i64): i64
 ```
 
 _Undocumented._
-
-### `touchedBuiltinProto`
-
-```milo
-fn touchedBuiltinProto(st: &mut Interp, obj: i64)
-```
-
-Lowest-level mutators invalidate builtin-prototype fast paths. Guarding here
-rather than only at setMember covers assignment, defineProperty, deletion, and
-accessor installation.

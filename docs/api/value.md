@@ -16,25 +16,6 @@ pub fn daysFromCivil(y: i64, m: i64, d: i64): i64
 
 Days since 1970-01-01 (Howard Hinnant's civil-from-days, inverted).
 
-### `floatG`
-
-```milo
-fn floatG(n: f64, prec: i32): string
-```
-
-_Undocumented._
-
-### `fracToLimbs`
-
-```milo
-fn fracToLimbs(x0: f64, nLimbs: i64): Vec<i64>
-```
-
-Exact fixed-point fraction: 32-bit limbs, limbs[i] weighs 2^-(32*(i+1)).
-A double's fraction part has < 1075 significant bits, so extraction by
-repeated exact *2^32 scaling terminates (power-of-two scaling and
-x - floor(x) are both exact in IEEE arithmetic).
-
 ### `funcEnv`
 
 ```milo
@@ -52,26 +33,10 @@ pub fn funcHandle(v: &JSValue): i64
 
 function index if v is a user function, else -1
 
-### `hexByte`
-
-```milo
-fn hexByte(c: u8): string
-```
-
-_Undocumented._
-
 ### `hexDigitVal`
 
 ```milo
 pub fn hexDigitVal(c: u8): i64
-```
-
-_Undocumented._
-
-### `hexVal`
-
-```milo
-fn hexVal(c: u8): i64
 ```
 
 _Undocumented._
@@ -92,14 +57,6 @@ pub fn isFiniteF(n: f64): bool
 
 _Undocumented._
 
-### `isJsWs`
-
-```milo
-fn isJsWs(c: u8): bool
-```
-
-_Undocumented._
-
 ### `isNullish`
 
 ```milo
@@ -108,42 +65,10 @@ pub fn isNullish(v: &JSValue): bool
 
 null or undefined — the nullish set that a `?.` link short-circuits on.
 
-### `isNumericLiteral`
-
-```milo
-fn isNumericLiteral(t: &string): bool
-```
-
-_Undocumented._
-
-### `isoNum`
-
-```milo
-fn isoNum(s: &string, from: i64, to: i64): i64
-```
-
-_Undocumented._
-
 ### `isStr`
 
 ```milo
 pub fn isStr(v: &JSValue): bool
-```
-
-_Undocumented._
-
-### `isUriReserved`
-
-```milo
-fn isUriReserved(c: u8): bool
-```
-
-_Undocumented._
-
-### `isUriUnreserved`
-
-```milo
-fn isUriUnreserved(c: u8): bool
 ```
 
 _Undocumented._
@@ -155,17 +80,6 @@ pub fn jsEquals(a: &JSValue, b: &JSValue): bool
 ```
 
 _Undocumented._
-
-### `jsExpandExpForm`
-
-```milo
-fn jsExpandExpForm(s: &string): string
-```
-
-%g picks exponent form well before JS does. The spec uses plain decimal
-whenever the decimal point lands in (-6, 21]: 1e16 prints as
-"10000000000000000" and 1e-6 as "0.000001"; exponent form starts at 1e21 and
-1e-7. Expand a %g exponent form back to plain decimal when JS requires it.
 
 ### `jsInf`
 
@@ -192,23 +106,6 @@ pub fn jsNan(): f64
 
 _Undocumented._
 
-### `jsParseDigits`
-
-```milo
-fn jsParseDigits(s: &string, start: i64, radix: i64, neg: bool): f64
-```
-
-allowExp: parseFloat and ToNumber accept 1e3; parseInt does NOT (parseInt("12e3")
-is 12, stopping at the 'e').
-
-### `jsParseDigitsEx`
-
-```milo
-fn jsParseDigitsEx(s: &string, start: i64, radix: i64, neg: bool, allowExp: bool): f64
-```
-
-_Undocumented._
-
 ### `jsParseFloatPrefix`
 
 ```milo
@@ -228,14 +125,6 @@ Unlike toNum, trailing garbage is ignored rather than poisoning the result.
 parseInt auto-detects an 0x prefix; parseFloat must NOT (parseFloat("0x1234")
 is 0, because it stops at the 'x'). autoHex distinguishes the two callers.
 
-### `jsParsePrefixNumEx`
-
-```milo
-fn jsParsePrefixNumEx(s: &string, radix: i64, autoHex: bool): f64
-```
-
-_Undocumented._
-
 ### `jsStrictEquals`
 
 ```milo
@@ -246,30 +135,6 @@ JS loose equality, simplified: null==undefined, same-type direct, mixed via
 numeric coercion.
 Strict equality (===): same type, same value, no coercion. Objects, functions
 and natives compare by identity (their handle/index).
-
-### `limbsLess`
-
-```milo
-fn limbsLess(a: &Vec<i64>, b: &Vec<i64>): bool
-```
-
-_Undocumented._
-
-### `limbsMulSmall`
-
-```milo
-fn limbsMulSmall(limbs: &mut Vec<i64>, m: i64): i64
-```
-
-limbs *= m (m <= 36); returns the integer carry-out (the next digit)
-
-### `limbsSumOverflows`
-
-```milo
-fn limbsSumOverflows(a: &Vec<i64>, b: &Vec<i64>): bool
-```
-
-does a + b carry past 1.0?
 
 ### `nativeHandle`
 
@@ -361,41 +226,6 @@ pub fn parseIsoDate(s: &string): f64
 
 Parse the ISO-8601 forms JS accepts from a string: YYYY-MM-DD with an optional
 THH:MM:SS(.mmm)(Z). Anything else is NaN, matching Invalid Date.
-
-### `radixDigitChar`
-
-```milo
-fn radixDigitChar(d: i64): u8
-```
-
-_Undocumented._
-
-### `roundHalfAwayFromZero`
-
-```milo
-fn roundHalfAwayFromZero(x: f64): i64
-```
-
-_Undocumented._
-
-### `startsWithInfinity`
-
-```milo
-fn startsWithInfinity(t: &string): bool
-```
-
-ToNumber requires the ENTIRE string to be a numeric literal — unlike
-parseFloat, which happily stops at the first bad character. Without this
-Number("12abc") would be 12 instead of NaN.
-
-### `stripExpZeros`
-
-```milo
-fn stripExpZeros(s: &string): string
-```
-
-C's %g pads the exponent to at least two digits (1e-07); JS does not (1e-7).
-Only leading zeros go — 1e+21 and 1e-100 are already correct.
 
 ### `strLess`
 

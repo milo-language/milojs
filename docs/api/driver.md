@@ -1,15 +1,5 @@
 ## driver
 
-### `evalSourceValue`
-
-```milo
-pub fn evalSourceValue(src: &string, prog: &mut Prog, st: &mut Interp): JSValue
-```
-
-Evaluate one script into a persistent program and return its completion value.
-Unlike the CLI path, this never prints an uncaught exception: callers inspect
-the interpreter exception state.
-
 ### `bootInterp`
 
 ```milo
@@ -30,6 +20,17 @@ see MILOJS_GC_THRESHOLD.
 An Error object stringifies as [object Object], which says nothing about what
 went wrong. Report name and message when the thrown value is an error.
 
+### `evalSourceValue`
+
+```milo
+pub fn evalSourceValue(src: &string, prog: &mut Prog, st: &mut Interp): JSValue
+```
+
+Evaluate one script into a persistent program and return its completion value.
+Unlike the CLI path, this never prints an uncaught exception: callers inspect
+st.throwing/st.thrownValue. Keeping `prog` alive is required because functions
+retain indices into its arenas after evaluation returns.
+
 ### `makeInterp`
 
 ```milo
@@ -37,12 +38,3 @@ pub fn makeInterp(gcStats: bool, gcThreshold: i64, gcGrowth: i64): Interp
 ```
 
 _Undocumented._
-
-### `runSource`
-
-```milo
-fn runSource(src: &string, st: &mut Interp): i32
-```
-
-Lex, parse, and execute a source string in the given interpreter's globals.
-Returns 0 on success, 1 if an uncaught exception escaped.

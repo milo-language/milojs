@@ -71,11 +71,25 @@ Run the fast symbol and generated-document checks before committing:
 
 The preview C ABI is single-context while async/generator re-entry remains process-global. It supports evaluation, primitive values, property reads, exceptions, explicit value release, and GC-rooted object handles. `milo build-lib` must finish successfully because it generates both `libmilojs.a` and `libmilojs.h`.
 
-Build the library, then compile and run the [C embedding example](examples/embed/hello.c) on Linux:
+Build the library, then compile and run the [C embedding example](examples/embed/hello.c).
+
+On Linux:
 
 ```sh
+# Linux
 milo build-lib libmilojs.milo -o libmilojs.a &&
 cc -std=c11 -I. -Iinclude examples/embed/hello.c libmilojs.a -lm -lssl -lcrypto -ldl -pthread -o hello &&
+./hello
+```
+
+On macOS (drop `-lm`/`-ldl`; point at Homebrew's OpenSSL):
+
+```sh
+# macOS
+milo build-lib libmilojs.milo -o libmilojs.a &&
+cc -std=c11 -I. -Iinclude \
+  -I"$(brew --prefix openssl)/include" -L"$(brew --prefix openssl)/lib" \
+  examples/embed/hello.c libmilojs.a -lssl -lcrypto -pthread -o hello &&
 ./hello
 ```
 

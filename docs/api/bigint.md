@@ -16,30 +16,6 @@ pub fn bnAdd(a: &string, b: &string): string
 
 _Undocumented._
 
-### `bnAddMag`
-
-```milo
-fn bnAddMag(a: &string, b: &string): string
-```
-
-_Undocumented._
-
-### `bnBinPad`
-
-```milo
-fn bnBinPad(mag: &string, width: i64): string
-```
-
-pad a magnitude's binary form on the left to `width` bits
-
-### `bnBitLen`
-
-```milo
-fn bnBitLen(mag: &string): i64
-```
-
-_Undocumented._
-
 ### `bnBitwise`
 
 ```milo
@@ -58,14 +34,6 @@ pub fn bnCmp(a: &string, b: &string): i64
 
 -1 / 0 / 1
 
-### `bnCmpMag`
-
-```milo
-fn bnCmpMag(a: &string, b: &string): i64
-```
-
--1 / 0 / 1 for a < / == / > b
-
 ### `bnDiv`
 
 ```milo
@@ -73,14 +41,6 @@ pub fn bnDiv(a: &string, b: &string): string
 ```
 
 BigInt division truncates toward zero; remainder takes the DIVIDEND's sign.
-
-### `bnDivModMag`
-
-```milo
-fn bnDivModMag(a: &string, b: &string): BnDivResult
-```
-
-long division of magnitudes: a / b, b != "0". quotient + remainder, both >= 0.
 
 ### `bnFromF64`
 
@@ -100,22 +60,6 @@ pub fn bnFromRadix(s: &string, radix: i64): string
 parse a base-`radix` magnitude string (no sign) into a canonical decimal
 BigInt. Used for hex/oct/bin BigInt literals and BigInt("0x..").
 
-### `bnIsNeg`
-
-```milo
-fn bnIsNeg(s: &string): bool
-```
-
-_Undocumented._
-
-### `bnMag`
-
-```milo
-fn bnMag(s: &string): string
-```
-
-the magnitude (unsigned digits) of a canonical BigInt
-
 ### `bnMod`
 
 ```milo
@@ -128,14 +72,6 @@ _Undocumented._
 
 ```milo
 pub fn bnMul(a: &string, b: &string): string
-```
-
-_Undocumented._
-
-### `bnMulMag`
-
-```milo
-fn bnMulMag(a: &string, b: &string): string
 ```
 
 _Undocumented._
@@ -155,14 +91,6 @@ pub fn bnPow(a: &string, e: &string): string
 ```
 
 a ** e, e >= 0 (the caller rejects a negative exponent). Square-and-multiply.
-
-### `bnReverse`
-
-```milo
-fn bnReverse(v: &Vec<u8>): string
-```
-
-_Undocumented._
 
 ### `bnShl`
 
@@ -197,14 +125,6 @@ pub fn bnSub(a: &string, b: &string): string
 
 _Undocumented._
 
-### `bnSubMag`
-
-```milo
-fn bnSubMag(a: &string, b: &string): string
-```
-
-a - b, requires a >= b (magnitudes)
-
 ### `bnToRadix`
 
 ```milo
@@ -214,15 +134,6 @@ pub fn bnToRadix(s: &string, radix: i64): string
 canonical decimal BigInt → base-`radix` string (2..36), lowercase digits.
 Repeated division of the magnitude by the radix; the remainder each step is
 the next low-order digit. Arbitrary precision — no f64 round-trip.
-
-### `bnTwosComp`
-
-```milo
-fn bnTwosComp(a: &string, width: i64): string
-```
-
-width-bit two's-complement magnitude of a (unsigned string). Non-negative → a;
-negative → 2^width − |a|, which has the sign bit set.
 
 ### `isDecimalIntStr`
 
