@@ -106,6 +106,18 @@ pub struct ArrLitId {
     index: i64,
 }
 
+// Append-only declaration-list descriptor slot.
+@derive(Eq)
+pub struct DeclListId {
+    index: i64,
+}
+
+// Append-only switch-case-list descriptor slot.
+@derive(Eq)
+pub struct SwitchId {
+    index: i64,
+}
+
 // Append-only statement slot. Construction stays in addStmt so every published
 // ID is in bounds for its owning Prog; optional statement links use Option.
 @derive(Eq)
@@ -137,7 +149,7 @@ pub enum Stmt {
     For(Option<StmtId>, Option<ExprId>, Option<ExprId>, StmtId),
     Throw(ExprId),
     // let/var/const with one or more declarators: index into prog.declLists
-    MultiDecl(i64),
+    MultiDecl(DeclListId),
     // for (name in objExpr) body
     ForIn(string, ExprId, StmtId),
     // for (name of iterExpr) body
@@ -153,7 +165,7 @@ pub enum Stmt {
     // do body while (cond) — body runs before the first test
     DoWhile(StmtId, ExprId),
     // switch (discr) { ... } — index into prog.switches
-    Switch(ExprId, i64),
+    Switch(ExprId, SwitchId),
     // try block, catch-param name ("" if none), catch block idx (-1 if none),
     // finally block links are absent when the corresponding clause is omitted.
     Try(BlockId, string, Option<BlockId>, Option<BlockId>),
@@ -469,5 +481,21 @@ pub fn addArrLit(prog: &mut Prog, elements: Vec<Option<ExprId>>): ArrLitId {
     prog.arrLits.push(elements)
     return ArrLitId {
         index: prog.arrLits.len() - 1
+    }
+}
+
+// Append a declaration descriptor list and publish its typed ID.
+pub fn addDeclList(prog: &mut Prog, declarations: Vec<DeclItem>): DeclListId {
+    prog.declLists.push(declarations)
+    return DeclListId {
+        index: prog.declLists.len() - 1
+    }
+}
+
+// Append a switch-case descriptor list and publish its typed ID.
+pub fn addSwitch(prog: &mut Prog, cases: Vec<SwitchCase>): SwitchId {
+    prog.switches.push(cases)
+    return SwitchId {
+        index: prog.switches.len() - 1
     }
 }

@@ -24,6 +24,14 @@ pub fn addBlock(prog: &mut Prog, statements: Vec<StmtId>): BlockId
 
 Append a statement list and publish its typed block ID.
 
+### `addDeclList`
+
+```milo
+pub fn addDeclList(prog: &mut Prog, declarations: Vec<DeclItem>): DeclListId
+```
+
+Append a declaration descriptor list and publish its typed ID.
+
 ### `addExpr`
 
 ```milo
@@ -47,6 +55,14 @@ pub fn addStmt(prog: &mut Prog, s: Stmt): StmtId
 ```
 
 _Undocumented._
+
+### `addSwitch`
+
+```milo
+pub fn addSwitch(prog: &mut Prog, cases: Vec<SwitchCase>): SwitchId
+```
+
+Append a switch-case descriptor list and publish its typed ID.
 
 ### `getExpr`
 

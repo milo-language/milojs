@@ -1,0 +1,12 @@
+// @error: expected ExprId, got SwitchId
+
+from "../../ast" import {
+    SwitchCase, addSwitch, getExpr, newProg
+}
+
+fn confuseSwitchAndExpression(): void {
+    var prog = newProg()
+    var cases: Vec<SwitchCase> = Vec.new()
+    let switchId = addSwitch(prog, cases)
+    let _ = getExpr(prog, switchId)
+}

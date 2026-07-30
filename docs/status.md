@@ -60,9 +60,10 @@ ASLR variation.
 ### Arena safety status
 
 MiloJS still stores auxiliary AST, scope, and object references as raw `i64`
-indices. Expression, statement, block, call-argument, and literal descriptor
-slots now use distinct ID types, with absence represented by `Option<Id>`
-and retained compile-fail fixtures. No recyclable engine arena has migrated yet.
+indices. Expression, statement, block, call-argument, literal, declaration, and
+switch descriptor slots now use distinct ID types, with absence represented by
+`Option<Id>` and retained compile-fail fixtures. No recyclable engine arena has
+migrated yet.
 The staged migration is specified in
 `docs/milojs-arena-safety.md`. Its upstream blocker is resolved: Milo `9a0bfa4e`
 provides release-checked live-handle snapshots, stale/free rejection, slot

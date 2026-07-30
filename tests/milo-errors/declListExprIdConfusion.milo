@@ -1,0 +1,12 @@
+// @error: expected ExprId, got DeclListId
+
+from "../../ast" import {
+    DeclItem, addDeclList, getExpr, newProg
+}
+
+fn confuseDeclarationListAndExpression(): void {
+    var prog = newProg()
+    var declarations: Vec<DeclItem> = Vec.new()
+    let declarationsId = addDeclList(prog, declarations)
+    let _ = getExpr(prog, declarationsId)
+}

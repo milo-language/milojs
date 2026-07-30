@@ -502,8 +502,8 @@ fn isPatternStart(p: &PState): bool {
 
 // Wrap desugared declarators into one statement.
 fn declsToStmt(prog: &mut Prog, items: Vec<DeclItem>): StmtId {
-    prog.declLists.push(items)
-    return addStmt(prog, Stmt.MultiDecl(prog.declLists.len() - 1))
+    let declarationsId = addDeclList(prog, items)
+    return addStmt(prog, Stmt.MultiDecl(declarationsId))
 }
 
 // Put a statement at the front of an already-parsed block (used to unpack
@@ -1455,8 +1455,8 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
         if peekKind(p) == T_SEMI {
             advance(p)
         }
-        prog.declLists.push(items)
-        return addStmt(prog, Stmt.MultiDecl(prog.declLists.len() - 1))
+        let declarationsId = addDeclList(prog, items)
+        return addStmt(prog, Stmt.MultiDecl(declarationsId))
     }
     if k == T_IMPORT && p.pos + 1 < p.toks.len() && p.toks[p.pos + 1].kind != T_LPAREN {
         return parseImport(p, prog)
@@ -1526,8 +1526,8 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
             )
         }
         expect(p, T_RBRACE)
-        prog.switches.push(cases)
-        return addStmt(prog, Stmt.Switch(discr, prog.switches.len() - 1))
+        let switchId = addSwitch(prog, cases)
+        return addStmt(prog, Stmt.Switch(discr, switchId))
     }
     if k == T_ASYNC && p.pos + 1 < p.toks.len() && p.toks[p.pos + 1].kind == T_FUNCTION {
         advance(p)
@@ -1950,8 +1950,8 @@ fn parseImport(p: &mut PState, prog: &mut Prog): StmtId {
             name: tmp, init: requireCall(prog, spec), isVar: false
         }
         )
-        prog.declLists.push(items)
-        return addStmt(prog, Stmt.MultiDecl(prog.declLists.len() - 1))
+        let declarationsId = addDeclList(prog, items)
+        return addStmt(prog, Stmt.MultiDecl(declarationsId))
     }
 
     // import * as ns from "m"
@@ -2023,8 +2023,8 @@ fn parseImport(p: &mut PState, prog: &mut Prog): StmtId {
             i = i + 1
         }
     }
-    prog.declLists.push(items)
-    return addStmt(prog, Stmt.MultiDecl(prog.declLists.len() - 1))
+    let declarationsId = addDeclList(prog, items)
+    return addStmt(prog, Stmt.MultiDecl(declarationsId))
 }
 
 // Destructuring lowers to a hidden temp plus one declarator per bound name
@@ -2121,8 +2121,8 @@ fn parseExport(p: &mut PState, prog: &mut Prog, list: &mut Vec<StmtId>) {
         }
         Stmt.MultiDecl(d) => {
             var i: i64 = 0
-            while i < prog.declLists[d].len() {
-                let n = prog.declLists[d][i].name.clone()
+            while i < prog.declLists[d.index].len() {
+                let n = prog.declLists[d.index][i].name.clone()
                 if n.len() > 0 && !isSyntheticTemp(n) {
                     list.push(exportAssign(prog, n.clone(), n))
                 }

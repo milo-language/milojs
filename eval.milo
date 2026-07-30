@@ -11091,14 +11091,14 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
         Stmt.Switch(discrIdx, casesIdx) => {
             let dv = evalExpr(prog, discrIdx, st, scope)
             pushTemp(st, cloneValue(dv))
-            let n = prog.switches[casesIdx].len()
+            let n = prog.switches[casesIdx.index].len()
             // pick the arm, then run every arm from there on: fallthrough is the
             // default in JS and only break stops it
             var start = -1
             var defaultAt = -1
             var i: i64 = 0
             while i < n && start < 0 {
-                match prog.switches[casesIdx][i].test {
+                match prog.switches[casesIdx.index][i].test {
                     Option.None => {
                         if defaultAt < 0 {
                             defaultAt = i
@@ -11123,7 +11123,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 var c = start
                 var going = true
                 while going && c < n {
-                    let flow = execBlock(prog, prog.switches[casesIdx][c].body, st, switchScope)
+                    let flow = execBlock(prog, prog.switches[casesIdx.index][c].body, st, switchScope)
                     match flow {
                         Flow.Ret(v) => {
                             result = Flow.Ret(v)
@@ -11451,12 +11451,12 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
         }
         Stmt.MultiDecl(listIdx) => {
             var i: i64 = 0
-            let n = prog.declLists[listIdx].len()
+            let n = prog.declLists[listIdx.index].len()
             while i < n {
-                let name = prog.declLists[listIdx][i].name.clone()
-                let initIdx = prog.declLists[listIdx][i].init
+                let name = prog.declLists[listIdx.index][i].name.clone()
+                let initIdx = prog.declLists[listIdx.index][i].init
                 let v = evalExpr(prog, initIdx, st, scope)
-                if prog.declLists[listIdx][i].isVar {
+                if prog.declLists[listIdx.index][i].isVar {
                     // `var` was already bound in the function scope by hoisting;
                     // assign there rather than shadowing it in this block
                     scopeAssign(st, scope, name, v)
@@ -11532,9 +11532,9 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 match prog.stmts[initStmt.index] {
                     Stmt.MultiDecl(listIdx) => {
                         var di: i64 = 0
-                        while di < prog.declLists[listIdx].len() {
-                            if !prog.declLists[listIdx][di].isVar {
-                                letNames.push(prog.declLists[listIdx][di].name.clone())
+                        while di < prog.declLists[listIdx.index].len() {
+                            if !prog.declLists[listIdx.index][di].isVar {
+                                letNames.push(prog.declLists[listIdx.index][di].name.clone())
                             }
                             di = di + 1
                         }
@@ -11709,9 +11709,9 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64) {
         }
         Stmt.MultiDecl(listIdx) => {
             var d: i64 = 0
-            while d < prog.declLists[listIdx].len() {
-                if prog.declLists[listIdx][d].isVar {
-                    let dname = prog.declLists[listIdx][d].name.clone()
+            while d < prog.declLists[listIdx.index].len() {
+                if prog.declLists[listIdx.index][d].isVar {
+                    let dname = prog.declLists[listIdx.index][d].name.clone()
                     if dname.len() > 0 && !scopeHasOwn(st, scope, dname) {
                         scopeDefine(st, scope, dname, JSValue.Undefined)
                     }
@@ -11773,8 +11773,8 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64) {
         }
         Stmt.Switch(_d, casesIdx) => {
             var c: i64 = 0
-            while c < prog.switches[casesIdx].len() {
-                hoistBlock(prog, prog.switches[casesIdx][c].body, st, scope)
+            while c < prog.switches[casesIdx.index].len() {
+                hoistBlock(prog, prog.switches[casesIdx.index][c].body, st, scope)
                 c = c + 1
             }
         }
