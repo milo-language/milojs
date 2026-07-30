@@ -50,12 +50,15 @@ APIs accept only the matching ID.
    Acceptance: swapping an expression and statement ID is a compile failure;
    malformed/out-of-range construction is tested at the boundary; fixture speed
    does not regress materially.
-   **Progress:** `StmtId` now covers the statement arena, block contents,
-   evaluator entry points, and recursive statement links. Optional `if`/`for`
-   links use `Option<StmtId>`, and `tests/milo-errors/stmtExprIdConfusion.milo`
-   locks the compile-time separation from raw expression indices. Three
-   alternating wall-clock samples of the statement-loop pairs moved from
-   3.65s/4.92s to 3.79s/5.09s (about 4%, within this harness's run-to-run noise).
+   **Progress:** `StmtId` and `ExprId` now cover both primary AST arenas, block
+   contents, evaluator entry points, recursive children, argument lists, and
+   array/object literal expression links. Optional statement links, array holes,
+   computed object keys, switch defaults, and `for` condition/update links use
+   `Option<Id>`. Bidirectional compile-fail fixtures lock expression/statement
+   separation. Five alternating `loopNoDecl` wall-clock samples compare the raw
+   ID baseline at a 4.34s median with the completed pair at 4.53s (+4.4%, within
+   the gate's 5% material-regression threshold and this harness's run-to-run
+   noise).
 2. **Freeze parsed programs.** Parsing owns `BuildingProg` and its allocation
    methods. Successful parse consumes it into `FrozenProg`; evaluation, modules,
    and closures receive only the frozen view. REPL appendability is explicit: it

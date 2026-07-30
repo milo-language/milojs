@@ -1,4 +1,4 @@
-// @error: expected StmtId, got i64
+// @error: expected StmtId, got ExprId
 
 from "../../ast" import {
     Expr, addExpr, getStmt, newProg

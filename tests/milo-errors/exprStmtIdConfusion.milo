@@ -1,0 +1,11 @@
+// @error: expected ExprId, got StmtId
+
+from "../../ast" import {
+    Stmt, addStmt, getExpr, newProg
+}
+
+fn confuseExpressionAndStatement(): void {
+    var prog = newProg()
+    let stmtId = addStmt(prog, Stmt.Empty)
+    let _ = getExpr(prog, stmtId)
+}

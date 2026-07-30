@@ -3,7 +3,7 @@
 // execution returns a Flow so `return` can unwind out of nested blocks.
 
 from "./ast" import {
-    Prog, StmtId, gProg
+    ExprId, Prog, StmtId, gProg
 }
 from "./value" import {
     JSValue, i64ToStr, daysFromCivil
@@ -1235,13 +1235,13 @@ fn destructElement(_prog: &Prog, value: &JSValue, i: i64, st: &mut Interp): JSVa
 // Assign `value` to a single destructuring target: a nested pattern recurses; a
 // `name = default` element applies the default when value is undefined; otherwise
 // the target is an ordinary lvalue (identifier / member / index).
-fn assignTarget(prog: &Prog, targetIdx: i64, value: JSValue, st: &mut Interp, scope: i64) {
-    match prog.exprs[targetIdx] {
+fn assignTarget(prog: &Prog, targetId: ExprId, value: JSValue, st: &mut Interp, scope: i64) {
+    match prog.exprs[targetId.index] {
         Expr.ArrLit(_li) => {
-            assignPattern(prog, targetIdx, value, st, scope)
+            assignPattern(prog, targetId, value, st, scope)
         }
         Expr.ObjLit(_li) => {
-            assignPattern(prog, targetIdx, value, st, scope)
+            assignPattern(prog, targetId, value, st, scope)
         }
         Expr.Assign(name, defaultIdx) => {
             var v = cloneValue(value)
@@ -1251,27 +1251,23 @@ fn assignTarget(prog: &Prog, targetIdx: i64, value: JSValue, st: &mut Interp, sc
             scopeAssign(st, scope, name.clone(), cloneValue(v))
         }
         _ => {
-            writeLValue(prog, targetIdx, st, scope, cloneValue(value))
+            writeLValue(prog, targetId, st, scope, cloneValue(value))
         }
     }
 }
 
 // Destructure `value` into a pattern (ArrLit / ObjLit) of existing lvalue
 // targets. Handles nesting, holes, `...rest`, and `= default` elements.
-fn assignPattern(prog: &Prog, patIdx: i64, value: JSValue, st: &mut Interp, scope: i64) {
-    match prog.exprs[patIdx] {
+fn assignPattern(prog: &Prog, patId: ExprId, value: JSValue, st: &mut Interp, scope: i64) {
+    match prog.exprs[patId.index] {
         Expr.ArrLit(litIdx) => {
             pushTemp(st, cloneValue(value))
             var i: i64 = 0
             while i < prog.arrLits[litIdx].len() {
-                let e = prog.arrLits[litIdx][i]
-                if e < 0 {
-                    // elision: skip this position
-                    i = i + 1
-                    continue
-                }
-                match prog.exprs[e] {
-                    Expr.Spread(target) => {
+                match prog.arrLits[litIdx][i] {
+                    Option.Some(e) => {
+                    match prog.exprs[e.index] {
+                        Expr.Spread(target) => {
                         // ...rest — the remaining elements as a fresh array
                         let rest = newArray(st)
                         pushTemp(st, JSValue.Obj(rest))
@@ -1287,9 +1283,14 @@ fn assignPattern(prog: &Prog, patIdx: i64, value: JSValue, st: &mut Interp, scop
                         popTemp(st)
                         assignTarget(prog, target, JSValue.Obj(rest), st, scope)
                     }
-                    _ => {
-                        let ev = destructElement(prog, value, i, st)
-                        assignTarget(prog, e, ev, st, scope)
+                        _ => {
+                            let ev = destructElement(prog, value, i, st)
+                            assignTarget(prog, e, ev, st, scope)
+                        }
+                    }
+                    }
+                    Option.None => {
+                        // elision: skip this position
                     }
                 }
                 i = i + 1
@@ -1313,7 +1314,7 @@ fn assignPattern(prog: &Prog, patIdx: i64, value: JSValue, st: &mut Interp, scop
             popTemp(st)
         }
         _ => {
-            assignTarget(prog, patIdx, value, st, scope)
+            assignTarget(prog, patId, value, st, scope)
         }
     }
 }
@@ -1322,8 +1323,8 @@ fn assignPattern(prog: &Prog, patIdx: i64, value: JSValue, st: &mut Interp, scop
 // Backs ++/-- and compound assignment; the base object of a member target is
 // evaluated here and again by writeLValue (harmless unless the base has side
 // effects, which is rare).
-fn readLValue(prog: &Prog, targetIdx: i64, st: &mut Interp, scope: i64): JSValue {
-    match prog.exprs[targetIdx] {
+fn readLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSValue {
+    match prog.exprs[targetId.index] {
         Expr.Ident(name) => {
             match scopeTryLookup(st, scope, name) {
                 Option.Some(v) => {
@@ -1381,8 +1382,8 @@ fn readLValue(prog: &Prog, targetIdx: i64, st: &mut Interp, scope: i64): JSValue
     }
 }
 
-fn writeLValue(prog: &Prog, targetIdx: i64, st: &mut Interp, scope: i64, value: JSValue) {
-    match prog.exprs[targetIdx] {
+fn writeLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64, value: JSValue) {
+    match prog.exprs[targetId.index] {
         Expr.Ident(name) => {
             scopeAssign(st, scope, name.clone(), value)
         }
@@ -4650,7 +4651,7 @@ fn evalBigIntBin(op: &string, va: JSValue, vb: JSValue, st: &mut Interp): JSValu
 // tree-walk keeps this frame live while evaluating either operand. Keeping only
 // binary locals here prevents rare expression arms from inflating every
 // recursive JavaScript call's native stack usage.
-fn evalBinaryExpr(prog: &Prog, op: &string, a: i64, b: i64, st: &mut Interp, scope: i64): JSValue {
+fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Interp, scope: i64): JSValue {
     if op == "&&" {
         let va = evalExpr(prog, a, st, scope)
         if !truthy(va) {
@@ -4763,11 +4764,11 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: i64, b: i64, st: &mut Interp, sco
 // Hot recursive nodes bypass the full dispatcher. The fallback contains large
 // await/literal/construction arms whose locals otherwise reserve stack space on
 // every simple call, even when those arms are not selected.
-pub fn evalExpr(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue {
+pub fn evalExpr(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue {
     if st.throwing {
         return JSValue.Undefined
     }
-    match prog.exprs[idx] {
+    match prog.exprs[id.index] {
         Expr.Num(n) => {
             return JSValue.Number(n)
         }
@@ -4807,19 +4808,19 @@ pub fn evalExpr(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue {
             return evalCall(prog, callee, argsIdx, st, scope)
         }
         _ => {
-            return evalExprFallback(prog, idx, st, scope)
+    return evalExprFallback(prog, id, st, scope)
         }
     }
 }
 
-fn evalExprFallback(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue {
+fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue {
     // an exception is unwinding — stop evaluating, produce a placeholder
     if st.throwing {
         return JSValue.Undefined
     }
     // match the arena slot in place — cloning the node (and its string payloads)
     // per visit was the dominant interpreter cost
-    match prog.exprs[idx] {
+    match prog.exprs[id.index] {
         Expr.Num(n) => {
             return JSValue.Number(n)
         }
@@ -4991,7 +4992,7 @@ fn evalExprFallback(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue
             }
             // typeof is the one context where an undeclared name is legal
             if op == "typeof" {
-                match prog.exprs[a] {
+                match prog.exprs[a.index] {
                     Expr.Ident(iname) => {
                         if !scopeHas(st, scope, iname) {
                             return JSValue.Str("undefined")
@@ -5534,9 +5535,12 @@ fn evalExprFallback(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue
             let n = prog.objLits[litIdx].len()
             while i < n {
                 var key = prog.objLits[litIdx][i].key.clone()
-                let keyExprIdx = prog.objLits[litIdx][i].keyExpr
-                if keyExprIdx >= 0 {
-                    key = toStr(evalExpr(prog, keyExprIdx, st, scope))
+                match prog.objLits[litIdx][i].keyExpr {
+                    Option.Some(keyExprId) => {
+                        key = toStr(evalExpr(prog, keyExprId, st, scope))
+                    }
+                    Option.None => {
+                    }
                 }
                 let valIdx = prog.objLits[litIdx][i].val
                 let v = evalExpr(prog, valIdx, st, scope)
@@ -5607,7 +5611,7 @@ fn evalExprFallback(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue
             pushTemp(st, JSValue.Obj(rawArr))
             var ti: i64 = 0
             while ti < prog.arrLits[litIdx].len() {
-                let v = evalExpr(prog, prog.arrLits[litIdx][ti], st, scope)
+                let v = evalExpr(prog, prog.arrLits[litIdx][ti]!, st, scope)
                 arrPush(st, arr, cloneValue(v))
                 arrPush(st, rawArr, v)
                 ti = ti + 1
@@ -5625,17 +5629,15 @@ fn evalExprFallback(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue
             var i: i64 = 0
             let n = prog.arrLits[litIdx].len()
             while i < n {
-                let elemIdx = prog.arrLits[litIdx][i]
-                if elemIdx < 0 {
-                    // elision sentinel from the parser: a hole
+                match prog.arrLits[litIdx][i] {
+                    Option.None => {
                     let at = arrLen(st, arr)
                     arrPush(st, arr, JSValue.Undefined)
                     arrMarkHole(st, arr, at)
-                    i = i + 1
-                    continue
-                }
-                match prog.exprs[elemIdx] {
-                    Expr.Spread(inner) => {
+                    }
+                    Option.Some(elemIdx) => {
+                    match prog.exprs[elemIdx.index] {
+                        Expr.Spread(inner) => {
                         let sv = evalExpr(prog, inner, st, scope)
                         var tmp: Vec<JSValue> = Vec.new()
                         spreadInto(prog, tmp, sv, st)
@@ -5645,9 +5647,11 @@ fn evalExprFallback(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue
                             t = t + 1
                         }
                     }
-                    _ => {
-                        let v = evalExpr(prog, elemIdx, st, scope)
-                        arrPush(st, arr, v)
+                        _ => {
+                            let v = evalExpr(prog, elemIdx, st, scope)
+                            arrPush(st, arr, v)
+                        }
+                    }
                     }
                 }
                 i = i + 1
@@ -6141,7 +6145,7 @@ fn evalArgs(prog: &Prog, argsIdx: i64, st: &mut Interp, scope: i64): Vec<JSValue
     let n = prog.argLists[argsIdx].len()
     while j < n {
         let eIdx = prog.argLists[argsIdx][j]
-        match prog.exprs[eIdx] {
+        match prog.exprs[eIdx.index] {
             Expr.Spread(inner) => {
                 let v = evalExpr(prog, inner, st, scope)
                 pushTemp(st, cloneValue(v))
@@ -6328,7 +6332,7 @@ fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, this
     // catchable RangeError instead.
     // The safe limit tracks the stack the interpreter runs on. After splitting
     // the hot evaluator dispatcher, the engine's normal process stack supports
-    // a 108-frame guard; the runtime uses 500 on its separately sized green task.
+    // a 104-frame guard; the runtime uses 500 on its separately sized green task.
     // Keep the guard below the native ceiling so constructing the RangeError and
     // unwinding it remain reliable rather than ending in a process crash.
     if st.callDepth >= st.callDepthLimit {
@@ -6432,8 +6436,8 @@ fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, this
 // under __super$<Name> so super(...) can find it.
 // Best-effort name for a callee expression, so "is not a function" says which
 // one. Diagnostics only.
-fn describeCallee(prog: &Prog, calleeIdx: i64): string {
-    match prog.exprs[calleeIdx] {
+fn describeCallee(prog: &Prog, calleeId: ExprId): string {
+    match prog.exprs[calleeId.index] {
         Expr.Ident(n) => {
             return n.clone()
         }
@@ -7638,8 +7642,8 @@ fn proxyDelete(prog: &Prog, o: i64, key: string, st: &mut Interp): JSValue {
     return JSValue.Bool(true)
 }
 
-fn evalDelete(prog: &Prog, targetIdx: i64, st: &mut Interp, scope: i64): JSValue {
-    match prog.exprs[targetIdx] {
+fn evalDelete(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSValue {
+    match prog.exprs[targetId.index] {
         Expr.Member(objIdx, name) => {
             let ov = evalExpr(prog, objIdx, st, scope)
             let o = objHandle(ov)
@@ -7675,7 +7679,7 @@ fn evalDelete(prog: &Prog, targetIdx: i64, st: &mut Interp, scope: i64): JSValue
         _ => {
             // `delete someVariable` is not permitted on bindings; evaluate for
             // effect and report false
-            let _ = evalExpr(prog, targetIdx, st, scope)
+            let _ = evalExpr(prog, targetId, st, scope)
             return JSValue.Bool(false)
         }
     }
@@ -10732,9 +10736,9 @@ fn throwNullMember(st: &mut Interp, name: &string, base: &string): JSValue {
     return JSValue.Undefined
 }
 
-fn evalCall(prog: &Prog, calleeIdx: i64, argsIdx: i64, st: &mut Interp, scope: i64): JSValue {
+fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: i64, st: &mut Interp, scope: i64): JSValue {
     // builtin: console.log(...)
-    match prog.exprs[calleeIdx] {
+    match prog.exprs[calleeId.index] {
         Expr.Ident(fname) => {
             // super(...) — parsed as a call of __super$<Class>. The base
             // constructor runs against the instance being built, so `this` has
@@ -10793,7 +10797,7 @@ fn evalCall(prog: &Prog, calleeIdx: i64, argsIdx: i64, st: &mut Interp, scope: i
             }
         }
         Expr.Member(objIdx, name) => {
-            match prog.exprs[objIdx] {
+            match prog.exprs[objIdx.index] {
                 Expr.Ident(objName) => {
                     if objName == "console" && (name == "log" || name == "error" || name == "warn" || name == "info" || name == "debug" || name == "trace" || name == "dir") {
                         let argVals = evalArgs(prog, argsIdx, st, scope)
@@ -10828,11 +10832,11 @@ fn evalCall(prog: &Prog, calleeIdx: i64, argsIdx: i64, st: &mut Interp, scope: i
 
     // A Member/Index callee is a method call: `this` binds to the receiver.
     // Anything else is a plain call with `this` = undefined.
-    match prog.exprs[calleeIdx] {
+    match prog.exprs[calleeId.index] {
         Expr.Member(objIdx, name) => {
             // super.method() — the base's *prototype* holds the method, and it
             // must run against the current `this`, not against the base itself
-            match prog.exprs[objIdx] {
+            match prog.exprs[objIdx.index] {
                 Expr.Ident(bname) => {
                     if isSuperName(bname) {
                         let baseVal = scopeLookup(st, scope, bname)
@@ -10901,7 +10905,7 @@ fn evalCall(prog: &Prog, calleeIdx: i64, argsIdx: i64, st: &mut Interp, scope: i
             return callMember(prog, recv, key, argsIdx, st, scope)
         }
         _ => {
-            let calleeVal = evalExpr(prog, calleeIdx, st, scope)
+            let calleeVal = evalExpr(prog, calleeId, st, scope)
             // a preceding `?.` short-circuited: the call is skipped, result undefined
             if st.optShort {
                 return JSValue.Undefined
@@ -10937,12 +10941,12 @@ fn evalCall(prog: &Prog, calleeIdx: i64, argsIdx: i64, st: &mut Interp, scope: i
                         return makeArrayFromCtor(st, argVals)
                     }
                     st.throwing = true
-                    st.thrownValue = makeError(st, "TypeError", describeCallee(prog, calleeIdx) + " is not a function" + currentModule(st))
+                    st.thrownValue = makeError(st, "TypeError", describeCallee(prog, calleeId) + " is not a function" + currentModule(st))
                     return JSValue.Undefined
                 }
                 _ => {
                     st.throwing = true
-                    st.thrownValue = makeError(st, "TypeError", describeCallee(prog, calleeIdx) + " is not a function" + currentModule(st))
+                    st.thrownValue = makeError(st, "TypeError", describeCallee(prog, calleeId) + " is not a function" + currentModule(st))
                     return JSValue.Undefined
                 }
             }
@@ -11081,15 +11085,17 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             var defaultAt = -1
             var i: i64 = 0
             while i < n && start < 0 {
-                let test = prog.switches[casesIdx][i].test
-                if test < 0 {
-                    if defaultAt < 0 {
-                        defaultAt = i
+                match prog.switches[casesIdx][i].test {
+                    Option.None => {
+                        if defaultAt < 0 {
+                            defaultAt = i
+                        }
                     }
-                } else {
-                    let tv = evalExpr(prog, test, st, scope)
-                    if jsStrictEquals(dv, tv) {
-                        start = i
+                    Option.Some(test) => {
+                        let tv = evalExpr(prog, test, st, scope)
+                        if jsStrictEquals(dv, tv) {
+                            start = i
+                        }
                     }
                 }
                 i = i + 1
@@ -11533,9 +11539,13 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                     looping = false
                 } else {
                     var run = true
-                    if cond >= 0 {
-                        let vc = evalExpr(prog, cond, st, loopScope)
-                        run = truthy(vc)
+                    match cond {
+                        Option.Some(condExpr) => {
+                            let vc = evalExpr(prog, condExpr, st, loopScope)
+                            run = truthy(vc)
+                        }
+                        Option.None => {
+                        }
                     }
                     if !run || st.throwing {
                         looping = false
@@ -11589,8 +11599,14 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                             looping = false
                         } else if st.throwing {
                             looping = false
-                        } else if update >= 0 {
-                            evalExpr(prog, update, st, loopScope)
+                        } else {
+                            match update {
+                                Option.Some(updateExpr) => {
+                                    evalExpr(prog, updateExpr, st, loopScope)
+                                }
+                                Option.None => {
+                                }
+                            }
                         }
                     }
                 }

@@ -53,18 +53,21 @@ nodes from the full expression dispatcher reduced `evalExpr`'s native frame from
 about 250 KB to 824 bytes; binary evaluation uses about 5.7 KB. The unchanged
 closure and catchable-recursion fixtures now pass without a stack override.
 The engine and embedding default now permits 100 ordinary recursive calls and
-guards at 108; the runtime retains a 500-frame limit on its green task.
+guards at 104; the runtime retains a 500-frame limit on its green task. The
+earlier 108 guard proved too close to the native ceiling under stack-layout and
+ASLR variation.
 
 ### Arena safety status
 
-MiloJS still stores most AST, scope, and object references as raw `i64` indices.
-Statement slots and recursive statement links now use `StmtId`, with optional
-links represented by `Option<StmtId>` and a retained compile-fail fixture. No
-recyclable engine arena has migrated yet. The staged migration is specified in
+MiloJS still stores auxiliary AST, scope, and object references as raw `i64`
+indices. Primary expression and statement slots now use `ExprId`/`StmtId`, with
+absence represented by `Option<Id>` and retained bidirectional compile-fail
+fixtures. No recyclable engine arena has migrated yet. The staged migration is specified in
 `docs/milojs-arena-safety.md`. Its upstream blocker is resolved: Milo `9a0bfa4e`
 provides release-checked live-handle snapshots, stale/free rejection, slot
 retirement at generation exhaustion, and the method-oriented `Arena<T>` API
-needed by a mark-sweep collector. `ExprId` is the next AST implementation slice.
+needed by a mark-sweep collector. Block, function, class, and literal-table IDs
+remain before the AST phase is complete.
 
 ## Shipped engine surface
 

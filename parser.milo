@@ -7,7 +7,7 @@ from "./lexer" import {
     Token
 }
 from "./ast" import {
-    Prog, StmtId
+    ExprId, Prog, StmtId
 }
 from "./value" import {
     i64ToStr, numToStr
@@ -140,16 +140,14 @@ fn expectStatementEnd(p: &mut PState) {
 
 // A template literal desugars to string concatenation, starting from a string
 // chunk so the whole chain coerces to string: `a${x}b` → "a" + x + "b".
-fn parseTemplate(p: &mut PState, prog: &mut Prog): i64 {
+fn parseTemplate(p: &mut PState, prog: &mut Prog): ExprId {
     expect(p, T_TEMPLATE_BEGIN)
-    var result = -1
+    var first = ""
     if peekKind(p) == T_TEMPLATE_CHUNK {
-        let chunk = p.toks[p.pos].text.clone()
+        first = p.toks[p.pos].text.clone()
         advance(p)
-        result = addExpr(prog, Expr.StrLit(chunk))
-    } else {
-        result = addExpr(prog, Expr.StrLit(""))
     }
+    var result = addExpr(prog, Expr.StrLit(first))
     while peekKind(p) != T_TEMPLATE_END && peekKind(p) != T_EOF {
         let e = parseExpr(p, prog)
         result = addExpr(prog, Expr.Bin("+", result, e))
@@ -169,25 +167,25 @@ fn parseTemplate(p: &mut PState, prog: &mut Prog): i64 {
 // `tag`a${x}b`` calls tag(["a","b"], x). The strings array is built as an array
 // literal and the hole expressions become the remaining arguments; there is no
 // separate .raw, which nothing in the target reads.
-fn parseTaggedTemplate(p: &mut PState, prog: &mut Prog, tagExpr: i64): i64 {
+fn parseTaggedTemplate(p: &mut PState, prog: &mut Prog, tagExpr: ExprId): ExprId {
     expect(p, T_TEMPLATE_BEGIN)
-    var chunks: Vec<i64> = Vec.new()
-    var holes: Vec<i64> = Vec.new()
+    var chunks: Vec<Option<ExprId>> = Vec.new()
+    var holes: Vec<ExprId> = Vec.new()
     if peekKind(p) == T_TEMPLATE_CHUNK {
         let chunk = p.toks[p.pos].text.clone()
         advance(p)
-        chunks.push(addExpr(prog, Expr.StrLit(chunk)))
+        chunks.push(Option.Some(addExpr(prog, Expr.StrLit(chunk))))
     } else {
-        chunks.push(addExpr(prog, Expr.StrLit("")))
+        chunks.push(Option.Some(addExpr(prog, Expr.StrLit(""))))
     }
     while peekKind(p) != T_TEMPLATE_END && peekKind(p) != T_EOF {
         holes.push(parseExpr(p, prog))
         if peekKind(p) == T_TEMPLATE_CHUNK {
             let chunk = p.toks[p.pos].text.clone()
             advance(p)
-            chunks.push(addExpr(prog, Expr.StrLit(chunk)))
+            chunks.push(Option.Some(addExpr(prog, Expr.StrLit(chunk))))
         } else {
-            chunks.push(addExpr(prog, Expr.StrLit("")))
+            chunks.push(Option.Some(addExpr(prog, Expr.StrLit(""))))
         }
     }
     if peekKind(p) == T_TEMPLATE_END {
@@ -195,7 +193,7 @@ fn parseTaggedTemplate(p: &mut PState, prog: &mut Prog, tagExpr: i64): i64 {
     }
     prog.arrLits.push(chunks)
     let stringsArr = addExpr(prog, Expr.TemplateStrings(prog.arrLits.len() - 1))
-    var args: Vec<i64> = Vec.new()
+    var args: Vec<ExprId> = Vec.new()
     args.push(stringsArr)
     var h: i64 = 0
     while h < holes.len() {
@@ -207,7 +205,7 @@ fn parseTaggedTemplate(p: &mut PState, prog: &mut Prog, tagExpr: i64): i64 {
 }
 
 // One call-argument or array element, possibly a `...spread`.
-fn parseArg(p: &mut PState, prog: &mut Prog): i64 {
+fn parseArg(p: &mut PState, prog: &mut Prog): ExprId {
     if peekKind(p) == T_SPREAD {
         advance(p)
         let e = parseExpr(p, prog)
@@ -219,7 +217,7 @@ fn parseArg(p: &mut PState, prog: &mut Prog): i64 {
 // Build an arrow function from its parameter list; the caller has consumed `=>`.
 // Body is a block `{ }` or a single expression (implicit return). isArrow=true so
 // it doesn't bind its own `this`.
-fn makeArrow(p: &mut PState, prog: &mut Prog, params: Vec<string>, isAsync: bool, prelude: Vec<DeclItem>, mkRestFrom: i64): i64 {
+fn makeArrow(p: &mut PState, prog: &mut Prog, params: Vec<string>, isAsync: bool, prelude: Vec<DeclItem>, mkRestFrom: i64): ExprId {
     var body = -1
     if peekKind(p) == T_LBRACE {
         body = parseBraceBlock(p, prog)
@@ -287,7 +285,7 @@ fn parseArrowHead(p: &mut PState, prog: &mut Prog, params: &mut Vec<string>, pre
 
 // `x = <default>` in a pattern: JS only substitutes on undefined. This compares
 // loosely, so an explicit null also takes the default — a small deviation.
-fn withDefault(prog: &mut Prog, valExpr: i64, dflt: i64): i64 {
+fn withDefault(prog: &mut Prog, valExpr: ExprId, dflt: ExprId): ExprId {
     let undef = addExpr(prog, Expr.UndefLit)
     let cond = addExpr(prog, Expr.Bin("==", valExpr, undef))
     return addExpr(prog, Expr.Cond(cond, dflt, valExpr))
@@ -308,15 +306,15 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
                 let restName = p.toks[p.pos].text.clone()
                 advance(p)
                 let srcIdx = addExpr(prog, Expr.Ident(srcName.clone()))
-                var keyEls: Vec<i64> = Vec.new()
+                var keyEls: Vec<Option<ExprId>> = Vec.new()
                 var ki: i64 = 0
                 while ki < seenKeys.len() {
-                    keyEls.push(addExpr(prog, Expr.StrLit(seenKeys[ki].clone())))
+                    keyEls.push(Option.Some(addExpr(prog, Expr.StrLit(seenKeys[ki].clone()))))
                     ki = ki + 1
                 }
                 prog.arrLits.push(keyEls)
                 let keysArr = addExpr(prog, Expr.ArrLit(prog.arrLits.len() - 1))
-                var restArgs: Vec<i64> = Vec.new()
+                var restArgs: Vec<ExprId> = Vec.new()
                 restArgs.push(srcIdx)
                 restArgs.push(keysArr)
                 prog.argLists.push(restArgs)
@@ -386,7 +384,7 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
             let restName = p.toks[p.pos].text.clone()
             advance(p)
             let srcIdx = addExpr(prog, Expr.Ident(srcName.clone()))
-            var sliceArgs: Vec<i64> = Vec.new()
+            var sliceArgs: Vec<ExprId> = Vec.new()
             sliceArgs.push(addExpr(prog, Expr.Num(i as f64)))
             prog.argLists.push(sliceArgs)
             let callee = addExpr(prog, Expr.Member(srcIdx, "slice"))
@@ -488,7 +486,7 @@ fn parseParam(p: &mut PState, prog: &mut Prog, params: &mut Vec<string>, prelude
 
 // `a = 1, b = 2` in a for-init or for-update. parseExpr deliberately stops at a
 // comma (declarator lists need that), so sequences are stitched up here.
-fn parseCommaSeq(p: &mut PState, prog: &mut Prog): i64 {
+fn parseCommaSeq(p: &mut PState, prog: &mut Prog): ExprId {
     var e = parseExpr(p, prog)
     while peekKind(p) == T_COMMA {
         advance(p)
@@ -522,7 +520,7 @@ fn prependStmt(prog: &mut Prog, blockIdx: i64, stmtIdx: StmtId) {
     prog.blocks[blockIdx] = merged
 }
 
-fn parsePrimary(p: &mut PState, prog: &mut Prog): i64 {
+fn parsePrimary(p: &mut PState, prog: &mut Prog): ExprId {
     let k = peekKind(p)
     if k == T_NUM {
         let v = p.toks[p.pos].num
@@ -685,7 +683,7 @@ fn parsePrimary(p: &mut PState, prog: &mut Prog): i64 {
 
 // new Ctor(args) — the constructor may be a member chain (new a.b.C()). The arg
 // list is parsed here; a following postfix chain (new C().x) is left to the caller.
-fn parseNew(p: &mut PState, prog: &mut Prog): i64 {
+fn parseNew(p: &mut PState, prog: &mut Prog): ExprId {
     expect(p, T_NEW)
     var callee = parsePrimary(p, prog)
     while peekKind(p) == T_DOT {
@@ -697,7 +695,7 @@ fn parseNew(p: &mut PState, prog: &mut Prog): i64 {
         }
         callee = addExpr(prog, Expr.Member(callee, name))
     }
-    var argIdxs: Vec<i64> = Vec.new()
+    var argIdxs: Vec<ExprId> = Vec.new()
     if peekKind(p) == T_LPAREN {
         advance(p)
         if peekKind(p) != T_RPAREN {
@@ -715,17 +713,17 @@ fn parseNew(p: &mut PState, prog: &mut Prog): i64 {
 }
 
 // [ expr, expr, ... ] — element expressions, trailing comma tolerated
-fn parseArrayLiteral(p: &mut PState, prog: &mut Prog): i64 {
+fn parseArrayLiteral(p: &mut PState, prog: &mut Prog): ExprId {
     expect(p, T_LBRACKET)
-    var elems: Vec<i64> = Vec.new()
+    var elems: Vec<Option<ExprId>> = Vec.new()
     while peekKind(p) != T_RBRACKET && peekKind(p) != T_EOF {
         if peekKind(p) == T_COMMA {
             // elision [1, , 3]: a HOLE, recorded as sentinel -1 (a real slot in
             // length terms, but `in`/hasOwnProperty/keys say absent)
-            elems.push(-1)
+            elems.push(Option.None)
             advance(p)
         } else {
-            elems.push(parseArg(p, prog))
+            elems.push(Option.Some(parseArg(p, prog)))
             if peekKind(p) == T_COMMA {
                 advance(p)
             }
@@ -738,7 +736,7 @@ fn parseArrayLiteral(p: &mut PState, prog: &mut Prog): i64 {
 }
 
 // { key: expr, key: expr, ... } — keys are identifiers or string literals
-fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): i64 {
+fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
     expect(p, T_LBRACE)
     var props: Vec<PropInit> = Vec.new()
     while peekKind(p) != T_RBRACE && peekKind(p) != T_EOF {
@@ -748,7 +746,7 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): i64 {
             advance(p)
             let se = parseExpr(p, prog)
             props.push(PropInit {
-                key: "...", val: se, kind: 0, keyExpr: -1
+                key: "...", val: se, kind: 0, keyExpr: Option.None
             }
             )
             if peekKind(p) == T_COMMA {
@@ -756,11 +754,11 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): i64 {
             }
         } else {
             var key = ""
-            var keyExpr = -1
+            var keyExpr: Option<ExprId> = Option.None
             // `{ [expr]: v }` — the key is evaluated at construction time
             if peekKind(p) == T_LBRACKET {
                 advance(p)
-                keyExpr = parseExpr(p, prog)
+                keyExpr = Option.Some(parseExpr(p, prog))
                 expect(p, T_RBRACKET)
             }
             var accessorKind: i64 = 0
@@ -781,7 +779,7 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): i64 {
                 isMethodAsync = true
                 advance(p)
             }
-            if keyExpr < 0 {
+            if keyExpr is Option.None {
                 if peekKind(p) == T_NUM {
                     // a numeric property key `{ 2: v }` — its key is ToString(num)
                     // ("2", "10", "1.5"), not the token's (empty) text
@@ -796,7 +794,7 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): i64 {
                 }
             }
             // shorthand `{ req, ip }` is `{ req: req, ip: ip }`
-            var valIdx = -1
+            var valIdx: Option<ExprId> = Option.None
             if peekKind(p) == T_STAR {
                 advance(p)
                 isMethodGen = true
@@ -825,24 +823,24 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): i64 {
                     name: key.clone(), params: mparams, body: mbody, isArrow: false, isAsync: isMethodAsync, restFrom: mrest, isGenerator: isMethodGen
                 }
                 )
-                valIdx = addExpr(prog, Expr.FuncExpr(prog.funcs.len() - 1))
+                valIdx = Option.Some(addExpr(prog, Expr.FuncExpr(prog.funcs.len() - 1)))
             } else if peekKind(p) == T_COLON {
                 advance(p)
-                valIdx = parseExpr(p, prog)
+                valIdx = Option.Some(parseExpr(p, prog))
                 // `{ handler: () => {} }` — the anonymous value takes the key name
-                inferFuncName(prog, valIdx, key)
+                inferFuncName(prog, valIdx!, key)
             } else if peekKind(p) == T_EQ {
                 // shorthand with default, only meaningful in a destructuring
                 // pattern: `{ g = 10 }` — record it as `g = default` so
                 // destructuring applies the default when the key is missing
                 advance(p)
                 let defExpr = parseTernary(p, prog)
-                valIdx = addExpr(prog, Expr.Assign(key.clone(), defExpr))
+                valIdx = Option.Some(addExpr(prog, Expr.Assign(key.clone(), defExpr)))
             } else {
-                valIdx = addExpr(prog, Expr.Ident(key.clone()))
+                valIdx = Option.Some(addExpr(prog, Expr.Ident(key.clone())))
             }
             props.push(PropInit {
-                key: key, val: valIdx, kind: accessorKind, keyExpr: keyExpr
+                key: key, val: valIdx!, kind: accessorKind, keyExpr: keyExpr
             }
             )
             if peekKind(p) == T_COMMA {
@@ -856,7 +854,7 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): i64 {
     return addExpr(prog, Expr.ObjLit(idx))
 }
 
-fn parsePostfix(p: &mut PState, prog: &mut Prog): i64 {
+fn parsePostfix(p: &mut PState, prog: &mut Prog): ExprId {
     var e = parsePrimary(p, prog)
     var go = true
     var sawOpt = false
@@ -864,7 +862,7 @@ fn parsePostfix(p: &mut PState, prog: &mut Prog): i64 {
         let k = peekKind(p)
         if k == T_LPAREN {
             advance(p)
-            var argIdxs: Vec<i64> = Vec.new()
+            var argIdxs: Vec<ExprId> = Vec.new()
             if peekKind(p) != T_RPAREN {
                 argIdxs.push(parseArg(p, prog))
                 while peekKind(p) == T_COMMA {
@@ -892,7 +890,7 @@ fn parsePostfix(p: &mut PState, prog: &mut Prog): i64 {
             if peekKind(p) == T_LPAREN {
                 // f?.(args) — optional call
                 advance(p)
-                var callArgs: Vec<i64> = Vec.new()
+                var callArgs: Vec<ExprId> = Vec.new()
                 if peekKind(p) != T_RPAREN {
                     callArgs.push(parseArg(p, prog))
                     while peekKind(p) == T_COMMA {
@@ -946,7 +944,7 @@ fn parsePostfix(p: &mut PState, prog: &mut Prog): i64 {
     return e
 }
 
-fn parseUnary(p: &mut PState, prog: &mut Prog): i64 {
+fn parseUnary(p: &mut PState, prog: &mut Prog): ExprId {
     let k = peekKind(p)
     if k == T_MINUS {
         advance(p)
@@ -1001,7 +999,7 @@ fn parseUnary(p: &mut PState, prog: &mut Prog): i64 {
     return parsePostfix(p, prog)
 }
 
-fn parseMul(p: &mut PState, prog: &mut Prog): i64 {
+fn parseMul(p: &mut PState, prog: &mut Prog): ExprId {
     var left = parseUnary(p, prog)
     var go = true
     while go {
@@ -1027,7 +1025,7 @@ fn parseMul(p: &mut PState, prog: &mut Prog): i64 {
     return left
 }
 
-fn parseAdd(p: &mut PState, prog: &mut Prog): i64 {
+fn parseAdd(p: &mut PState, prog: &mut Prog): ExprId {
     var left = parseMul(p, prog)
     var go = true
     while go {
@@ -1047,7 +1045,7 @@ fn parseAdd(p: &mut PState, prog: &mut Prog): i64 {
     return left
 }
 
-fn parseShift(p: &mut PState, prog: &mut Prog): i64 {
+fn parseShift(p: &mut PState, prog: &mut Prog): ExprId {
     var left = parseAdd(p, prog)
     var go = true
     while go {
@@ -1069,7 +1067,7 @@ fn parseShift(p: &mut PState, prog: &mut Prog): i64 {
     return left
 }
 
-fn parseRel(p: &mut PState, prog: &mut Prog): i64 {
+fn parseRel(p: &mut PState, prog: &mut Prog): ExprId {
     var left = parseShift(p, prog)
     var go = true
     while go {
@@ -1101,7 +1099,7 @@ fn parseRel(p: &mut PState, prog: &mut Prog): i64 {
     return left
 }
 
-fn parseEq(p: &mut PState, prog: &mut Prog): i64 {
+fn parseEq(p: &mut PState, prog: &mut Prog): ExprId {
     var left = parseRel(p, prog)
     var go = true
     while go {
@@ -1125,7 +1123,7 @@ fn parseEq(p: &mut PState, prog: &mut Prog): i64 {
     return left
 }
 
-fn parseBitAnd(p: &mut PState, prog: &mut Prog): i64 {
+fn parseBitAnd(p: &mut PState, prog: &mut Prog): ExprId {
     var left = parseEq(p, prog)
     while peekKind(p) == T_AMP {
         advance(p)
@@ -1135,7 +1133,7 @@ fn parseBitAnd(p: &mut PState, prog: &mut Prog): i64 {
     return left
 }
 
-fn parseBitXor(p: &mut PState, prog: &mut Prog): i64 {
+fn parseBitXor(p: &mut PState, prog: &mut Prog): ExprId {
     var left = parseBitAnd(p, prog)
     while peekKind(p) == T_CARET {
         advance(p)
@@ -1145,7 +1143,7 @@ fn parseBitXor(p: &mut PState, prog: &mut Prog): i64 {
     return left
 }
 
-fn parseBitOr(p: &mut PState, prog: &mut Prog): i64 {
+fn parseBitOr(p: &mut PState, prog: &mut Prog): ExprId {
     var left = parseBitXor(p, prog)
     while peekKind(p) == T_PIPE {
         advance(p)
@@ -1155,7 +1153,7 @@ fn parseBitOr(p: &mut PState, prog: &mut Prog): i64 {
     return left
 }
 
-fn parseAnd(p: &mut PState, prog: &mut Prog): i64 {
+fn parseAnd(p: &mut PState, prog: &mut Prog): ExprId {
     var left = parseBitOr(p, prog)
     while peekKind(p) == T_ANDAND {
         advance(p)
@@ -1165,7 +1163,7 @@ fn parseAnd(p: &mut PState, prog: &mut Prog): i64 {
     return left
 }
 
-fn parseOr(p: &mut PState, prog: &mut Prog): i64 {
+fn parseOr(p: &mut PState, prog: &mut Prog): ExprId {
     var left = parseAnd(p, prog)
     var going = true
     while going {
@@ -1185,7 +1183,7 @@ fn parseOr(p: &mut PState, prog: &mut Prog): i64 {
 }
 
 // c ? a : b — sits between the logical operators and assignment
-fn parseTernary(p: &mut PState, prog: &mut Prog): i64 {
+fn parseTernary(p: &mut PState, prog: &mut Prog): ExprId {
     let cond = parseOr(p, prog)
     if peekKind(p) == T_QUESTION {
         advance(p)
@@ -1234,7 +1232,7 @@ fn compoundOp(k: i32): string {
     return "%"
 }
 
-fn parseExpr(p: &mut PState, prog: &mut Prog): i64 {
+fn parseExpr(p: &mut PState, prog: &mut Prog): ExprId {
     // `yield` binds looser than everything but the comma operator, so it belongs
     // here rather than with the unary operators: `yield a + b` yields the sum.
     // Parsed but not executable — calling a generator throws first (eval.milo),
@@ -1311,11 +1309,11 @@ fn parseExpr(p: &mut PState, prog: &mut Prog): i64 {
 // binding name is known statically, so set it on the anonymous FuncDef at parse
 // time — no per-instance runtime name slot needed. Only anonymous functions are
 // affected; a named function expression keeps its own name.
-fn inferFuncName(prog: &mut Prog, initIdx: i64, name: &string) {
-    if initIdx < 0 || name.len() == 0 {
+fn inferFuncName(prog: &mut Prog, initId: ExprId, name: &string) {
+    if name.len() == 0 {
         return
     }
-    match prog.exprs[initIdx] {
+    match prog.exprs[initId.index] {
         Expr.FuncExpr(f) => {
             if prog.funcs[f].name.len() == 0 {
                 prog.funcs[f].name = name.clone()
@@ -1406,15 +1404,15 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
                 var pat: Vec<DeclItem> = Vec.new()
                 let tmp = "__d" + i64ToStr(save)
                 patternDecls(p, prog, tmp.clone(), pat)
-                var tinit = -1
+                var tinit: Option<ExprId> = Option.None
                 if peekKind(p) == T_EQ {
                     advance(p)
-                    tinit = parseExpr(p, prog)
+                    tinit = Option.Some(parseExpr(p, prog))
                 } else {
-                    tinit = addExpr(prog, Expr.UndefLit)
+                    tinit = Option.Some(addExpr(prog, Expr.UndefLit))
                 }
                 items.push(DeclItem {
-                    name: tmp, init: tinit, isVar: declaredVar
+                    name: tmp, init: tinit!, isVar: declaredVar
                 }
                 )
                 var pi: i64 = 0
@@ -1436,21 +1434,21 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
                     name = p.toks[p.pos].text.clone()
                     advance(p)
                 }
-                var init = -1
+                var init: Option<ExprId> = Option.None
                 if peekKind(p) == T_EQ {
                     advance(p)
                     // parseExpr stops at ',' (no comma operator), so each declarator's
                     // initializer parses independently
-                    init = parseExpr(p, prog)
+                    init = Option.Some(parseExpr(p, prog))
                     // `const bar = () => {}` / `= function(){}` — an anonymous
                     // function expression inherits the binding name (JS NamedEvaluation)
-                    inferFuncName(prog, init, name)
+                    inferFuncName(prog, init!, name)
                 }
-                if init < 0 {
-                    init = addExpr(prog, Expr.UndefLit)
+                if init is Option.None {
+                    init = Option.Some(addExpr(prog, Expr.UndefLit))
                 }
                 items.push(DeclItem {
-                    name: name, init: init, isVar: declaredVar
+                    name: name, init: init!, isVar: declaredVar
                 }
                 )
                 if peekKind(p) == T_COMMA {
@@ -1511,10 +1509,10 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
         expect(p, T_LBRACE)
         var cases: Vec<SwitchCase> = Vec.new()
         while peekKind(p) != T_RBRACE && peekKind(p) != T_EOF {
-            var test = -1
+            var test: Option<ExprId> = Option.None
             if peekKind(p) == T_CASE {
                 advance(p)
-                test = parseExpr(p, prog)
+                test = Option.Some(parseExpr(p, prog))
             } else if peekKind(p) == T_DEFAULT {
                 advance(p)
             } else {
@@ -1639,15 +1637,15 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
             init = Option.Some(addStmt(prog, Stmt.ExprStmt(ie)))
             expect(p, T_SEMI)
         }
-        var cond = -1
+        var cond: Option<ExprId> = Option.None
         if peekKind(p) != T_SEMI {
             // the test is an Expression too: `for (;a, b;)` is legal
-            cond = parseCommaSeq(p, prog)
+            cond = Option.Some(parseCommaSeq(p, prog))
         }
         expect(p, T_SEMI)
-        var update = -1
+        var update: Option<ExprId> = Option.None
         if peekKind(p) != T_RPAREN {
-            update = parseCommaSeq(p, prog)
+            update = Option.Some(parseCommaSeq(p, prog))
         }
         expect(p, T_RPAREN)
         let body = parseStmt(p, prog)
@@ -1717,20 +1715,20 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
     }
     if k == T_RETURN {
         advance(p)
-        var e = -1
+        var e: Option<ExprId> = Option.None
         let nk = peekKind(p)
         if nk != T_SEMI && nk != T_RBRACE && nk != T_EOF {
             // `return a(), b` returns b — the comma operator is part of the
             // returned Expression, not a statement separator.
-            e = parseCommaSeq(p, prog)
+            e = Option.Some(parseCommaSeq(p, prog))
         }
-        if e < 0 {
-            e = addExpr(prog, Expr.UndefLit)
+        if e is Option.None {
+            e = Option.Some(addExpr(prog, Expr.UndefLit))
         }
         if peekKind(p) == T_SEMI {
             advance(p)
         }
-        return addStmt(prog, Stmt.Ret(e))
+        return addStmt(prog, Stmt.Ret(e!))
     }
     if k == T_LBRACE {
         let b = parseBraceBlock(p, prog)
@@ -1783,7 +1781,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     // and static-field (name, init) pairs collected while scanning the body
     var fieldStmts: Vec<StmtId> = Vec.new()
     var staticFieldNames: Vec<string> = Vec.new()
-    var staticFieldInits: Vec<i64> = Vec.new()
+    var staticFieldInits: Vec<ExprId> = Vec.new()
     while peekKind(p) != T_RBRACE && peekKind(p) != T_EOF {
         if peekKind(p) == T_SEMI {
             advance(p)
@@ -1895,7 +1893,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
         let superRef = addExpr(prog, Expr.Ident("__super$" + superKey.clone()))
         let argsRef = addExpr(prog, Expr.Ident("arguments"))
         let spread = addExpr(prog, Expr.Spread(argsRef))
-        var callArgs: Vec<i64> = Vec.new()
+        var callArgs: Vec<ExprId> = Vec.new()
         callArgs.push(spread)
         prog.argLists.push(callArgs)
         let superCall = addExpr(prog, Expr.Call(superRef, prog.argLists.len() - 1))
@@ -1924,9 +1922,9 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
 }
 
 // require("<spec>") as an expression.
-fn requireCall(prog: &mut Prog, spec: string): i64 {
+fn requireCall(prog: &mut Prog, spec: string): ExprId {
     let callee = addExpr(prog, Expr.Ident("require"))
-    var args: Vec<i64> = Vec.new()
+    var args: Vec<ExprId> = Vec.new()
     args.push(addExpr(prog, Expr.StrLit(spec)))
     prog.argLists.push(args)
     return addExpr(prog, Expr.Call(callee, prog.argLists.len() - 1))

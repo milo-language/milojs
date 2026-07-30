@@ -16,18 +16,18 @@ pub enum Expr {
     NullLit,
     UndefLit,
     Ident(string),
-    Bin(string, i64, i64),
-    Un(string, i64),
-    Assign(string, i64),
-    Call(i64, i64),
-    Member(i64, string),
+    Bin(string, ExprId, ExprId),
+    Un(string, ExprId),
+    Assign(string, ExprId),
+    Call(ExprId, i64),
+    Member(ExprId, string),
     FuncExpr(i64),
     // object literal: index into prog.objLits (a list of key/value-expr pairs)
     ObjLit(i64),
     // computed member read: obj[keyExpr]
-    Index(i64, i64),
+    Index(ExprId, ExprId),
     // property write: obj, keyExpr, valExpr — backs both obj.x = v and obj[k] = v
-    SetMember(i64, i64, i64),
+    SetMember(ExprId, ExprId, ExprId),
     // array literal: index into prog.arrLits (a list of element-expr indices)
     ArrLit(i64),
     // the strings array a tagged template hands its tag function: an array of
@@ -36,42 +36,49 @@ pub enum Expr {
     // the call without it), so a plain ArrLit is not enough.
     TemplateStrings(i64),
     // new Ctor(args): constructor expr, arg-list index
-    New(i64, i64),
+    New(ExprId, i64),
     // ++/-- on an lvalue: target expr, isIncrement, isPrefix
-    Update(i64, bool, bool),
+    Update(ExprId, bool, bool),
     // x op= y on an lvalue: target expr, op ("+","-","*","/","%"), rhs expr
-    CompoundAssign(i64, string, i64),
+    CompoundAssign(ExprId, string, ExprId),
     // logical assignment: target, op ("&&"/"||"/"??"), rhs. Short-circuits — rhs
     // is evaluated and stored only when the op says the target needs updating.
-    LogicalAssign(i64, string, i64),
+    LogicalAssign(ExprId, string, ExprId),
     // destructuring assignment to existing targets: `[a,b] = rhs` /
     // `({a,b} = rhs)`. First index is the pattern (an ArrLit/ObjLit), second the
     // rhs. Distinct from `let [a,b] = rhs` (a declaration, handled at parse time).
-    DestructAssign(i64, i64),
+    DestructAssign(ExprId, ExprId),
     // ternary c ? a : b
-    Cond(i64, i64, i64),
+    Cond(ExprId, ExprId, ExprId),
     // ...expr in a call-arg or array-literal position
-    Spread(i64),
+    Spread(ExprId),
     // the comma/sequence operator: evaluate left for effect, yield right.
     // Shows up constantly in TS-compiled CommonJS as `(0, mod.fn)(...)`.
-    Comma(i64, i64),
+    Comma(ExprId, ExprId),
     // /pattern/flags written literally
     RegexLit(string, string),
     // a?.b — yields undefined when the base is null/undefined
-    OptMember(i64, string),
+    OptMember(ExprId, string),
     // class expression: index into prog.classes
     ClassExpr(i64),
     // a?.[k] — computed sibling of OptMember
-    OptIndex(i64, i64),
+    OptIndex(ExprId, ExprId),
     // wraps the outermost expression of a postfix chain that contains a `?.`.
     // A nullish `?.` base short-circuits the ENTIRE rest of the chain to
     // undefined (a?.b.c[d]() is all-or-nothing), so the runtime sets a flag that
     // propagates up through the chain's Member/Index/Call nodes; this node is
     // where the flag is scoped and consumed.
-    OptChainRoot(i64),
+    OptChainRoot(ExprId),
     // f?.(args) — optional call: if the callee is nullish the call is skipped and
     // the result is undefined, else it is called. (callee expr, argList index)
-    OptCall(i64, i64),
+    OptCall(ExprId, i64),
+}
+
+// Append-only expression slot. Like StmtId, this is intentionally distinct
+// from every other Prog index family while retaining a one-word representation.
+@derive(Eq)
+pub struct ExprId {
+    index: i64,
 }
 
 // Append-only statement slot. Construction stays in addStmt so every published
@@ -84,32 +91,32 @@ pub struct StmtId {
 // One key/value pair in an object literal; val is an expr index.
 pub struct PropInit {
     key: string,
-    val: i64,
+    val: ExprId,
     // 0 plain, 1 getter, 2 setter — accessors are installed rather than assigned
     kind: i64,
-    // computed key `{ [expr]: v }`: expression index, or -1 for a literal key
-    keyExpr: i64,
+    // computed key `{ [expr]: v }`, absent for a literal key.
+    keyExpr: Option<ExprId>,
 }
 
 pub enum Stmt {
-    Decl(string, i64),
-    ExprStmt(i64),
-    If(i64, StmtId, Option<StmtId>),
-    While(i64, StmtId),
-    Ret(i64),
+    Decl(string, ExprId),
+    ExprStmt(ExprId),
+    If(ExprId, StmtId, Option<StmtId>),
+    While(ExprId, StmtId),
+    Ret(ExprId),
     Block(i64),
     FuncDecl(i64),
     Empty,
     // for (init; cond; update) body — cond/update remain expression indices;
     // init is optional and body is always a statement ID.
-    For(Option<StmtId>, i64, i64, StmtId),
-    Throw(i64),
+    For(Option<StmtId>, Option<ExprId>, Option<ExprId>, StmtId),
+    Throw(ExprId),
     // let/var/const with one or more declarators: index into prog.declLists
     MultiDecl(i64),
     // for (name in objExpr) body
-    ForIn(string, i64, StmtId),
+    ForIn(string, ExprId, StmtId),
     // for (name of iterExpr) body
-    ForOf(string, i64, StmtId),
+    ForOf(string, ExprId, StmtId),
     // break/continue carry their target label, "" when unlabeled
     Break(string),
     Continue(string),
@@ -119,9 +126,9 @@ pub enum Stmt {
     // class declaration: index into prog.classes
     ClassDecl(i64),
     // do body while (cond) — body runs before the first test
-    DoWhile(StmtId, i64),
+    DoWhile(StmtId, ExprId),
     // switch (discr) { ... } — index into prog.switches
-    Switch(i64, i64),
+    Switch(ExprId, i64),
     // try block, catch-param name ("" if none), catch block idx (-1 if none),
     // finally block idx (-1 if none). Block idxs index prog.blocks.
     Try(i64, string, i64, i64),
@@ -145,7 +152,7 @@ pub struct FuncDef {
 // one declarator in a `let a = 1, b, c = 3` statement
 pub struct DeclItem {
     name: string,
-    init: i64,
+    init: ExprId,
     // `var` hoists to the enclosing function and has no per-iteration binding;
     // let/const do neither, so the distinction has to survive parsing
     isVar: bool,
@@ -181,13 +188,13 @@ pub struct ClassDef {
     // constructor object when the class value is built. Instance fields are not
     // here: they are injected as `this.name = init` statements into the ctor.
     staticFieldNames: Vec<string>,
-    staticFieldInits: Vec<i64>,
+    staticFieldInits: Vec<ExprId>,
 }
 
 // One `case v:` / `default:` arm. `test` is -1 for default. Bodies are separate
 // blocks but fall through to the next arm unless a break intervenes.
 pub struct SwitchCase {
-    test: i64,
+    test: Option<ExprId>,
     body: i64,
 }
 
@@ -195,10 +202,10 @@ pub struct Prog {
     exprs: Vec<Expr>,
     stmts: Vec<Stmt>,
     blocks: Vec<Vec<StmtId>>,
-    argLists: Vec<Vec<i64>>,
+    argLists: Vec<Vec<ExprId>>,
     funcs: Vec<FuncDef>,
     objLits: Vec<Vec<PropInit>>,
-    arrLits: Vec<Vec<i64>>,
+    arrLits: Vec<Vec<Option<ExprId>>>,
     declLists: Vec<Vec<DeclItem>>,
     classes: Vec<ClassDef>,
     switches: Vec<Vec<SwitchCase>>,
@@ -386,17 +393,19 @@ fn cloneStmt(s: &Stmt): Stmt {
     }
 }
 
-pub fn getExpr(prog: &Prog, i: i64): Expr {
-    return cloneExpr(prog.exprs[i])
+pub fn getExpr(prog: &Prog, id: ExprId): Expr {
+    return cloneExpr(prog.exprs[id.index])
 }
 
 pub fn getStmt(prog: &Prog, id: StmtId): Stmt {
     return cloneStmt(prog.stmts[id.index])
 }
 
-pub fn addExpr(prog: &mut Prog, e: Expr): i64 {
+pub fn addExpr(prog: &mut Prog, e: Expr): ExprId {
     prog.exprs.push(e)
-    return prog.exprs.len() - 1
+    return ExprId {
+        index: prog.exprs.len() - 1
+    }
 }
 
 pub fn addStmt(prog: &mut Prog, s: Stmt): StmtId {

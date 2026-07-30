@@ -11,7 +11,7 @@ Create an empty program arena.
 ### `addExpr`
 
 ```milo
-pub fn addExpr(prog: &mut Prog, e: Expr): i64
+pub fn addExpr(prog: &mut Prog, e: Expr): ExprId
 ```
 
 _Undocumented._
@@ -43,7 +43,7 @@ _Undocumented._
 ### `getExpr`
 
 ```milo
-pub fn getExpr(prog: &Prog, i: i64): Expr
+pub fn getExpr(prog: &Prog, id: ExprId): Expr
 ```
 
 _Undocumented._

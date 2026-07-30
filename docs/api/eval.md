@@ -481,7 +481,7 @@ _Undocumented._
 ### `evalExpr`
 
 ```milo
-pub fn evalExpr(prog: &Prog, idx: i64, st: &mut Interp, scope: i64): JSValue
+pub fn evalExpr(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue
 ```
 
 _Undocumented._
