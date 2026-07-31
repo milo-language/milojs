@@ -1,0 +1,22 @@
+insert {"lastInsertRowid":1,"changes":1}
+insert {"lastInsertRowid":2,"changes":1}
+all [{"id":1,"name":"alice","score":9.5,"bio":null},{"id":2,"name":"bob","score":3,"bio":"hi"}]
+get {"name":"bob"}
+miss undefined
+bare [{"name":"bob"}]
+prefixed [{"name":"bob"}]
+columns ["id","name"]
+types number number null
+update {"lastInsertRowid":2,"changes":2}
+iterate 3
+bool bind ERR_INVALID_ARG_TYPE
+unbound then bigint [{"v":null},{"v":1}]
+prepare err ERR_SQLITE_ERROR no such table: nope
+exec err ERR_SQLITE_ERROR
+isOpen true location null
+closed false
+after close database is not open
+disk location false
+reopened [{"k":"a","v":1},{"k":"b","v":2}]
+fk enforced ERR_SQLITE_ERROR
+ctor function function

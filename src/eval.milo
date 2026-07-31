@@ -44,6 +44,12 @@ from "std/net" import {
 from "std/fetch" import {
     TlsStream
 }
+from "std/sqlite" import {
+    Database, Statement, dbOpen, dbClose, dbExec, dbQuery, dbStep, dbColumnCount,
+    dbColumnInt64, dbColumnFloat, dbColumnText, dbFinalize, dbBindInt64, dbBindText,
+    dbBindNull, dbReset, dbLastInsertId,
+    sqlite3_column_type, sqlite3_changes, sqlite3_errmsg, sqlite3_bind_double, sqlite3_step
+}
 from "std/time" import {
     epochMillis, sleepMs
 }
@@ -1677,6 +1683,59 @@ let NATIVE_TA_BASE: i64 = 79
 // Above the TA block (79..87). node-fetch is built on this.
 let NATIVE_HTTP_FETCH: i64 = 88
 
+// node:sqlite primitives (lib/sqlite.js wraps these into the Node API shape).
+// Databases and statements are addressed by index into st.sqliteDbs/sqliteStmts;
+// JS never sees a pointer. Left a gap above the last id (126) so the unrelated
+// blocks stay easy to extend.
+let NATIVE_SQLITE_OPEN: i64 = 130
+let NATIVE_SQLITE_CLOSE: i64 = 131
+let NATIVE_SQLITE_EXEC: i64 = 132
+let NATIVE_SQLITE_PREPARE: i64 = 133
+let NATIVE_SQLITE_ERRMSG: i64 = 134
+let NATIVE_SQLITE_STEP: i64 = 135
+let NATIVE_SQLITE_COLUMN_COUNT: i64 = 136
+let NATIVE_SQLITE_COLUMN_NAME: i64 = 137
+let NATIVE_SQLITE_COLUMN_VALUE: i64 = 138
+let NATIVE_SQLITE_BIND: i64 = 139
+let NATIVE_SQLITE_RESET: i64 = 140
+let NATIVE_SQLITE_FINALIZE: i64 = 141
+let NATIVE_SQLITE_CHANGES: i64 = 142
+let NATIVE_SQLITE_LAST_INSERT_ID: i64 = 143
+let NATIVE_SQLITE_BIND_INDEX: i64 = 144
+let NATIVE_SQLITE_FILENAME: i64 = 145
+
+// sqlite3_column_name is not wrapped by std/sqlite, but node:sqlite's get()/all()
+// return row objects keyed by column name, so it is declared here directly. The
+// libsqlite3 link flag already comes from the std/sqlite import.
+extern fn sqlite3_column_name(stmt: *u8, col: i32): *u8
+
+// Named parameters (`$id`, `:id`, `@id`) resolve to a 1-based index through this;
+// also not wrapped by std/sqlite. Returns 0 for a name the statement does not use.
+extern fn sqlite3_bind_parameter_index(stmt: *u8, name: *u8): i32
+
+// The path sqlite resolved the connection to, which is what Node's
+// DatabaseSync.location() reports (not the string the caller passed).
+extern fn sqlite3_db_filename(db: *u8, dbName: *u8): *u8
+
+// A live index into st.sqliteDbs, or -1 when the handle is closed or bogus. Every
+// sqlite native funnels through this so a use-after-close is a JS-level error
+// rather than a call on a freed sqlite3*.
+fn sqliteDbIdx(st: &Interp, v: &JSValue): i64 {
+    let i = toNum(v) as i64
+    if i < 0 || i >= st.sqliteDbs.len() || !st.sqliteDbLive[i] {
+        return 0 - 1
+    }
+    return i
+}
+
+fn sqliteStmtIdx(st: &Interp, v: &JSValue): i64 {
+    let i = toNum(v) as i64
+    if i < 0 || i >= st.sqliteStmts.len() || !st.sqliteStmtLive[i] {
+        return 0 - 1
+    }
+    return i
+}
+
 // The `.name` of a native constructor (Object.name === "Object" etc), so
 // `err.constructor.name` and similar resolve. Empty for natives that are not
 // named constructors.
@@ -2478,6 +2537,284 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             st.connOpen[idx] = false
         }
         return JSValue.Undefined
+    }
+    if id == NATIVE_SQLITE_OPEN {
+        if argVals.len() == 0 {
+            return JSValue.Number(0.0 - 1.0)
+        }
+        match dbOpen(toStr(argVals[0])) {
+            Result.Ok(db) => {
+                st.sqliteDbs.push(db)
+                st.sqliteDbLive.push(true)
+                return JSValue.Number((st.sqliteDbs.len() - 1) as f64)
+            }
+            Result.Err(_e) => {
+                return JSValue.Number(0.0 - 1.0)
+            }
+        }
+    }
+    if id == NATIVE_SQLITE_CLOSE {
+        if argVals.len() == 0 {
+            return JSValue.Undefined
+        }
+        let d = sqliteDbIdx(st, argVals[0])
+        if d < 0 {
+            return JSValue.Undefined
+        }
+        // sqlite3_close() refuses to close a connection with unfinalized
+        // statements, so reap this database's statements first; otherwise the
+        // file stays locked for the rest of the process.
+        var i: i64 = 0
+        while i < st.sqliteStmts.len() {
+            if st.sqliteStmtLive[i] && st.sqliteStmtDb[i] == d {
+                dbFinalize(st.sqliteStmts[i])
+                st.sqliteStmtLive[i] = false
+            }
+            i = i + 1
+        }
+        dbClose(st.sqliteDbs[d])
+        st.sqliteDbLive[d] = false
+        return JSValue.Undefined
+    }
+    if id == NATIVE_SQLITE_EXEC {
+        if argVals.len() < 2 {
+            return JSValue.Number(0.0 - 1.0)
+        }
+        let d = sqliteDbIdx(st, argVals[0])
+        if d < 0 {
+            return JSValue.Number(0.0 - 1.0)
+        }
+        match dbExec(st.sqliteDbs[d], toStr(argVals[1])) {
+            Result.Ok(n) => {
+                return JSValue.Number(n as f64)
+            }
+            Result.Err(_e) => {
+                return JSValue.Number(0.0 - 1.0)
+            }
+        }
+    }
+    if id == NATIVE_SQLITE_PREPARE {
+        if argVals.len() < 2 {
+            return JSValue.Number(0.0 - 1.0)
+        }
+        let d = sqliteDbIdx(st, argVals[0])
+        if d < 0 {
+            return JSValue.Number(0.0 - 1.0)
+        }
+        match dbQuery(st.sqliteDbs[d], toStr(argVals[1])) {
+            Result.Ok(stmt) => {
+                st.sqliteStmts.push(stmt)
+                st.sqliteStmtLive.push(true)
+                st.sqliteStmtDb.push(d)
+                return JSValue.Number((st.sqliteStmts.len() - 1) as f64)
+            }
+            Result.Err(_e) => {
+                return JSValue.Number(0.0 - 1.0)
+            }
+        }
+    }
+    if id == NATIVE_SQLITE_ERRMSG {
+        if argVals.len() == 0 {
+            return JSValue.Str("")
+        }
+        let d = sqliteDbIdx(st, argVals[0])
+        if d < 0 {
+            return JSValue.Str("")
+        }
+        unsafe {
+            let p = sqlite3_errmsg(st.sqliteDbs[d]._handle)
+            if p == 0 as *u8 {
+                return JSValue.Str("")
+            }
+            return JSValue.Str(_cstrToString(p))
+        }
+    }
+    if id == NATIVE_SQLITE_STEP {
+        // The raw sqlite code, not a bool: SQLITE_ROW 100, SQLITE_DONE 101, and
+        // anything else is a real failure (SQLITE_CONSTRAINT 19 and friends).
+        // dbStep() collapses all of those to false, which silently swallowed
+        // constraint violations, so the code crosses into JS intact.
+        if argVals.len() == 0 {
+            return JSValue.Number(0.0 - 1.0)
+        }
+        let s = sqliteStmtIdx(st, argVals[0])
+        if s < 0 {
+            return JSValue.Number(0.0 - 1.0)
+        }
+        return JSValue.Number(sqlite3_step(st.sqliteStmts[s]._handle) as f64)
+    }
+    if id == NATIVE_SQLITE_COLUMN_COUNT {
+        if argVals.len() == 0 {
+            return JSValue.Number(0.0)
+        }
+        let s = sqliteStmtIdx(st, argVals[0])
+        if s < 0 {
+            return JSValue.Number(0.0)
+        }
+        return JSValue.Number(dbColumnCount(st.sqliteStmts[s]) as f64)
+    }
+    if id == NATIVE_SQLITE_COLUMN_NAME {
+        if argVals.len() < 2 {
+            return JSValue.Str("")
+        }
+        let s = sqliteStmtIdx(st, argVals[0])
+        if s < 0 {
+            return JSValue.Str("")
+        }
+        unsafe {
+            let p = sqlite3_column_name(st.sqliteStmts[s]._handle, toNum(argVals[1]) as i32)
+            if p == 0 as *u8 {
+                return JSValue.Str("")
+            }
+            return JSValue.Str(_cstrToString(p))
+        }
+    }
+    if id == NATIVE_SQLITE_COLUMN_VALUE {
+        if argVals.len() < 2 {
+            return JSValue.Null
+        }
+        let s = sqliteStmtIdx(st, argVals[0])
+        if s < 0 {
+            return JSValue.Null
+        }
+        let col = toNum(argVals[1]) as i32
+        // SQLITE_INTEGER 1, FLOAT 2, TEXT 3, BLOB 4, NULL 5
+        let ty = sqlite3_column_type(st.sqliteStmts[s]._handle, col)
+        if ty == 5 {
+            return JSValue.Null
+        }
+        if ty == 1 {
+            // Node returns a BigInt past 2^53; milojs narrows to a JS number
+            // instead, so rowids beyond the safe range lose precision.
+            return JSValue.Number(dbColumnInt64(st.sqliteStmts[s], col) as f64)
+        }
+        if ty == 2 {
+            return JSValue.Number(dbColumnFloat(st.sqliteStmts[s], col))
+        }
+        // TEXT, and BLOB as its bytes reinterpreted as text (no Buffer yet)
+        return JSValue.Str(dbColumnText(st.sqliteStmts[s], col))
+    }
+    if id == NATIVE_SQLITE_BIND {
+        if argVals.len() < 3 {
+            return JSValue.Bool(false)
+        }
+        let s = sqliteStmtIdx(st, argVals[0])
+        if s < 0 {
+            return JSValue.Bool(false)
+        }
+        // sqlite parameter indices are 1-based; JS passes the 1-based index too
+        let idx = toNum(argVals[1]) as i32
+        match argVals[2] {
+            JSValue.Null => {
+                match dbBindNull(st.sqliteStmts[s], idx) {
+                    Result.Ok(_x) => { return JSValue.Bool(true) }
+                    Result.Err(_e) => { return JSValue.Bool(false) }
+                }
+            }
+            JSValue.Undefined => {
+                match dbBindNull(st.sqliteStmts[s], idx) {
+                    Result.Ok(_x) => { return JSValue.Bool(true) }
+                    Result.Err(_e) => { return JSValue.Bool(false) }
+                }
+            }
+            JSValue.Bool(b) => {
+                // sqlite has no boolean type; Node stores 0/1 integers
+                var n: i64 = 0
+                if b {
+                    n = 1
+                }
+                match dbBindInt64(st.sqliteStmts[s], idx, n) {
+                    Result.Ok(_x) => { return JSValue.Bool(true) }
+                    Result.Err(_e) => { return JSValue.Bool(false) }
+                }
+            }
+            JSValue.Number(f) => {
+                // Bind whole numbers as INTEGER so PRIMARY KEY columns and
+                // `typeof row.id === "number"` round-trip the way Node's do;
+                // a real float would come back as REAL either way.
+                if f >= 0.0 - 9007199254740992.0 && f <= 9007199254740992.0 && f == ((f as i64) as f64) {
+                    match dbBindInt64(st.sqliteStmts[s], idx, f as i64) {
+                        Result.Ok(_x) => { return JSValue.Bool(true) }
+                        Result.Err(_e) => { return JSValue.Bool(false) }
+                    }
+                }
+                let rc = sqlite3_bind_double(st.sqliteStmts[s]._handle, idx, f)
+                return JSValue.Bool(rc == 0)
+            }
+            _ => {
+                match dbBindText(st.sqliteStmts[s], idx, toStr(argVals[2])) {
+                    Result.Ok(_x) => { return JSValue.Bool(true) }
+                    Result.Err(_e) => { return JSValue.Bool(false) }
+                }
+            }
+        }
+    }
+    if id == NATIVE_SQLITE_FILENAME {
+        if argVals.len() == 0 {
+            return JSValue.Str("")
+        }
+        let d = sqliteDbIdx(st, argVals[0])
+        if d < 0 {
+            return JSValue.Str("")
+        }
+        unsafe {
+            let p = sqlite3_db_filename(st.sqliteDbs[d]._handle, "main")
+            if p == 0 as *u8 {
+                return JSValue.Str("")
+            }
+            return JSValue.Str(_cstrToString(p))
+        }
+    }
+    if id == NATIVE_SQLITE_BIND_INDEX {
+        if argVals.len() < 2 {
+            return JSValue.Number(0.0)
+        }
+        let s = sqliteStmtIdx(st, argVals[0])
+        if s < 0 {
+            return JSValue.Number(0.0)
+        }
+        return JSValue.Number(sqlite3_bind_parameter_index(st.sqliteStmts[s]._handle, toStr(argVals[1])) as f64)
+    }
+    if id == NATIVE_SQLITE_RESET {
+        if argVals.len() == 0 {
+            return JSValue.Undefined
+        }
+        let s = sqliteStmtIdx(st, argVals[0])
+        if s >= 0 {
+            dbReset(st.sqliteStmts[s])
+        }
+        return JSValue.Undefined
+    }
+    if id == NATIVE_SQLITE_FINALIZE {
+        if argVals.len() == 0 {
+            return JSValue.Undefined
+        }
+        let s = sqliteStmtIdx(st, argVals[0])
+        if s >= 0 {
+            dbFinalize(st.sqliteStmts[s])
+            st.sqliteStmtLive[s] = false
+        }
+        return JSValue.Undefined
+    }
+    if id == NATIVE_SQLITE_CHANGES {
+        if argVals.len() == 0 {
+            return JSValue.Number(0.0)
+        }
+        let d = sqliteDbIdx(st, argVals[0])
+        if d < 0 {
+            return JSValue.Number(0.0)
+        }
+        return JSValue.Number(sqlite3_changes(st.sqliteDbs[d]._handle) as f64)
+    }
+    if id == NATIVE_SQLITE_LAST_INSERT_ID {
+        if argVals.len() == 0 {
+            return JSValue.Number(0.0)
+        }
+        let d = sqliteDbIdx(st, argVals[0])
+        if d < 0 {
+            return JSValue.Number(0.0)
+        }
+        return JSValue.Number(dbLastInsertId(st.sqliteDbs[d]) as f64)
     }
     if id == NATIVE_HTTP_FETCH {
         var method = "GET"
@@ -4547,6 +4884,22 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "__tcpSend", JSValue.Native(NATIVE_TCP_SEND))
     scopeDefine(st, 0, "__tcpClose", JSValue.Native(NATIVE_TCP_CLOSE))
     scopeDefine(st, 0, "__httpFetch", JSValue.Native(NATIVE_HTTP_FETCH))
+    scopeDefine(st, 0, "__sqliteOpen", JSValue.Native(NATIVE_SQLITE_OPEN))
+    scopeDefine(st, 0, "__sqliteClose", JSValue.Native(NATIVE_SQLITE_CLOSE))
+    scopeDefine(st, 0, "__sqliteExec", JSValue.Native(NATIVE_SQLITE_EXEC))
+    scopeDefine(st, 0, "__sqlitePrepare", JSValue.Native(NATIVE_SQLITE_PREPARE))
+    scopeDefine(st, 0, "__sqliteErrmsg", JSValue.Native(NATIVE_SQLITE_ERRMSG))
+    scopeDefine(st, 0, "__sqliteStep", JSValue.Native(NATIVE_SQLITE_STEP))
+    scopeDefine(st, 0, "__sqliteColumnCount", JSValue.Native(NATIVE_SQLITE_COLUMN_COUNT))
+    scopeDefine(st, 0, "__sqliteColumnName", JSValue.Native(NATIVE_SQLITE_COLUMN_NAME))
+    scopeDefine(st, 0, "__sqliteColumnValue", JSValue.Native(NATIVE_SQLITE_COLUMN_VALUE))
+    scopeDefine(st, 0, "__sqliteBind", JSValue.Native(NATIVE_SQLITE_BIND))
+    scopeDefine(st, 0, "__sqliteReset", JSValue.Native(NATIVE_SQLITE_RESET))
+    scopeDefine(st, 0, "__sqliteFinalize", JSValue.Native(NATIVE_SQLITE_FINALIZE))
+    scopeDefine(st, 0, "__sqliteChanges", JSValue.Native(NATIVE_SQLITE_CHANGES))
+    scopeDefine(st, 0, "__sqliteLastInsertId", JSValue.Native(NATIVE_SQLITE_LAST_INSERT_ID))
+    scopeDefine(st, 0, "__sqliteBindIndex", JSValue.Native(NATIVE_SQLITE_BIND_INDEX))
+    scopeDefine(st, 0, "__sqliteFilename", JSValue.Native(NATIVE_SQLITE_FILENAME))
     scopeDefine(st, 0, "__httpRegister", JSValue.Native(NATIVE_HTTP_REGISTER))
     scopeDefine(st, 0, "__httpUnregister", JSValue.Native(NATIVE_HTTP_UNREGISTER))
     scopeDefine(st, 0, "__writeFileSync", JSValue.Native(NATIVE_WRITE_FILE))

@@ -194,6 +194,9 @@ fn builtinSource(name: &string): string {
     if name == "assert" {
         return @embedFile("../lib/assert.js")
     }
+    if name == "sqlite" {
+        return @embedFile("../lib/sqlite.js")
+    }
     if name == "prelude" {
         return @embedFile("../lib/prelude.js")
     }
@@ -230,6 +233,13 @@ pub fn reportUnresolved(st: &mut Interp, spec: &string) {
     }
     st.reportedMissing.push(spec.clone())
     eprint("milojs: cannot resolve '" + spec + "' — no such package, and node builtin modules are not implemented yet")
+}
+
+// Builtins Node only exposes under the node: prefix, because a same-named npm
+// package predates them. Bare `require("sqlite")` must keep resolving through
+// node_modules or it silently hijacks the (unrelated) `sqlite` package.
+fn builtinRequiresPrefix(name: &string): bool {
+    return name == "sqlite"
 }
 
 fn isBuiltinPath(path: &string): bool {
@@ -369,7 +379,10 @@ pub fn resolveSpec(dir: &string, spec: &string): string {
     // node builtins (with or without the node: prefix) come first
     let bare = stripNodePrefix(spec)
     if builtinSource(bare).len() > 0 {
-        return "builtin:" + bare
+        // A shorter `bare` means the specifier carried the node: prefix.
+        if !builtinRequiresPrefix(bare) || bare.len() != spec.len() {
+            return "builtin:" + bare
+        }
     }
     // Only "./" and "../" are relative. A bare leading dot is part of a PACKAGE
     // name — @prisma/client requires ".prisma/client", which node resolves through

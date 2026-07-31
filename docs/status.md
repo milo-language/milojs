@@ -3,7 +3,7 @@ system: status
 purpose: canonical current capability, evidence, and next-milestone dashboard for milojs
 key-files: src/milojs-engine.milo, src/milojs.milo, tests/run.sh, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts
 update-when: a product gate lands, a conformance sweep is rerun, or the supported host surface changes
-last-verified: 2026-07-30
+last-verified: 2026-07-31
 -->
 
 # milojs status
@@ -32,14 +32,15 @@ language engine and embedding contract are unstable.
 
 ## Evidence
 
-Last QuickJS sweep: 2026-07-30. The test262 sample was last run on 2026-07-24.
+Last QuickJS sweep: 2026-07-30. The test262 sample was last run on 2026-07-31
+against test262 `5ef1e572`.
 
 | measure | result | interpretation |
 |---|---:|---|
-| deterministic test262 sample | 473/1476 (32.0%) | broad language and builtin coverage is still early |
+| deterministic test262 sample | 513/1470 (34.9%) | broad language and builtin coverage is still early |
 | QuickJS `tests/` at `fced162` | 96/166 (57.8%) | useful subset, with a substantial semantic long tail |
 | locked engine fixtures | 151 | byte-exact differential output |
-| locked runtime fixtures | 29 | module, async, fetch, HTTP, and host behavior |
+| locked runtime fixtures | 30 | module, async, fetch, HTTP, sqlite, and host behavior |
 | Milo invariant fixtures | 3 | scheduler/context and GC-root invariants |
 
 The QuickJS numerator rose from 93 to 96 while its current corpus added 17
@@ -106,11 +107,22 @@ builtin prototype dispatch. See `docs/backlog.md` for the maintained detail.
   ESM live bindings.
 - Event loop, microtasks, timers, async suspension, HTTP serving, outbound
   `fetch`, filesystem APIs, Buffer, streams, and a growing set of Node modules.
+- `node:sqlite` (`DatabaseSync`/`StatementSync`) over libsqlite3 via Milo's
+  `std/sqlite`: `exec`, `prepare`, `run`/`get`/`all`/`iterate`/`columns`,
+  positional and named parameters, foreign keys on by default, and Node's
+  `ERR_SQLITE_ERROR`/`ERR_INVALID_ARG_TYPE` codes. A differential fixture locks
+  the output byte-for-byte against Node. Only the `node:` specifier resolves, as
+  in Node, so the unrelated `sqlite` npm package is not shadowed. Results are
+  JS numbers rather than BigInt, so `setReadBigInts(true)` and rowids past 2^53
+  are rejected rather than silently wrong; blobs come back as text.
 - Node-API addon loading with promises, references, wrapping, classes, and
   threadsafe functions.
 
 This is an application-oriented compatibility slice, not general Node
-compatibility. Client `http.request`/`http.get`, TLS serving, child processes,
+compatibility. `http.request`/`http.get` are exported but never complete: a
+client request against our own in-process server hangs instead of failing, which
+is worse than an absent export and should be treated as a client-side gap, not a
+shipped API. TLS serving, child processes,
 computed module discovery, and significant package-facing edges remain. Ten of
 64 Node-API entry points are honest stubs; external-Buffer finalization remains
 from the Buffer family. A compiled-addon differential test locks native callbacks
