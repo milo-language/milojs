@@ -21,10 +21,14 @@ if [ -z "${CC:-}" ]; then
   done
 fi
 : "${CC:?no C compiler found; set CC}"
+# -lsqlite3 is required because node:sqlite calls libsqlite3 directly. Milo adds
+# that flag itself when it links a binary, but an embedder linking libmilojs.a
+# with its own compiler does not get it, so the archive has undefined sqlite3_*
+# symbols until the embedder names the library.
 if [ -z "${MILOJS_EMBED_LIBS:-}" ]; then
   case "$(uname -s)" in
-    Darwin) MILOJS_EMBED_LIBS="-lssl -lcrypto -pthread" ;;
-    *)      MILOJS_EMBED_LIBS="-lm -lssl -lcrypto -ldl -pthread" ;;
+    Darwin) MILOJS_EMBED_LIBS="-lssl -lcrypto -lsqlite3 -pthread" ;;
+    *)      MILOJS_EMBED_LIBS="-lm -lssl -lcrypto -lsqlite3 -ldl -pthread" ;;
   esac
 fi
 # macOS OpenSSL is keg-only under Homebrew — its headers/libs are off the default

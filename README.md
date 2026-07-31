@@ -80,7 +80,7 @@ On Linux:
 ```sh
 # Linux
 milo build-lib src/libmilojs.milo -o libmilojs.a &&
-cc -std=c11 -I. -Iinclude examples/embed/hello.c libmilojs.a -lm -lssl -lcrypto -ldl -pthread -o hello &&
+cc -std=c11 -I. -Iinclude examples/embed/hello.c libmilojs.a -lm -lssl -lcrypto -lsqlite3 -ldl -pthread -o hello &&
 ./hello
 ```
 
@@ -91,7 +91,7 @@ On macOS (drop `-lm`/`-ldl`; point at Homebrew's OpenSSL):
 milo build-lib src/libmilojs.milo -o libmilojs.a &&
 cc -std=c11 -I. -Iinclude \
   -I"$(brew --prefix openssl)/include" -L"$(brew --prefix openssl)/lib" \
-  examples/embed/hello.c libmilojs.a -lssl -lcrypto -pthread -o hello &&
+  examples/embed/hello.c libmilojs.a -lssl -lcrypto -lsqlite3 -pthread -o hello &&
 ./hello
 ```
 

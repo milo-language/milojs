@@ -58,7 +58,11 @@ const disk = new DatabaseSync(file);
 disk.exec("CREATE TABLE t (k TEXT PRIMARY KEY, v INTEGER)");
 disk.prepare("INSERT INTO t VALUES (?, ?)").run("a", 1);
 disk.prepare("INSERT INTO t VALUES (?, ?)").run("b", 2);
-console.log("disk location", disk.location() === file);
+// Compare the basename, not the whole path: sqlite reports the resolved path,
+// and macOS TMPDIR is a symlink (/var -> /private/var) while Linux /tmp is not,
+// so an equality check against `file` is true on one platform and false on the
+// other.
+console.log("disk location", disk.location().endsWith("milojs-sqlite-fixture.db"));
 disk.close();
 
 const again = new DatabaseSync(file);

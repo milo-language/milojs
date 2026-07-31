@@ -16,7 +16,7 @@ exec err ERR_SQLITE_ERROR
 isOpen true location null
 closed false
 after close database is not open
-disk location false
+disk location true
 reopened [{"k":"a","v":1},{"k":"b","v":2}]
 fk enforced ERR_SQLITE_ERROR
 ctor function function

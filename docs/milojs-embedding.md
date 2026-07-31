@@ -21,8 +21,10 @@ adds stable status constants and includes that generated file. A C smoke test is
 the acceptance gate, not merely successful Milo compilation.
 
 The preview static archive currently requires the host link to include its
-transitive system libraries (`libm`, OpenSSL, dynamic loading, and pthreads on
-Linux). `tests/run-embed.sh` is the executable link recipe and accepts
+transitive system libraries (`libm`, OpenSSL, libsqlite3, dynamic loading, and
+pthreads on Linux). Milo adds `-lsqlite3` itself when it links a binary, but an
+embedder driving its own link does not inherit that, so the archive carries
+undefined `sqlite3_*` symbols until the host names the library. `tests/run-embed.sh` is the executable link recipe and accepts
 `MILOJS_EMBED_LIBS` for nonstandard toolchains. Release packaging should replace
 this manual list with `pkg-config` metadata.
 
