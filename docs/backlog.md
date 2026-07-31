@@ -161,6 +161,23 @@ Remaining divergences:
 - `import()` with a computed specifier fails the same way a computed `require`
   does: the preload scan cannot see it, so the module is never registered.
 
+## Found by differential sweep 2026-07-30, not yet fixed
+
+Ranked by how likely a first-time user is to hit them. All four are reproducible
+against node with a two-line script.
+
+1. **A user-defined `Symbol.iterator` is never consulted.** `[...obj]` yields
+   nothing and `for (const v of obj)` reports `iterator has no next method`, for
+   an object literal *or* a class, whether the method is written
+   `*[Symbol.iterator]() {}` or `[Symbol.iterator]: function* () {}`. Defining
+   the method now parses (see `tests/runtime/objectGeneratorMethods.js`); the gap
+   is in the consumer, which does not look the symbol up on ordinary objects.
+   Array, Map, and Set iteration are unaffected — they are dispatched natively.
+2. **`TypedArray.prototype.subarray` returns an empty view.** `a.subarray(1)` has
+   length 0, so `join`/spread over it are empty. `slice` is correct.
+3. `[1, , 3].flat()` keeps the hole (length 3, node gives 2).
+4. `"ß".toUpperCase()` answers `"ß"`; the special casing to `"SS"` is missing.
+
 ## Smaller known gaps
 
 - `console.log` quotes strings inside an inspected array/object with `"`, where

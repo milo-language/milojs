@@ -38,8 +38,8 @@ Last QuickJS sweep: 2026-07-30. The test262 sample was last run on 2026-07-24.
 |---|---:|---|
 | deterministic test262 sample | 473/1476 (32.0%) | broad language and builtin coverage is still early |
 | QuickJS `tests/` at `fced162` | 96/166 (57.8%) | useful subset, with a substantial semantic long tail |
-| locked engine fixtures | 150 | byte-exact differential output |
-| locked runtime fixtures | 28 | module, async, fetch, HTTP, and host behavior |
+| locked engine fixtures | 151 | byte-exact differential output |
+| locked runtime fixtures | 29 | module, async, fetch, HTTP, and host behavior |
 | Milo invariant fixtures | 3 | scheduler/context and GC-root invariants |
 
 The QuickJS numerator rose from 93 to 96 while its current corpus added 17

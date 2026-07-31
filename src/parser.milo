@@ -349,11 +349,31 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
                     if peekKind(p) == T_LBRACE || peekKind(p) == T_LBRACKET {
                         nested = true
                         let tmp = "__d" + i64ToStr(p.pos)
+                        // the sub-pattern's declarators are gathered separately
+                        // so a default on the sub-pattern itself
+                        // (`{b: {c} = {c: 2}}`) can be applied to the temp
+                        // before the unpacking reads it — the `=` only appears
+                        // after the closing brace this recursion consumes
+                        var inner: Vec<DeclItem> = Vec.new()
+                        patternDecls(p, prog, tmp.clone(), inner)
+                        var initExpr = valExpr
+                        if peekKind(p) == T_EQ {
+                            advance(p)
+                            let dflt = parseExpr(p, prog)
+                            initExpr = withDefault(prog, initExpr, dflt)
+                        }
                         out.push(DeclItem {
-                            name: tmp.clone(), init: valExpr, isVar: false
+                            name: tmp.clone(), init: initExpr, isVar: false
                         }
                         )
-                        patternDecls(p, prog, tmp, out)
+                        var di: i64 = 0
+                        while di < inner.len() {
+                            out.push(DeclItem {
+                                name: inner[di].name.clone(), init: inner[di].init, isVar: inner[di].isVar
+                            }
+                            )
+                            di = di + 1
+                        }
                     } else {
                         target = p.toks[p.pos].text.clone()
                         advance(p)
@@ -408,11 +428,28 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
             var valExpr = addExpr(prog, Expr.Index(srcIdx, idxE))
             if peekKind(p) == T_LBRACE || peekKind(p) == T_LBRACKET {
                 let tmp = "__d" + i64ToStr(p.pos)
+                // same two-phase split as the object case: `[[x] = [9]]` puts the
+                // default after the sub-pattern's closing bracket
+                var inner: Vec<DeclItem> = Vec.new()
+                patternDecls(p, prog, tmp.clone(), inner)
+                var initExpr = valExpr
+                if peekKind(p) == T_EQ {
+                    advance(p)
+                    let dflt = parseExpr(p, prog)
+                    initExpr = withDefault(prog, initExpr, dflt)
+                }
                 out.push(DeclItem {
-                    name: tmp.clone(), init: valExpr, isVar: false
+                    name: tmp.clone(), init: initExpr, isVar: false
                 }
                 )
-                patternDecls(p, prog, tmp, out)
+                var di: i64 = 0
+                while di < inner.len() {
+                    out.push(DeclItem {
+                        name: inner[di].name.clone(), init: inner[di].init, isVar: inner[di].isVar
+                    }
+                    )
+                    di = di + 1
+                }
             } else {
                 let name = p.toks[p.pos].text.clone()
                 advance(p)
@@ -782,6 +819,15 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
         } else {
             var key = ""
             var keyExpr: Option<ExprId> = Option.None
+            var isMethodGen = false
+            // `{ *gen() {} }` / `{ *[Symbol.iterator]() {} }` — the star comes
+            // BEFORE the key. Checking for it only after the key had the key
+            // parser consume the star as an unrecognised token, leaving the
+            // method nameless.
+            if peekKind(p) == T_STAR {
+                advance(p)
+                isMethodGen = true
+            }
             // `{ [expr]: v }` — the key is evaluated at construction time
             if peekKind(p) == T_LBRACKET {
                 advance(p)
@@ -799,12 +845,16 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
                 }
                 advance(p)
             }
-            var isMethodGen = false
             var isMethodAsync = false
             // `async foo() {}` — `async` is only a modifier when a method name follows
             if peekKind(p) == T_ASYNC && p.pos + 1 < p.toks.len() && p.toks[p.pos + 1].kind != T_COLON && p.toks[p.pos + 1].kind != T_COMMA && p.toks[p.pos + 1].kind != T_RBRACE && p.toks[p.pos + 1].kind != T_LPAREN {
                 isMethodAsync = true
                 advance(p)
+                // `async *gen() {}` puts the star after the modifier
+                if peekKind(p) == T_STAR {
+                    advance(p)
+                    isMethodGen = true
+                }
             }
             if keyExpr is Option.None {
                 if peekKind(p) == T_NUM {
@@ -822,10 +872,6 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
             }
             // shorthand `{ req, ip }` is `{ req: req, ip: ip }`
             var valIdx: Option<ExprId> = Option.None
-            if peekKind(p) == T_STAR {
-                advance(p)
-                isMethodGen = true
-            }
             if peekKind(p) == T_LPAREN {
                 // method shorthand `{ foo(a) { ... } }` — a plain function-valued prop
                 advance(p)
