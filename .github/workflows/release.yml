@@ -61,7 +61,7 @@ jobs:
       - name: install openssl static archives
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
-            sudo apt-get update && sudo apt-get install -y libssl-dev
+            sudo apt-get update && sudo apt-get install -y libssl-dev libsqlite3-dev
           else
             brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
           fi

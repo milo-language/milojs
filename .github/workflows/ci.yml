@@ -28,8 +28,8 @@ jobs:
           sudo ln -sf /usr/bin/clang++-18 /usr/bin/clang++
 
       # The runtime's fetch/TLS path links OpenSSL.
-      - name: install openssl headers
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+      - name: install openssl and sqlite headers
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev libsqlite3-dev
 
       # Test against the released compiler, the same one users have. A milo
       # change that breaks milojs shows up here on the next run, not silently.
@@ -112,9 +112,9 @@ jobs:
           sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
           sudo ln -sf /usr/bin/clang++-18 /usr/bin/clang++
 
-      - name: install openssl headers (linux)
+      - name: install openssl and sqlite headers (linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev libsqlite3-dev
 
       # Preinstalled on the runner image, but keep it explicit so the keg prefix
       # run-embed.sh points -I/-L at is guaranteed present.
