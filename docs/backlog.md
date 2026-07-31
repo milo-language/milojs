@@ -163,6 +163,11 @@ Remaining divergences:
 
 ## Smaller known gaps
 
+- `console.log` quotes strings inside an inspected array/object with `"`, where
+  node uses `'`. Cosmetic, but it means any fixture printing a nested string is
+  locked to milojs's spelling rather than node's.
+- `Object.groupBy` / `Map.groupBy` (ES2024) are missing.
+
 - Generators are runtime-only: `function*` throws
   `generators require the milojs runtime (not the engine)` under
   `milojs-engine`, costing 42 test262 and 3 QuickJS cases. The runtime handles

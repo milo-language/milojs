@@ -1023,16 +1023,26 @@ fn parseUnary(p: &mut PState, prog: &mut Prog): ExprId {
     return parsePostfix(p, prog)
 }
 
+// `**` binds tighter than `*` and is RIGHT-associative: 2 * 3 ** 2 is 18, not 36,
+// and 2 ** 3 ** 2 is 2 ** 9, not 8 ** 2. Parsed as its own level above the
+// multiplicative operators, with the right operand recursing here so the chain
+// nests to the right.
+fn parseExp(p: &mut PState, prog: &mut Prog): ExprId {
+    let left = parseUnary(p, prog)
+    if peekKind(p) == T_STARSTAR {
+        advance(p)
+        let right = parseExp(p, prog)
+        return addExpr(prog, Expr.Bin("**", left, right))
+    }
+    return left
+}
+
 fn parseMul(p: &mut PState, prog: &mut Prog): ExprId {
-    var left = parseUnary(p, prog)
+    var left = parseExp(p, prog)
     var go = true
     while go {
         let k = peekKind(p)
-        if k == T_STARSTAR {
-            advance(p)
-            let right = parseUnary(p, prog)
-            left = addExpr(prog, Expr.Bin("**", left, right))
-        } else if k == T_STAR || k == T_SLASH || k == T_PERCENT {
+        if k == T_STAR || k == T_SLASH || k == T_PERCENT {
             advance(p)
             var op = "*"
             if k == T_SLASH {
@@ -1040,7 +1050,7 @@ fn parseMul(p: &mut PState, prog: &mut Prog): ExprId {
             } else if k == T_PERCENT {
                 op = "%"
             }
-            let right = parseUnary(p, prog)
+            let right = parseExp(p, prog)
             left = addExpr(prog, Expr.Bin(op, left, right))
         } else {
             go = false

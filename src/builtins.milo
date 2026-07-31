@@ -36,12 +36,15 @@ fn throwRange(st: &mut Interp, msg: string): JSValue {
     return JSValue.Undefined
 }
 
-// Same shape as throwRange, for the JSON reader's syntax errors.
+// Same shape as throwRange, for the JSON reader's syntax errors. `.stack` is a
+// string headed "Name: message" (no real backtrace available), because a caught
+// error whose stack is undefined breaks ordinary logging.
 fn throwSyntax(st: &mut Interp, msg: string): JSValue {
     let o = newObject(st)
     st.objects[o].isError = true
     objSet(st, o, "name", JSValue.Str("SyntaxError"))
-    objSet(st, o, "message", JSValue.Str(msg))
+    objSet(st, o, "message", JSValue.Str(msg.clone()))
+    objSet(st, o, "stack", JSValue.Str("SyntaxError: " + msg))
     st.throwing = true
     st.thrownValue = JSValue.Obj(o)
     return JSValue.Undefined
