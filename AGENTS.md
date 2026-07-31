@@ -135,5 +135,5 @@ twice, it belongs in `tools/` with a line in this table.
   Not what the code does; names handle that.
 - Match the surrounding code's idiom and comment density.
 - Commit messages: one line, all lowercase, no mention of AI authorship.
-- Never push to `main` here. This is `milo-language/milojs`, which is **not**
-  covered by the push-to-main exemption.
+- Pushing to `main` is fine here. Run the suites in "Tests" and
+  `tools/precommit.sh` before you do — CI is the only other gate.
