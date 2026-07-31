@@ -4,14 +4,15 @@
 // require that had to parse-and-append mid-eval would fight the borrow rules.
 // Pre-loading moves all mutation into a phase where the driver owns the Prog.
 //
-// Requires are found by scanning the token stream for `require("literal")`, so
-// computed requires (require(someVar)) are not discovered — a known limit.
+// Edges are found by scanning the token stream for `require("literal")` and for
+// the ESM forms that desugar onto it, so computed specifiers (require(someVar),
+// import(someVar)) are not discovered — a known limit.
 
 from "std/fs" import {
     readFile
 }
 from "./lexer" import {
-    lex, Token
+    lex, Token, T_IDENT, T_LPAREN, T_STR, T_IMPORT, T_EXPORT, T_STAR, T_LBRACE, T_RBRACE, T_COMMA, T_DOT
 }
 from "./ast" import {
     Prog
@@ -399,17 +400,123 @@ pub fn resolveSpec(dir: &string, spec: &string): string {
     return resolveBare(dir, spec)
 }
 
-// Find every `require("literal")` in a token stream.
+// Skip a `{ ... }` clause starting at `i` (which must be the T_LBRACE), and
+// return the index just past its T_RBRACE.
+fn skipBraced(toks: &Vec<Token>, i: i64): i64 {
+    var j = i + 1
+    while j < toks.len() && toks[j].kind != T_RBRACE {
+        j = j + 1
+    }
+    if j < toks.len() {
+        return j + 1
+    }
+    return j
+}
+
+// The specifier of an ESM clause whose `from` should be at `i`, or "" when this
+// is not a `from "spec"` after all. Matching the grammar exactly rather than
+// scanning ahead for the next string matters: `export const url = "./x"` has a
+// string on the same line and must NOT be read as a module edge.
+fn specAfterFrom(toks: &Vec<Token>, i: i64): string {
+    if i + 1 < toks.len() && toks[i].kind == T_IDENT && toks[i].text == "from" && toks[i + 1].kind == T_STR {
+        return toks[i + 1].text.clone()
+    }
+    return ""
+}
+
+// Find every module this token stream loads: `require("literal")`, and the ESM
+// forms the parser desugars onto require — static `import`, dynamic `import()`,
+// and `export ... from`.
+//
+// Module discovery runs on tokens, BEFORE parsing, so it cannot see the
+// desugared require() calls the parser will emit and has to recognise the ESM
+// syntax itself.
 fn scanRequires(toks: &Vec<Token>): Vec<string> {
     var out: Vec<string> = Vec.new()
     var i: i64 = 0
-    while i + 2 < toks.len() {
-        if toks[i].kind == T_IDENT && toks[i].text == "require" && toks[i + 1].kind == T_LPAREN && toks[i + 2].kind == T_STR {
+    while i < toks.len() {
+        if i + 2 < toks.len() && toks[i].kind == T_IDENT && toks[i].text == "require" && toks[i + 1].kind == T_LPAREN && toks[i + 2].kind == T_STR {
             out.push(toks[i + 2].text.clone())
+        } else if toks[i].kind == T_IMPORT && !isMemberName(toks, i) {
+            var j = i + 1
+            if j < toks.len() && toks[j].kind == T_LPAREN {
+                // import("m") — a literal specifier is loadable, anything else
+                // is computed and left to fail at run time like require does
+                if j + 1 < toks.len() && toks[j + 1].kind == T_STR {
+                    out.push(toks[j + 1].text.clone())
+                }
+            } else if j < toks.len() && toks[j].kind == T_STR {
+                out.push(toks[j].text.clone())  // import "m"
+            } else {
+                // an import clause: [default] [, * as ns | { ... }] from "m"
+                if j < toks.len() && toks[j].kind == T_IDENT && toks[j].text != "from" {
+                    j = j + 1
+                    if j < toks.len() && toks[j].kind == T_COMMA {
+                        j = j + 1
+                    }
+                }
+                if j < toks.len() && toks[j].kind == T_STAR {
+                    j = j + 1
+                    if j < toks.len() && toks[j].kind == T_IDENT && toks[j].text == "as" {
+                        j = j + 2
+                    }
+                } else if j < toks.len() && toks[j].kind == T_LBRACE {
+                    j = skipBraced(toks, j)
+                }
+                let spec = specAfterFrom(toks, j)
+                if spec.len() > 0 {
+                    out.push(spec)
+                }
+            }
+        } else if toks[i].kind == T_EXPORT && i + 1 < toks.len() && !isMemberName(toks, i) {
+            // only the re-export forms load a module: `export * from "m"` and
+            // `export { a } from "m"`
+            var j = i + 1
+            if toks[j].kind == T_STAR {
+                j = j + 1
+            } else if toks[j].kind == T_LBRACE {
+                j = skipBraced(toks, j)
+            } else {
+                j = toks.len()
+            }
+            if j < toks.len() {
+                let spec = specAfterFrom(toks, j)
+                if spec.len() > 0 {
+                    out.push(spec)
+                }
+            }
         }
         i = i + 1
     }
     return out
+}
+
+// `import`/`export` are lexed as keywords wherever they appear, so `o.export`
+// and `o.import(x)` would otherwise read as module syntax. A preceding dot means
+// this one is a property name.
+fn isMemberName(toks: &Vec<Token>, i: i64): bool {
+    return i > 0 && toks[i - 1].kind == T_DOT
+}
+
+// Does this token stream use ESM syntax? Only the `import`/`export` STATEMENT
+// forms make a file a module; dynamic `import()` is an ordinary expression and
+// is legal in a plain script.
+pub fn hasEsmSyntax(toks: &Vec<Token>): bool {
+    var i: i64 = 0
+    while i < toks.len() {
+        if !isMemberName(toks, i) {
+            if toks[i].kind == T_EXPORT {
+                return true
+            }
+            if toks[i].kind == T_IMPORT {
+                if i + 1 >= toks.len() || toks[i + 1].kind != T_LPAREN {
+                    return true
+                }
+            }
+        }
+        i = i + 1
+    }
+    return false
 }
 
 pub fn findModule(st: &Interp, path: &string): i64 {

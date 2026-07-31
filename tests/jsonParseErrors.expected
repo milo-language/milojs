@@ -1,0 +1,5 @@
+SyntaxError,SyntaxError,SyntaxError,SyntaxError,SyntaxError,SyntaxError,SyntaxError,SyntaxError,SyntaxError,SyntaxError
+true,true,true,true,true,true,true,true,true,true
+{"a":[1,2,{"b":null}],"c":true,"d":"x\ny"} null true 3
+42 s null true false
+[] {}

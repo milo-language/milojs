@@ -38,8 +38,8 @@ Last QuickJS sweep: 2026-07-30. The test262 sample was last run on 2026-07-24.
 |---|---:|---|
 | deterministic test262 sample | 473/1476 (32.0%) | broad language and builtin coverage is still early |
 | QuickJS `tests/` at `fced162` | 96/166 (57.8%) | useful subset, with a substantial semantic long tail |
-| locked engine fixtures | 144 | byte-exact differential output |
-| locked runtime fixtures | 27 | module, async, fetch, HTTP, and host behavior |
+| locked engine fixtures | 149 | byte-exact differential output |
+| locked runtime fixtures | 28 | module, async, fetch, HTTP, and host behavior |
 | Milo invariant fixtures | 3 | scheduler/context and GC-root invariants |
 
 The QuickJS numerator rose from 93 to 96 while its current corpus added 17
@@ -89,6 +89,10 @@ before the AST phase is complete.
   ArrayBuffer/DataView, integer typed arrays, and arbitrary-precision BigInt.
 - Common builtins implemented partly in Milo and partly in the embedded
   `lib/engine-prelude.js` specification layer.
+- Object-to-string conversion runs a user-defined `toString` from every path that
+  can re-enter the interpreter, including `String(x)` and `Array.prototype.join`;
+  tagged templates carry the un-escaped `raw` chunks; `JSON.parse` rejects
+  malformed input with a `SyntaxError` rather than returning a partial value.
 
 Important limits include incomplete test262 behavior, runtime-only generators,
 no direct `eval`, incomplete typed-array methods, and remaining whitelist-based
@@ -96,7 +100,10 @@ builtin prototype dispatch. See `docs/backlog.md` for the maintained detail.
 
 ## Shipped runtime surface
 
-- CommonJS loading and a parse-time ESM compatibility lowering.
+- CommonJS loading and a parse-time ESM compatibility lowering: default, named,
+  namespace, side-effect, and renamed imports, `export ... from`, `export *`, and
+  dynamic `import()` of a literal specifier. Bindings are snapshots rather than
+  ESM live bindings.
 - Event loop, microtasks, timers, async suspension, HTTP serving, outbound
   `fetch`, filesystem APIs, Buffer, streams, and a growing set of Node modules.
 - Node-API addon loading with promises, references, wrapping, classes, and

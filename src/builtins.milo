@@ -36,6 +36,17 @@ fn throwRange(st: &mut Interp, msg: string): JSValue {
     return JSValue.Undefined
 }
 
+// Same shape as throwRange, for the JSON reader's syntax errors.
+fn throwSyntax(st: &mut Interp, msg: string): JSValue {
+    let o = newObject(st)
+    st.objects[o].isError = true
+    objSet(st, o, "name", JSValue.Str("SyntaxError"))
+    objSet(st, o, "message", JSValue.Str(msg))
+    st.throwing = true
+    st.thrownValue = JSValue.Obj(o)
+    return JSValue.Undefined
+}
+
 fn isWs(c: u8): bool {
     return c == ' ' || c == 9 as u8 || c == 10 as u8 || c == 13 as u8
 }
@@ -1033,6 +1044,11 @@ fn mjPushStringified(out: &mut string, v: &JSValue, st: &Interp) {
 
 struct JCur {
     pos: i64,
+    // first malformed construct seen, "" while the text is still valid JSON.
+    // The reader keeps going after setting it — unwinding mid-parse would mean
+    // threading a Result through every recursive step — and mjJsonParse turns a
+    // non-empty message into the thrown SyntaxError.
+    err: string,
 }
 
 fn mjSkipWs(s: &string, c: &mut JCur) {
@@ -1113,6 +1129,12 @@ fn mjParseString(s: &string, c: &mut JCur): string {
             c.pos = c.pos + 1
         }
     }
+    if c.pos >= s.len() {
+        if c.err.len() == 0 {
+            c.err = "Unterminated string in JSON"
+        }
+        return out
+    }
     c.pos = c.pos + 1
     return out
 }
@@ -1133,11 +1155,21 @@ fn mjParseNumber(s: &string, c: &mut JCur): JSValue {
         }
     }
     let numStr = strSlice(s, start, c.pos)
+    let numLen = numStr.len()
     match parseFloat(numStr) {
         Option.Some(n) => {
             return JSValue.Number(n)
         }
         Option.None => {
+            // `{bad` gets here with nothing number-shaped consumed at all, which
+            // is what used to produce a NaN-valued property instead of a throw
+            if c.err.len() == 0 {
+                if numLen == 0 {
+                    c.err = "Unexpected token in JSON at position " + i64ToStr(start)
+                } else {
+                    c.err = "Unexpected number in JSON at position " + i64ToStr(start)
+                }
+            }
             return JSValue.Number(jsNan())
         }
     }
@@ -1166,6 +1198,8 @@ fn mjParseArray(s: &string, c: &mut JCur, st: &mut Interp): JSValue {
     }
     if c.pos < s.len() && s[c.pos] == ']' {
         c.pos = c.pos + 1
+    } else if c.err.len() == 0 {
+        c.err = "Expected ',' or ']' after array element in JSON at position " + i64ToStr(c.pos)
     }
     popTemp(st)
     return JSValue.Obj(arr)
@@ -1187,10 +1221,14 @@ fn mjParseObject(s: &string, c: &mut JCur, st: &mut Interp): JSValue {
         var key = ""
         if c.pos < s.len() && s[c.pos] == 34 as u8 {
             key = mjParseString(s, c)
+        } else if c.err.len() == 0 {
+            c.err = "Expected property name or '}' in JSON at position " + i64ToStr(c.pos)
         }
         mjSkipWs(s, c)
         if c.pos < s.len() && s[c.pos] == ':' {
             c.pos = c.pos + 1
+        } else if c.err.len() == 0 {
+            c.err = "Expected ':' after property name in JSON at position " + i64ToStr(c.pos)
         }
         let v = mjParseVal(s, c, st)
         objSet(st, obj, key, v)
@@ -1203,14 +1241,34 @@ fn mjParseObject(s: &string, c: &mut JCur, st: &mut Interp): JSValue {
     }
     if c.pos < s.len() && s[c.pos] == '}' {
         c.pos = c.pos + 1
+    } else if c.err.len() == 0 {
+        c.err = "Expected ',' or '}' after property value in JSON at position " + i64ToStr(c.pos)
     }
     popTemp(st)
     return JSValue.Obj(obj)
 }
 
+// `s` continues with `word` at `at`.
+fn jsonWordAt(s: &string, at: i64, word: &string): bool {
+    if at + word.len() > s.len() {
+        return false
+    }
+    var i: i64 = 0
+    while i < word.len() {
+        if s[at + i] != word[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
 fn mjParseVal(s: &string, c: &mut JCur, st: &mut Interp): JSValue {
     mjSkipWs(s, c)
     if c.pos >= s.len() {
+        if c.err.len() == 0 {
+            c.err = "Unexpected end of JSON input"
+        }
         return JSValue.Undefined
     }
     let ch = s[c.pos]
@@ -1223,24 +1281,44 @@ fn mjParseVal(s: &string, c: &mut JCur, st: &mut Interp): JSValue {
     if ch == 34 as u8 {
         return JSValue.Str(mjParseString(s, c))
     }
-    if ch == 't' {
-        c.pos = c.pos + 4
-        return JSValue.Bool(true)
-    }
-    if ch == 'f' {
-        c.pos = c.pos + 5
-        return JSValue.Bool(false)
-    }
-    if ch == 'n' {
-        c.pos = c.pos + 4
-        return JSValue.Null
+    // the keywords are matched in full: bare `t` used to be accepted as true and
+    // skip four characters, so `JSON.parse("nope")` answered null
+    if ch == 't' || ch == 'f' || ch == 'n' {
+        if jsonWordAt(s, c.pos, "true") {
+            c.pos = c.pos + 4
+            return JSValue.Bool(true)
+        }
+        if jsonWordAt(s, c.pos, "false") {
+            c.pos = c.pos + 5
+            return JSValue.Bool(false)
+        }
+        if jsonWordAt(s, c.pos, "null") {
+            c.pos = c.pos + 4
+            return JSValue.Null
+        }
+        if c.err.len() == 0 {
+            c.err = "Unexpected token in JSON at position " + i64ToStr(c.pos)
+        }
+        return JSValue.Undefined
     }
     return mjParseNumber(s, c)
 }
 
 pub fn mjJsonParse(s: &string, st: &mut Interp): JSValue {
     var c = JCur {
-        pos: 0
+        pos: 0, err: ""
     }
-    return mjParseVal(s, c, st)
+    let v = mjParseVal(s, c, st)
+    if c.err.len() == 0 {
+        // anything but whitespace left over is garbage after a complete value,
+        // e.g. `{"a":1} extra`
+        mjSkipWs(s, c)
+        if c.pos < s.len() {
+            c.err = "Unexpected non-whitespace character after JSON at position " + i64ToStr(c.pos)
+        }
+    }
+    if c.err.len() > 0 {
+        return throwSyntax(st, c.err)
+    }
+    return v
 }

@@ -24,6 +24,16 @@ pub fn findModule(st: &Interp, path: &string): i64
 
 _Undocumented._
 
+### `hasEsmSyntax`
+
+```milo
+pub fn hasEsmSyntax(toks: &Vec<Token>): bool
+```
+
+Does this token stream use ESM syntax? Only the `import`/`export` STATEMENT
+forms make a file a module; dynamic `import()` is an ordinary expression and
+is legal in a plain script.
+
 ### `preloadGraph`
 
 ```milo

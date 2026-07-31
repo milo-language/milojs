@@ -131,6 +131,11 @@ pub struct Token {
     // parser cannot tell a legal `let a` ⏎ `-6` from an illegal `let a -6`
     // without knowing where the lines broke.
     nlBefore: bool,
+    // verbatim source text, escapes NOT expanded. Only T_TEMPLATE_CHUNK fills
+    // this in: a tag function's `strings.raw` is defined as the un-escaped
+    // source, so `String.raw`a\nb`` has to keep the backslash and the n that
+    // `text` has already collapsed into one newline. Empty everywhere else.
+    raw: string,
 }
 
 fn isSpace(c: u8): bool {
@@ -371,7 +376,7 @@ fn keywordKind(s: &string): i32 {
 
 fn pushTok(toks: &mut Vec<Token>, kind: i32) {
     toks.push(Token {
-        kind: kind, num: 0.0, text: "", nlBefore: false
+        kind: kind, num: 0.0, text: "", nlBefore: false, raw: ""
     }
     )
 }
@@ -388,6 +393,7 @@ fn scanTmplChunk(src: &string, start: i64, toks: &mut Vec<Token>): ChunkResult {
     var i = start
     let n = src.len()
     var buf = String.withCapacity(16)
+    var rawBuf = String.withCapacity(16)
     var isHole = false
     while true {
         if i >= n {
@@ -402,14 +408,32 @@ fn scanTmplChunk(src: &string, start: i64, toks: &mut Vec<Token>): ChunkResult {
             isHole = true
             break
         } else if c == 92 as u8 && i + 1 < n {
-            i = scanEscape(src, i, buf)
+            let after = scanEscape(src, i, buf)
+            // raw keeps the escape exactly as written, so copy the same span the
+            // cooked scan consumed rather than re-deciding where it ended
+            var r = i
+            while r < after {
+                rawBuf.push(src[r])
+                r = r + 1
+            }
+            i = after
+        } else if c == 13 as u8 {
+            // a template literal normalizes CRLF and a lone CR to one LF, in the
+            // cooked text and in raw alike
+            buf.push(10 as u8)
+            rawBuf.push(10 as u8)
+            i = i + 1
+            if i < n && src[i] == 10 as u8 {
+                i = i + 1
+            }
         } else {
             buf.push(c)
+            rawBuf.push(c)
             i = i + 1
         }
     }
     toks.push(Token {
-        kind: T_TEMPLATE_CHUNK, num: 0.0, text: buf, nlBefore: false
+        kind: T_TEMPLATE_CHUNK, num: 0.0, text: buf, nlBefore: false, raw: rawBuf
     }
     )
     return ChunkResult {
@@ -468,7 +492,7 @@ fn scanRegexLit(src: &string, start: i64, toks: &mut Vec<Token>): i64 {
         i = i + 1
     }
     toks.push(Token {
-        kind: T_REGEX, num: 0.0, text: pat + "\n" + flags, nlBefore: false
+        kind: T_REGEX, num: 0.0, text: pat + "\n" + flags, nlBefore: false, raw: ""
     }
     )
     return i
@@ -552,14 +576,14 @@ pub fn lex(src: &string): Vec<Token> {
                 if i < n && src[i] == 'n' {
                     i = i + 1
                     toks.push(Token {
-                        kind: T_BIGINT, num: 0.0, text: bnFromRadix(raw, radix), nlBefore: false
+                        kind: T_BIGINT, num: 0.0, text: bnFromRadix(raw, radix), nlBefore: false, raw: ""
                     }
                     )
                     continue
                 }
                 v = acc
                 toks.push(Token {
-                    kind: T_NUM, num: v, text: "", nlBefore: false
+                    kind: T_NUM, num: v, text: "", nlBefore: false, raw: ""
                 }
                 )
                 continue
@@ -599,7 +623,7 @@ pub fn lex(src: &string): Vec<Token> {
                 if !hasDot {
                     i = i + 1
                     toks.push(Token {
-                        kind: T_BIGINT, num: 0.0, text: bigNormalizeDec(txt), nlBefore: false
+                        kind: T_BIGINT, num: 0.0, text: bigNormalizeDec(txt), nlBefore: false, raw: ""
                     }
                     )
                     continue
@@ -633,7 +657,7 @@ pub fn lex(src: &string): Vec<Token> {
                 }
             }
             toks.push(Token {
-                kind: T_NUM, num: v, text: "", nlBefore: false
+                kind: T_NUM, num: v, text: "", nlBefore: false, raw: ""
             }
             )
         } else if c == 35 as u8 && i + 1 < n && isIdentStart(src[i + 1]) {
@@ -648,7 +672,7 @@ pub fn lex(src: &string): Vec<Token> {
                 i = i + 1
             }
             toks.push(Token {
-                kind: T_IDENT, num: 0.0, text: pname, nlBefore: false
+                kind: T_IDENT, num: 0.0, text: pname, nlBefore: false, raw: ""
             }
             )
         } else if isIdentStart(c) {
@@ -659,7 +683,7 @@ pub fn lex(src: &string): Vec<Token> {
             }
             let k = keywordKind(name)
             toks.push(Token {
-                kind: k, num: 0.0, text: name, nlBefore: false
+                kind: k, num: 0.0, text: name, nlBefore: false, raw: ""
             }
             )
         } else if c == 34 as u8 || c == 39 as u8 {
@@ -677,7 +701,7 @@ pub fn lex(src: &string): Vec<Token> {
             }
             i = i + 1
             toks.push(Token {
-                kind: T_STR, num: 0.0, text: s, nlBefore: false
+                kind: T_STR, num: 0.0, text: s, nlBefore: false, raw: ""
             }
             )
         } else if c == 96 as u8 {

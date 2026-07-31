@@ -1,12 +1,14 @@
 # milojs
 
+[![CI](https://github.com/milo-language/milojs/actions/workflows/ci.yml/badge.svg)](https://github.com/milo-language/milojs/actions/workflows/ci.yml)
+
 <p align="center">
   <img src="docs/images/repl.png" alt="The milojs REPL evaluating console.log('Woof!')" width="760">
 </p>
 
 A JavaScript engine and runtime written in the [Milo](https://github.com/milo-language/milo) programming language.
 
-MiloJS owns its parser, tree-walking evaluator, garbage collector, regular expression engine, BigInt implementation, module loader, and event loop. It has no V8, JavaScriptCore, or C JavaScript engine underneath it.
+MiloJS owns its parser, tree-walking evaluator, garbage collector, regular expression engine, BigInt implementation, module loader, and event loop. It has no V8, JavaScriptCore, or C JavaScript engine underneath it — about 26.5k lines of Milo, from source text to running program. It starts in a few milliseconds and embeds into a C program as a static library.
 
 This is an experimental implementation, not yet a drop-in replacement for QuickJS or Node. See [the current status](docs/status.md) for shipped capabilities, measured evidence, known gaps, and product gates.
 

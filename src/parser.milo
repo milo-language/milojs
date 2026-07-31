@@ -165,34 +165,42 @@ fn parseTemplate(p: &mut PState, prog: &mut Prog): ExprId {
 }
 
 // `tag`a${x}b`` calls tag(["a","b"], x). The strings array is built as an array
-// literal and the hole expressions become the remaining arguments; there is no
-// separate .raw, which nothing in the target reads.
+// literal and the hole expressions become the remaining arguments. A parallel
+// list of the same chunks un-escaped becomes the array's `raw`.
 fn parseTaggedTemplate(p: &mut PState, prog: &mut Prog, tagExpr: ExprId): ExprId {
     expect(p, T_TEMPLATE_BEGIN)
     var chunks: Vec<Option<ExprId>> = Vec.new()
+    var raws: Vec<Option<ExprId>> = Vec.new()
     var holes: Vec<ExprId> = Vec.new()
     if peekKind(p) == T_TEMPLATE_CHUNK {
         let chunk = p.toks[p.pos].text.clone()
+        let rawChunk = p.toks[p.pos].raw.clone()
         advance(p)
         chunks.push(Option.Some(addExpr(prog, Expr.StrLit(chunk))))
+        raws.push(Option.Some(addExpr(prog, Expr.StrLit(rawChunk))))
     } else {
         chunks.push(Option.Some(addExpr(prog, Expr.StrLit(""))))
+        raws.push(Option.Some(addExpr(prog, Expr.StrLit(""))))
     }
     while peekKind(p) != T_TEMPLATE_END && peekKind(p) != T_EOF {
         holes.push(parseExpr(p, prog))
         if peekKind(p) == T_TEMPLATE_CHUNK {
             let chunk = p.toks[p.pos].text.clone()
+            let rawChunk = p.toks[p.pos].raw.clone()
             advance(p)
             chunks.push(Option.Some(addExpr(prog, Expr.StrLit(chunk))))
+            raws.push(Option.Some(addExpr(prog, Expr.StrLit(rawChunk))))
         } else {
             chunks.push(Option.Some(addExpr(prog, Expr.StrLit(""))))
+            raws.push(Option.Some(addExpr(prog, Expr.StrLit(""))))
         }
     }
     if peekKind(p) == T_TEMPLATE_END {
         advance(p)
     }
     let chunksId = addArrLit(prog, chunks)
-    let stringsArr = addExpr(prog, Expr.TemplateStrings(chunksId))
+    let rawsId = addArrLit(prog, raws)
+    let stringsArr = addExpr(prog, Expr.TemplateStrings(chunksId, rawsId))
     var args: Vec<ExprId> = Vec.new()
     args.push(stringsArr)
     var h: i64 = 0
@@ -521,6 +529,28 @@ fn prependStmt(prog: &mut Prog, blockId: BlockId, stmtIdx: StmtId) {
 
 fn parsePrimary(p: &mut PState, prog: &mut Prog): ExprId {
     let k = peekKind(p)
+    // dynamic import("m") → Promise.resolve(require("m")). The module graph is
+    // discovered and parsed before anything runs, so the load itself is already
+    // done by this point and the only thing left is to hand it back as a
+    // promise. A computed specifier therefore fails the same way a computed
+    // require does — see modules.milo.
+    if k == T_IMPORT && p.pos + 1 < p.toks.len() && p.toks[p.pos + 1].kind == T_LPAREN {
+        advance(p)
+        advance(p)
+        let spec = parseExpr(p, prog)
+        if peekKind(p) == T_RPAREN {
+            advance(p)
+        }
+        let reqCallee = addExpr(prog, Expr.Ident("require"))
+        var reqArgs: Vec<ExprId> = Vec.new()
+        reqArgs.push(spec)
+        let loaded = addExpr(prog, Expr.Call(reqCallee, addArgList(prog, reqArgs)))
+        let promise = addExpr(prog, Expr.Ident("Promise"))
+        let resolve = addExpr(prog, Expr.Member(promise, "resolve"))
+        var pArgs: Vec<ExprId> = Vec.new()
+        pArgs.push(loaded)
+        return addExpr(prog, Expr.Call(resolve, addArgList(prog, pArgs)))
+    }
     if k == T_NUM {
         let v = p.toks[p.pos].num
         advance(p)
@@ -1923,16 +1953,31 @@ fn requireCall(prog: &mut Prog, spec: string): ExprId {
     return addExpr(prog, Expr.Call(callee, argsId))
 }
 
+// The interop read for a default import: `ns.__esModule ? ns.default : ns`.
+// A module lowered from ESM source marks itself (see parseProgram), so its
+// `export default` is found under `.default`; a real CommonJS module has no
+// marker and `import fs from "fs"` has to yield module.exports itself. This is
+// the same heuristic Babel and tsc emit for the same reason.
+fn defaultInterop(prog: &mut Prog, tmp: &string): ExprId {
+    let flagBase = addExpr(prog, Expr.Ident(tmp.clone()))
+    let flag = addExpr(prog, Expr.Member(flagBase, "__esModule"))
+    let hitBase = addExpr(prog, Expr.Ident(tmp.clone()))
+    let hit = addExpr(prog, Expr.Member(hitBase, "default"))
+    let miss = addExpr(prog, Expr.Ident(tmp.clone()))
+    return addExpr(prog, Expr.Cond(flag, hit, miss))
+}
+
 // ESM `import` desugared onto the CommonJS loader:
 //
 //   import { a, b as c } from "m"   →   const __esm_N = require("m"),
 //                                             a = __esm_N.a, c = __esm_N.b
+//   import d, { a } from "m"        →   const __esm_N = require("m"),
+//                                             d = <default interop>, a = __esm_N.a
 //   import * as ns from "m"         →   const ns = require("m")
 //   import "m"                      →   const __esm_N = require("m")
 //
 // One MultiDecl covers every form, which keeps this a single statement and so
-// avoids threading extra statements out of parseStmt. Default imports are not
-// used by the QuickJS suite and are not supported.
+// avoids threading extra statements out of parseStmt.
 fn parseImport(p: &mut PState, prog: &mut Prog): StmtId {
     advance(p)
     var items: Vec<DeclItem> = Vec.new()
@@ -1956,8 +2001,17 @@ fn parseImport(p: &mut PState, prog: &mut Prog): StmtId {
 
     // import * as ns from "m"
     var nsName = ""
+    var defName = ""
     var named: Vec<string> = Vec.new()
     var locals: Vec<string> = Vec.new()
+    // import d from "m" / import d, { a } from "m" / import d, * as ns from "m"
+    if peekKind(p) == T_IDENT && p.toks[p.pos].text != "from" {
+        defName = p.toks[p.pos].text.clone()
+        advance(p)
+        if peekKind(p) == T_COMMA {
+            advance(p)
+        }
+    }
     if peekKind(p) == T_STAR {
         advance(p)
         if peekKind(p) == T_IDENT && p.toks[p.pos].text == "as" {
@@ -2001,27 +2055,34 @@ fn parseImport(p: &mut PState, prog: &mut Prog): StmtId {
         advance(p)
     }
 
+    // one require per import statement, bound to a temp that every clause of
+    // this import then reads — `import d, * as ns from "m"` must not load twice
+    items.push(DeclItem {
+        name: tmp.clone(), init: requireCall(prog, spec), isVar: false
+    }
+    )
     if nsName.len() > 0 {
         items.push(DeclItem {
-            name: nsName, init: requireCall(prog, spec), isVar: false
+            name: nsName, init: addExpr(prog, Expr.Ident(tmp.clone())), isVar: false
         }
         )
-    } else {
+    }
+    if defName.len() > 0 {
         items.push(DeclItem {
-            name: tmp.clone(), init: requireCall(prog, spec), isVar: false
+            name: defName, init: defaultInterop(prog, tmp), isVar: false
         }
         )
-        var i: i64 = 0
-        while i < named.len() {
-            // index rather than member access, so string-named imports work
-            let base = addExpr(prog, Expr.Ident(tmp.clone()))
-            let key = addExpr(prog, Expr.StrLit(named[i].clone()))
-            items.push(DeclItem {
-                name: locals[i].clone(), init: addExpr(prog, Expr.Index(base, key)), isVar: false
-            }
-            )
-            i = i + 1
+    }
+    var i: i64 = 0
+    while i < named.len() {
+        // index rather than member access, so string-named imports work
+        let base = addExpr(prog, Expr.Ident(tmp.clone()))
+        let key = addExpr(prog, Expr.StrLit(named[i].clone()))
+        items.push(DeclItem {
+            name: locals[i].clone(), init: addExpr(prog, Expr.Index(base, key)), isVar: false
         }
+        )
+        i = i + 1
     }
     let declarationsId = addDeclList(prog, items)
     return addStmt(prog, Stmt.MultiDecl(declarationsId))
@@ -2077,9 +2138,39 @@ fn parseExport(p: &mut PState, prog: &mut Prog, list: &mut Vec<StmtId>) {
         return
     }
 
-    // export { a, b as c }  →  exports.a = a; exports.c = b
+    // export * from "m"  →  __esmStar(exports, require("m"))
+    //
+    // The helper copies own keys except `default`, which `export *` does not
+    // re-export. It lives in the engine prelude because the copy loop has to run
+    // at module-eval time, when the source module's exports object exists.
+    if k == T_STAR {
+        advance(p)
+        if peekKind(p) == T_IDENT && p.toks[p.pos].text == "from" {
+            advance(p)
+        }
+        var starSpec = ""
+        if peekKind(p) == T_STR {
+            starSpec = p.toks[p.pos].text.clone()
+            advance(p)
+        }
+        if peekKind(p) == T_SEMI {
+            advance(p)
+        }
+        let callee = addExpr(prog, Expr.Ident("__esmStar"))
+        var sargs: Vec<ExprId> = Vec.new()
+        sargs.push(addExpr(prog, Expr.Ident("exports")))
+        sargs.push(requireCall(prog, starSpec))
+        let sargsId = addArgList(prog, sargs)
+        list.push(addStmt(prog, Stmt.ExprStmt(addExpr(prog, Expr.Call(callee, sargsId)))))
+        return
+    }
+
+    // export { a, b as c }        →  exports.a = a; exports.c = b
+    // export { a } from "m"       →  exports.a = require("m").a
     if k == T_LBRACE {
         advance(p)
+        var reLocals: Vec<string> = Vec.new()
+        var reNames: Vec<string> = Vec.new()
         while peekKind(p) != T_RBRACE && peekKind(p) != T_EOF {
             var local = p.toks[p.pos].text.clone()
             advance(p)
@@ -2089,7 +2180,8 @@ fn parseExport(p: &mut PState, prog: &mut Prog, list: &mut Vec<StmtId>) {
                 exported = p.toks[p.pos].text.clone()
                 advance(p)
             }
-            list.push(exportAssign(prog, exported, local))
+            reLocals.push(local)
+            reNames.push(exported)
             if peekKind(p) == T_COMMA {
                 advance(p)
             }
@@ -2097,8 +2189,42 @@ fn parseExport(p: &mut PState, prog: &mut Prog, list: &mut Vec<StmtId>) {
         if peekKind(p) == T_RBRACE {
             advance(p)
         }
+        var reSpec = ""
+        if peekKind(p) == T_IDENT && p.toks[p.pos].text == "from" {
+            advance(p)
+            if peekKind(p) == T_STR {
+                reSpec = p.toks[p.pos].text.clone()
+                advance(p)
+            }
+        }
         if peekKind(p) == T_SEMI {
             advance(p)
+        }
+        var ri: i64 = 0
+        if reSpec.len() > 0 {
+            // re-export: the names are the source module's, not local bindings,
+            // so read them off one shared require temp
+            let tmp = "__esm_" + i64ToStr(prog.exprs.len())
+            var items: Vec<DeclItem> = Vec.new()
+            items.push(DeclItem {
+                name: tmp.clone(), init: requireCall(prog, reSpec), isVar: false
+            }
+            )
+            list.push(addStmt(prog, Stmt.MultiDecl(addDeclList(prog, items))))
+            while ri < reNames.len() {
+                let obj = addExpr(prog, Expr.Ident("exports"))
+                let key = addExpr(prog, Expr.StrLit(reNames[ri].clone()))
+                let base = addExpr(prog, Expr.Ident(tmp.clone()))
+                let srcKey = addExpr(prog, Expr.StrLit(reLocals[ri].clone()))
+                let val = addExpr(prog, Expr.Index(base, srcKey))
+                list.push(addStmt(prog, Stmt.ExprStmt(addExpr(prog, Expr.SetMember(obj, key, val)))))
+                ri = ri + 1
+            }
+        } else {
+            while ri < reNames.len() {
+                list.push(exportAssign(prog, reNames[ri].clone(), reLocals[ri].clone()))
+                ri = ri + 1
+            }
         }
         return
     }
@@ -2136,12 +2262,31 @@ fn parseExport(p: &mut PState, prog: &mut Prog, list: &mut Vec<StmtId>) {
 
 pub fn parseProgram(p: &mut PState, prog: &mut Prog): BlockId {
     var list: Vec<StmtId> = Vec.new()
+    var sawExport = false
     while peekKind(p) != T_EOF {
         if peekKind(p) == T_EXPORT {
+            sawExport = true
             parseExport(p, prog, list)
         } else {
             list.push(parseStmt(p, prog))
         }
+    }
+    if sawExport {
+        // `__esmMark(exports)` first, so that a circular import observes the
+        // marker even mid-initialization. It is what tells a default import to
+        // read `.default` instead of taking module.exports whole; see
+        // defaultInterop.
+        let callee = addExpr(prog, Expr.Ident("__esmMark"))
+        var margs: Vec<ExprId> = Vec.new()
+        margs.push(addExpr(prog, Expr.Ident("exports")))
+        var marked: Vec<StmtId> = Vec.new()
+        marked.push(addStmt(prog, Stmt.ExprStmt(addExpr(prog, Expr.Call(callee, addArgList(prog, margs))))))
+        var mi: i64 = 0
+        while mi < list.len() {
+            marked.push(list[mi])
+            mi = mi + 1
+        }
+        return addBlock(prog, marked)
     }
     return addBlock(prog, list)
 }

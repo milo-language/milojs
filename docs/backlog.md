@@ -145,12 +145,33 @@ and `escape` all work on ordinary receivers. Check whether a method is
 prototype-dispatched or whitelisted before assuming the prelude is the place to
 put it.
 
+## ESM over the CommonJS loader — working, with two known divergences
+
+Every import form now loads: default, named, namespace, side-effect, renamed,
+`export ... from`, `export *`, and dynamic `import()` of a literal specifier.
+Module discovery recognises the ESM syntax directly (`scanRequires` in
+`src/modules.milo`), because it runs on tokens before the parser has desugared
+anything to `require`. `tests/esmImports.js` and `tests/runtime/esmModules.js`
+lock the behavior against node.
+
+Remaining divergences:
+
+- Bindings are snapshots, not ESM live bindings. A mutated export does not
+  update an importer that already read it.
+- `import()` with a computed specifier fails the same way a computed `require`
+  does: the preload scan cannot see it, so the module is never registered.
+
 ## Smaller known gaps
 
 - Generators are runtime-only: `function*` throws
   `generators require the milojs runtime (not the engine)` under
   `milojs-engine`, costing 42 test262 and 3 QuickJS cases. The runtime handles
   them, so this is engine/runtime factoring, not a missing feature.
+- A template literal desugars to `"" + x`, so its holes convert with the DEFAULT
+  ToPrimitive hint rather than the string hint the spec requires. Observable only
+  for an object with both `valueOf` and `toString`: `` `${x}` `` answers valueOf
+  where node answers toString. `String(x)` and `join` take the string hint
+  correctly. Fixing it needs a template-concat node rather than a chain of `+`.
 
 ## Node-API: 10 of 64 entry points are stubs
 

@@ -11,6 +11,18 @@ task is parked forever. Such a task keeps the scheduler's task count > 0, which
 would block main's final -1 poll and hang the process at exit — Node instead
 drops an unfinished generator, so the entry point exits directly when this holds.
 
+### `callNativeProg`
+
+```milo
+pub fn callNativeProg(prog: &Prog, id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue
+```
+
+Native dispatch for the call sites that hold a Prog. callNative itself does
+not, so any native whose answer depends on re-entering user code has to be
+intercepted here — otherwise `String(obj)` reports "[object Object]" for an
+object whose toString says otherwise, while `${obj}` and `"" + obj` (both of
+which run the full ToPrimitive) disagree with it.
+
 ### `evalExpr`
 
 ```milo
@@ -130,3 +142,13 @@ pub fn setupGlobals(st: &mut Interp)
 ```
 
 _Undocumented._
+
+### `toStrProg`
+
+```milo
+pub fn toStrProg(prog: &Prog, v: &JSValue, st: &mut Interp): string
+```
+
+ToString for the paths that DO have a Prog, so a user-defined toString is
+honoured. `toStr` alone cannot call back into the interpreter and answers
+"[object Object]" for any plain object.
