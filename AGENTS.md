@@ -71,6 +71,21 @@ the same commit and bump its `last-verified`.
 ## Tests — always run them
 
 ```sh
+tools/dev.sh
+```
+
+Builds both binaries (skipping the build if neither is stale — see below),
+then runs every suite: `run.sh`, `run-milo.sh`, `run-repl.sh`, `run-embed.sh`,
+`run-napi.sh`. Prints a PASS/FAIL summary with wall time per suite and exits
+nonzero if any failed. `tools/dev.sh <pattern>` is the inner loop: build, then
+run only `tests/run.sh` fixtures whose basename contains `<pattern>`, skipping
+the repl/embed/napi suites — for iterating on one fixture without paying for
+the rest. `tools/dev.sh --rebuild` forces a rebuild even if the binaries look
+current; see `tools/dev.sh -h` for the rest.
+
+Equivalent by hand, if you need one suite in isolation:
+
+```sh
 milo build src/milojs-engine.milo -o /tmp/mj-engine
 milo build src/milojs.milo -o /tmp/mj-runtime
 MILOJS_ENGINE_BIN=/tmp/mj-engine MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run.sh
@@ -81,7 +96,9 @@ MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run-napi.sh
 ```
 
 Build once and reuse the binaries — `run.sh` otherwise compiles per fixture and
-an LLVM build per test dwarfs the test time.
+an LLVM build per test dwarfs the test time. `run.sh` itself runs fixtures in
+parallel (`MILOJS_JOBS`, default: core count) and takes an optional
+`[pattern]` argument to filter by fixture basename.
 
 - `tests/*.js` — engine fixtures. Each has a `.expected` locked to **node's**
   byte-exact output. That is the contract: differential, not hand-written.
@@ -98,9 +115,16 @@ locks in whatever the engine currently does, including its bugs.
 Need a local corpus, so they are manual, not CI:
 
 ```sh
-MILOJS_ENGINE=/tmp/mj-engine bun scripts/test262-sweep.ts --sample 1500
-MILOJS_ENGINE=/tmp/mj-engine bun scripts/quickjs-sweep.ts
+TEST262=~/git/test262 MILOJS_ENGINE=.dev/mj-engine bun scripts/test262-sweep.ts --sample 1500
+QUICKJS_TESTS=~/git/quickjs/tests MILOJS_ENGINE=.dev/mj-engine bun scripts/quickjs-sweep.ts
 ```
+
+Both scripts default to `/tmp` paths for the corpora. Point them at the checkouts
+above instead: a corpus under `/tmp` gets reaped, and the sweep then reports
+`0/0 pass (NaN%)` — a missing corpus looks like a finished run, not an error.
+
+`--sample N` is seeded, so the same N is comparable across runs; `-v` lists every
+failing case and `--json <file>` writes the machine-readable form.
 
 Current numbers live in `docs/backlog.md`. Update them there when they move.
 
@@ -122,6 +146,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 
 | tool | what it does |
 |---|---|
+| `tools/dev.sh` | one-command dev loop: build engine+runtime (cached in `.dev/`, skipped when up to date), then run the suites in "Tests". `tools/dev.sh <pattern>` filters `run.sh` to matching fixtures. |
 | `tools/lint-symbols.sh` | duplicate + std-shadowing definitions. Exit 1 on a finding. |
 | `tools/gen-docs.sh` | regenerates `docs/api/` from doc-comments |
 | `tools/precommit.sh` | lint + docs freshness; wire with `git config core.hooksPath .githooks` |

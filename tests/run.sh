@@ -16,10 +16,14 @@
 #
 # MILO points at the compiler: a `milo` on PATH by default, or a checkout's
 # src/main.ts (invoked through bun).
+#
+# Usage: tests/run.sh [pattern]
+#   With a pattern, only fixtures whose basename contains it run (both passes).
 set -u
 cd "$(dirname "$0")/.." || exit 1
 DIR="tests"
 RUNTIME_DIR="$DIR/runtime"
+PATTERN="${1:-}"
 
 MILO="${MILO:-milo}"
 case "$MILO" in
@@ -37,13 +41,68 @@ else
   echo "warning: no timeout(1); a hung fixture will hang this suite"
 fi
 
-fail=0
+# Fixtures are independent processes with no shared state, so they parallelize
+# trivially. Cap concurrency at MILOJS_JOBS, defaulting to the core count
+# (nproc on Linux, sysctl on Darwin — neither exists on the other) so a
+# fixture-heavy suite doesn't oversubscribe a small box.
+if command -v nproc >/dev/null 2>&1; then
+  DEFAULT_JOBS="$(nproc)"
+elif command -v sysctl >/dev/null 2>&1; then
+  DEFAULT_JOBS="$(sysctl -n hw.ncpu 2>/dev/null)"
+fi
+JOBS="${MILOJS_JOBS:-${DEFAULT_JOBS:-4}}"
 
-# run_pass <binary> <dir> <kind>: diff every dir/*.js against its .expected,
-# executing through <binary>. <kind> is "engine" or "runtime", used only in
-# messages. A hung fixture is killed with SIGKILL — a wedged green scheduler
-# never reaches a point where it handles SIGTERM, so the default signal leaves
-# it running (one such process ran for hours once, skewing later timings).
+fail=0
+passed=0
+failed=0
+total=0
+
+# run_one <js> <dir> <kind> <runner> <outfile>: run a single fixture and write
+# its full ok/FAIL output block to <outfile>. Runs backgrounded, in its own
+# subshell, so it cannot set variables in the parent (that's what `fail` used
+# to be) — a FAIL instead drops an <outfile>.fail marker that the caller counts
+# after `wait`.
+run_one() {
+  local js="$1" dir="$2" kind="$3" runner="$4" outfile="$5"
+  local name exp got status
+  name="$(basename "$js" .js)"
+  exp="$dir/$name.expected"
+  if [ ! -f "$exp" ]; then
+    echo "SKIP $name (no .expected)" >"$outfile"
+    return 0
+  fi
+  # A GC-rooting fixture is vacuous at the default collection threshold — it
+  # only exercises the root walk if a collection actually happens during the
+  # window it sets up. Force one per allocation so `*Gc*` fixtures test R7.
+  local gcenv=""
+  case "$name" in *Gc*) gcenv="MILOJS_GC_THRESHOLD=1" ;; esac
+  got="$(env $gcenv $runner "$js" 2>&1)"
+  status=$?
+  # A hung fixture is killed with SIGKILL — a wedged green scheduler never
+  # reaches a point where it handles SIGTERM, so the default signal leaves it
+  # running (one such process ran for hours once, skewing later timings).
+  if [ "$status" -eq 137 ] || [ "$status" -eq 124 ]; then
+    {
+      echo "FAIL $name ($kind, hung, killed after ${PER_TEST_TIMEOUT}s)"
+    } >"$outfile"
+    : >"$outfile.fail"
+  elif [ "$got" = "$(cat "$exp")" ]; then
+    echo "ok   $name" >"$outfile"
+  else
+    {
+      echo "FAIL $name ($kind)"
+      diff <(printf '%s\n' "$got") "$exp" | head -20
+    } >"$outfile"
+    : >"$outfile.fail"
+  fi
+}
+
+# run_pass <binary> <dir> <kind>: diff every dir/*.js (optionally filtered by
+# $PATTERN) against its .expected, executing through <binary>, up to $JOBS at
+# a time. Results print in the same alphabetical order as a serial run — each
+# fixture's output goes to a file named by its position in the (sorted, glob)
+# list, and those files are `cat`ed back in order once every job is done — so
+# output stays deterministic and diffable even though execution isn't ordered.
 run_pass() {
   local bin="$1" dir="$2" kind="$3"
   local runner
@@ -53,32 +112,57 @@ run_pass() {
     runner="$bin"
   fi
   [ -d "$dir" ] || return 0
+
+  local -a files=()
+  local js name
   for js in "$dir"/*.js; do
     [ -e "$js" ] || continue
-    local name exp got status
-    name="$(basename "$js" .js)"
-    exp="$dir/$name.expected"
-    [ -f "$exp" ] || { echo "SKIP $name (no .expected)"; continue; }
-    # A GC-rooting fixture is vacuous at the default collection threshold — it
-    # only exercises the root walk if a collection actually happens during the
-    # window it sets up. Force one per allocation so `*Gc*` fixtures test R7.
-    local gcenv=""
-    case "$name" in *Gc*) gcenv="MILOJS_GC_THRESHOLD=1" ;; esac
-    got="$(env $gcenv $runner "$js" 2>&1)"
-    status=$?
-    if [ $status -eq 137 ] || [ $status -eq 124 ]; then
-      echo "FAIL $name ($kind, hung, killed after ${PER_TEST_TIMEOUT}s)"
-      fail=1
-      continue
+    if [ -n "$PATTERN" ]; then
+      name="$(basename "$js" .js)"
+      case "$name" in
+        *"$PATTERN"*) ;;
+        *) continue ;;
+      esac
     fi
-    if [ "$got" = "$(cat "$exp")" ]; then
-      echo "ok   $name"
-    else
-      echo "FAIL $name ($kind)"
-      diff <(printf '%s\n' "$got") "$exp" | head -20
-      fail=1
+    files+=("$js")
+  done
+  [ ${#files[@]} -eq 0 ] && return 0
+
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+
+  # Bounded parallelism: keep at most $JOBS fixtures in flight. bash on macOS
+  # ships 3.2 (no `wait -n`), so cap the window by waiting on the oldest
+  # still-tracked pid once it's full rather than waiting on "any" job.
+  local -a pids=()
+  local i seq
+  for i in "${!files[@]}"; do
+    seq="$(printf '%04d' "$i")"
+    run_one "${files[$i]}" "$dir" "$kind" "$runner" "$tmpdir/$seq" &
+    pids+=("$!")
+    if [ "${#pids[@]}" -ge "$JOBS" ]; then
+      wait "${pids[0]}"
+      pids=("${pids[@]:1}")
     fi
   done
+  wait
+
+  local this_failed=0 this_skipped=0
+  for i in "${!files[@]}"; do
+    seq="$(printf '%04d' "$i")"
+    cat "$tmpdir/$seq"
+    if [ -e "$tmpdir/$seq.fail" ]; then
+      this_failed=$((this_failed + 1))
+    elif head -1 "$tmpdir/$seq" | grep -q '^SKIP '; then
+      this_skipped=$((this_skipped + 1))
+    fi
+  done
+  rm -rf "$tmpdir"
+
+  [ "$this_failed" -gt 0 ] && fail=1
+  failed=$((failed + this_failed))
+  passed=$((passed + ${#files[@]} - this_failed - this_skipped))
+  total=$((total + ${#files[@]}))
 }
 
 # Resolve (or build) the engine binary.
@@ -126,4 +210,11 @@ if compgen -G "$RUNTIME_DIR/*.js" >/dev/null; then
   run_pass "$RUNTIME_BIN" "$RUNTIME_DIR" runtime
 fi
 
+# A typo'd filter must not look like a clean (zero-fixture) pass.
+if [ -n "$PATTERN" ] && [ "$total" -eq 0 ]; then
+  echo "no fixture matches '$PATTERN'"
+  exit 1
+fi
+
+echo "$passed passed, $failed failed ($total fixtures)"
 exit $fail
