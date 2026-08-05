@@ -15,7 +15,13 @@ narrow_transcript="$(mktemp)"
 trap 'rm -f "$transcript" "$narrow_transcript"' EXIT
 
 if [ "$(uname -s)" = Darwin ]; then
-  printf '1 + 1\n\004' | script -q "$transcript" "$RUNTIME" >/dev/null
+  # Give the REPL time to reach its raw-mode read before the line arrives.
+  # Writing immediately races startup: the bytes are echoed by the pty's line
+  # discipline and the following ^D closes the master before the REPL ever
+  # reads them, so the run reports "expression result missing" for a REPL that
+  # is in fact fine. The sleeps are the whole reason this branch is not a
+  # one-liner.
+  { sleep 1; printf '1 + 1\n'; sleep 1; printf '\004'; } | script -q "$transcript" "$RUNTIME" >/dev/null
 else
   printf '1 + 1\n\004' | timeout 10 script -qfec "$RUNTIME" "$transcript" >/dev/null
   printf '\004' | timeout 10 script -qfec "stty cols 40 rows 20; exec $RUNTIME" "$narrow_transcript" >/dev/null
