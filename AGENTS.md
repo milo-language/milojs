@@ -3,6 +3,24 @@
 Router for agents working in this repo. Read this first, then follow the links
 that match your task. Do not read the whole repo to orient yourself.
 
+## How to work here
+
+The loop is `~/.claude/AGENT_WORKFLOW.md` (or the `workflow` skill): research →
+plan → implement → run → review → wrap-up. This file wins where they differ. Three
+rules matter more than the rest:
+
+- **Nothing works until it has been run.** This is a JS engine: running it means
+  building both binaries and executing real `.js` through them. `tools/dev.sh` is
+  the whole loop in one command; `tools/dev.sh <pattern>` is the inner loop.
+- **node is the oracle.** Every `.expected` is captured from node, never
+  hand-written. If milojs and node disagree, milojs is wrong.
+- **Measure the move.** A conformance change reports its before/after sweep number
+  (see §Conformance sweeps). "Should improve things" is not a result.
+
+Parallel agents get their own git worktree — several will collide in
+`src/eval.milo` and `lib/engine-prelude.js` otherwise. Split work by feature
+cluster, merge to `main` as each one goes green, and push. Small green commits.
+
 ## What this is
 
 Two binaries, both written in [Milo](https://github.com/milo-language/milo):
