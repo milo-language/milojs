@@ -2025,8 +2025,8 @@ pub fn collect(st: &mut Interp) {
             markValue(st, cb)
             var ta: i64 = 0
             while ta < st.timers[tm].args.len() {
-                let av = cloneValue(st.timers[tm].args[ta])
-                markValue(st, av)
+                let argVal = cloneValue(st.timers[tm].args[ta])
+                markValue(st, argVal)
                 ta = ta + 1
             }
         }

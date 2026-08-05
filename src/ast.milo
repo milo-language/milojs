@@ -339,8 +339,8 @@ fn cloneExpr(e: &Expr): Expr {
         Expr.Cond(c, a, b) => {
             return Expr.Cond(c, a, b)
         }
-        Expr.Spread(e) => {
-            return Expr.Spread(e)
+        Expr.Spread(inner) => {
+            return Expr.Spread(inner)
         }
         Expr.Comma(a, b) => {
             return Expr.Comma(a, b)

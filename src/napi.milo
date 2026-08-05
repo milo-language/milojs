@@ -206,69 +206,69 @@ fn napiReadStr(p: *u8, len: i64): string {
 
 // ── value creation ──
 
-@export
+@externalLinkage
 fn napi_get_undefined(_env: *u8, result: *u8): i32 {
     napiWriteHandle(result, napiHandle(JSValue.Undefined))
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_get_null(_env: *u8, result: *u8): i32 {
     napiWriteHandle(result, napiHandle(JSValue.Null))
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_get_boolean(_env: *u8, value: bool, result: *u8): i32 {
     napiWriteHandle(result, napiHandle(JSValue.Bool(value)))
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_create_int32(_env: *u8, value: i32, result: *u8): i32 {
     napiWriteHandle(result, napiHandle(JSValue.Number(value as f64)))
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_create_uint32(_env: *u8, value: i32, result: *u8): i32 {
     napiWriteHandle(result, napiHandle(JSValue.Number((value as i64) as f64)))
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_create_int64(_env: *u8, value: i64, result: *u8): i32 {
     napiWriteHandle(result, napiHandle(JSValue.Number(value as f64)))
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_create_double(_env: *u8, value: f64, result: *u8): i32 {
     napiWriteHandle(result, napiHandle(JSValue.Number(value)))
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_create_string_utf8(_env: *u8, str: *u8, length: i64, result: *u8): i32 {
     napiWriteHandle(result, napiHandle(JSValue.Str(napiReadStr(str, length))))
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_create_object(_env: *u8, result: *u8): i32 {
     let o = newObject(gInterp)
     napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_create_array(_env: *u8, result: *u8): i32 {
     let o = newArray(gInterp)
     napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_create_array_with_length(_env: *u8, length: i64, result: *u8): i32 {
     let o = newArray(gInterp)
     if length > 0 {
@@ -280,7 +280,7 @@ fn napi_create_array_with_length(_env: *u8, length: i64, result: *u8): i32 {
 
 // ── properties ──
 
-@export
+@externalLinkage
 fn napi_set_named_property(_env: *u8, object: i64, utf8name: *u8, value: i64): i32 {
     match napiValueOf(object) {
         JSValue.Obj(o) => {
@@ -293,7 +293,7 @@ fn napi_set_named_property(_env: *u8, object: i64, utf8name: *u8, value: i64): i
     }
 }
 
-@export
+@externalLinkage
 fn napi_get_named_property(_env: *u8, object: i64, utf8name: *u8, result: *u8): i32 {
     match napiValueOf(object) {
         JSValue.Obj(o) => {
@@ -309,19 +309,19 @@ fn napi_get_named_property(_env: *u8, object: i64, utf8name: *u8, result: *u8): 
 
 // ── value extraction ──
 
-@export
+@externalLinkage
 fn napi_get_value_double(_env: *u8, value: i64, result: *u8): i32 {
     napiWriteF64(result, toNum(napiValueOf(value)))
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_get_value_int32(_env: *u8, value: i64, result: *u8): i32 {
     napiWriteI32(result, toNum(napiValueOf(value)) as i32)
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_get_value_bool(_env: *u8, value: i64, result: *u8): i32 {
     napiWriteBool(result, truthy(napiValueOf(value)))
     return NAPI_OK
@@ -329,7 +329,7 @@ fn napi_get_value_bool(_env: *u8, value: i64, result: *u8): i32 {
 
 // napi_valuetype: undefined 0, null 1, boolean 2, number 3, string 4, symbol 5,
 // object 6, function 7, external 8, bigint 9
-@export
+@externalLinkage
 fn napi_typeof(_env: *u8, value: i64, result: *u8): i32 {
     match napiValueOf(value) {
         JSValue.Undefined => {
@@ -367,7 +367,7 @@ fn napi_typeof(_env: *u8, value: i64, result: *u8): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_is_array(_env: *u8, value: i64, result: *u8): i32 {
     match napiValueOf(value) {
         JSValue.Obj(o) => {
@@ -380,7 +380,7 @@ fn napi_is_array(_env: *u8, value: i64, result: *u8): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_get_array_length(_env: *u8, value: i64, result: *u8): i32 {
     match napiValueOf(value) {
         JSValue.Obj(o) => {
@@ -400,7 +400,7 @@ fn napi_get_array_length(_env: *u8, value: i64, result: *u8): i32 {
 // The result is a milojs object carrying the callback's registry index. It reports
 // as a function to typeof and is dispatched by callValue, so from JS it is
 // indistinguishable from any other callable.
-@export
+@externalLinkage
 fn napi_create_function(_env: *u8, _utf8name: *u8, _length: i64, cb: i64, data: i64, result: *u8): i32 {
     if cb == 0 {
         return NAPI_INVALID_ARG
@@ -422,7 +422,7 @@ fn napi_create_function(_env: *u8, _utf8name: *u8, _length: i64, cb: i64, data: 
 // `argc` is in/out: on entry the size of the addon's argv buffer, on exit the
 // number of arguments actually copied. Real argument count is reported even when
 // the buffer is smaller, which is how addons detect being under-called.
-@export
+@externalLinkage
 fn napi_get_cb_info(_env: *u8, cbinfo: i64, argc: *u8, argv: *u8, thisArg: *u8, data: *u8): i32 {
     if cbinfo < 0 || cbinfo >= gNapi.calls.len() {
         return NAPI_INVALID_ARG
@@ -528,51 +528,51 @@ pub fn napiLoadAddon(path: &string): Result<JSValue, string> {
 // napi_ok without producing a value, which is a lie an addon may act on — these are
 // the remaining work, not a finished surface.
 
-@export
+@externalLinkage
 fn napi_add_env_cleanup_hook(_a0: *u8, _a1: *u8, _a2: *u8): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_coerce_to_object(_a0: *u8, _a1: *u8, _a2: *u8): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_create_bigint_words(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_create_external_buffer(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8, _a5: *u8): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_fatal_error(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8) {
 }
 
-@export
+@externalLinkage
 fn napi_fatal_exception(_a0: *u8, _a1: *u8): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_get_and_clear_last_exception(_a0: *u8, _a1: *u8): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_get_value_bigint_int64(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_get_value_bigint_uint64(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_get_value_bigint_words(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8): i32 {
     return NAPI_OK
 }
@@ -624,7 +624,7 @@ fn napiMakeFn(cb: i64, data: i64): i64 {
 //
 // Produces a constructor object plus a prototype carrying the instance methods.
 // `new Ctor()` links the instance's proto here, so method lookup finds them.
-@export
+@externalLinkage
 fn napi_define_class(_env: *u8, _utf8name: *u8, _length: i64, constructor: i64, data: i64, propertyCount: i64, properties: *u8, result: *u8): i32 {
     if constructor == 0 {
         return NAPI_INVALID_ARG
@@ -665,7 +665,7 @@ fn napi_define_class(_env: *u8, _utf8name: *u8, _length: i64, constructor: i64, 
 //
 // The finalizer is accepted but never invoked yet: milojs's collector has no
 // finalizer hook, so a wrapped native allocation outlives its JS object.
-@export
+@externalLinkage
 fn napi_wrap(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _finalizeHint: i64, _result: *u8): i32 {
     match napiValueOf(jsObject) {
         JSValue.Obj(o) => {
@@ -679,7 +679,7 @@ fn napi_wrap(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _fin
     }
 }
 
-@export
+@externalLinkage
 fn napi_unwrap(_env: *u8, jsObject: i64, result: *u8): i32 {
     match napiValueOf(jsObject) {
         JSValue.Obj(o) => {
@@ -694,7 +694,7 @@ fn napi_unwrap(_env: *u8, jsObject: i64, result: *u8): i32 {
 
 // ── remaining mechanical surface ──
 
-@export
+@externalLinkage
 
 // index is uint32_t, NOT size_t. Declaring it i64 reads the undefined upper half
 // of the 32-bit argument slot on AArch64, so the index came through as garbage and
@@ -716,7 +716,7 @@ fn napi_get_element(_env: *u8, object: i64, index32: i32, result: *u8): i32 {
     }
 }
 
-@export
+@externalLinkage
 fn napi_set_element(_env: *u8, object: i64, index32: i32, value: i64): i32 {
     let index = index32 as i64
     match napiValueOf(object) {
@@ -730,7 +730,7 @@ fn napi_set_element(_env: *u8, object: i64, index32: i32, value: i64): i32 {
     }
 }
 
-@export
+@externalLinkage
 fn napi_has_named_property(_env: *u8, object: i64, utf8name: *u8, result: *u8): i32 {
     match napiValueOf(object) {
         JSValue.Obj(o) => {
@@ -752,7 +752,7 @@ fn napi_has_named_property(_env: *u8, object: i64, utf8name: *u8, result: *u8): 
     }
 }
 
-@export
+@externalLinkage
 fn napi_get_value_uint32(_env: *u8, value: i64, result: *u8): i32 {
     napiWriteI32(result, toNum(napiValueOf(value)) as i32)
     return NAPI_OK
@@ -761,7 +761,7 @@ fn napi_get_value_uint32(_env: *u8, value: i64, result: *u8): i32 {
 // napi_get_value_string_utf8(env, value, buf, bufsize, result)
 // A NULL buf means "just tell me the length", which is how addons size their
 // allocation before the real call.
-@export
+@externalLinkage
 fn napi_get_value_string_utf8(_env: *u8, value: i64, buf: *u8, bufsize: i64, result: *u8): i32 {
     let s = toStr(napiValueOf(value))
     unsafe {
@@ -790,7 +790,7 @@ fn napi_get_value_string_utf8(_env: *u8, value: i64, buf: *u8, bufsize: i64, res
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_coerce_to_string(_env: *u8, value: i64, result: *u8): i32 {
     napiWriteHandle(result, napiHandle(JSValue.Str(toStr(napiValueOf(value)))))
     return NAPI_OK
@@ -799,7 +799,7 @@ fn napi_coerce_to_string(_env: *u8, value: i64, result: *u8): i32 {
 // ── errors and globals ──
 
 // napi_get_property(env, object, key, result) — key is a napi_value, not a C string
-@export
+@externalLinkage
 fn napi_get_property(_env: *u8, object: i64, key: i64, result: *u8): i32 {
     match napiValueOf(object) {
         JSValue.Obj(o) => {
@@ -813,7 +813,7 @@ fn napi_get_property(_env: *u8, object: i64, key: i64, result: *u8): i32 {
     }
 }
 
-@export
+@externalLinkage
 fn napi_get_global(_env: *u8, result: *u8): i32 {
     // scope 0 is the global scope; addons use this to reach globalThis
     let o = newObject(gInterp)
@@ -830,7 +830,7 @@ fn napiMakeError(msgVal: JSValue): i64 {
     return o
 }
 
-@export
+@externalLinkage
 fn napi_create_error(_env: *u8, _code: i64, msg: i64, result: *u8): i32 {
     let o = napiMakeError(napiValueOf(msg))
     napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
@@ -839,14 +839,14 @@ fn napi_create_error(_env: *u8, _code: i64, msg: i64, result: *u8): i32 {
 
 // Raise a JS exception. The addon returns to us immediately afterwards, and the
 // pending throw is what callers observe.
-@export
+@externalLinkage
 fn napi_throw(_env: *u8, error: i64): i32 {
     gInterp.throwing = true
     gInterp.thrownValue = napiValueOf(error)
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_throw_error(_env: *u8, _code: *u8, msg: *u8): i32 {
     let o = napiMakeError(JSValue.Str(napiReadStr(msg, -1)))
     gInterp.throwing = true
@@ -858,7 +858,7 @@ fn napi_throw_error(_env: *u8, _code: *u8, msg: *u8): i32 {
 // array. napi-rs's serde deserializer walks this to build a struct, so a stub that
 // returns napi_ok without writing anything leaves it reading an uninitialized
 // handle off its own stack.
-@export
+@externalLinkage
 fn napi_get_property_names(_env: *u8, object: i64, result: *u8): i32 {
     match napiValueOf(object) {
         JSValue.Obj(o) => {
@@ -962,7 +962,7 @@ fn napiEnsureBufferView(buf: i64): i64 {
     return view
 }
 
-@export
+@externalLinkage
 fn napi_create_buffer(_env: *u8, length: i64, data: *u8, result: *u8): i32 {
     if (result as i64) == 0 || (data as i64) == 0 || length < 0 {
         return NAPI_INVALID_ARG
@@ -977,7 +977,7 @@ fn napi_create_buffer(_env: *u8, length: i64, data: *u8, result: *u8): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_create_buffer_copy(_env: *u8, length: i64, source: *u8, data: *u8, result: *u8): i32 {
     if (result as i64) == 0 || length < 0 || (length > 0 && (source as i64) == 0) {
         return NAPI_INVALID_ARG
@@ -994,7 +994,7 @@ fn napi_create_buffer_copy(_env: *u8, length: i64, source: *u8, data: *u8, resul
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_get_buffer_info(_env: *u8, value: i64, data: *u8, length: *u8): i32 {
     match napiValueOf(value) {
         JSValue.Obj(buf) => {
@@ -1020,7 +1020,7 @@ fn napi_get_buffer_info(_env: *u8, value: i64, data: *u8, length: *u8): i32 {
 // leaves the caller reading an uninitialized bool off its own stack — napi-rs then
 // took a plain string for a Buffer and the whole deserialize failed with a bare
 // InvalidArg and no reason string.
-@export
+@externalLinkage
 fn napi_is_buffer(_env: *u8, value: i64, result: *u8): i32 {
     match napiValueOf(value) {
         JSValue.Obj(o) => {
@@ -1036,24 +1036,24 @@ fn napi_is_buffer(_env: *u8, value: i64, result: *u8): i32 {
 // References keep a value alive across calls. There is no finalizer hook in the
 // collector yet, so a reference is simply a handle that is never released — it
 // over-retains rather than freeing something the addon still points at.
-@export
+@externalLinkage
 fn napi_create_reference(_env: *u8, value: i64, _initialRefcount: i32, result: *u8): i32 {
     napiWriteHandle(result, napiHandle(napiValueOf(value)))
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_get_reference_value(_env: *u8, ref: i64, result: *u8): i32 {
     napiWriteHandle(result, napiHandle(napiValueOf(ref)))
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_delete_reference(_env: *u8, _ref: i64): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_reference_unref(_env: *u8, _ref: i64, result: *u8): i32 {
     unsafe {
         if (result as i64) != 0 {
@@ -1128,7 +1128,7 @@ pub fn napiTakePending(): Vec<NapiPending> {
     return out
 }
 
-@export
+@externalLinkage
 fn napi_create_promise(_env: *u8, deferred: *u8, promise: *u8): i32 {
     let p = newPromise(gInterp, 0, JSValue.Undefined)
     gNapi.liveDeferred = gNapi.liveDeferred + 1
@@ -1137,7 +1137,7 @@ fn napi_create_promise(_env: *u8, deferred: *u8, promise: *u8): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_resolve_deferred(_env: *u8, deferred: i64, resolution: i64): i32 {
     match napiValueOf(deferred) {
         JSValue.Obj(p) => {
@@ -1150,7 +1150,7 @@ fn napi_resolve_deferred(_env: *u8, deferred: i64, resolution: i64): i32 {
     }
 }
 
-@export
+@externalLinkage
 fn napi_reject_deferred(_env: *u8, deferred: i64, rejection: i64): i32 {
     match napiValueOf(deferred) {
         JSValue.Obj(p) => {
@@ -1179,7 +1179,7 @@ fn napiEnsurePipe() {
     }
     unsafe {
         var fds: [i32; 2] = [0; 2]
-        if pipe(fds as *u8) != 0 {
+        if pipe(fds as *i32) != 0 {
             return
         }
         // fd 0/1 would mean pipe() never wrote the array: reading stdin returns EOF
@@ -1195,7 +1195,7 @@ fn napiEnsurePipe() {
     }
 }
 
-@export
+@externalLinkage
 fn napi_create_threadsafe_function(_env: *u8, func: i64, _asyncResource: i64, _asyncResourceName: i64, _maxQueueSize: i64, _initialThreadCount: i64, _threadFinalizeData: i64, _threadFinalizeCb: i64, context: i64, callJsCb: i64, result: *u8): i32 {
     napiEnsurePipe()
     var initialRefs = _initialThreadCount
@@ -1213,7 +1213,7 @@ fn napi_create_threadsafe_function(_env: *u8, func: i64, _asyncResource: i64, _a
 
 // CALLED FROM A FOREIGN THREAD. Touch nothing but the pipe fd, which is read-only
 // after setup.
-@export
+@externalLinkage
 fn napi_call_threadsafe_function(func: i64, data: i64, _isBlocking: i32): i32 {
     unsafe {
         if gNapi.tsfnW < 0 {
@@ -1229,7 +1229,7 @@ fn napi_call_threadsafe_function(func: i64, data: i64, _isBlocking: i32): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_get_threadsafe_function_context(func: i64, result: *u8): i32 {
     let i = func - 1
     if i < 0 || i >= gNapi.tsfns.len() {
@@ -1239,7 +1239,7 @@ fn napi_get_threadsafe_function_context(func: i64, result: *u8): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_acquire_threadsafe_function(_func: i64): i32 {
     let i = _func - 1
     if i >= 0 && i < gNapi.tsfns.len() {
@@ -1248,7 +1248,7 @@ fn napi_acquire_threadsafe_function(_func: i64): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_release_threadsafe_function(_func: i64, _mode: i32): i32 {
     let i = _func - 1
     if i >= 0 && i < gNapi.tsfns.len() {
@@ -1262,7 +1262,7 @@ fn napi_release_threadsafe_function(_func: i64, _mode: i32): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_unref_threadsafe_function(_env: *u8, _func: i64): i32 {
     let i = _func - 1
     if i >= 0 && i < gNapi.tsfns.len() {
@@ -1271,7 +1271,7 @@ fn napi_unref_threadsafe_function(_env: *u8, _func: i64): i32 {
     return NAPI_OK
 }
 
-@export
+@externalLinkage
 fn napi_ref_threadsafe_function(_env: *u8, _func: i64): i32 {
     let i = _func - 1
     if i >= 0 && i < gNapi.tsfns.len() {

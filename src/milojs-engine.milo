@@ -65,7 +65,9 @@ fn main(): i32 {
     var parser = ArgParser.new("milojs-engine", "the milojs JavaScript engine — runs a raw .js file")
     parser.addPositional("file", "the .js file to run")
     let parsed = parser.parse()
-    let path = parsed.getString("file")
+    // parse() already exits on a missing required positional, so the None arm is
+    // unreachable — the default keeps this a plain string rather than an unwrap panic.
+    let path = parsed.getString("file") ?? ""
 
     let r = readFile(path)
     match r {

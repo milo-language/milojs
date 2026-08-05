@@ -4499,7 +4499,6 @@ fn requireModule(prog: &Prog, spec: &string, st: &mut Interp): JSValue {
         st.throwing = true
         st.thrownValue = makeError(st, "Error", "Cannot find module '" + spec + "'")
         return JSValue.Undefined
-        return JSValue.Undefined
     }
     let idx = findModule(st, path)
     if idx < 0 {
@@ -6202,9 +6201,9 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                         }
                     }
                 }
-                JSValue.Native(id) => {
+                JSValue.Native(nativeId) => {
                     let argVals = evalArgs(prog, argsIdx, st, scope)
-                    return callNativeProg(prog, id, argVals, st)
+                    return callNativeProg(prog, nativeId, argVals, st)
                 }
                 JSValue.Obj(co) => {
                     if st.objects[co].isProxy {
@@ -9038,7 +9037,7 @@ fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSValue,
 // Node-API's synchronous callback into JavaScript. This adapter lives beside
 // callValue rather than in napi.milo because the evaluator already imports the
 // Node-API layer; importing the evaluator back from there would create a cycle.
-@export
+@externalLinkage
 fn napi_call_function(_env: *u8, recv: i64, func: i64, argc: i64, argv: *u8, result: *u8): i32 {
     if argc < 0 || (argc > 0 && argv as i64 == 0) {
         return NAPI_INVALID_ARG
