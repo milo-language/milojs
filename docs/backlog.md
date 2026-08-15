@@ -22,7 +22,7 @@ run by hand rather than in CI:
 
 | sweep | score | measured |
 |---|---:|---|
-| test262, 1500-case deterministic sample | 586/1470 = **39.9%** | 2026-08-15 |
+| test262, 1500-case deterministic sample | 588/1470 = **40.0%** | 2026-08-15 |
 | QuickJS `tests/` at `fced162` | 97/149 = **65.1%** | 2026-08-15 |
 
 Movement on 2026-08-15: the engine now runs the program on a green task, so
@@ -65,6 +65,30 @@ concrete constructor's `prototype` chaining to it, and the native's property bag
 | `built-ins/ArrayBuffer` | 43/221 = 19.5% | 43/221 = 19.5% |
 
 Locked by `tests/typedArrayPrototypes.js`.
+
+### Receiver brand checks — 2026-08-15
+
+Built-in methods are dispatched by NAME here, which is correct for
+`Array.prototype` (genuinely generic in ES) and wrong for the buffer family
+(node throws a TypeError when `this` is the wrong kind). So
+`Int8Array.prototype.join.call([1, 2], '-')` returned `"1-2"` instead of
+throwing, and `ArrayBuffer.prototype.slice.call({})` returned an object.
+
+A bound method built for `%TypedArray%` / `ArrayBuffer` / `DataView` now records
+a `boundBrand` and checks the receiver before dispatching — at both call sites
+(plain invocation and `.call`/`.apply`), and the brand survives `bind()`. Also
+added `ArrayBuffer.isView`.
+
+| area | before | after |
+|---|---:|---:|
+| `built-ins/DataView` | 153/561 = 27.3% | **186/561 = 33.2%** |
+| `built-ins/ArrayBuffer` | 43/221 = 19.5% | **58/221 = 26.2%** |
+| `built-ins/TypedArray` | 149/1446 = 10.3% | **191/1446 = 13.2%** |
+
+Locked by `tests/bufferBrandChecks.js`. Still missing on ArrayBuffer:
+`Symbol.species`, and `name`/`length` on native constructors generally
+(`ArrayBuffer.name` is undefined) — the latter is the "should be an own
+property" bucket, ~42 cases suite-wide across all builtins.
 
 **Next in this cluster, in order of size:**
 1. **`BigInt64Array` / `BigUint64Array` do not exist** — now the top bucket in
@@ -151,6 +175,29 @@ Strongest: `language/block-scope` 100%, `literals` 77%, `identifiers` 75%.
   the body settle that promise when it reaches its yield. That needs a per-
   generator queue of pending requests, since node queues concurrent `next()`
   calls, and `runEventLoop` must count a live async generator body as work.
+
+  **This was attempted on 2026-08-15 and reverted — read this before trying
+  again.** The queue itself worked: a FIFO of (generator, promise, mode, arg)
+  in `Interp` (marked by `collect`, since nothing else roots the promise or the
+  send value), `asyncGenRequest` enqueueing and returning a pending promise
+  without parking, `asyncGenYield` settling the served request and either
+  picking up the next queued one or parking, and `asyncGenFinish` draining the
+  rest. `bug1355.js` stopped hanging and the simple cases passed. Two further
+  fixes were needed and made: for-await's IteratorClose and `yield*` delegation
+  both drove the inner generator with the SYNCHRONOUS `genResume`, which parks
+  the caller against a queue only that caller can feed — both must go through
+  the async request and await the promise.
+
+  What killed it was the event loop. Yielding to a runnable generator body
+  before `runOneTimer` starves the timer that would settle the await the body
+  is parked on. Moving the yield after timers fixed that specific livelock but
+  left a NONDETERMINISTIC hang in ordinary sequential code — the same script
+  produced 2, 16, or all 18 lines across runs — which is strictly worse than
+  the one pathological shape it set out to fix. The remaining race was not
+  identified. Whoever picks this up should start by making the body's
+  runnability explicit rather than inferring it from "a request is queued":
+  the event loop cannot currently distinguish "body is runnable" from "body is
+  parked on a promise nothing has settled yet", and spins on the difference.
 
 - **`built-ins/AsyncGeneratorFunction` is unmoved at 13%** — the
   `AsyncGeneratorFunction` constructor and the prototype/`@@toStringTag` chain

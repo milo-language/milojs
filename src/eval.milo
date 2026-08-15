@@ -532,6 +532,53 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
     return direct
 }
 
+// A bound method that first checks its receiver really is of `brand`. See
+// JSObjExtra.boundBrand for why the buffer family needs this and Array does not.
+fn makeBrandedMethod(st: &mut Interp, name: string, brand: i64): JSValue {
+    let v = makeBoundMethod(st, JSValue.Undefined, name)
+    let h = objHandle(v)
+    st.objExtras[st.objects[h].extra].boundBrand = brand
+    return v
+}
+
+fn brandMatches(st: &Interp, brand: i64, recv: &JSValue): bool {
+    if brand == 0 {
+        return true
+    }
+    let h = objHandle(recv)
+    if h < 0 {
+        return false
+    }
+    if brand == 2 {
+        return st.objects[h].isArrayBuffer
+    }
+    if brand == 3 {
+        return st.objects[h].isDataView
+    }
+    return st.objExtras[st.objects[h].extra].taBuf >= 0 && !st.objects[h].isDataView
+}
+
+// Throws and returns false when `recv` is not of the bound method's brand.
+fn brandOk(st: &mut Interp, boundObj: i64, mname: &string, recv: &JSValue): bool {
+    let brand = st.objExtras[st.objects[boundObj].extra].boundBrand
+    if brandMatches(st, brand, recv) {
+        return true
+    }
+    st.throwing = true
+    st.thrownValue = makeError(st, "TypeError", "Method " + brandName(brand) + ".prototype." + mname + " called on incompatible receiver" + currentModule(st))
+    return false
+}
+
+fn brandName(brand: i64): string {
+    if brand == 2 {
+        return "ArrayBuffer"
+    }
+    if brand == 3 {
+        return "DataView"
+    }
+    return "TypedArray"
+}
+
 fn makeBoundMethod(st: &mut Interp, recv: JSValue, name: string): JSValue {
     let bo = newObject(st)
     st.objects[bo].isBound = true
@@ -1738,6 +1785,9 @@ let NATIVE_SQLITE_FILENAME: i64 = 145
 // The engine's console.log renderer, exposed to JS so lib/util.js does not have
 // to keep a second, diverging copy of node's util.inspect.
 pub let NATIVE_INSPECT: i64 = 146
+// ArrayBuffer.isView(x): true for a typed-array view or a DataView, and
+// crucially FALSE for an ArrayBuffer itself
+let NATIVE_ARRAYBUFFER_ISVIEW: i64 = 147
 
 // sqlite3_column_name is not wrapped by std/sqlite, but node:sqlite's get()/all()
 // return row objects keyed by column name, so it is declared here directly. The
@@ -3129,6 +3179,16 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             )
         }
         return JSValue.Undefined
+    }
+    if id == NATIVE_ARRAYBUFFER_ISVIEW {
+        if argVals.len() == 0 {
+            return JSValue.Bool(false)
+        }
+        let h = objHandle(argVals[0])
+        if h < 0 {
+            return JSValue.Bool(false)
+        }
+        return JSValue.Bool(st.objects[h].isDataView || st.objExtras[st.objects[h].extra].taBuf >= 0)
     }
     if id == NATIVE_INSPECT {
         if argVals.len() == 0 {
@@ -4729,7 +4789,7 @@ fn setupTypedArrayProtos(st: &mut Interp) {
     let names = typedArrayMethodNames()
     var i: i64 = 0
     while i < names.len() {
-        objSet(st, taProto, names[i].clone(), makeBoundMethod(st, JSValue.Undefined, names[i].clone()))
+        objSet(st, taProto, names[i].clone(), makeBrandedMethod(st, names[i].clone(), 1))
         objSetNonEnumerable(st, taProto, names[i])
         i = i + 1
     }
@@ -4784,13 +4844,15 @@ fn setupBufferProtos(st: &mut Interp) {
     abNames.push("transfer")
     var i: i64 = 0
     while i < abNames.len() {
-        objSet(st, abProto, abNames[i].clone(), makeBoundMethod(st, JSValue.Undefined, abNames[i].clone()))
+        objSet(st, abProto, abNames[i].clone(), makeBrandedMethod(st, abNames[i].clone(), 2))
         objSetNonEnumerable(st, abProto, abNames[i])
         i = i + 1
     }
     objSet(st, abProto, "constructor", JSValue.Native(NATIVE_ARRAYBUFFER))
     objSetNonEnumerable(st, abProto, "constructor")
     let abBag = getNativeProps(st, NATIVE_ARRAYBUFFER)
+    objSet(st, abBag, "isView", JSValue.Native(NATIVE_ARRAYBUFFER_ISVIEW))
+    objSetNonEnumerable(st, abBag, "isView")
     objSet(st, abBag, "prototype", JSValue.Obj(abProto))
     objSetNonEnumerable(st, abBag, "prototype")
 
@@ -4815,7 +4877,7 @@ fn setupBufferProtos(st: &mut Interp) {
     dvNames.push("setFloat64")
     var d: i64 = 0
     while d < dvNames.len() {
-        objSet(st, dvProto, dvNames[d].clone(), makeBoundMethod(st, JSValue.Undefined, dvNames[d].clone()))
+        objSet(st, dvProto, dvNames[d].clone(), makeBrandedMethod(st, dvNames[d].clone(), 3))
         objSetNonEnumerable(st, dvProto, dvNames[d])
         d = d + 1
     }
@@ -9894,6 +9956,9 @@ fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSValue,
                     if !isBoundThisSet(st, o) {
                         recvV = cloneValue(thisVal)
                     }
+                    if !brandOk(st, o, mname, recvV) {
+                        return JSValue.Undefined
+                    }
                     return callBuiltinByName(prog, recvV, mname, args, st)
                 }
                 let target = cloneValue(st.objExtras[ex].boundTarget)
@@ -11845,6 +11910,9 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                         let exf = ensureExtra(st, nf)
                         st.objExtras[exf].boundTarget = fTarget
                         st.objExtras[exf].boundMethod = mname.clone()
+                        // a bound buffer-family method keeps its receiver brand
+                        st.objExtras[exf].boundBrand = st.objExtras[exo].boundBrand
+
                         st.objExtras[exf].boundThis = newThis
                         st.objExtras[exf].boundArgs = fb
                         popTemp(st)
@@ -11875,6 +11943,8 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                     let exn = ensureExtra(st, nb)
                     st.objExtras[exn].boundTarget = bTarget
                     st.objExtras[exn].boundMethod = mname.clone()
+                    st.objExtras[exn].boundBrand = st.objExtras[exo].boundBrand
+
                     st.objExtras[exn].boundThis = bThis
                     st.objExtras[exn].boundArgs = na
                     popTemp(st)
@@ -11882,6 +11952,9 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                 }
                 popTemp(st)
                 if mname.len() > 0 {
+                    if !brandOk(st, o, mname, newThis) {
+                        return JSValue.Undefined
+                    }
                     return callBuiltinByName(prog, newThis, mname, rest, st)
                 }
                 let target = cloneValue(st.objExtras[exo].boundTarget)

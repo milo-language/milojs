@@ -1,0 +1,16 @@
+ArrayBuffer.prototype.slice on {} -> TypeError
+ArrayBuffer.prototype.slice on [] -> TypeError
+ArrayBuffer.prototype.slice on a view -> TypeError
+DataView.prototype.getInt8 on {} -> TypeError
+DataView.prototype.getInt8 on a buffer -> TypeError
+TypedArray map on {} -> TypeError
+TypedArray join on [] -> TypeError
+TypedArray at on a string -> TypeError
+4
+1-2-3
+42
+a-b
+1
+1+2+3
+bound to the wrong kind -> TypeError
+true true false false false

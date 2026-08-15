@@ -461,6 +461,12 @@ struct JSObjExtra {
     boundThis: JSValue,
     boundArgs: Vec<JSValue>,
     boundMethod: string,
+    // Which built-in the bound method came off, for the receiver brand check:
+    // 0 none (generic, e.g. Array.prototype.slice), 1 %TypedArray%,
+    // 2 ArrayBuffer, 3 DataView. Buffer-family methods are NOT generic — node
+    // throws TypeError when `this` is the wrong kind — but they are dispatched
+    // by name here, so without a brand they silently did something reasonable.
+    boundBrand: i64,
     // Proxy target/handler (isProxy stays inline — every property path checks it)
     proxyTarget: JSValue,
     proxyHandler: JSValue,
@@ -505,7 +511,7 @@ pub fn defaultExtra(): JSObjExtra {
         boundTarget: JSValue.Undefined,
         boundThis: JSValue.Undefined,
         boundArgs: Vec.new(),
-        boundMethod: "",
+        boundMethod: "", boundBrand: 0,
         proxyTarget: JSValue.Undefined,
         proxyHandler: JSValue.Undefined,
         mapKeys: Vec.new(),
