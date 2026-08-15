@@ -1,0 +1,26 @@
+RegExp.prototype: object
+exec on proto: function
+proto identity: true true
+own names on proto: 15
+flags: gi a(b)c true true false false false false false
+desc source: {"enumerable":false,"configurable":true}
+exec: ["abc","b"]
+Symbol.match/replace/split: function function function
+[ 'abc', 'abc' ]
+2
+[ 'a', 'b', 'c' ]
+XXX
+str delegation: b a|b
+flags on proto vs instance: function true
+lastIndex writable: {"value":0,"writable":true,"enumerable":false,"configurable":false}
+true false false false false false
+exec via proto: ["b"]
+test via proto: true
+toString via proto: /ab/gi
+names: ["compile","constructor","dotAll","exec","flags","global","hasIndices","ignoreCase","multiline","source","sticky","test","toString","unicode","unicodeSets"]
+str.match direct: ["abc","b"]
+String.prototype.match.call: ["abc","b"]
+regex toString direct: /ab/gi
+String.prototype.split.call: ["a","b"]
+/ab/gi /x/ /y/g
+b g true true

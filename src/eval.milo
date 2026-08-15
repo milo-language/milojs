@@ -9,7 +9,7 @@ from "./value" import {
     JSValue, i64ToStr, daysFromCivil
 }
 from "./runtime" import {
-    Interp, Timer, Microtask, Reaction, PendingFetch, NATIVE_RESOLVER_BASE, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr
+    Interp, Timer, Microtask, Reaction, PendingFetch, NATIVE_RESOLVER_BASE, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable
 }
 from "./builtins" import {
     stringMethod, jsCharAt, mjStringifyVal, mjJsonParse, mjJsonOmitted
@@ -2008,6 +2008,9 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
             // string, which is what a bare "abc".slice() must keep doing.
             if isArrayMethod(name) && !isStringMethodName(name) {
                 return arrayMethodGeneric(prog, JSValue.Str(sv.clone()), name, args, st)
+            }
+            if isStringRegexOp(st, name, args) {
+                return stringRegexOp(prog, sv, name, args, st)
             }
             return stringMethod(name, sv, args, st)
         }
@@ -5383,6 +5386,22 @@ fn mathNative(id: i64, args: &Vec<JSValue>, st: &mut Interp): JSValue {
 // an error whose kind matches (Error itself matches any error).
 // Compile a pattern and wrap it as a RegExp object (regexId links to the
 // compiled program; source/flags/lastIndex are ordinary properties).
+// A single-character search over a flags string. Named mj* per the house rule:
+// std/string owns strIndexOf.
+fn strIndexOfMj(hay: &string, needle: &string): i64 {
+    if needle.len() == 0 {
+        return 0
+    }
+    var i: i64 = 0
+    while i < hay.len() {
+        if hay[i] == needle[0] {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
 fn makeRegex(st: &mut Interp, pattern: string, flags: string): JSValue {
     let re = regexCompile(pattern.clone(), flags.clone())
     let isGlobal = re.flagG
@@ -5392,9 +5411,33 @@ fn makeRegex(st: &mut Interp, pattern: string, flags: string): JSValue {
     let _er = ensureExtra(st, o)
     st.objExtras[st.objects[o].extra].regexId = id
     objSet(st, o, "source", JSValue.Str(pattern))
-    objSet(st, o, "flags", JSValue.Str(flags))
+    objSetNonEnumerable(st, o, "source")
+    objSet(st, o, "flags", JSValue.Str(flags.clone()))
+    objSetNonEnumerable(st, o, "flags")
+    // the whole flag family, not just `global` — a test that reads .multiline or
+    // .sticky got undefined, and `undefined` is not `false`
     objSet(st, o, "global", JSValue.Bool(isGlobal))
+    objSetNonEnumerable(st, o, "global")
+    objSet(st, o, "ignoreCase", JSValue.Bool(strIndexOfMj(flags.clone(), "i") >= 0))
+    objSetNonEnumerable(st, o, "ignoreCase")
+    objSet(st, o, "multiline", JSValue.Bool(strIndexOfMj(flags.clone(), "m") >= 0))
+    objSetNonEnumerable(st, o, "multiline")
+    objSet(st, o, "sticky", JSValue.Bool(strIndexOfMj(flags.clone(), "y") >= 0))
+    objSetNonEnumerable(st, o, "sticky")
+    objSet(st, o, "unicode", JSValue.Bool(strIndexOfMj(flags.clone(), "u") >= 0))
+    objSetNonEnumerable(st, o, "unicode")
+    objSet(st, o, "unicodeSets", JSValue.Bool(strIndexOfMj(flags.clone(), "v") >= 0))
+    objSetNonEnumerable(st, o, "unicodeSets")
+    objSet(st, o, "dotAll", JSValue.Bool(strIndexOfMj(flags.clone(), "s") >= 0))
+    objSetNonEnumerable(st, o, "dotAll")
+    objSet(st, o, "hasIndices", JSValue.Bool(strIndexOfMj(flags.clone(), "d") >= 0))
+    objSetNonEnumerable(st, o, "hasIndices")
     objSet(st, o, "lastIndex", JSValue.Number(0.0))
+    objSetNonEnumerable(st, o, "lastIndex")
+    objSetNonConfigurable(st, o, "lastIndex")
+    if st.regexProtoObj >= 0 {
+        st.objects[o].proto = st.regexProtoObj
+    }
     return JSValue.Obj(o)
 }
 
@@ -5503,10 +5546,77 @@ fn buildMatchArray(st: &mut Interp, s: &string, saves: &Vec<i64>, rid: i64): JSV
 }
 
 fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSValue {
+    // the prototype's flag accessors, dispatched under an internal name so they
+    // cannot shadow an instance's own data property of the same name
+    if name.len() > 8 && strSlice(name.clone(), 0, 8) == "__reGet_" {
+        return objGet(st, o, strSlice(name.clone(), 8, name.len()))
+    }
+    // RegExp.prototype[@@match](str) and friends: delegate to the String method
+    // that actually implements the operation in this engine
+    var strOp = ""
+    if name == "@@sym:Symbol.match:0" {
+        strOp = "match"
+    } else if name == "@@sym:Symbol.matchAll:0" {
+        strOp = "matchAll"
+    } else if name == "@@sym:Symbol.replace:0" {
+        strOp = "replace"
+    } else if name == "@@sym:Symbol.search:0" {
+        strOp = "search"
+    } else if name == "@@sym:Symbol.split:0" {
+        strOp = "split"
+    }
+    if strOp.len() > 0 {
+        var sArgs: Vec<JSValue> = Vec.new()
+        sArgs.push(JSValue.Obj(o))
+        var ai: i64 = 1
+        while ai < args.len() {
+            sArgs.push(cloneValue(args[ai]))
+            ai = ai + 1
+        }
+        var recvStr = JSValue.Str("")
+        if args.len() > 0 {
+            recvStr = JSValue.Str(toStr(args[0]))
+        }
+        return callBuiltinByName(gProg, recvStr, strOp, sArgs, st)
+    }
     let rid = st.objExtras[st.objects[o].extra].regexId
     var subject = ""
     if args.len() > 0 {
         subject = toStr(args[0])
+    }
+    if name == "toString" {
+        // listed as a regex method but never implemented — /ab/gi.toString()
+        // returned undefined
+        return JSValue.Str("/" + toStr(objGet(st, o, "source")) + "/" + toStr(objGet(st, o, "flags")))
+    }
+    if name == "compile" {
+        // node's legacy in-place recompile: replaces the pattern and flags on
+        // THIS object rather than returning a new one
+        var np = toStr(objGet(st, o, "source"))
+        var nf = ""
+        if args.len() > 0 {
+            np = toStr(args[0])
+        }
+        if args.len() > 1 {
+            nf = toStr(args[1])
+        }
+        let fresh = makeRegex(st, np, nf)
+        let fh = objHandle(fresh)
+        if fh >= 0 {
+            st.objExtras[st.objects[o].extra].regexId = st.objExtras[st.objects[fh].extra].regexId
+            objSet(st, o, "source", objGet(st, fh, "source"))
+            objSet(st, o, "flags", objGet(st, fh, "flags"))
+            objSet(st, o, "global", objGet(st, fh, "global"))
+            objSet(st, o, "ignoreCase", objGet(st, fh, "ignoreCase"))
+            objSet(st, o, "multiline", objGet(st, fh, "multiline"))
+            objSet(st, o, "sticky", objGet(st, fh, "sticky"))
+            objSet(st, o, "unicode", objGet(st, fh, "unicode"))
+            objSet(st, o, "unicodeSets", objGet(st, fh, "unicodeSets"))
+            objSet(st, o, "dotAll", objGet(st, fh, "dotAll"))
+            objSet(st, o, "hasIndices", objGet(st, fh, "hasIndices"))
+            objSet(st, o, "lastIndex", JSValue.Number(0.0))
+        }
+        return JSValue.Obj(o)
     }
     if name == "test" {
         let saves = regexExec(st.regexes[rid], subject, 0)
@@ -6186,6 +6296,113 @@ fn dataViewProto(st: &mut Interp): i64 {
     return objHandle(objGet(st, getNativeProps(st, NATIVE_DATAVIEW), "prototype"))
 }
 
+// RegExp.prototype. Like the buffer family and Date before it, this object did
+// not exist: `RegExp.prototype` read as undefined, so every test262 case that
+// starts from the prototype — and there are many, since the flag accessors and
+// the @@match/@@replace/@@split family all live there — failed before testing
+// anything. Instances now link it, which is also what makes
+// `Object.getPrototypeOf(/x/) === RegExp.prototype` hold.
+//
+// The flag properties stay OWN properties of each instance (that is where this
+// engine resolves them); the prototype carries the methods.
+// The regex-taking String operations. These used to live only on evalExpr's
+// method-call path, so `s.match(/re/)` worked while
+// `String.prototype.match.call(s, /re/)` returned undefined and
+// `String.prototype.split.call(s, /,/)` returned the string unsplit —
+// callBuiltinByName goes straight to stringMethod, which knows nothing about
+// regexes. Both paths call this now.
+fn isStringRegexOp(st: &Interp, name: &string, args: &Vec<JSValue>): bool {
+    if args.len() == 0 {
+        return false
+    }
+    if regexIdOf(st, args[0]) < 0 {
+        return false
+    }
+    return name == "replace" || name == "replaceAll" || name == "match" || name == "matchAll" || name == "split" || name == "search"
+}
+
+fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    let rid = regexIdOf(st, args[0])
+    if name == "replace" || name == "replaceAll" {
+        if args.len() > 1 && isCallable(args[1]) {
+            return regexReplaceFn(prog, st, s, rid, cloneValue(args[1]))
+        }
+        var repl = ""
+        if args.len() > 1 {
+            repl = toStr(args[1])
+        }
+        return regexReplace(st, s, rid, repl)
+    }
+    if name == "match" {
+        return regexStrMatch(st, s, rid)
+    }
+    if name == "matchAll" {
+        return regexStrMatchAll(st, s, rid)
+    }
+    if name == "split" {
+        return regexSplit(st, s, rid)
+    }
+    // search: index of the first match, or -1 (UTF-16 units)
+    let saves = regexExec(st.regexes[rid], s, 0)
+    if saves.len() == 0 {
+        return JSValue.Number(0.0 - 1.0)
+    }
+    return JSValue.Number(byteToUtf16(s, saves[0]) as f64)
+}
+
+fn setupRegexProto(st: &mut Interp) {
+    let rp = newObject(st)
+    st.objects[rp].proto = st.objectProtoObj
+    var names: Vec<string> = Vec.new()
+    names.push("exec")
+    names.push("test")
+    names.push("toString")
+    names.push("compile")
+    // String.prototype.match/replace/search/split are the real implementations
+    // here; these delegate to them, which is the direction the spec runs in
+    // reverse. Having them at all is what lets code feature-detect a regex.
+    names.push("@@sym:Symbol.match:0")
+    names.push("@@sym:Symbol.matchAll:0")
+    names.push("@@sym:Symbol.replace:0")
+    names.push("@@sym:Symbol.search:0")
+    names.push("@@sym:Symbol.split:0")
+    var i: i64 = 0
+    while i < names.len() {
+        objSet(st, rp, names[i].clone(), makeBoundMethod(st, JSValue.Undefined, names[i].clone()))
+        objSetNonEnumerable(st, rp, names[i])
+        i = i + 1
+    }
+    // The flag family is an ACCESSOR on the prototype in the spec, while this
+    // engine keeps them as own data properties on each instance. Both can hold:
+    // the getter is registered under an internal name, so an instance's own
+    // property still wins on a normal read and only a read through the prototype
+    // itself reaches the accessor.
+    var flagNames: Vec<string> = Vec.new()
+    flagNames.push("source")
+    flagNames.push("flags")
+    flagNames.push("global")
+    flagNames.push("ignoreCase")
+    flagNames.push("multiline")
+    flagNames.push("sticky")
+    flagNames.push("unicode")
+    flagNames.push("unicodeSets")
+    flagNames.push("dotAll")
+    flagNames.push("hasIndices")
+    var f: i64 = 0
+    while f < flagNames.len() {
+        let getter = makeBoundMethod(st, JSValue.Undefined, "__reGet_" + flagNames[f].clone())
+        objDefineAccessor(st, rp, flagNames[f].clone(), getter, JSValue.Undefined)
+        objSetNonEnumerable(st, rp, flagNames[f])
+        f = f + 1
+    }
+    objSet(st, rp, "constructor", JSValue.Native(NATIVE_REGEXP))
+    objSetNonEnumerable(st, rp, "constructor")
+    let rbag = getNativeProps(st, NATIVE_REGEXP)
+    objSet(st, rbag, "prototype", JSValue.Obj(rp))
+    objSetNonEnumerable(st, rbag, "prototype")
+    st.regexProtoObj = rp
+}
+
 fn setupErrorProtos(st: &mut Interp) {
     let errorProto = newObject(st)
     objSet(st, errorProto, "name", JSValue.Str("Error"))
@@ -6348,6 +6565,7 @@ pub fn setupGlobals(st: &mut Interp) {
     setupErrorProtos(st)
     setupTypedArrayProtos(st)
     setupBufferProtos(st)
+    setupRegexProto(st)
     // Object is itself an object, so it carries the Object.prototype methods.
     // Code borrows them from the constructor — `Object.hasOwnProperty.call(o, k)`
     // is a common way to avoid a shadowed own property — and the native's bag
@@ -6413,6 +6631,12 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, symbolCtorObj, "toPrimitive", JSValue.Str(symToPrimitiveKey()))
     objSet(st, symbolCtorObj, "toStringTag", JSValue.Str(symToStringTagKey()))
     objSet(st, symbolCtorObj, "hasInstance", JSValue.Str("@@sym:Symbol.hasInstance:0"))
+    // the regex protocol symbols, which RegExp.prototype implements
+    objSet(st, symbolCtorObj, "match", JSValue.Str("@@sym:Symbol.match:0"))
+    objSet(st, symbolCtorObj, "matchAll", JSValue.Str("@@sym:Symbol.matchAll:0"))
+    objSet(st, symbolCtorObj, "replace", JSValue.Str("@@sym:Symbol.replace:0"))
+    objSet(st, symbolCtorObj, "search", JSValue.Str("@@sym:Symbol.search:0"))
+    objSet(st, symbolCtorObj, "split", JSValue.Str("@@sym:Symbol.split:0"))
     let dateCtorObj = getNativeProps(st, NATIVE_DATE)
     objSet(st, dateCtorObj, "now", JSValue.Native(NATIVE_DATE_NOW))
     objSet(st, dateCtorObj, "UTC", JSValue.Native(NATIVE_DATE_UTC))
@@ -10636,7 +10860,13 @@ fn isMapSetMethodName(n: &string): bool {
 }
 
 fn isRegexMethodName(n: &string): bool {
-    return n == "test" || n == "exec" || n == "toString"
+    if n.len() > 8 && strSlice(n.clone(), 0, 8) == "__reGet_" {
+        return true
+    }
+    if n == "@@sym:Symbol.match:0" || n == "@@sym:Symbol.matchAll:0" || n == "@@sym:Symbol.replace:0" || n == "@@sym:Symbol.search:0" || n == "@@sym:Symbol.split:0" {
+        return true
+    }
+    return n == "test" || n == "exec" || n == "toString" || n == "compile"
 }
 
 fn isTypedArrayMethodName(n: &string): bool {
@@ -13472,35 +13702,8 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                 return JSValue.Undefined
             }
             // regex-based string ops when the first arg is a RegExp
-            if argVals.len() > 0 && regexIdOf(st, argVals[0]) >= 0 {
-                let rid = regexIdOf(st, argVals[0])
-                if name == "replace" || name == "replaceAll" {
-                    if argVals.len() > 1 && isCallable(argVals[1]) {
-                        return regexReplaceFn(prog, st, s, rid, argVals[1])
-                    }
-                    var repl = ""
-                    if argVals.len() > 1 {
-                        repl = toStr(argVals[1])
-                    }
-                    return regexReplace(st, s, rid, repl)
-                }
-                if name == "match" {
-                    return regexStrMatch(st, s, rid)
-                }
-                if name == "matchAll" {
-                    return regexStrMatchAll(st, s, rid)
-                }
-                if name == "split" {
-                    return regexSplit(st, s, rid)
-                }
-                if name == "search" {
-                    // index of the first match, or -1 (UTF-16 units)
-                    let saves = regexExec(st.regexes[rid], s, 0)
-                    if saves.len() == 0 {
-                        return JSValue.Number(0.0 - 1.0)
-                    }
-                    return JSValue.Number(byteToUtf16(s, saves[0]) as f64)
-                }
+            if isStringRegexOp(st, name, argVals) {
+                return stringRegexOp(prog, s, name, argVals, st)
             }
             return stringMethod(name, s, argVals, st)
         }

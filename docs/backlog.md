@@ -22,7 +22,7 @@ run by hand rather than in CI:
 
 | sweep | score | measured |
 |---|---:|---|
-| test262, 1500-case deterministic sample | 653/1470 = **44.4%** | 2026-08-15 |
+| test262, 1500-case deterministic sample | 655/1470 = **44.6%** | 2026-08-15 |
 | QuickJS `tests/` at `fced162` | 97/149 = **65.1%** | 2026-08-15 |
 
 Movement on 2026-08-15: the engine now runs the program on a green task, so
@@ -65,6 +65,47 @@ concrete constructor's `prototype` chaining to it, and the native's property bag
 | `built-ins/ArrayBuffer` | 43/221 = 19.5% | 43/221 = 19.5% |
 
 Locked by `tests/typedArrayPrototypes.js`.
+
+### RegExp — 2026-08-15
+
+`RegExp.prototype` did not exist. Same shape of gap as the buffer family and
+Date, and by now a recognisable pattern: **a constructor with no prototype
+object.** Instances carried `source`, `flags`, `global` and `lastIndex` and
+nothing else — `.ignoreCase`, `.multiline`, `.sticky`, `.unicode`, `.dotAll`,
+`.hasIndices`, `.unicodeSets` all read `undefined`, and `undefined` is not
+`false`.
+
+Now built: a real prototype with `exec`/`test`/`toString`/`compile`, the flag
+family as accessors (registered under an internal `__reGet_*` name so an
+instance's own data property still wins on a normal read — this engine resolves
+flags on the instance, the spec puts them on the prototype, and both can hold),
+`Symbol.match`/`matchAll`/`replace`/`search`/`split` — which did not exist as
+symbols at all — and instances linked to it.
+
+Three separate pre-existing bugs surfaced while building it:
+
+- **`/ab/gi.toString()` returned `undefined`.** `toString` was listed in
+  `isRegexMethodName` but `regexMethod` had no branch for it.
+- **`RegExp.prototype.compile` did not exist.**
+- **`String.prototype.match.call(s, /re/)` returned `undefined`** while
+  `s.match(/re/)` worked, and `String.prototype.split.call(s, /,/)` returned the
+  string unsplit. The regex-taking String operations lived only on `evalExpr`'s
+  method-call path; `callBuiltinByName` goes straight to `stringMethod`, which
+  knows nothing about regexes. Both paths now share `stringRegexOp`. This is the
+  same class of bug as the uncurry-this one — a second dispatch path that never
+  learned what the first one knows.
+
+| area | before | after |
+|---|---:|---:|
+| `built-ins/RegExp` | 605/1879 = 32.2% | **724/1879 = 38.5%** |
+
++119 cases. Whole-suite 1500-sample 653 → 655. Locked by
+`tests/regexpSurface.js`.
+
+The `@@match`/`@@replace`/`@@split` implementations delegate to the String
+methods, which is the reverse of the spec's direction (String delegates to the
+symbol). That is fine while nothing overrides them, and wrong for a user subclass
+that redefines `@@match` — worth inverting if subclassed regexes ever matter.
 
 ### Date — 2026-08-15
 
