@@ -153,8 +153,9 @@ pub enum Stmt {
     MultiDecl(DeclListId),
     // for (name in objExpr) body
     ForIn(string, ExprId, StmtId),
-    // for (name of iterExpr) body
-    ForOf(string, ExprId, StmtId),
+    // for (name of iterExpr) body; the bool is `for await`, which awaits each
+    // step (and prefers Symbol.asyncIterator over Symbol.iterator)
+    ForOf(string, ExprId, StmtId, bool),
     // break/continue carry their target label, "" when unlabeled
     Break(string),
     Continue(string),
@@ -411,8 +412,8 @@ fn cloneStmt(s: &Stmt): Stmt {
         Stmt.ForIn(name, objExpr, body) => {
             return Stmt.ForIn(name.clone(), objExpr, body)
         }
-        Stmt.ForOf(name, objExpr, body) => {
-            return Stmt.ForOf(name.clone(), objExpr, body)
+        Stmt.ForOf(name, objExpr, body, isAwait) => {
+            return Stmt.ForOf(name.clone(), objExpr, body, isAwait)
         }
         Stmt.ClassDecl(idx) => {
             return Stmt.ClassDecl(idx)

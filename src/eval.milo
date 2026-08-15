@@ -456,6 +456,9 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
         if st.objects[o].isDataView && isDataViewMethodName(key) {
             return makeBoundMethod(st, JSValue.Obj(o), key.clone())
         }
+        if st.objects[o].isAsyncGenerator && key == symAsyncIteratorKey() {
+            return makeBoundMethod(st, JSValue.Obj(o), key.clone())
+        }
         if st.objects[o].isGenerator && (key == "next" || key == "throw" || key == "return" || key == symIteratorKey()) {
             return makeBoundMethod(st, JSValue.Obj(o), key.clone())
         }
@@ -843,17 +846,22 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 return dataViewMethod(o, name, args, st)
             }
             if st.objects[o].isGenerator {
+                var gmode: i64 = -1
                 if name == "next" {
-                    return genNext(o, args, st)
+                    gmode = 0
+                } else if name == "throw" {
+                    gmode = 1
+                } else if name == "return" {
+                    gmode = 2
                 }
-                if name == "throw" {
-                    return genResume(o, args, 1, st)
-                }
-                if name == "return" {
-                    return genResume(o, args, 2, st)
+                if gmode >= 0 {
+                    if st.objects[o].isAsyncGenerator {
+                        return genResumeAsync(o, args, gmode, st)
+                    }
+                    return genResume(o, args, gmode, st)
                 }
                 // a generator is its own iterator: gen[Symbol.iterator]() === gen
-                if name == symIteratorKey() {
+                if name == symIteratorKey() || name == symAsyncIteratorKey() {
                     return JSValue.Obj(o)
                 }
             }
@@ -5548,204 +5556,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                 return JSValue.Undefined
             }
             if op == "await" {
-                var awaited = cloneValue(va)
-                // Resolution is recursive: a thenable may resolve with another
-                // thenable, and each one has to be unwrapped in turn. The bound
-                // is a runaway guard — a self-resolving chain would spin here.
-                var rounds: i64 = 0
-                while rounds < 1000 {
-                    rounds = rounds + 1
-                    // `await thenable` adopts it: the spec resolves the awaited value
-                    // through Promise.resolve, which calls .then on anything that has
-                    // one. prisma's query builders return a PrismaPromise (a plain
-                    // object with .then), and without this `await model.findMany()`
-                    // handed the builder itself back instead of the rows.
-                    let th = objHandle(awaited)
-                    if th >= 0 && !isPromise(st, th) {
-                        let thenFn = getMemberDyn(prog, th, "then", st)
-                        if isCallableIn(st, thenFn) {
-                            let adopted = newPromise(st, 0, JSValue.Undefined)
-                            pushTemp(st, JSValue.Obj(adopted))
-                            var thenArgs: Vec<JSValue> = Vec.new()
-                            thenArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + adopted * 2))
-                            thenArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + adopted * 2 + 1))
-                            let _tr = callValue(prog, thenFn, thenArgs, JSValue.Obj(th), st)
-                            popTemp(st)
-                            if st.throwing {
-                                return JSValue.Undefined
-                            }
-                            awaited = JSValue.Obj(adopted)
-                        }
-                    }
-                    let po = objHandle(awaited)
-                    if po >= 0 && isPromise(st, po) {
-                        let ps = st.objects[po].promiseState
-                        let pv = cloneValue(st.objExtras[st.objects[po].extra].promiseValue)
-                        if ps == 2 {
-                            awaitYieldMicrotasks(prog, st)
-                            markRejectHandled(st, po)
-                            st.throwing = true
-                            st.thrownValue = pv
-                            return JSValue.Undefined
-                        }
-                        if ps == 1 {
-                            // already settled — but with a thenable, which the
-                            // loop above still has to unwrap
-                            let fh = objHandle(pv)
-                            var fnested = false
-                            if fh >= 0 && !isPromise(st, fh) {
-                                let fthen = getMemberDyn(prog, fh, "then", st)
-                                if isCallableIn(st, fthen) {
-                                    fnested = true
-                                }
-                            }
-                            if !fnested {
-                                awaitYieldMicrotasks(prog, st)
-                                return pv
-                            }
-                            awaited = pv
-                        } else {
-                            // Pending. On an activation task this suspends properly:
-                            // the task parks and the settle wakes it, so other
-                            // activations and the event loop keep running (R2).
-                            //
-                            // Root the awaited promise for the whole park: the temp
-                            // rides in the saved ExecCtx that collect marks. Without
-                            // this the promise (often an activation's own promise,
-                            // referenced from nothing else) was swept mid-park — its
-                            // settle then hit a recycled slot and was silently
-                            // dropped, wedging the awaiter forever. Worse, the old
-                            // popTemp here had NO matching push, so each park stole
-                            // an unrelated live temp root from the resumed
-                            // activation — that unrooted objects at random under
-                            // concurrent fetches ("json is not a function").
-                            pushTemp(st, JSValue.Obj(po))
-                            if parkOnPromise(st, po) {
-                                let ps2 = st.objects[po].promiseState
-                                let pv2 = cloneValue(st.objExtras[st.objects[po].extra].promiseValue)
-                                if ps2 == 2 {
-                                    popTemp(st)
-                                    markRejectHandled(st, po)
-                                    st.throwing = true
-                                    st.thrownValue = pv2
-                                    return JSValue.Undefined
-                                }
-                                if ps2 == 1 {
-                                    popTemp(st)
-                                    return pv2
-                                }
-                                // still pending (spurious wake): keep the temp and
-                                // fall through to the drain, which pops on exit
-                            }
-                            // On the main task there is nowhere to suspend to — it
-                            // runs the event loop — so the loop is drained in place
-                            // until the promise settles. Ordering therefore differs from
-                            // real JS — work queued *after* this await can run before the
-                            // awaiting function resumes — but the value flow is correct.
-                            // If nothing is runnable the await can never complete, which
-                            // is a deadlock and is reported as one.
-                            // (the temp root pushed above stays live for the drain: the
-                            // promise may be a temporary reachable from nothing while
-                            // the drain runs user code)
-                            // Budget: an unrelated interval keeps the loop runnable
-                            // forever, so "nothing runnable" alone cannot detect a stuck
-                            // await — the tahoeroads bundle hung silently for exactly
-                            // this reason (its 2s interval kept feeding the drain).
-                            // Node abandons the continuation instead; without coroutines
-                            // the honest alternative is a loud error after a deadline.
-                            let awaitDeadline = (epochMillis() as f64) + st.awaitBudgetMs
-                            var spins: i64 = 0
-                            while st.objects[po].promiseState == 0 && !st.throwing {
-                                // Service off-thread work on EVERY iteration, not
-                                // only when no timer is runnable: an app with a
-                                // live interval always has a timer to run, so a
-                                // response delivered by a worker thread was never
-                                // picked up and the await ran out its budget.
-                                serviceFetches(st)
-                                if (epochMillis() as f64) > awaitDeadline {
-                                    popTemp(st)
-                                    st.throwing = true
-                                    st.thrownValue = makeError(st, "TypeError", "await did not settle within budget — likely a promise nothing will ever resolve" + currentModule(st))
-                                    return JSValue.Undefined
-                                }
-                                if st.microtasks.len() > 0 {
-                                    drainMicrotasks(prog, st, 1000000)
-                                } else {
-                                    compactTimers(st)
-                                    // Only timers that are ALREADY due: runOneTimer
-                                    // sleeps until the earliest timer fires, which is
-                                    // right for an idle event loop but not here. A
-                                    // blocked await is waiting on a worker thread or
-                                    // an addon that can answer at any moment, so
-                                    // sleeping through a far-future timer made the
-                                    // await take that timer's delay — a request that
-                                    // fetched in a second took 32s behind a 30s cache
-                                    // timer.
-                                    if !runDueTimer(prog, st) {
-                                        // A node-api addon settles from its own threads,
-                                        // so there is no timer or microtask to run while
-                                        // it works — this await is waiting on exactly
-                                        // that. Without it, `await engine.connect()`
-                                        // (prisma's query engine) was reported as an
-                                        // unsettleable promise the moment it was made.
-                                        napiServiceTsfn(st)
-                                        serviceFetches(st)
-                                        if hasPendingFetches(st) {
-                                            napiWaitBriefly()
-                                        } else if napiMayDeliver() {
-                                            napiWaitBriefly()
-                                        } else if earliestTimer(st) >= 0 {
-                                            // A timer will fire eventually — very
-                                            // likely the one that settles this await.
-                                            // Wait in slices rather than sleeping to
-                                            // its due time, so a worker thread or an
-                                            // addon that answers sooner is still
-                                            // picked up promptly.
-                                            napiWaitBriefly()
-                                        } else if st.microtasks.len() == 0 {
-                                            popTemp(st)
-                                            st.throwing = true
-                                            st.thrownValue = makeError(st, "TypeError", "await on a promise that can never settle (no pending work)" + currentModule(st))
-                                            return JSValue.Undefined
-                                        }
-                                    }
-                                }
-                                spins = spins + 1
-                            }
-                            popTemp(st)
-                            if st.throwing {
-                                return JSValue.Undefined
-                            }
-                            let settled = st.objects[po].promiseState
-                            let sv = cloneValue(st.objExtras[st.objects[po].extra].promiseValue)
-                            if settled == 2 {
-                                markRejectHandled(st, po)
-                                st.throwing = true
-                                st.thrownValue = sv
-                                return JSValue.Undefined
-                            }
-                            // resolved with another thenable: unwrap it too
-                            let sh = objHandle(sv)
-                            var nested = false
-                            if sh >= 0 && !isPromise(st, sh) {
-                                let nthen = getMemberDyn(prog, sh, "then", st)
-                                if isCallableIn(st, nthen) {
-                                    nested = true
-                                }
-                            }
-                            if !nested {
-                                return sv
-                            }
-                            awaited = sv
-                        }
-                    } else {
-                        // await of a non-thenable value: still yields a microtask tick
-                        awaitYieldMicrotasks(prog, st)
-                        return awaited
-                    }
-
-                }
-                return awaited
+                return awaitValue(prog, va, st)
             }
             if op == "yield" {
                 return genYield(va, st)
@@ -7368,6 +7179,15 @@ fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, this
     // body's first await. Cleared immediately so a nested async call spawns.
     let alreadyOnActivation = st.suppressAsyncSpawn
     st.suppressAsyncSpawn = false
+    // An `async function*` is a generator first: calling it returns an async
+    // generator OBJECT, not a promise. Its body still awaits — that works
+    // because the body runs on its own green task, which is all parkOnPromise
+    // needs. Checked before the activation spawn, which would otherwise swallow
+    // it and hand back a promise with no next().
+    if prog.funcs[fIdx].isAsync && prog.funcs[fIdx].isGenerator && !st.suppressGenSpawn {
+        st.suppressAsyncSpawn = false
+        return makeGenerator(fIdx, envIdx, argVals, thisVal, true, st)
+    }
     if prog.funcs[fIdx].isAsync && !alreadyOnActivation {
         let caller = schedulerCurrent()
         if caller as i64 != 0 {
@@ -7390,7 +7210,7 @@ fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, this
     let genBody = st.suppressGenSpawn
     st.suppressGenSpawn = false
     if prog.funcs[fIdx].isGenerator && !genBody {
-        return makeGenerator(fIdx, envIdx, argVals, thisVal, st)
+        return makeGenerator(fIdx, envIdx, argVals, thisVal, false, st)
     }
     st.callDepth = st.callDepth + 1
     let callScope = newScope(st, envIdx)
@@ -7457,7 +7277,11 @@ fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, this
         _ => {
         }
     }
-    if prog.funcs[fIdx].isAsync {
+    // Not for an async GENERATOR body: its completion is delivered through the
+    // generator protocol (genFinish), so wrapping the return in a promise made
+    // `return v` surface as {value: Promise, done: true}, and wrapping a throw
+    // hid it from genFinish entirely.
+    if prog.funcs[fIdx].isAsync && !prog.funcs[fIdx].isGenerator {
         // an async body that threw yields a rejected promise instead of
         // propagating the throw to its (synchronous) caller
         if st.throwing {
@@ -7655,6 +7479,10 @@ fn isSymbolValue(v: &JSValue): bool {
 
 // The well-known @@iterator key. Symbols are interned strings, so this is just a
 // fixed one; counter 0 is reserved because user symbols start at 1.
+fn symAsyncIteratorKey(): string {
+    return "@@sym:Symbol.asyncIterator:0"
+}
+
 fn symIteratorKey(): string {
     return "@@sym:Symbol.iterator:0"
 }
@@ -8025,6 +7853,7 @@ fn removeGen(st: &mut Interp, gi: i64) {
     st.genThis.remove(gi)
     st.genYielded.remove(gi)
     st.genSent.remove(gi)
+    st.genAsync.remove(gi)
     st.genResumeMode.remove(gi)
     st.genDone.remove(gi)
     st.genThrew.remove(gi)
@@ -8098,9 +7927,10 @@ fn genFinish(st: &mut Interp, gi: i64, r: JSValue) {
 
 // Create a generator object for a `function*` call. Does NOT run the body — that
 // starts on the first next(). Registers the gen* record and returns the object.
-fn makeGenerator(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
+fn makeGenerator(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, isAsync: bool, st: &mut Interp): JSValue {
     let g = newObject(st)
     st.objects[g].isGenerator = true
+    st.objects[g].isAsyncGenerator = isAsync
     var rootedArgs: Vec<JSValue> = Vec.new()
     var ri: i64 = 0
     while ri < argVals.len() {
@@ -8115,6 +7945,7 @@ fn makeGenerator(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue
     st.genThis.push(cloneValue(thisVal))
     st.genYielded.push(JSValue.Undefined)
     st.genSent.push(JSValue.Undefined)
+    st.genAsync.push(isAsync)
     st.genResumeMode.push(0)
     st.genDone.push(false)
     st.genThrew.push(false)
@@ -8145,6 +7976,28 @@ fn genCompletedResult(arg0: &JSValue, mode: i64, st: &mut Interp): JSValue {
 
 fn genNext(o: i64, args: Vec<JSValue>, st: &mut Interp): JSValue {
     return genResume(o, args, 0, st)
+}
+
+// The async-generator wrapper: same drive, but the step comes back as a promise
+// (rejected if the body threw), because next/throw/return on an async generator
+// are promise-returning.
+//
+// Divergence from node, deliberate for now: node returns a PENDING promise and
+// runs the body afterwards, whereas this drives the body to its next yield
+// first and hands back an already-settled promise. Values and ordering within
+// the generator are identical; what differs is interleaving with other work
+// queued between the next() call and its await.
+fn genResumeAsync(o: i64, args: Vec<JSValue>, mode: i64, st: &mut Interp): JSValue {
+    let step = genResume(o, args, mode, st)
+    if st.throwing {
+        let err = cloneValue(st.thrownValue)
+        st.throwing = false
+        st.thrownValue = JSValue.Undefined
+        let rej = newPromise(st, 2, err)
+        markRejectHandled(st, rej)
+        return JSValue.Obj(rej)
+    }
+    return JSValue.Obj(newPromise(st, 1, step))
 }
 
 // gen.next(v) / gen.throw(e) / gen.return(v), by `mode` (0/1/2). All three drive
@@ -8203,6 +8056,9 @@ fn genResume(o: i64, args: Vec<JSValue>, mode: i64, st: &mut Interp): JSValue {
             // gProg/gInterp: a task body cannot borrow from the spawning frame.
             // Run the function* body (not another makeGenerator) — see callFunction.
             gInterp.suppressGenSpawn = true
+            // an async generator's body is already ON a task; without this the
+            // isAsync branch would spawn an activation and hand back a promise
+            gInterp.suppressAsyncSpawn = true
             let r = callFunction(gProg, fIdx, envIdx, bodyArgs, bodyThis, gInterp)
             let fgi = genIndexOf(gInterp, genObjIdx)
             if fgi >= 0 {
@@ -8249,6 +8105,210 @@ fn genResume(o: i64, args: Vec<JSValue>, mode: i64, st: &mut Interp): JSValue {
     return iterResult(st, yielded, done)
 }
 
+
+// `await v`, factored out of the Unary branch so `for await (… of …)` can reuse
+// it verbatim rather than growing a second, drifting copy of the thenable
+// unwrapping, the activation park, and the main-task drain.
+pub fn awaitValue(prog: &Prog, va: &JSValue, st: &mut Interp): JSValue {
+            var awaited = cloneValue(va)
+            // Resolution is recursive: a thenable may resolve with another
+            // thenable, and each one has to be unwrapped in turn. The bound
+            // is a runaway guard — a self-resolving chain would spin here.
+            var rounds: i64 = 0
+            while rounds < 1000 {
+                rounds = rounds + 1
+                // `await thenable` adopts it: the spec resolves the awaited value
+                // through Promise.resolve, which calls .then on anything that has
+                // one. prisma's query builders return a PrismaPromise (a plain
+                // object with .then), and without this `await model.findMany()`
+                // handed the builder itself back instead of the rows.
+                let th = objHandle(awaited)
+                if th >= 0 && !isPromise(st, th) {
+                    let thenFn = getMemberDyn(prog, th, "then", st)
+                    if isCallableIn(st, thenFn) {
+                        let adopted = newPromise(st, 0, JSValue.Undefined)
+                        pushTemp(st, JSValue.Obj(adopted))
+                        var thenArgs: Vec<JSValue> = Vec.new()
+                        thenArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + adopted * 2))
+                        thenArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + adopted * 2 + 1))
+                        let _tr = callValue(prog, thenFn, thenArgs, JSValue.Obj(th), st)
+                        popTemp(st)
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
+                        awaited = JSValue.Obj(adopted)
+                    }
+                }
+                let po = objHandle(awaited)
+                if po >= 0 && isPromise(st, po) {
+                    let ps = st.objects[po].promiseState
+                    let pv = cloneValue(st.objExtras[st.objects[po].extra].promiseValue)
+                    if ps == 2 {
+                        awaitYieldMicrotasks(prog, st)
+                        markRejectHandled(st, po)
+                        st.throwing = true
+                        st.thrownValue = pv
+                        return JSValue.Undefined
+                    }
+                    if ps == 1 {
+                        // already settled — but with a thenable, which the
+                        // loop above still has to unwrap
+                        let fh = objHandle(pv)
+                        var fnested = false
+                        if fh >= 0 && !isPromise(st, fh) {
+                            let fthen = getMemberDyn(prog, fh, "then", st)
+                            if isCallableIn(st, fthen) {
+                                fnested = true
+                            }
+                        }
+                        if !fnested {
+                            awaitYieldMicrotasks(prog, st)
+                            return pv
+                        }
+                        awaited = pv
+                    } else {
+                        // Pending. On an activation task this suspends properly:
+                        // the task parks and the settle wakes it, so other
+                        // activations and the event loop keep running (R2).
+                        //
+                        // Root the awaited promise for the whole park: the temp
+                        // rides in the saved ExecCtx that collect marks. Without
+                        // this the promise (often an activation's own promise,
+                        // referenced from nothing else) was swept mid-park — its
+                        // settle then hit a recycled slot and was silently
+                        // dropped, wedging the awaiter forever. Worse, the old
+                        // popTemp here had NO matching push, so each park stole
+                        // an unrelated live temp root from the resumed
+                        // activation — that unrooted objects at random under
+                        // concurrent fetches ("json is not a function").
+                        pushTemp(st, JSValue.Obj(po))
+                        if parkOnPromise(st, po) {
+                            let ps2 = st.objects[po].promiseState
+                            let pv2 = cloneValue(st.objExtras[st.objects[po].extra].promiseValue)
+                            if ps2 == 2 {
+                                popTemp(st)
+                                markRejectHandled(st, po)
+                                st.throwing = true
+                                st.thrownValue = pv2
+                                return JSValue.Undefined
+                            }
+                            if ps2 == 1 {
+                                popTemp(st)
+                                return pv2
+                            }
+                            // still pending (spurious wake): keep the temp and
+                            // fall through to the drain, which pops on exit
+                        }
+                        // On the main task there is nowhere to suspend to — it
+                        // runs the event loop — so the loop is drained in place
+                        // until the promise settles. Ordering therefore differs from
+                        // real JS — work queued *after* this await can run before the
+                        // awaiting function resumes — but the value flow is correct.
+                        // If nothing is runnable the await can never complete, which
+                        // is a deadlock and is reported as one.
+                        // (the temp root pushed above stays live for the drain: the
+                        // promise may be a temporary reachable from nothing while
+                        // the drain runs user code)
+                        // Budget: an unrelated interval keeps the loop runnable
+                        // forever, so "nothing runnable" alone cannot detect a stuck
+                        // await — the tahoeroads bundle hung silently for exactly
+                        // this reason (its 2s interval kept feeding the drain).
+                        // Node abandons the continuation instead; without coroutines
+                        // the honest alternative is a loud error after a deadline.
+                        let awaitDeadline = (epochMillis() as f64) + st.awaitBudgetMs
+                        var spins: i64 = 0
+                        while st.objects[po].promiseState == 0 && !st.throwing {
+                            // Service off-thread work on EVERY iteration, not
+                            // only when no timer is runnable: an app with a
+                            // live interval always has a timer to run, so a
+                            // response delivered by a worker thread was never
+                            // picked up and the await ran out its budget.
+                            serviceFetches(st)
+                            if (epochMillis() as f64) > awaitDeadline {
+                                popTemp(st)
+                                st.throwing = true
+                                st.thrownValue = makeError(st, "TypeError", "await did not settle within budget — likely a promise nothing will ever resolve" + currentModule(st))
+                                return JSValue.Undefined
+                            }
+                            if st.microtasks.len() > 0 {
+                                drainMicrotasks(prog, st, 1000000)
+                            } else {
+                                compactTimers(st)
+                                // Only timers that are ALREADY due: runOneTimer
+                                // sleeps until the earliest timer fires, which is
+                                // right for an idle event loop but not here. A
+                                // blocked await is waiting on a worker thread or
+                                // an addon that can answer at any moment, so
+                                // sleeping through a far-future timer made the
+                                // await take that timer's delay — a request that
+                                // fetched in a second took 32s behind a 30s cache
+                                // timer.
+                                if !runDueTimer(prog, st) {
+                                    // A node-api addon settles from its own threads,
+                                    // so there is no timer or microtask to run while
+                                    // it works — this await is waiting on exactly
+                                    // that. Without it, `await engine.connect()`
+                                    // (prisma's query engine) was reported as an
+                                    // unsettleable promise the moment it was made.
+                                    napiServiceTsfn(st)
+                                    serviceFetches(st)
+                                    if hasPendingFetches(st) {
+                                        napiWaitBriefly()
+                                    } else if napiMayDeliver() {
+                                        napiWaitBriefly()
+                                    } else if earliestTimer(st) >= 0 {
+                                        // A timer will fire eventually — very
+                                        // likely the one that settles this await.
+                                        // Wait in slices rather than sleeping to
+                                        // its due time, so a worker thread or an
+                                        // addon that answers sooner is still
+                                        // picked up promptly.
+                                        napiWaitBriefly()
+                                    } else if st.microtasks.len() == 0 {
+                                        popTemp(st)
+                                        st.throwing = true
+                                        st.thrownValue = makeError(st, "TypeError", "await on a promise that can never settle (no pending work)" + currentModule(st))
+                                        return JSValue.Undefined
+                                    }
+                                }
+                            }
+                            spins = spins + 1
+                        }
+                        popTemp(st)
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
+                        let settled = st.objects[po].promiseState
+                        let sv = cloneValue(st.objExtras[st.objects[po].extra].promiseValue)
+                        if settled == 2 {
+                            markRejectHandled(st, po)
+                            st.throwing = true
+                            st.thrownValue = sv
+                            return JSValue.Undefined
+                        }
+                        // resolved with another thenable: unwrap it too
+                        let sh = objHandle(sv)
+                        var nested = false
+                        if sh >= 0 && !isPromise(st, sh) {
+                            let nthen = getMemberDyn(prog, sh, "then", st)
+                            if isCallableIn(st, nthen) {
+                                nested = true
+                            }
+                        }
+                        if !nested {
+                            return sv
+                        }
+                        awaited = sv
+                    }
+                } else {
+                    // await of a non-thenable value: still yields a microtask tick
+                    awaitYieldMicrotasks(prog, st)
+                    return awaited
+                }
+
+            }
+            return awaited
+}
 // The `yield e` expression, evaluated on a generator's body task. `handed` is the
 // already-evaluated operand. Hands it out, parks the body, and on resume returns
 // the value the next() caller passed in.
@@ -12300,7 +12360,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             scopeDefine(st, scope, prog.classes[classIdx].name.clone(), v)
             return Flow.Normal
         }
-        Stmt.ForOf(name, objExpr, body) => {
+        Stmt.ForOf(name, objExpr, body, isForAwait) => {
             let ov = evalExpr(prog, objExpr, st, scope)
             // the snapshot's element handles are only kept alive by the source
             // object, so it must stay rooted for the whole loop. `holder` keeps
@@ -12321,7 +12381,22 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             var isGen = srcH >= 0 && st.objects[srcH].isGenerator
             var driveIter = isGen
             var iterVal = cloneValue(ov)
-            if srcH >= 0 && !isGen && !st.objects[srcH].isArray && !st.objects[srcH].isMap && !st.objects[srcH].isSet {
+            // `for await` takes Symbol.asyncIterator when the object has one;
+            // anything else is driven as a sync iterator whose VALUES are then
+            // awaited (the spec's CreateAsyncFromSyncIterator)
+            var asyncIter = isForAwait && srcH >= 0 && st.objects[srcH].isAsyncGenerator
+            if isForAwait && srcH >= 0 && !asyncIter {
+                let aFn = getMember(st, srcH, symAsyncIteratorKey())
+                if isCallableIn(st, aFn) {
+                    var aArgs: Vec<JSValue> = Vec.new()
+                    iterVal = callValue(prog, aFn, aArgs, cloneValue(ov), st)
+                    driveIter = true
+                    asyncIter = true
+                    let aH = objHandle(iterVal)
+                    isGen = aH >= 0 && st.objects[aH].isGenerator
+                }
+            }
+            if !asyncIter && srcH >= 0 && !isGen && !st.objects[srcH].isArray && !st.objects[srcH].isMap && !st.objects[srcH].isSet {
                 let itFn = getMember(st, srcH, symIteratorKey())
                 if isCallableIn(st, itFn) {
                     var noArgs: Vec<JSValue> = Vec.new()
@@ -12351,7 +12426,11 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                     var step = JSValue.Undefined
                     if isGen {
                         var nArgs: Vec<JSValue> = Vec.new()
-                        step = genNext(iterH, nArgs, st)
+                        if st.objects[iterH].isAsyncGenerator {
+                            step = genResumeAsync(iterH, nArgs, 0, st)
+                        } else {
+                            step = genNext(iterH, nArgs, st)
+                        }
                     } else {
                         let nextFn = getMember(st, iterH, "next")
                         if !isCallableIn(st, nextFn) {
@@ -12362,6 +12441,10 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                             var nArgs: Vec<JSValue> = Vec.new()
                             step = callValue(prog, nextFn, nArgs, cloneValue(iter), st)
                         }
+                    }
+                    if isForAwait && !st.throwing {
+                        // an async iterator hands back a promise of {value,done}
+                        step = awaitValue(prog, cloneValue(step), st)
                     }
                     if running && !st.throwing {
                         let stepH = objHandle(step)
@@ -12377,7 +12460,14 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                             // all capture the final value (for-of over let/const)
                             let iterScope = newScope(st, loopScope2)
                             pushActive(st, iterScope)
-                            scopeDefine(st, iterScope, name.clone(), getMember(st, stepH, "value"))
+                            var bound = getMember(st, stepH, "value")
+                            if isForAwait && !asyncIter {
+                                // sync iterator under `for await`: the VALUE is
+                                // what gets awaited, so `for await (x of [p1,p2])`
+                                // binds the resolved values
+                                bound = awaitValue(prog, cloneValue(bound), st)
+                            }
+                            scopeDefine(st, iterScope, name.clone(), bound)
                             let flow = execStmt(prog, body, st, iterScope)
                             popActive(st)
                             popTemp(st)
@@ -12512,7 +12602,14 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 // last — the isbot `for (let key of ...) getters[key]=...` idiom
                 let iterScope = newScope(st, loopScope)
                 pushActive(st, iterScope)
-                scopeDefine(st, iterScope, name.clone(), cloneValue(vals[i]))
+                var eagerBound = cloneValue(vals[i])
+                if isForAwait {
+                    // the eager path covers arrays/strings/Map/Set, all sync, so
+                    // `for await` awaits each value: `for await (x of [p1, p2])`
+                    // binds the resolved values, not the promises
+                    eagerBound = awaitValue(prog, cloneValue(eagerBound), st)
+                }
+                scopeDefine(st, iterScope, name.clone(), eagerBound)
                 let flow = execStmt(prog, body, st, iterScope)
                 popActive(st)
                 match flow {
@@ -12931,7 +13028,7 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64) {
         Stmt.ForIn(_nm, _o, body) => {
             hoistStmt(prog, body, st, scope)
         }
-        Stmt.ForOf(_nm, _o, body) => {
+        Stmt.ForOf(_nm, _o, body, _aw) => {
             hoistStmt(prog, body, st, scope)
         }
         Stmt.Try(tryB, _p, catchB, finallyB) => {

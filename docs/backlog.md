@@ -22,7 +22,7 @@ run by hand rather than in CI:
 
 | sweep | score | measured |
 |---|---:|---|
-| test262, 1500-case deterministic sample | 539/1470 = **36.7%** | 2026-08-15 |
+| test262, 1500-case deterministic sample | 577/1470 = **39.3%** | 2026-08-15 |
 | QuickJS `tests/` at `fced162` | 97/149 = **65.1%** | 2026-08-15 |
 
 Movement on 2026-08-15: the engine now runs the program on a green task, so
@@ -70,8 +70,48 @@ Strongest: `language/block-scope` 100%, `literals` 77%, `identifiers` 75%.
   accepted; node raises `SyntaxError: Identifier 'x' has already been declared`.
   Found while assembling `tests/generatorCompletions.js`, whose groups had to be
   braced to avoid relying on this.
-- **Async generators.** `async *m() {}` produces an object with no `next`, in
-  both object literals and classes, and `for await (... of ...)` does not parse.
+- **Async generators** — DONE 2026-08-15 (with one open limitation, below).
+  `async function*` is now a generator first: `callFunction` builds the
+  generator object BEFORE the activation-spawn branch, which used to swallow it
+  and hand back a promise. The body still awaits, because it runs on its own
+  green task and that is all `parkOnPromise` needs. `next`/`throw`/`return` wrap
+  each step in a promise (`genResumeAsync`), and the async return-wrapping in
+  `callFunction` is skipped for a generator body — it was turning `return v`
+  into `{value: Promise, done: true}` and hiding a throw from `genFinish`.
+  `for await (… of …)` parses (a bool on `Stmt.ForOf`) and prefers
+  `Symbol.asyncIterator`; over a plain sync iterable it awaits each VALUE
+  instead, per CreateAsyncFromSyncIterator. The ~200-line `await`
+  implementation was factored out of the Unary branch into `awaitValue` so
+  for-await reuses it rather than growing a second copy.
+
+  test262, before → after:
+  `language/statements/for-await-of` **47.9% → 91.0%** (+532 cases),
+  `language/expressions/async-generator` **14.1% → 43.3%** (+182),
+  `language/statements/async-generator` **11.3% → 40.5%** (+88),
+  `built-ins/AsyncGeneratorPrototype` **0% → 41.7%** (+20).
+  Whole-suite 1500-sample 540 → 577 (36.7% → 39.3%).
+  Locked by `tests/asyncGenerators.js`.
+
+- **OPEN, and the one thing that can HANG: `next()` on an async generator drives
+  the body instead of scheduling it.** node returns a *pending* promise
+  immediately and runs the body afterwards; `genResumeAsync` parks the caller,
+  drives the body to its next yield, and returns an already-settled promise.
+  Values are always identical, but interleaving differs whenever two async
+  functions are in flight — and it deadlocks in one shape: a caller that invokes
+  `next()` WITHOUT awaiting it, where the body then awaits a promise that only
+  settles after `next()` returns. Nothing is runnable and the process hangs.
+  QuickJS `bug1355.js` is exactly this (it was a parse error before async
+  generators existed, so nothing that previously worked regressed).
+
+  The fix is to stop driving the body from the caller: `next()` should register
+  a pending promise, unpark the body task, and return without parking, letting
+  the body settle that promise when it reaches its yield. That needs a per-
+  generator queue of pending requests, since node queues concurrent `next()`
+  calls, and `runEventLoop` must count a live async generator body as work.
+
+- **`built-ins/AsyncGeneratorFunction` is unmoved at 13%** — the
+  `AsyncGeneratorFunction` constructor and the prototype/`@@toStringTag` chain
+  are not modelled at all, separately from the objects working.
 - **`await` of an already-settled promise resumes inline** instead of after a
   microtask tick, so an async function whose awaits all settle synchronously
   runs to completion before returning. `tests/promises.js` pins the one line

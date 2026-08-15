@@ -1,0 +1,41 @@
+object function
+{ value: 1, done: false } { value: 2, done: false } { value: 'r', done: true }
+ag 1
+ag 2
+arr 1
+arr 2
+arr 3
+prom a
+prom b
+awaiting 0
+awaiting 10
+awaiting 20
+str h
+str i
+set 7
+set 8
+sync s1
+sync s2
+custom c0
+custom c1
+map k 1
+c1
+c2
+o1
+o2
+t 1
+caught agboom
+ag finally
+after break
+deleg 1
+deleg 2
+deleg 3
+{ value: 1, done: false }
+ag finally
+{ value: 'rv', done: true }
+{ value: undefined, done: true }
+rejected: agboom
+ag finally
+threw in: into
+function
+end
