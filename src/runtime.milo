@@ -1063,6 +1063,28 @@ pub fn objGet(st: &Interp, obj: i64, key: &string): JSValue {
 // stack), which the spec makes non-enumerable — `Object.keys(new TypeError("x"))`
 // is `[]` in a real engine, and code that spreads or serializes a caught error
 // otherwise picks up three fields that should not be there.
+// A built-in's own `name` / `length`: the spec gives both
+// { writable: false, enumerable: false, configurable: true }, and test262 has a
+// name.js and a length.js per method that check exactly that with
+// verifyProperty — which also deletes the property to prove it is configurable.
+pub fn objDefineBuiltinAttr(st: &mut Interp, obj: i64, key: string, value: JSValue) {
+    var i: i64 = 0
+    while i < st.objects[obj].props.len() {
+        if st.objects[obj].props[i].key == key {
+            st.objects[obj].props[i].value = value
+            st.objects[obj].props[i].writable = false
+            st.objects[obj].props[i].enumerable = false
+            st.objects[obj].props[i].configurable = true
+            return
+        }
+        i = i + 1
+    }
+    st.objects[obj].props.push(Prop {
+        key: key, value: value, acc: Option.None, writable: false, enumerable: false, configurable: true
+    }
+    )
+}
+
 pub fn objSetNonEnumerable(st: &mut Interp, obj: i64, key: &string) {
     var i: i64 = 0
     let n = st.objects[obj].props.len()

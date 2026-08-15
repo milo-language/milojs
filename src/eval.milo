@@ -9,7 +9,7 @@ from "./value" import {
     JSValue, i64ToStr, daysFromCivil
 }
 from "./runtime" import {
-    Interp, Timer, Microtask, Reaction, PendingFetch, NATIVE_RESOLVER_BASE, collect, linkProtoConstructor, objHasInChain
+    Interp, Timer, Microtask, Reaction, PendingFetch, NATIVE_RESOLVER_BASE, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr
 }
 from "./builtins" import {
     stringMethod, jsCharAt, mjStringifyVal, mjJsonParse, mjJsonOmitted
@@ -584,7 +584,9 @@ fn makeBoundMethod(st: &mut Interp, recv: JSValue, name: string): JSValue {
     st.objects[bo].isBound = true
     let ex = ensureExtra(st, bo)
     st.objExtras[ex].boundThis = recv
-    st.objExtras[ex].boundMethod = name
+    st.objExtras[ex].boundMethod = name.clone()
+    // every built-in function has an own `name` — test262 checks one per method
+    objDefineBuiltinAttr(st, bo, "name", JSValue.Str(name))
     return JSValue.Obj(bo)
 }
 
@@ -1529,7 +1531,7 @@ fn readLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
                 JSValue.Func(fIdx, fe) => {
                     // a class static read as an lvalue (C.count++)
                     let statics = getFuncStatics(st, fIdx, fe)
-                    return getMember(st, statics, name)
+                    return getMemberDyn(prog, statics, name, st)
                 }
                 _ => {
                     return JSValue.Undefined
@@ -1549,7 +1551,7 @@ fn readLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
                 }
                 JSValue.Func(fIdx, fe) => {
                     let statics = getFuncStatics(st, fIdx, fe)
-                    return getMember(st, statics, key)
+                    return getMemberDyn(prog, statics, key, st)
                 }
                 _ => {
                     return JSValue.Undefined
@@ -1576,7 +1578,9 @@ fn writeLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64, value
                 JSValue.Func(fIdx, fe) => {
                     // a class static written as an lvalue (C.count++)
                     let statics = getFuncStatics(st, fIdx, fe)
-                    setMember(st, statics, name.clone(), value)
+                    // setMemberDyn so a `static set x(v)` accessor is invoked;
+                    // the plain set overwrote the accessor with a data property
+                    setMemberDyn(prog, statics, name.clone(), value, st)
                 }
                 _ => {
                 }
@@ -1595,7 +1599,7 @@ fn writeLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64, value
                 }
                 JSValue.Func(fIdx, fe) => {
                     let statics = getFuncStatics(st, fIdx, fe)
-                    setMember(st, statics, key, value)
+                    setMemberDyn(prog, statics, key, value, st)
                 }
                 _ => {
                 }
@@ -4926,6 +4930,27 @@ fn errorProtoFor(st: &mut Interp, nativeId: i64): i64 {
     return objHandle(objGet(st, bag, "prototype"))
 }
 
+// Give every native reachable as a method of `owner` its own `name`, derived
+// from the key it is registered under. A native's properties live in a per-id
+// bag (getNativeProps), so there is nowhere to put a name at the ~145 individual
+// registration sites; one pass per namespace covers them all.
+fn nameNativesOf(st: &mut Interp, owner: i64) {
+    var i: i64 = 0
+    while i < st.objects[owner].props.len() {
+        let key = st.objects[owner].props[i].key.clone()
+        let v = cloneValue(st.objects[owner].props[i].value)
+        match v {
+            JSValue.Native(nid) => {
+                let bag = getNativeProps(st, nid)
+                objDefineBuiltinAttr(st, bag, "name", JSValue.Str(key))
+            }
+            _ => {
+            }
+        }
+        i = i + 1
+    }
+}
+
 pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "Error", JSValue.Native(NATIVE_ERROR))
     scopeDefine(st, 0, "TypeError", JSValue.Native(NATIVE_TYPE_ERROR))
@@ -4936,6 +4961,7 @@ pub fn setupGlobals(st: &mut Interp) {
     let json = newObject(st)
     objSet(st, json, "stringify", JSValue.Native(NATIVE_JSON_STRINGIFY))
     objSet(st, json, "parse", JSValue.Native(NATIVE_JSON_PARSE))
+    nameNativesOf(st, json)
     scopeDefine(st, 0, "JSON", JSValue.Obj(json))
     // Math likewise: native-fn methods + numeric constants
     let math = newObject(st)
@@ -4969,9 +4995,11 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, math, "SQRT1_2", JSValue.Number(0.7071067811865476))
     objSet(st, math, "PI", JSValue.Number(3.141592653589793))
     objSet(st, math, "E", JSValue.Number(2.718281828459045))
+    nameNativesOf(st, math)
     scopeDefine(st, 0, "Math", JSValue.Obj(math))
     scopeDefine(st, 0, "RegExp", JSValue.Native(NATIVE_REGEXP))
     let promiseCtor = newObject(st)
+    nameNativesOf(st, promiseCtor)
     st.promiseCtorObj = promiseCtor
     objSet(st, promiseCtor, "resolve", JSValue.Native(NATIVE_PROMISE_RESOLVE))
     objSet(st, promiseCtor, "reject", JSValue.Native(NATIVE_PROMISE_REJECT))
@@ -5027,6 +5055,7 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, objectCtor, "propertyIsEnumerable", makeBoundMethod(st, JSValue.Undefined, "propertyIsEnumerable"))
     objSet(st, objectCtor, "toString", makeBoundMethod(st, JSValue.Undefined, "@@objProtoToString"))
     objSet(st, objectCtor, "valueOf", makeBoundMethod(st, JSValue.Undefined, "valueOf"))
+    nameNativesOf(st, objectCtor)
     scopeDefine(st, 0, "Object", JSValue.Native(NATIVE_OBJECT_CTOR))
     scopeDefine(st, 0, "Number", JSValue.Native(NATIVE_NUMBER))
     scopeDefine(st, 0, "BigInt", JSValue.Native(NATIVE_BIGINT))
@@ -5045,6 +5074,7 @@ pub fn setupGlobals(st: &mut Interp) {
     objSetNonEnumerable(st, stringProto, "constructor")
     st.objects[stringProto].proto = objectProto
     objSet(st, stringCtorObj, "prototype", JSValue.Obj(stringProto))
+    nameNativesOf(st, stringCtorObj)
     st.stringCtorProps = stringCtorObj
     st.stringProtoObj = stringProto
     st.stringProtoPristine = true
@@ -5086,6 +5116,7 @@ pub fn setupGlobals(st: &mut Interp) {
         objSet(st, dateProto, dm.clone(), makeBoundMethod(st, JSValue.Undefined, dm.clone()))
     }
     objSet(st, dateCtorObj, "prototype", JSValue.Obj(dateProto))
+    nameNativesOf(st, dateCtorObj)
     st.dateCtorProps = dateCtorObj
     scopeDefine(st, 0, "Date", JSValue.Native(NATIVE_DATE))
     // Function.prototype.{call,apply,bind} are bound-method values: invoking
@@ -5155,6 +5186,7 @@ pub fn setupGlobals(st: &mut Interp) {
     st.objects[arrayCtor].isFunctionLike = true
     objSet(st, arrayCtor, "prototype", JSValue.Obj(arrayProto))
     objSet(st, arrayCtor, "name", JSValue.Str("Array"))
+    nameNativesOf(st, arrayCtor)
     st.arrayCtorObj = arrayCtor
     st.arrayProtoObj = arrayProto
     // Set only now that setup has finished writing the methods in, so the setup
@@ -6035,7 +6067,10 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                         return JSValue.Str(prog.funcs[fIdx].name.clone())
                     }
                     let statics = getFuncStatics(st, fIdx, fe)
-                    return getMember(st, statics, name)
+                    // getMemberDyn, not getMember: a `static get v()` is stored on
+                    // the statics object as an accessor, and the plain read never
+                    // invoked it — every static getter returned undefined
+                    return getMemberDyn(prog, statics, name, st)
                 }
                 JSValue.Native(nid) => {
                     let bag = getNativeProps(st, nid)
@@ -6184,7 +6219,10 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                         }
                     } else {
                         let statics = getFuncStatics(st, sf, senv)
-                        objSet(st, statics, key, cloneValue(v))
+                        // setMemberDyn, not objSet: a `static set x(v)` accessor
+                        // has to be invoked, and objSet would replace it with a
+                        // plain data property
+                        setMemberDyn(prog, statics, key, cloneValue(v), st)
                     }
                 }
                 _ => {
@@ -6619,7 +6657,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             match ov {
                 JSValue.Func(fIdx, fe) => {
                     let statics = getFuncStatics(st, fIdx, fe)
-                    return getMember(st, statics, key)
+                    return getMemberDyn(prog, statics, key, st)
                 }
                 JSValue.Native(nid) => {
                     return getMember(st, getNativeProps(st, nid), key)
@@ -6673,7 +6711,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                         return JSValue.Str(prog.funcs[fIdx].name.clone())
                     }
                     let statics = getFuncStatics(st, fIdx, fe)
-                    return getMember(st, statics, name)
+                    return getMemberDyn(prog, statics, name, st)
                 }
                 JSValue.Native(nid) => {
                     let bag = getNativeProps(st, nid)
@@ -9854,6 +9892,20 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
         if baseFn >= 0 {
             let baseProto = getFuncProto(st, baseFn)
             st.objects[proto].proto = baseProto
+            // Statics are inherited too: `class D extends B {}` makes D.staticOfB
+            // resolve. Only the instance side was linked, so a static method or
+            // accessor declared on the base was invisible on the subclass.
+            var baseEnv: i64 = -1
+            match baseVal {
+                JSValue.Func(_bf, be) => {
+                    baseEnv = be
+                }
+                _ => {
+                }
+            }
+            let baseStatics = getFuncStatics(st, baseFn, baseEnv)
+            let ownStatics = getFuncStatics(st, ctorFn, classScope)
+            st.objects[ownStatics].proto = baseStatics
         }
         scopeDefine(st, classScope, "__super$" + prog.classes[classIdx].superKey.clone(), baseVal)
     }
@@ -12104,6 +12156,20 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
         JSValue.Func(bf, benv) => {
             // method call on a function value: either a static (Class.make())
             // or .call/.apply, which retarget `this`
+            //
+            // An OWN static wins over Function.prototype: `class C { static
+            // call() {} }` then `C.call()` must run the static, not
+            // Function.prototype.call, which silently returned undefined.
+            if name == "call" || name == "apply" || name == "bind" {
+                let ownStatics = getFuncStatics(st, bf, benv)
+                if objOwnIndex(st, ownStatics, name) >= 0 {
+                    let own = getMemberDyn(prog, ownStatics, name, st)
+                    if isCallableIn(st, own) {
+                        let argVals = evalArgs(prog, argsIdx, st, scope)
+                        return callValue(prog, own, argVals, JSValue.Func(bf, benv), st)
+                    }
+                }
+            }
             if name == "bind" {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
                 var extra: Vec<JSValue> = Vec.new()
@@ -12151,9 +12217,21 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                 return callFunctionViaMethod(prog, bf, benv, rest, thisArg, st)
             }
             let statics = getFuncStatics(st, bf, benv)
-            let m = getMember(st, statics, name)
+            // getMemberDyn so `static get m()` is invoked and its RESULT is what
+            // gets called — C.m() where m is a static accessor returning a
+            // function reported "m is not a function"
+            let m = getMemberDyn(prog, statics, name, st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
             let mf = funcHandle(m)
             if mf >= 0 {
+                let argVals = evalArgs(prog, argsIdx, st, scope)
+                return callValue(prog, m, argVals, JSValue.Func(bf, benv), st)
+            }
+            // a static whose value is a callable object (a bound method, or a
+            // generator returned by an accessor) is still callable
+            if isCallableIn(st, m) {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
                 return callValue(prog, m, argVals, JSValue.Func(bf, benv), st)
             }

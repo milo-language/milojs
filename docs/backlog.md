@@ -22,7 +22,7 @@ run by hand rather than in CI:
 
 | sweep | score | measured |
 |---|---:|---|
-| test262, 1500-case deterministic sample | 588/1470 = **40.0%** | 2026-08-15 |
+| test262, 1500-case deterministic sample | 608/1470 = **41.4%** | 2026-08-15 |
 | QuickJS `tests/` at `fced162` | 97/149 = **65.1%** | 2026-08-15 |
 
 Movement on 2026-08-15: the engine now runs the program on a green task, so
@@ -65,6 +65,57 @@ concrete constructor's `prototype` chaining to it, and the native's property bag
 | `built-ins/ArrayBuffer` | 43/221 = 19.5% | 43/221 = 19.5% |
 
 Locked by `tests/typedArrayPrototypes.js`.
+
+### Static accessors, and static inheritance — 2026-08-15
+
+`static get` / `static set` did not work **at all**. A class's statics live in a
+per-function object, and every path that touched it used the non-invoking
+`getMember`/`objSet`/`setMember` — so a getter was returned as a data property
+(i.e. never called, reading `undefined`) and a setter was silently overwritten
+by the assigned value. Instance accessors were fine, which is why this survived:
+nothing in this repo uses a static one.
+
+Fixed on all four paths — read, method-call, write, and the compound-assignment
+lvalue reads — by moving to `getMemberDyn` / `setMemberDyn`. Three related bugs
+came out of the fixture while writing it:
+
+- **Statics were not inherited.** `class D extends B {}` linked only the
+  instance prototype; `D.staticOfB` was undefined. The statics object now
+  chains to the base's.
+- **An own static named `call`/`apply`/`bind` lost to `Function.prototype`.**
+  `class C { static call() {} }` then `C.call()` ran `Function.prototype.call`
+  and returned undefined. An own static now wins; a class without one still
+  gets `Function.prototype`'s.
+- **`C.#priv++` on a static private field did not increment**, for the same
+  accessor-blind lvalue read.
+
+| area | before | after |
+|---|---:|---:|
+| `language/statements/class` | 1680/4361 = 38.5% | **1926/4361 = 44.2%** |
+| `language/expressions/class` | 1560/4052 = 38.5% | **1806/4052 = 44.6%** |
+
++492 cases. Whole-suite 1500-sample 588 → 608 (40.0% → 41.4%). Locked by
+`tests/staticAccessors.js`.
+
+### Built-in function `name` — 2026-08-15, correct but did NOT move the number
+
+Every bound-method built-in now carries an own `name` with the spec's
+`{writable: false, enumerable: false, configurable: true}`, matching node's
+descriptor exactly, and each native reachable as a method of a namespace
+(`Math`, `JSON`, `Object`, `Array`, `String`, `Date`, `Promise`) gets its name
+from the key it is registered under — a per-namespace pass, since a native's
+properties live in a shared per-id bag with nowhere to put a name at the ~145
+individual registration sites. 39 prelude function expressions written as
+`X.y = function (…)` were also given names.
+
+The test262 `name should be an own property` bucket did **not** move (19 before
+and after). The sampled cases target function values that have no own-property
+bag at all — `Object.getOwnPropertyNames(Math.cosh)` returns `[]` here versus
+`["length","name"]` in node — so `name` reads correctly but is not an own
+property. Making JS functions and natives carry real property bags is the
+prerequisite, and it also gates the `length.js` half, which additionally needs a
+per-method arity table. Kept because it is a genuine fidelity improvement and
+costs nothing; recorded here so nobody re-measures it expecting a win.
 
 ### Receiver brand checks — 2026-08-15
 
