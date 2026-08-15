@@ -579,13 +579,1143 @@ fn brandName(brand: i64): string {
     return "TypedArray"
 }
 
+// GENERATED from node (see docs/backlog.md): the `length` every built-in
+// function carries. test262 has a length.js per method asserting it exactly.
+// Only three names disagree across prototypes — constructor (excluded),
+// toString (Number.prototype.toString is 1, everything else 0) and set
+// (Map.prototype.set is 2, %TypedArray%.prototype.set is 1); the commoner
+// value is used for those two.
+// GENERATED from node: the `length` of a built-in STATIC. Kept separate from
+// builtinArity because the same name can differ — Object.keys is 1 while
+// Array.prototype.keys is 0.
+fn builtinStaticArity(n: &string): i64 {
+    if n == "UTC" {
+        return 7
+    }
+    if n == "abs" {
+        return 1
+    }
+    if n == "acos" {
+        return 1
+    }
+    if n == "acosh" {
+        return 1
+    }
+    if n == "all" {
+        return 1
+    }
+    if n == "allSettled" {
+        return 1
+    }
+    if n == "any" {
+        return 1
+    }
+    if n == "apply" {
+        return 3
+    }
+    if n == "asin" {
+        return 1
+    }
+    if n == "asinh" {
+        return 1
+    }
+    if n == "assign" {
+        return 2
+    }
+    if n == "atan" {
+        return 1
+    }
+    if n == "atan2" {
+        return 2
+    }
+    if n == "atanh" {
+        return 1
+    }
+    if n == "captureStackTrace" {
+        return 2
+    }
+    if n == "cbrt" {
+        return 1
+    }
+    if n == "ceil" {
+        return 1
+    }
+    if n == "clz32" {
+        return 1
+    }
+    if n == "construct" {
+        return 2
+    }
+    if n == "cos" {
+        return 1
+    }
+    if n == "cosh" {
+        return 1
+    }
+    if n == "create" {
+        return 2
+    }
+    if n == "defineProperties" {
+        return 2
+    }
+    if n == "defineProperty" {
+        return 3
+    }
+    if n == "deleteProperty" {
+        return 2
+    }
+    if n == "entries" {
+        return 1
+    }
+    if n == "escape" {
+        return 1
+    }
+    if n == "exp" {
+        return 1
+    }
+    if n == "expm1" {
+        return 1
+    }
+    if n == "f16round" {
+        return 1
+    }
+    if n == "floor" {
+        return 1
+    }
+    if n == "for" {
+        return 1
+    }
+    if n == "freeze" {
+        return 1
+    }
+    if n == "from" {
+        return 1
+    }
+    if n == "fromAsync" {
+        return 1
+    }
+    if n == "fromCharCode" {
+        return 1
+    }
+    if n == "fromCodePoint" {
+        return 1
+    }
+    if n == "fromEntries" {
+        return 1
+    }
+    if n == "fround" {
+        return 1
+    }
+    if n == "get" {
+        return 2
+    }
+    if n == "getOwnPropertyDescriptor" {
+        return 2
+    }
+    if n == "getOwnPropertyDescriptors" {
+        return 1
+    }
+    if n == "getOwnPropertyNames" {
+        return 1
+    }
+    if n == "getOwnPropertySymbols" {
+        return 1
+    }
+    if n == "getPrototypeOf" {
+        return 1
+    }
+    if n == "groupBy" {
+        return 2
+    }
+    if n == "has" {
+        return 2
+    }
+    if n == "hasOwn" {
+        return 2
+    }
+    if n == "hypot" {
+        return 2
+    }
+    if n == "imul" {
+        return 2
+    }
+    if n == "is" {
+        return 2
+    }
+    if n == "isArray" {
+        return 1
+    }
+    if n == "isError" {
+        return 1
+    }
+    if n == "isExtensible" {
+        return 1
+    }
+    if n == "isFinite" {
+        return 1
+    }
+    if n == "isFrozen" {
+        return 1
+    }
+    if n == "isInteger" {
+        return 1
+    }
+    if n == "isNaN" {
+        return 1
+    }
+    if n == "isRawJSON" {
+        return 1
+    }
+    if n == "isSafeInteger" {
+        return 1
+    }
+    if n == "isSealed" {
+        return 1
+    }
+    if n == "isView" {
+        return 1
+    }
+    if n == "keyFor" {
+        return 1
+    }
+    if n == "keys" {
+        return 1
+    }
+    if n == "log" {
+        return 1
+    }
+    if n == "log10" {
+        return 1
+    }
+    if n == "log1p" {
+        return 1
+    }
+    if n == "log2" {
+        return 1
+    }
+    if n == "max" {
+        return 2
+    }
+    if n == "min" {
+        return 2
+    }
+    if n == "now" {
+        return 0
+    }
+    if n == "of" {
+        return 0
+    }
+    if n == "ownKeys" {
+        return 1
+    }
+    if n == "parse" {
+        return 2
+    }
+    if n == "parseFloat" {
+        return 1
+    }
+    if n == "parseInt" {
+        return 2
+    }
+    if n == "pow" {
+        return 2
+    }
+    if n == "prepareStackTrace" {
+        return 2
+    }
+    if n == "preventExtensions" {
+        return 1
+    }
+    if n == "prototype" {
+        return 0
+    }
+    if n == "race" {
+        return 1
+    }
+    if n == "random" {
+        return 0
+    }
+    if n == "raw" {
+        return 1
+    }
+    if n == "rawJSON" {
+        return 1
+    }
+    if n == "reject" {
+        return 1
+    }
+    if n == "resolve" {
+        return 1
+    }
+    if n == "round" {
+        return 1
+    }
+    if n == "seal" {
+        return 1
+    }
+    if n == "set" {
+        return 3
+    }
+    if n == "setPrototypeOf" {
+        return 2
+    }
+    if n == "sign" {
+        return 1
+    }
+    if n == "sin" {
+        return 1
+    }
+    if n == "sinh" {
+        return 1
+    }
+    if n == "sqrt" {
+        return 1
+    }
+    if n == "stringify" {
+        return 3
+    }
+    if n == "tan" {
+        return 1
+    }
+    if n == "tanh" {
+        return 1
+    }
+    if n == "trunc" {
+        return 1
+    }
+    if n == "try" {
+        return 1
+    }
+    if n == "values" {
+        return 1
+    }
+    if n == "withResolvers" {
+        return 0
+    }
+    return 0
+}
+
+fn builtinArity(n: &string): i64 {
+    if n == "UTC" {
+        return 7
+    }
+    if n == "__defineGetter__" {
+        return 2
+    }
+    if n == "__defineSetter__" {
+        return 2
+    }
+    if n == "__lookupGetter__" {
+        return 1
+    }
+    if n == "__lookupSetter__" {
+        return 1
+    }
+    if n == "abs" {
+        return 1
+    }
+    if n == "acos" {
+        return 1
+    }
+    if n == "acosh" {
+        return 1
+    }
+    if n == "add" {
+        return 1
+    }
+    if n == "all" {
+        return 1
+    }
+    if n == "allSettled" {
+        return 1
+    }
+    if n == "anchor" {
+        return 1
+    }
+    if n == "any" {
+        return 1
+    }
+    if n == "apply" {
+        return 2
+    }
+    if n == "asin" {
+        return 1
+    }
+    if n == "asinh" {
+        return 1
+    }
+    if n == "assign" {
+        return 2
+    }
+    if n == "at" {
+        return 1
+    }
+    if n == "atan" {
+        return 1
+    }
+    if n == "atan2" {
+        return 2
+    }
+    if n == "atanh" {
+        return 1
+    }
+    if n == "big" {
+        return 0
+    }
+    if n == "bind" {
+        return 1
+    }
+    if n == "blink" {
+        return 0
+    }
+    if n == "bold" {
+        return 0
+    }
+    if n == "call" {
+        return 1
+    }
+    if n == "catch" {
+        return 1
+    }
+    if n == "cbrt" {
+        return 1
+    }
+    if n == "ceil" {
+        return 1
+    }
+    if n == "charAt" {
+        return 1
+    }
+    if n == "charCodeAt" {
+        return 1
+    }
+    if n == "clear" {
+        return 0
+    }
+    if n == "clz32" {
+        return 1
+    }
+    if n == "codePointAt" {
+        return 1
+    }
+    if n == "compile" {
+        return 2
+    }
+    if n == "concat" {
+        return 1
+    }
+    if n == "construct" {
+        return 2
+    }
+    if n == "copyWithin" {
+        return 2
+    }
+    if n == "cos" {
+        return 1
+    }
+    if n == "cosh" {
+        return 1
+    }
+    if n == "create" {
+        return 2
+    }
+    if n == "defineProperties" {
+        return 2
+    }
+    if n == "defineProperty" {
+        return 3
+    }
+    if n == "delete" {
+        return 1
+    }
+    if n == "deleteProperty" {
+        return 2
+    }
+    if n == "difference" {
+        return 1
+    }
+    if n == "endsWith" {
+        return 1
+    }
+    if n == "entries" {
+        return 0
+    }
+    if n == "every" {
+        return 1
+    }
+    if n == "exec" {
+        return 1
+    }
+    if n == "exp" {
+        return 1
+    }
+    if n == "expm1" {
+        return 1
+    }
+    if n == "f16round" {
+        return 1
+    }
+    if n == "fill" {
+        return 1
+    }
+    if n == "filter" {
+        return 1
+    }
+    if n == "finally" {
+        return 1
+    }
+    if n == "find" {
+        return 1
+    }
+    if n == "findIndex" {
+        return 1
+    }
+    if n == "findLast" {
+        return 1
+    }
+    if n == "findLastIndex" {
+        return 1
+    }
+    if n == "fixed" {
+        return 0
+    }
+    if n == "flat" {
+        return 0
+    }
+    if n == "flatMap" {
+        return 1
+    }
+    if n == "floor" {
+        return 1
+    }
+    if n == "fontcolor" {
+        return 1
+    }
+    if n == "fontsize" {
+        return 1
+    }
+    if n == "forEach" {
+        return 1
+    }
+    if n == "freeze" {
+        return 1
+    }
+    if n == "from" {
+        return 1
+    }
+    if n == "fromAsync" {
+        return 1
+    }
+    if n == "fromCharCode" {
+        return 1
+    }
+    if n == "fromCodePoint" {
+        return 1
+    }
+    if n == "fromEntries" {
+        return 1
+    }
+    if n == "fround" {
+        return 1
+    }
+    if n == "get" {
+        return 1
+    }
+    if n == "getBigInt64" {
+        return 1
+    }
+    if n == "getBigUint64" {
+        return 1
+    }
+    if n == "getDate" {
+        return 0
+    }
+    if n == "getDay" {
+        return 0
+    }
+    if n == "getFloat16" {
+        return 1
+    }
+    if n == "getFloat32" {
+        return 1
+    }
+    if n == "getFloat64" {
+        return 1
+    }
+    if n == "getFullYear" {
+        return 0
+    }
+    if n == "getHours" {
+        return 0
+    }
+    if n == "getInt16" {
+        return 1
+    }
+    if n == "getInt32" {
+        return 1
+    }
+    if n == "getInt8" {
+        return 1
+    }
+    if n == "getMilliseconds" {
+        return 0
+    }
+    if n == "getMinutes" {
+        return 0
+    }
+    if n == "getMonth" {
+        return 0
+    }
+    if n == "getOwnPropertyDescriptor" {
+        return 2
+    }
+    if n == "getOwnPropertyDescriptors" {
+        return 1
+    }
+    if n == "getOwnPropertyNames" {
+        return 1
+    }
+    if n == "getOwnPropertySymbols" {
+        return 1
+    }
+    if n == "getPrototypeOf" {
+        return 1
+    }
+    if n == "getSeconds" {
+        return 0
+    }
+    if n == "getTime" {
+        return 0
+    }
+    if n == "getTimezoneOffset" {
+        return 0
+    }
+    if n == "getUTCDate" {
+        return 0
+    }
+    if n == "getUTCDay" {
+        return 0
+    }
+    if n == "getUTCFullYear" {
+        return 0
+    }
+    if n == "getUTCHours" {
+        return 0
+    }
+    if n == "getUTCMilliseconds" {
+        return 0
+    }
+    if n == "getUTCMinutes" {
+        return 0
+    }
+    if n == "getUTCMonth" {
+        return 0
+    }
+    if n == "getUTCSeconds" {
+        return 0
+    }
+    if n == "getUint16" {
+        return 1
+    }
+    if n == "getUint32" {
+        return 1
+    }
+    if n == "getUint8" {
+        return 1
+    }
+    if n == "getYear" {
+        return 0
+    }
+    if n == "groupBy" {
+        return 2
+    }
+    if n == "has" {
+        return 1
+    }
+    if n == "hasOwn" {
+        return 2
+    }
+    if n == "hasOwnProperty" {
+        return 1
+    }
+    if n == "hypot" {
+        return 2
+    }
+    if n == "imul" {
+        return 2
+    }
+    if n == "includes" {
+        return 1
+    }
+    if n == "indexOf" {
+        return 1
+    }
+    if n == "intersection" {
+        return 1
+    }
+    if n == "is" {
+        return 2
+    }
+    if n == "isArray" {
+        return 1
+    }
+    if n == "isDisjointFrom" {
+        return 1
+    }
+    if n == "isExtensible" {
+        return 1
+    }
+    if n == "isFinite" {
+        return 1
+    }
+    if n == "isFrozen" {
+        return 1
+    }
+    if n == "isInteger" {
+        return 1
+    }
+    if n == "isNaN" {
+        return 1
+    }
+    if n == "isPrototypeOf" {
+        return 1
+    }
+    if n == "isRawJSON" {
+        return 1
+    }
+    if n == "isSafeInteger" {
+        return 1
+    }
+    if n == "isSealed" {
+        return 1
+    }
+    if n == "isSubsetOf" {
+        return 1
+    }
+    if n == "isSupersetOf" {
+        return 1
+    }
+    if n == "isView" {
+        return 1
+    }
+    if n == "isWellFormed" {
+        return 0
+    }
+    if n == "italics" {
+        return 0
+    }
+    if n == "join" {
+        return 1
+    }
+    if n == "keys" {
+        return 0
+    }
+    if n == "lastIndexOf" {
+        return 1
+    }
+    if n == "link" {
+        return 1
+    }
+    if n == "localeCompare" {
+        return 1
+    }
+    if n == "log" {
+        return 1
+    }
+    if n == "log10" {
+        return 1
+    }
+    if n == "log1p" {
+        return 1
+    }
+    if n == "log2" {
+        return 1
+    }
+    if n == "map" {
+        return 1
+    }
+    if n == "match" {
+        return 1
+    }
+    if n == "matchAll" {
+        return 1
+    }
+    if n == "max" {
+        return 2
+    }
+    if n == "min" {
+        return 2
+    }
+    if n == "normalize" {
+        return 0
+    }
+    if n == "now" {
+        return 0
+    }
+    if n == "of" {
+        return 0
+    }
+    if n == "ownKeys" {
+        return 1
+    }
+    if n == "padEnd" {
+        return 1
+    }
+    if n == "padStart" {
+        return 1
+    }
+    if n == "parse" {
+        return 2
+    }
+    if n == "parseFloat" {
+        return 1
+    }
+    if n == "parseInt" {
+        return 2
+    }
+    if n == "pop" {
+        return 0
+    }
+    if n == "pow" {
+        return 2
+    }
+    if n == "preventExtensions" {
+        return 1
+    }
+    if n == "propertyIsEnumerable" {
+        return 1
+    }
+    if n == "push" {
+        return 1
+    }
+    if n == "race" {
+        return 1
+    }
+    if n == "random" {
+        return 0
+    }
+    if n == "raw" {
+        return 1
+    }
+    if n == "rawJSON" {
+        return 1
+    }
+    if n == "reduce" {
+        return 1
+    }
+    if n == "reduceRight" {
+        return 1
+    }
+    if n == "reject" {
+        return 1
+    }
+    if n == "repeat" {
+        return 1
+    }
+    if n == "replace" {
+        return 2
+    }
+    if n == "replaceAll" {
+        return 2
+    }
+    if n == "resize" {
+        return 1
+    }
+    if n == "resolve" {
+        return 1
+    }
+    if n == "reverse" {
+        return 0
+    }
+    if n == "round" {
+        return 1
+    }
+    if n == "seal" {
+        return 1
+    }
+    if n == "search" {
+        return 1
+    }
+    if n == "set" {
+        return 1
+    }
+    if n == "setBigInt64" {
+        return 2
+    }
+    if n == "setBigUint64" {
+        return 2
+    }
+    if n == "setDate" {
+        return 1
+    }
+    if n == "setFloat16" {
+        return 2
+    }
+    if n == "setFloat32" {
+        return 2
+    }
+    if n == "setFloat64" {
+        return 2
+    }
+    if n == "setFullYear" {
+        return 3
+    }
+    if n == "setHours" {
+        return 4
+    }
+    if n == "setInt16" {
+        return 2
+    }
+    if n == "setInt32" {
+        return 2
+    }
+    if n == "setInt8" {
+        return 2
+    }
+    if n == "setMilliseconds" {
+        return 1
+    }
+    if n == "setMinutes" {
+        return 3
+    }
+    if n == "setMonth" {
+        return 2
+    }
+    if n == "setPrototypeOf" {
+        return 2
+    }
+    if n == "setSeconds" {
+        return 2
+    }
+    if n == "setTime" {
+        return 1
+    }
+    if n == "setUTCDate" {
+        return 1
+    }
+    if n == "setUTCFullYear" {
+        return 3
+    }
+    if n == "setUTCHours" {
+        return 4
+    }
+    if n == "setUTCMilliseconds" {
+        return 1
+    }
+    if n == "setUTCMinutes" {
+        return 3
+    }
+    if n == "setUTCMonth" {
+        return 2
+    }
+    if n == "setUTCSeconds" {
+        return 2
+    }
+    if n == "setUint16" {
+        return 2
+    }
+    if n == "setUint32" {
+        return 2
+    }
+    if n == "setUint8" {
+        return 2
+    }
+    if n == "setYear" {
+        return 1
+    }
+    if n == "shift" {
+        return 0
+    }
+    if n == "sign" {
+        return 1
+    }
+    if n == "sin" {
+        return 1
+    }
+    if n == "sinh" {
+        return 1
+    }
+    if n == "slice" {
+        return 2
+    }
+    if n == "small" {
+        return 0
+    }
+    if n == "some" {
+        return 1
+    }
+    if n == "sort" {
+        return 1
+    }
+    if n == "splice" {
+        return 2
+    }
+    if n == "split" {
+        return 2
+    }
+    if n == "sqrt" {
+        return 1
+    }
+    if n == "startsWith" {
+        return 1
+    }
+    if n == "strike" {
+        return 0
+    }
+    if n == "stringify" {
+        return 3
+    }
+    if n == "sub" {
+        return 0
+    }
+    if n == "subarray" {
+        return 2
+    }
+    if n == "substr" {
+        return 2
+    }
+    if n == "substring" {
+        return 2
+    }
+    if n == "sup" {
+        return 0
+    }
+    if n == "symmetricDifference" {
+        return 1
+    }
+    if n == "tan" {
+        return 1
+    }
+    if n == "tanh" {
+        return 1
+    }
+    if n == "test" {
+        return 1
+    }
+    if n == "then" {
+        return 2
+    }
+    if n == "toDateString" {
+        return 0
+    }
+    if n == "toExponential" {
+        return 1
+    }
+    if n == "toFixed" {
+        return 1
+    }
+    if n == "toGMTString" {
+        return 0
+    }
+    if n == "toISOString" {
+        return 0
+    }
+    if n == "toJSON" {
+        return 1
+    }
+    if n == "toLocaleDateString" {
+        return 0
+    }
+    if n == "toLocaleLowerCase" {
+        return 0
+    }
+    if n == "toLocaleString" {
+        return 0
+    }
+    if n == "toLocaleTimeString" {
+        return 0
+    }
+    if n == "toLocaleUpperCase" {
+        return 0
+    }
+    if n == "toLowerCase" {
+        return 0
+    }
+    if n == "toPrecision" {
+        return 1
+    }
+    if n == "toReversed" {
+        return 0
+    }
+    if n == "toSorted" {
+        return 1
+    }
+    if n == "toSpliced" {
+        return 2
+    }
+    if n == "toString" {
+        return 0
+    }
+    if n == "toTimeString" {
+        return 0
+    }
+    if n == "toUTCString" {
+        return 0
+    }
+    if n == "toUpperCase" {
+        return 0
+    }
+    if n == "toWellFormed" {
+        return 0
+    }
+    if n == "transfer" {
+        return 0
+    }
+    if n == "transferToFixedLength" {
+        return 0
+    }
+    if n == "trim" {
+        return 0
+    }
+    if n == "trimEnd" {
+        return 0
+    }
+    if n == "trimLeft" {
+        return 0
+    }
+    if n == "trimRight" {
+        return 0
+    }
+    if n == "trimStart" {
+        return 0
+    }
+    if n == "trunc" {
+        return 1
+    }
+    if n == "try" {
+        return 1
+    }
+    if n == "union" {
+        return 1
+    }
+    if n == "unshift" {
+        return 1
+    }
+    if n == "valueOf" {
+        return 0
+    }
+    if n == "values" {
+        return 0
+    }
+    if n == "with" {
+        return 2
+    }
+    if n == "withResolvers" {
+        return 0
+    }
+    return 0
+}
+
 fn makeBoundMethod(st: &mut Interp, recv: JSValue, name: string): JSValue {
     let bo = newObject(st)
     st.objects[bo].isBound = true
     let ex = ensureExtra(st, bo)
     st.objExtras[ex].boundThis = recv
     st.objExtras[ex].boundMethod = name.clone()
-    // every built-in function has an own `name` — test262 checks one per method
+    // every built-in function has own `name` and `length` — test262 checks one
+    // of each per method, with verifyProperty, so they must be real own
+    // properties with the spec's attributes and not synthesised on read
+    objDefineBuiltinAttr(st, bo, "length", JSValue.Number(builtinArity(name) as f64))
     objDefineBuiltinAttr(st, bo, "name", JSValue.Str(name))
     return JSValue.Obj(bo)
 }
@@ -820,6 +1950,48 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
             return stringMethod(name, sv, args, st)
         }
         JSValue.Obj(o) => {
+            // .call/.apply/.bind on a BUILT-IN method value. This is the
+            // uncurry-this idiom —
+            //   var hop = Function.prototype.call.bind(Object.prototype.hasOwnProperty)
+            // — which arrives here as receiver = the built-in, name = "call".
+            // Nothing handled it, so it returned undefined. test262's
+            // propertyHelper.js is built entirely out of this, so EVERY
+            // verifyProperty test failed regardless of the property involved.
+            if st.objects[o].isBound && (name == "call" || name == "apply" || name == "bind") {
+                var uThis = JSValue.Undefined
+                if args.len() > 0 {
+                    uThis = cloneValue(args[0])
+                }
+                var uRest: Vec<JSValue> = Vec.new()
+                if name == "apply" {
+                    if args.len() > 1 {
+                        let ah = objHandle(args[1])
+                        if ah >= 0 && st.objects[ah].isArray {
+                            var ai: i64 = 0
+                            while ai < arrLen(st, ah) {
+                                uRest.push(arrGet(st, ah, ai))
+                                ai = ai + 1
+                            }
+                        }
+                    }
+                } else {
+                    var ai: i64 = 1
+                    while ai < args.len() {
+                        uRest.push(cloneValue(args[ai]))
+                        ai = ai + 1
+                    }
+                }
+                if name == "bind" {
+                    let nb = newObject(st)
+                    st.objects[nb].isBound = true
+                    let nex = ensureExtra(st, nb)
+                    st.objExtras[nex].boundTarget = JSValue.Obj(o)
+                    st.objExtras[nex].boundThis = uThis
+                    st.objExtras[nex].boundArgs = uRest
+                    return JSValue.Obj(nb)
+                }
+                return callValue(prog, JSValue.Obj(o), uRest, uThis, st)
+            }
             // array iterator steps: state lives in properties on the iterator
             // object itself, which is also the bound receiver
             if name == "__arrayIterNext" {
@@ -3364,6 +4536,10 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     if id == NATIVE_DATE {
         let o = newObject(st)
         st.objects[o].isDate = true
+        // Object.getPrototypeOf(new Date()) === Date.prototype
+        if st.dateProtoObj >= 0 {
+            st.objects[o].proto = st.dateProtoObj
+        }
         let _ed = ensureExtra(st, o)
         if argVals.len() == 0 {
             st.objExtras[st.objects[o].extra].dateMs = epochMillis() as f64
@@ -4990,6 +6166,7 @@ fn nameNativesOf(st: &mut Interp, owner: i64) {
         match v {
             JSValue.Native(nid) => {
                 let bag = getNativeProps(st, nid)
+                objDefineBuiltinAttr(st, bag, "length", JSValue.Number(builtinStaticArity(key) as f64))
                 objDefineBuiltinAttr(st, bag, "name", JSValue.Str(key))
             }
             _ => {
@@ -5164,7 +6341,12 @@ pub fn setupGlobals(st: &mut Interp) {
         objSet(st, dateProto, dm.clone(), makeBoundMethod(st, JSValue.Undefined, dm.clone()))
     }
     objSet(st, dateCtorObj, "prototype", JSValue.Obj(dateProto))
+    objSetNonEnumerable(st, dateCtorObj, "prototype")
+    objSet(st, dateProto, "constructor", JSValue.Native(NATIVE_DATE))
+    objSetNonEnumerable(st, dateProto, "constructor")
+    st.objects[dateProto].proto = st.objectProtoObj
     nameNativesOf(st, dateCtorObj)
+    st.dateProtoObj = dateProto
     st.dateCtorProps = dateCtorObj
     scopeDefine(st, 0, "Date", JSValue.Native(NATIVE_DATE))
     // Function.prototype.{call,apply,bind} are bound-method values: invoking

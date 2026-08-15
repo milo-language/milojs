@@ -22,7 +22,7 @@ run by hand rather than in CI:
 
 | sweep | score | measured |
 |---|---:|---|
-| test262, 1500-case deterministic sample | 615/1470 = **41.8%** | 2026-08-15 |
+| test262, 1500-case deterministic sample | 649/1470 = **44.1%** | 2026-08-15 |
 | QuickJS `tests/` at `fced162` | 97/149 = **65.1%** | 2026-08-15 |
 
 Movement on 2026-08-15: the engine now runs the program on a green task, so
@@ -65,6 +65,51 @@ concrete constructor's `prototype` chaining to it, and the native's property bag
 | `built-ins/ArrayBuffer` | 43/221 = 19.5% | 43/221 = 19.5% |
 
 Locked by `tests/typedArrayPrototypes.js`.
+
+### The uncurry-this idiom, and `name`/`length` on built-ins — 2026-08-15
+
+**The single highest-leverage bug found so far.**
+`Function.prototype.call.bind(f)` — the uncurry-this idiom, which turns a method
+into a standalone function taking the receiver as its first argument — returned
+`undefined` whenever `f` was a BUILT-IN. A plain JS function worked, which is
+why it went unnoticed. The uncurried call arrives at `callBuiltinByName` as
+receiver = the built-in, name = `"call"`, and nothing handled that case.
+
+test262's `propertyHelper.js` opens with
+`var __hasOwnProperty = Function.prototype.call.bind(Object.prototype.hasOwnProperty)`
+and four more like it, so **every `verifyProperty` test in the suite failed
+before it looked at any property** — which is why the "name/length should be an
+own property" buckets refused to move in the previous attempt no matter how
+correct the descriptors were made.
+
+Alongside it, built-ins now carry own `name` AND `length` with the spec's
+`{writable: false, enumerable: false, configurable: true}`. The arity tables
+(`builtinArity`, `builtinStaticArity` in `src/eval.milo`) are **generated from
+node** — it is the oracle for this too. Two tables, because the same name can
+differ: `Object.keys` is 1 while `Array.prototype.keys` is 0. Across every
+prototype only three names disagree internally — `constructor` (excluded),
+`toString` (Number's is 1, everything else 0) and `set` (Map's is 2,
+%TypedArray%'s is 1); the commoner value wins for those two. To regenerate,
+walk the prototypes and constructors in node reading
+`Object.getOwnPropertyDescriptor(p, k).value.length`.
+
+Date instances also now link `Date.prototype` (`Object.getPrototypeOf(new Date())`
+was not `Date.prototype`).
+
+| area | before | after |
+|---|---:|---:|
+| `built-ins/Object` | 1350/3411 = 39.6% | **1649/3411 = 48.3%** |
+| `built-ins/Array` | 1672/3082 = 54.3% | **1783/3082 = 57.9%** |
+| `built-ins/TypedArray` | 248/1446 = 17.2% | **339/1446 = 23.4%** |
+| `built-ins/String` | 468/1223 = 38.3% | **560/1223 = 45.8%** |
+| `built-ins/Date` | 87/594 = 14.6% | **137/594 = 23.1%** |
+
+**+644 cases** across those five. Whole-suite 1500-sample 615 → 649
+(41.8% → 44.1%). Locked by `tests/builtinFunctionShape.js`.
+
+`Date.prototype` still has 20 of node's 47 methods — the whole `setX`,
+`getUTCX` and `setUTCX` families are missing, which is most of what is left in
+`built-ins/Date`.
 
 ### The rest of %TypedArray%.prototype, and detached views — 2026-08-15
 

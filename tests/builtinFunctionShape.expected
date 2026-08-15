@@ -1,0 +1,16 @@
+true false
+1-2-3 4+5
+true false
+true true
+7|8
+2,3
+{"value":1,"writable":false,"enumerable":false,"configurable":true} {"value":"every","writable":false,"enumerable":false,"configurable":true}
+["length","name"]
+1 2 1
+1 1 2
+1 2 3
+0 1
+true false
+1
+true true
+0 getTime 0
