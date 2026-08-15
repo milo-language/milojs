@@ -7,3 +7,4 @@ libmilojs.h
 /hello
 # tools/dev.sh's cached engine/runtime binaries
 .dev/
+.claude/
