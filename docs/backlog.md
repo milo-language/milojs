@@ -22,18 +22,44 @@ run by hand rather than in CI:
 
 | sweep | score | measured |
 |---|---:|---|
-| test262, 1500-case deterministic sample | 473/1476 = **32.0%** | 2026-07-24 |
-| QuickJS `tests/` at `fced162` | 96/166 = **57.8%** | 2026-07-30 |
+| test262, 1500-case deterministic sample | 539/1470 = **36.7%** | 2026-08-15 |
+| QuickJS `tests/` at `fced162` | 97/149 = **65.1%** | 2026-08-15 |
 
-The prior QuickJS result was 93/149 (62.4%). The current checkout adds 17
-scored cases; MiloJS passes three more cases, but the larger denominator lowers the
-percentage. The current result includes `bug776.js`, whose recursive `.apply`
-now throws the expected `RangeError` instead of crashing the process, and
-`bug1468.js`, whose huge sparse length no longer materializes billions of holes.
+Movement on 2026-08-15: the engine now runs the program on a green task, so
+generators work there (they threw "generators require the milojs runtime"
+before). test262 508→539 (34.6%→36.7%) and QuickJS 95→97 (63.8%→65.1%). Only
+31 of the 104 generator-blocked cases converted; the rest need `gen.throw()` /
+`gen.return()` and async generators, none of which exist yet.
+
+Denominators move between runs as cases start or stop being scored — compare
+the numerator and the fraction from the same table row, not across rows. The
+`96/166` and `473/1476` rows this replaced were 2026-07-24/30 measurements.
 
 Weakest areas: `built-ins/TypedArray` 0%, `ArrayBuffer` 0%, `Atomics` 0%,
 `language/eval-code` 0%, `Temporal` 1%, `TypedArrayConstructors` 5%, `Map` 14%.
 Strongest: `language/block-scope` 100%, `literals` 77%, `identifiers` 75%.
+
+### Open, in rough value order
+
+- **`gen.throw()` / `gen.return()`** are not implemented at all — `g.throw(e)`
+  returns undefined and the caller traps reading `.value`. `throw` is the easy
+  half (set `st.throwing` at the resume point in `genYield`); `return` has to
+  unwind the body through its `finally` blocks, which the Flow machinery does
+  not currently express across a park.
+- **Async generators.** `async *m() {}` produces an object with no `next`, in
+  both object literals and classes, and `for await (... of ...)` does not parse.
+- **`await` of an already-settled promise resumes inline** instead of after a
+  microtask tick, so an async function whose awaits all settle synchronously
+  runs to completion before returning. `tests/promises.js` pins the one line
+  this moves ("then 42"); everything else in that fixture matches node.
+- **console.log renders like bun, not node** (`src/eval.milo:6740`): nested
+  strings are double-quoted, and objects always break across lines instead of
+  staying inline when short. 17 of the 157 engine fixtures' `.expected` files
+  therefore are not byte-exact node captures — measured 2026-08-15:
+  `binaryLength control errorInspect es6 implicitSuper includesNanSymbols
+  methods modules objects oop operators promises propertyDescriptors prototype
+  prototypeMethodValues radixToString regex`. Fixing inspect would convert most
+  of them in one change.
 
 Stage 6 of the roadmap calls for a checked-in `test262-status.md` so the trend is
 visible. It does not exist yet — this table is the stopgap.

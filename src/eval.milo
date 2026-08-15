@@ -5745,40 +5745,73 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     }
                     return last
                 }
-                // any other iterable: resolve [Symbol.iterator] and drive next()
-                let itFn = getMemberDyn(prog, vh, symIteratorKey(), st)
+                // any other iterable: resolve [Symbol.iterator] and drive next().
+                // Guarded on vh: a primitive (`yield* "hi"`) has handle -1, and
+                // getMemberDyn indexed st.objects with it and trapped.
                 var iter = cloneValue(va)
-                if isCallableIn(st, itFn) {
-                    var noArgs: Vec<JSValue> = Vec.new()
-                    iter = callValue(prog, itFn, noArgs, cloneValue(va), st)
-                }
-                let ih = objHandle(iter)
-                if ih < 0 {
-                    return JSValue.Undefined
-                }
-                pushTemp(st, cloneValue(iter))
-                var guard2: i64 = 0
-                while !st.throwing && guard2 < 100000000 {
-                    guard2 = guard2 + 1
-                    let nextFn = getMemberDyn(prog, objHandle(iter), "next", st)
-                    if !isCallableIn(st, nextFn) {
-                        guard2 = 100000000
-                    } else {
-                        var nArgs: Vec<JSValue> = Vec.new()
-                        let step = callValue(prog, nextFn, nArgs, cloneValue(iter), st)
-                        let sh = objHandle(step)
-                        if sh < 0 {
-                            guard2 = 100000000
-                        } else if truthy(getMember(st, sh, "done")) {
-                            last = getMember(st, sh, "value")
-                            guard2 = 100000000
-                        } else {
-                            let v = getMember(st, sh, "value")
-                            let _sent = genYield(v, st)
-                        }
+                if vh >= 0 {
+                    let itFn = getMemberDyn(prog, vh, symIteratorKey(), st)
+                    if isCallableIn(st, itFn) {
+                        var noArgs: Vec<JSValue> = Vec.new()
+                        iter = callValue(prog, itFn, noArgs, cloneValue(va), st)
                     }
                 }
-                popTemp(st)
+                var drove = false
+                let ih = objHandle(iter)
+                if ih >= 0 && isCallableIn(st, getMemberDyn(prog, ih, "next", st)) {
+                    drove = true
+                    pushTemp(st, cloneValue(iter))
+                    var guard2: i64 = 0
+                    while !st.throwing && guard2 < 100000000 {
+                        guard2 = guard2 + 1
+                        let nextFn = getMemberDyn(prog, objHandle(iter), "next", st)
+                        if !isCallableIn(st, nextFn) {
+                            guard2 = 100000000
+                        } else {
+                            var nArgs: Vec<JSValue> = Vec.new()
+                            let step = callValue(prog, nextFn, nArgs, cloneValue(iter), st)
+                            let sh = objHandle(step)
+                            if sh < 0 {
+                                guard2 = 100000000
+                            } else if truthy(getMember(st, sh, "done")) {
+                                last = getMember(st, sh, "value")
+                                guard2 = 100000000
+                            } else {
+                                let v = getMember(st, sh, "value")
+                                let _sent = genYield(v, st)
+                            }
+                        }
+                    }
+                    popTemp(st)
+                }
+                if !drove {
+                    // A string, or a native Map/Set: neither exposes a `next`
+                    // through the prototype chain yet, so the loop above cannot
+                    // drive them and `yield* new Set(...)` silently yielded
+                    // nothing. spreadInto already knows every built-in iterable,
+                    // so borrow it. Eager, unlike the loop above — only
+                    // observable for an infinite inner iterator, which none of
+                    // these shapes can be. Their completion value is undefined,
+                    // so `last` correctly stays Undefined.
+                    var items: Vec<JSValue> = Vec.new()
+                    spreadInto(prog, items, cloneValue(va), st)
+                    // hold the values in a rooted array: genYield parks this task,
+                    // and a collect while it is parked would sweep anything the
+                    // plain Vec is the only reference to
+                    let hold = newArray(st)
+                    pushTemp(st, JSValue.Obj(hold))
+                    var hi: i64 = 0
+                    while hi < items.len() {
+                        arrPush(st, hold, cloneValue(items[hi]))
+                        hi = hi + 1
+                    }
+                    var k: i64 = 0
+                    while !st.throwing && k < arrLen(st, hold) {
+                        let _sent = genYield(arrGet(st, hold, k), st)
+                        k = k + 1
+                    }
+                    popTemp(st)
+                }
                 return last
             }
             if op == "+" {
@@ -8013,7 +8046,6 @@ pub fn runEventLoop(prog: &Prog, st: &mut Interp) {
         napiServiceTsfn(st)
         serviceFetches(st)
         drainMicrotasks(prog, st, 1000000)
-        reportUnhandledRejections(st)
         compactTimers(st)
         // Order matters: run timers that are already due, then service a
         // listening server, and only sleep for a future timer when no server is
@@ -8051,6 +8083,14 @@ pub fn runEventLoop(prog: &Prog, st: &mut Interp) {
             // exiting here would drop them on the floor
             schedulerYield()
         } else {
+            // Report only here, where the loop is genuinely out of work. A
+            // rejection is "unhandled" the moment it settles with no reaction
+            // and no parked awaiter, but the awaiter of `await thr()` attaches
+            // only after its activation task is scheduled back in — several
+            // loop turns later. Reporting at the top of every turn caught that
+            // window and printed a spurious unhandled rejection for a
+            // try/catch-ed await (and for Promise.allSettled).
+            reportUnhandledRejections(st)
             going = false
         }
     }

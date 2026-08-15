@@ -1,6 +1,9 @@
-// Promises settle synchronously here — there is no event loop — so callbacks run
-// at .then() time rather than on a microtask. Ordering therefore differs from
-// real JS; this fixture pins the value flow, which does match.
+// Not a byte-exact node capture — the ONE known divergence, verified against node
+// 2026-08-15, is the position of "then 42". `await` of an ALREADY-settled promise
+// resumes inline here instead of after a microtask tick, so `chain()` runs to
+// completion before its .then() attaches and the callback fires immediately;
+// node makes chain() return pending and prints "then 42" seventh. Every other
+// line, and every value, matches node exactly. See docs/backlog.md.
 async function double(x) { return x * 2; }
 async function chain() { const v = await double(21); return v; }
 

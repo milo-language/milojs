@@ -5,10 +5,11 @@
 # Two passes:
 #   tests/*.js          run on the ENGINE  (milojs-engine.milo)
 #   tests/runtime/*.js  run on the RUNTIME (milojs.milo)
-# The runtime pass exists because R1 async activations only run on the runtime —
-# the engine executes the program on the main thread and never spawns one, so a
-# fixture for async-call ordering or promise adoption cannot be exercised on the
-# engine at all. Anything that depends on activations goes in tests/runtime/.
+# Both binaries now execute the program on a green task, so generators and async
+# activations work in either. The split is about the node layer: the runtime loads
+# a second prelude and defines process/fs/http/fetch, none of which exist in the
+# engine. A fixture that touches any of those goes in tests/runtime/; everything
+# that is plain JS belongs in tests/, where the engine is the stricter oracle.
 #
 # The binary for each pass is compiled ONCE and reused. `milo run` rebuilds on
 # every invocation, so a per-test build cost a full LLVM compile per file. Set
