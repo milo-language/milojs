@@ -1,0 +1,32 @@
+0,1,2,3,4,5
+5,1,4,1,5,9
+[[0,5],[1,1],[2,4],[3,1],[4,5],[5,9]]
+5,1,4,1,5,9
+3 1 -1 4
+9,5,1,4,1,5
+1,1,4,5,5,9
+9,5,5,4,1,1
+5,1,4,1,5,9
+5,1,4,1,5,9 unchanged after toSorted
+4,5,3,4,5
+1,1,2,3,5
+1,2,3,2,3
+function function function
+e 0 7
+e 1 8
+1-2-3
+src detached: true byteLength 0
+new byteLength 8
+ta.length after detach 0
+fill threw TypeError
+ta[0] undefined
+0 0 0 undefined
+write dropped -> undefined
+fill TypeError
+map TypeError
+slice TypeError
+join TypeError
+indexOf TypeError
+copyWithin TypeError
+toSorted TypeError
+entries TypeError

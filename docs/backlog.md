@@ -22,7 +22,7 @@ run by hand rather than in CI:
 
 | sweep | score | measured |
 |---|---:|---|
-| test262, 1500-case deterministic sample | 608/1470 = **41.4%** | 2026-08-15 |
+| test262, 1500-case deterministic sample | 615/1470 = **41.8%** | 2026-08-15 |
 | QuickJS `tests/` at `fced162` | 97/149 = **65.1%** | 2026-08-15 |
 
 Movement on 2026-08-15: the engine now runs the program on a green task, so
@@ -65,6 +65,46 @@ concrete constructor's `prototype` chaining to it, and the native's property bag
 | `built-ins/ArrayBuffer` | 43/221 = 19.5% | 43/221 = 19.5% |
 
 Locked by `tests/typedArrayPrototypes.js`.
+
+### The rest of %TypedArray%.prototype, and detached views — 2026-08-15
+
+Added the methods that were simply missing: `copyWithin`, `lastIndexOf`,
+`keys`/`values`/`entries`, `toReversed`, `toSorted`, `toLocaleString`, and
+`[Symbol.iterator]`.
+
+More interesting: **detachment was tracked on the ArrayBuffer but no view ever
+consulted it.** After `buffer.transfer()` a view still reported its old
+`length`, still `fill`ed, and still read its stale bytes. Views now behave as
+the spec says — zero for `length`/`byteLength`/`byteOffset`, `undefined` at
+every index, a dropped write, and a TypeError from every prototype method.
+
+**And a harness bug that was inflating the failure count.**
+`scripts/test262-sweep.ts` never provided `$262`, the host object test262
+expects a *runner* to supply. Every detached-buffer case died on
+`$262 is not defined` before asking the engine anything, and was counted as an
+engine failure. The sweep now injects it, with `detachArrayBuffer` going through
+`ArrayBuffer.prototype.transfer`.
+
+Attribution, measured by running the new sweep against the PREVIOUS engine:
+
+| area | before | harness only | + engine work |
+|---|---:|---:|---:|
+| `built-ins/TypedArray` | 191/1446 = 13.2% | 200 = 13.8% | **248/1446 = 17.2%** |
+| `built-ins/DataView` | 186/561 = 33.2% | 225 = 40.1% | 225/561 = 40.1% |
+| `built-ins/ArrayBuffer` | 58/221 = 26.2% | — | 63/221 = 28.5% |
+
+So DataView's **entire** +39 is the harness fix — the engine contributed
+nothing there, and that number was previously understated rather than wrong.
+TypedArray is +9 harness and **+48 engine**. Whole-suite 1500-sample 608 → 615.
+Locked by `tests/typedArrayMethods2.js`.
+
+**Still the top TypedArray blocker: `BigInt64Array`/`BigUint64Array`, 544
+cases.** Now scoped properly: `taLoad`/`taStore`/`taElem`/`taSetElem` are all
+`f64`-typed, and f64 cannot hold a 64-bit integer exactly, so this is not a new
+`TA_*` kind plus a width — it needs a parallel `JSValue`-returning element path
+threaded through all ~30 prototype methods. Also note `NATIVE_TA_BASE` is 79
+with ids 79..87 used and 88 taken by `NATIVE_HTTP_FETCH`, so the base has to
+move to a free range before two more kinds can be added.
 
 ### Static accessors, and static inheritance — 2026-08-15
 

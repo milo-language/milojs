@@ -86,6 +86,19 @@ if (sampleN && files.length > sampleN) {
 }
 files = files.slice(0, limit);
 
+// The $262 host object test262 expects a runner to provide. Without it every
+// detached-buffer case died on "$262 is not defined" before testing anything —
+// they were counted as engine failures when nothing had been asked of the
+// engine yet. detachArrayBuffer goes through ArrayBuffer.prototype.transfer,
+// which is what actually detaches the source here.
+const HOST_HOOK = `var $262 = {
+  global: globalThis,
+  detachArrayBuffer: function (buffer) { buffer.transfer(); },
+  gc: function () {},
+  agent: undefined,
+};
+`;
+
 const tmp = mkdtempSync(join(tmpdir(), "t262-"));
 const casePath = join(tmp, "case.js");
 
@@ -98,6 +111,7 @@ function runOne(file: string): { res: Res; why: string } {
 
   let body = "";
   if (!meta.flags.has("raw")) {
+    body += HOST_HOOK;
     body += harness("assert.js") + "\n" + harness("sta.js") + "\n";
     if (meta.flags.has("async")) body += harness("doneprintHandle.js") + "\n";
     for (const inc of meta.includes) { try { body += harness(inc) + "\n"; } catch { return { res: "skip", why: "missing-include:" + inc }; } }
