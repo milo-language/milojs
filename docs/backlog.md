@@ -166,13 +166,25 @@ Remaining divergences:
 Ranked by how likely a first-time user is to hit them. All four are reproducible
 against node with a two-line script.
 
-1. **A user-defined `Symbol.iterator` is never consulted.** `[...obj]` yields
-   nothing and `for (const v of obj)` reports `iterator has no next method`, for
-   an object literal *or* a class, whether the method is written
-   `*[Symbol.iterator]() {}` or `[Symbol.iterator]: function* () {}`. Defining
-   the method now parses (see `tests/runtime/objectGeneratorMethods.js`); the gap
-   is in the consumer, which does not look the symbol up on ordinary objects.
-   Array, Map, and Set iteration are unaffected — they are dispatched natively.
+1. **A user-defined `Symbol.iterator` is never consulted — DONE.** Three separate
+   defects, all fixed and locked by `tests/runtime/objectSymbolIterator.js` and
+   `tests/runtime/classSymbolIterator.js`:
+   - The drive loops in `spreadInto` and `Stmt.ForOf` read `next` as a stored
+     property. `*[Symbol.iterator]() {}` hands back a GENERATOR, whose `next` is
+     native, so spread came out empty and for-of reported `iterator has no next
+     method`. Both now recognise a generator iterator and drive it via `genNext`.
+   - Array destructuring and the `Map`/`Set` constructors index-read their source,
+     which answers undefined for something that is iterable and nothing else.
+     `const [a, b] = pattern` now binds the temp to `[...expr]` (spread IS the
+     protocol), and the constructors materialize through `iterableToArray`.
+   - A class body dropped both the `*` that makes a method a generator (consumed
+     and ignored) and a computed `[expr]` key (never parsed), so every iterable
+     class was un-iterable. `ClassMember` now carries `keyExpr`, evaluated in the
+     class scope like an object literal's computed key.
+
+   Still open next door: async generators (`async *m() {}`) produce an object with
+   no `next` in both object literals and classes, and `for await (... of ...)` does
+   not parse.
 2. **`TypedArray.prototype.subarray` returns an empty view.** `a.subarray(1)` has
    length 0, so `join`/spread over it are empty. `slice` is correct.
 3. `[1, , 3].flat()` keeps the hole (length 3, node gives 2).

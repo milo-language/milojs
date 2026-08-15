@@ -4364,9 +4364,11 @@ fn regexStrMatch(st: &mut Interp, s: &string, rid: i64): JSValue {
     var going = true
     while going {
         // NOT named `saves`: a second local of that name already exists in this
-        // function (the non-global path above), and milo's bounds checks cache
-        // the length per source name — the checks here would compare against the
-        // other, empty `saves` and trap 0/0 on every match.
+        // function (the non-global path above), and milo's bounds checks used to
+        // cache the hoisted length per source NAME, so the checks here compared
+        // against the other, empty `saves` and trapped 0/0 on every match. Fixed
+        // in milo 45c7b0a1; the distinct name stays so an older compiler still
+        // builds this correctly.
         let gsaves = regexExec(st.regexes[rid], s, pos)
         if gsaves.len() == 0 {
             going = false
@@ -8973,7 +8975,16 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
     }
     var i: i64 = 0
     while i < prog.classes[classIdx].members.len() {
-        let mName = prog.classes[classIdx].members[i].name.clone()
+        var mName = prog.classes[classIdx].members[i].name.clone()
+        // a computed key (`[Symbol.iterator]() {}`) is evaluated once here, in the
+        // class scope, exactly as an object literal evaluates its computed keys
+        match prog.classes[classIdx].members[i].keyExpr {
+            Option.Some(keyExprId) => {
+                mName = toStr(evalExpr(prog, keyExprId, st, classScope))
+            }
+            Option.None => {
+            }
+        }
         let mFn = prog.classes[classIdx].members[i].fnIdx
         let mv = JSValue.Func(mFn, classScope)
         let mKind = prog.classes[classIdx].members[i].kind

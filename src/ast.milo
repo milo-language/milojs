@@ -204,6 +204,10 @@ pub struct ClassMember {
     isStatic: bool,
     // 0 plain method, 1 getter, 2 setter
     kind: i64,
+    // `[expr]() {}` — evaluated in the class scope when the class is built, so
+    // `*[Symbol.iterator]() {}` lands under the symbol key rather than a name.
+    // None for an ordinary method, whose key is `name`.
+    keyExpr: Option<ExprId>,
 }
 
 pub struct ClassDef {

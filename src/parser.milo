@@ -1896,14 +1896,28 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                 }
                 advance(p)
             }
+            // `*gen() {}` — the star precedes the key, and the method it makes
+            // is a generator. It used to be consumed and dropped, so every class
+            // generator method compiled to a plain function that ran its body to
+            // completion and returned undefined.
+            var isStarM = false
             if peekKind(p) == T_STAR {
                 advance(p)
+                isStarM = true
             }
             var mname = ""
-            if isPropName(p) || peekKind(p) == T_STR {
-                mname = p.toks[p.pos].text.clone()
+            var mkeyExpr: Option<ExprId> = Option.None
+            // `[expr]() {}` — a computed key, the form `[Symbol.iterator]` takes
+            if peekKind(p) == T_LBRACKET {
+                advance(p)
+                mkeyExpr = Option.Some(parseExpr(p, prog))
+                expect(p, T_RBRACKET)
+            } else {
+                if isPropName(p) || peekKind(p) == T_STR {
+                    mname = p.toks[p.pos].text.clone()
+                }
+                advance(p)
             }
-            advance(p)
             if peekKind(p) == T_LPAREN {
                 advance(p)
                 var mparams: Vec<string> = Vec.new()
@@ -1924,7 +1938,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                     prependStmt(prog, mbody, munpack)
                 }
                 prog.funcs.push(FuncDef {
-                    name: mname.clone(), params: mparams, body: mbody, isArrow: false, isAsync: isAsyncM, restFrom: mrest, isGenerator: false
+                    name: mname.clone(), params: mparams, body: mbody, isArrow: false, isAsync: isAsyncM, restFrom: mrest, isGenerator: isStarM
                 }
                 )
                 let fidx = prog.funcs.len() - 1
@@ -1932,7 +1946,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                     ctorFn = fidx
                 } else {
                     members.push(ClassMember {
-                        name: mname, fnIdx: fidx, isStatic: isStatic, kind: memberKind
+                        name: mname, fnIdx: fidx, isStatic: isStatic, kind: memberKind, keyExpr: mkeyExpr
                     }
                     )
                 }

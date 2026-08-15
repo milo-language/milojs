@@ -1,0 +1,12 @@
+[ 0, 1, 2 ]
+for-of 0
+for-of 1
+for-of 2
+[ 0, 1, 2 ]
+[ 10, 20 ]
+destructured 0 1
+true 2
+[ 0, 1 ]
+[ 100, 101 ]
+function
+[ 1 ] [ 2, 3 ]
