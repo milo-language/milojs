@@ -4,7 +4,7 @@ cat the animal
 true
 3 4
 3
-[ "a the animal", "b the animal", "c the animal" ]
+[ 'a the animal', 'b the animal', 'c the animal' ]
 12
 48
 undefined

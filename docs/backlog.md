@@ -52,14 +52,30 @@ Strongest: `language/block-scope` 100%, `literals` 77%, `identifiers` 75%.
   microtask tick, so an async function whose awaits all settle synchronously
   runs to completion before returning. `tests/promises.js` pins the one line
   this moves ("then 42"); everything else in that fixture matches node.
-- **console.log renders like bun, not node** (`src/eval.milo:6740`): nested
-  strings are double-quoted, and objects always break across lines instead of
-  staying inline when short. 17 of the 157 engine fixtures' `.expected` files
-  therefore are not byte-exact node captures — measured 2026-08-15:
-  `binaryLength control errorInspect es6 implicitSuper includesNanSymbols
-  methods modules objects oop operators promises propertyDescriptors prototype
-  prototypeMethodValues radixToString regex`. Fixing inspect would convert most
-  of them in one change.
+- **console.log/util.inspect** — DONE 2026-08-15. Was bun-shaped; now
+  reproduces node's `util.inspect` defaults (depth 2, breakLength 80, compact 3):
+  node's quote selection and escapes for nested strings, its `^[a-zA-Z_]\w*$`
+  bare-key rule (`$` is NOT in it, so `{ '$x': 1 }`), inline-when-it-fits
+  layout with no trailing comma, `groupArrayElements` column layout for arrays
+  over six entries, `<N empty items>` for holes, `-0`, `[Function: name]`,
+  `Map(n) {…}` / `Set(n) {…}`, and a RegExp as its literal. `lib/util.js` no
+  longer keeps a second copy — it delegates through the new `__inspect` native.
+  Engine `.expected` files that are byte-exact node captures went **140/157 to
+  153/158**. Locked by `tests/consoleInspect.js` and
+  `tests/runtime/utilInspectMatchesConsole.js`.
+
+  Still divergent in inspect, both needing new state rather than new formatting:
+  a class prints `[Function: Foo]` where node prints `[class Foo]` (there is no
+  isClass flag on FuncDef), and `Object.create(null)` is missing node's
+  `[Object: null prototype]` prefix.
+
+- **The five fixtures whose `.expected` is not a node capture**, and why:
+  `binaryLength` (uses `__byteLength`, an engine-only global node lacks),
+  `errorInspect` (node prints absolute-path stack frames), `modules` (node
+  prints a PID-stamped circular-dependency warning), `promises` (the settled-
+  `await` tick above), and `radixToString` — that last one is a **real bug**:
+  `Number.prototype.toString(radix)` diverges in the final digits
+  (`1.204620462046204621` in node vs `1.2046204620462046205` here).
 
 Stage 6 of the roadmap calls for a checked-in `test262-status.md` so the trend is
 visible. It does not exist yet — this table is the stopgap.

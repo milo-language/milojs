@@ -1,0 +1,19 @@
+{
+  a: 'x',
+  b: [
+    1, 2, 3, 4,
+    5, 6, 7
+  ]
+}
+[
+  1, 2, 3, 4,
+  5, 6, 7
+]
+{ s: "it's", t: 'say "hi"' }
+Map(1) { 'k' => 1 }
+Set(2) { 1, 2 }
+{
+  long: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+}
+'plain' 42 null
+str and 7 and {"a":1}

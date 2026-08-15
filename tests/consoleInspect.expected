@@ -1,0 +1,110 @@
+[ 1, 2, 3 ]
+[ 'a', 'b' ]
+[]
+{}
+{ x: 1 }
+{ x: 1, y: 2 }
+{ x: 1, y: 2, z: 3 }
+{ a: 'hi' }
+{ 'a-b': 1 }
+{ '0': 1 }
+{ '$x': 1, _y: 2 }
+[
+  1, 2, 3, 4,
+  5, 6, 7
+]
+[ 1, 2, 3, 4, 5, 6 ]
+[
+  'aaaa', 'bbbb',
+  'cccc', 'dddd',
+  'eeee', 'ffff',
+  'gggg'
+]
+{ nested: { a: 1, b: 2 } }
+{ deep: { a: { b: [Object] } } }
+[ [ 1, 2 ], [ 3, 4 ] ]
+[ { a: 1 }, { b: 2 } ]
+{ s: "it's" }
+{ s: 'say "hi"' }
+{ s: `both ' and "` }
+{ s: 'tab\there' }
+{ s: 'nl\nhere' }
+{
+  n: null,
+  u: undefined,
+  t: true,
+  f: false,
+  z: 0,
+  neg: -0,
+  nan: NaN,
+  inf: Infinity
+}
+{ big: 10n }
+{ sym: Symbol(s) }
+{ fn: [Function: foo] }
+{ arrow: [Function: arrow] }
+{ anon: [Function: anon] }
+Map(1) { 'a' => 1 }
+Set(2) { 1, 2 }
+1970-01-01T00:00:00.000Z
+/ab+c/gi
+{
+  longish: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+}
+{ a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8 }
+[ 1, 'two', { three: 3 } ]
+{ a: { b: { c: [Object] } } }
+[ [ [ [Array] ] ] ]
+{ a: [ 1, 2 ], b: { c: [ 3, 4 ] } }
+[
+   0,  1,  2,  3,  4,  5,  6,
+   7,  8,  9, 10, 11, 12, 13,
+  14, 15, 16, 17, 18, 19
+]
+[
+      0,  1000,  2000,  3000,  4000,
+   5000,  6000,  7000,  8000,  9000,
+  10000, 11000, 12000, 13000, 14000,
+  15000, 16000, 17000, 18000, 19000,
+  20000, 21000, 22000, 23000, 24000,
+  25000, 26000, 27000, 28000, 29000
+]
+[
+  's0', 's1', 's2',
+  's3', 's4', 's5',
+  's6', 's7'
+]
+[
+      0, 11111,
+  22222, 33333,
+  44444, 55555,
+  66666
+]
+[ 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'b', 'c', 'd', 'e', 'f', 'g' ]
+[
+   1,  2,  3,  4,  5,  6,
+   7,  8,  9, 10, 11, 12,
+  13, 14, 15, 16
+]
+{ '': 1 }
+{ 'a b': 2 }
+{ '123abc': 3 }
+{ _ok: 4 }
+{ a0: 5 }
+{ s: '\x00\x1B\x7F' }
+{ s: 'back\\slash' }
+{ s: 'quote\'and"both`tick' }
+{ arr: [ 'x', 'y' ], o: { p: 'q' } }
+{ m: Map(0) {} }
+{ se: Set(0) {} }
+Map(2) { 'k' => { a: 1 }, 'j' => [ 1, 2 ] }
+Set(2) { 'a', 'b' }
+{ re: /x/g }
+{ d: 1970-01-02T00:00:00.000Z }
+{ u: undefined }
+[ undefined, null ]
+[ <2 empty items>, 1 ]
+{ a: 1, b: 'two', c: [ 3 ], d: { e: 4 }, f: null }
+{ veryLongKeyNameHere: 'and a fairly long value string here too ok' }
+[ { aaa: 1, bbb: 2 }, { ccc: 3, ddd: 4 }, { eee: 5, fff: 6 } ]
+multi { a: 1 } [ 1, 2 ] end

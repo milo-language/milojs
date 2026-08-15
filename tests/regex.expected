@@ -13,10 +13,10 @@ null
 hell0 world
 hell0 w0rld
 15/01/2024
-[ "1", "2", "3" ]
+[ '1', '2', '3' ]
 555-1234
 null
  hello world 
-[ "one", "two", "three" ]
-[ "1", "22", "333" ]
+[ 'one', 'two', 'three' ]
+[ '1', '22', '333' ]
 [ 1, 2, 3 ]

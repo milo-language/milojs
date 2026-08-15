@@ -1706,6 +1706,9 @@ let NATIVE_SQLITE_CHANGES: i64 = 142
 let NATIVE_SQLITE_LAST_INSERT_ID: i64 = 143
 let NATIVE_SQLITE_BIND_INDEX: i64 = 144
 let NATIVE_SQLITE_FILENAME: i64 = 145
+// The engine's console.log renderer, exposed to JS so lib/util.js does not have
+// to keep a second, diverging copy of node's util.inspect.
+pub let NATIVE_INSPECT: i64 = 146
 
 // sqlite3_column_name is not wrapped by std/sqlite, but node:sqlite's get()/all()
 // return row objects keyed by column name, so it is declared here directly. The
@@ -3097,6 +3100,25 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             )
         }
         return JSValue.Undefined
+    }
+    if id == NATIVE_INSPECT {
+        if argVals.len() == 0 {
+            return JSValue.Str("undefined")
+        }
+        // inspectTop, not inspectInner: util.inspect('x') is "'x'", but that is
+        // the quoted form only because a bare string is the whole value — node
+        // quotes it here and NOT in console.log, which is why the two differ.
+        match argVals[0] {
+            JSValue.Str(sv) => {
+                if isSymbolStr(sv) {
+                    return JSValue.Str(symbolDisplay(sv))
+                }
+                return JSValue.Str(inspectQuoteStr(sv))
+            }
+            _ => {
+            }
+        }
+        return JSValue.Str(inspectTop(st, cloneValue(argVals[0])))
     }
     if id == NATIVE_QUEUE_MICROTASK_JS {
         if argVals.len() > 0 {
@@ -4838,6 +4860,9 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "clearImmediate", JSValue.Native(NATIVE_CLEAR_TIMER))
     scopeDefine(st, 0, "setImmediate", JSValue.Native(NATIVE_SET_IMMEDIATE))
     scopeDefine(st, 0, "queueMicrotask", JSValue.Native(NATIVE_QUEUE_MICROTASK_JS))
+    // not a JS global in node; lib/util.js reads it off globalThis so util.inspect
+    // and console.log render identically
+    scopeDefine(st, 0, "__inspect", JSValue.Native(NATIVE_INSPECT))
     // The raw "wrap a value in a resolved promise" primitive, exposed under its
     // own name so the prelude can build the public Promise.resolve on top of it.
     // Capturing `Promise.resolve` from JS does not work: reading a method off a
@@ -6738,12 +6763,323 @@ fn spaces(n: i64): string {
     return s
 }
 
-// Reproduces bun's console.log object rendering: one property per line, indented
-// two spaces per level, a trailing comma after every entry, string *values*
-// double-quoted, closing brace at the parent indent. `{}` stays inline. Nesting
-// past depth 2 collapses to `[Object]`. A top-level string prints raw (see
-// inspectTop) — only nested strings are quoted.
-fn inspectInner(st: &Interp, v: &JSValue, depth: i64): string {
+// console.log's value rendering, reproducing node's `util.inspect` defaults
+// (depth 2, breakLength 80, compact 3) rather than bun's. The algorithm is
+// node's: render every entry, then decide layout — one line when the entries
+// fit inside breakLength, otherwise one per line at the parent indent + 2 with
+// NO trailing comma. Arrays of more than six entries are first laid out in
+// columns by inspectGroupArray, exactly as node's groupArrayElements does.
+//
+// Why mirror node this closely: every .expected in tests/ is a byte-exact node
+// capture, so any divergence here is a divergence in 17 fixtures at once.
+fn inspBreakLength(): i64 {
+    return 80
+}
+
+
+fn mjInspectHexUpper(v: i64): u8 {
+    if v < 10 {
+        return ('0' as i64 + v) as u8
+    }
+    return ('A' as i64 + (v - 10)) as u8
+}
+
+// node's strEscape: a nested string is single-quoted, switching to double when
+// it contains a single quote and no double, and to a backtick when it contains
+// both. Control characters become \n / \t / \r / \b / \f or \xNN (upper-case
+// hex, as node's escape table spells it).
+fn inspectQuoteStr(s: &string): string {
+    var hasSingle = false
+    var hasDouble = false
+    var hasBack = false
+    var i: i64 = 0
+    while i < s.len() {
+        let c = s[i]
+        if c == 39 as u8 {
+            hasSingle = true
+        }
+        if c == 34 as u8 {
+            hasDouble = true
+        }
+        if c == 96 as u8 {
+            hasBack = true
+        }
+        i = i + 1
+    }
+    var q = 39 as u8
+    if hasSingle {
+        if !hasDouble {
+            q = 34 as u8
+        } else if !hasBack {
+            q = 96 as u8
+        }
+    }
+    var out = String.withCapacity(s.len() + 2)
+    out.push(q)
+    var k: i64 = 0
+    while k < s.len() {
+        let c = s[k]
+        if c == q || c == 92 as u8 {
+            out.push(92 as u8)
+            out.push(c)
+        } else if c == 10 as u8 {
+            out.push(92 as u8)
+            out.push('n')
+        } else if c == 9 as u8 {
+            out.push(92 as u8)
+            out.push('t')
+        } else if c == 13 as u8 {
+            out.push(92 as u8)
+            out.push('r')
+        } else if c == 8 as u8 {
+            out.push(92 as u8)
+            out.push('b')
+        } else if c == 12 as u8 {
+            out.push(92 as u8)
+            out.push('f')
+        } else if c < 32 as u8 || c == 127 as u8 {
+            out.push(92 as u8)
+            out.push('x')
+            out.push(mjInspectHexUpper(((c as i64) >> 4) & 15))
+            out.push(mjInspectHexUpper((c as i64) & 15))
+        } else {
+            out.push(c)
+        }
+        k = k + 1
+    }
+    out.push(q)
+    return out
+}
+
+// node leaves a key bare only when it matches /^[a-zA-Z_][a-zA-Z_0-9]*$/ — note
+// that `$` is NOT in that set, so `{ $x: 1 }` prints as `{ '$x': 1 }`.
+fn inspectKeyStr(k: &string): string {
+    if isSymbolStr(k) {
+        return "[" + symbolDisplay(k) + "]"
+    }
+    var ok = k.len() > 0
+    var i: i64 = 0
+    while i < k.len() {
+        let c = k[i]
+        let alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == 95 as u8
+        let digit = c >= '0' && c <= '9'
+        if !alpha && !(digit && i > 0) {
+            ok = false
+        }
+        i = i + 1
+    }
+    if ok {
+        return k.clone()
+    }
+    return inspectQuoteStr(k)
+}
+
+fn strHasNewline(s: &string): bool {
+    var i: i64 = 0
+    while i < s.len() {
+        if s[i] == 10 as u8 {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+fn mjPadLeft(s: &string, width: i64): string {
+    if s.len() >= width {
+        return s.clone()
+    }
+    return spaces(width - s.len()) + s
+}
+
+fn mjPadRight(s: &string, width: i64): string {
+    if s.len() >= width {
+        return s.clone()
+    }
+    return s + spaces(width - s.len())
+}
+
+// node's reduceToSingleString. `base` is the prefix an exotic object carries
+// ("Map(1)", "Set(2)"); `grouped` says the entries already went through the
+// column layout, which node treats as a hard "do not put this on one line"
+// (its `entries === output.length` guard).
+fn inspectJoin(parts: &Vec<string>, open: &string, close: &string, base: &string, indentLvl: i64, grouped: bool): string {
+    var pre = ""
+    if base.len() > 0 {
+        pre = base + " "
+    }
+    if parts.len() == 0 {
+        return pre + open + close
+    }
+    let n = parts.len()
+    // node: start = entries + indentationLvl + braces[0].length + base.length + 10
+    let start = n + indentLvl + open.len() + base.len() + 10
+    var total = n + start
+    var fits = !grouped
+    if total + n > inspBreakLength() {
+        fits = false
+    }
+    var i: i64 = 0
+    while i < n {
+        total = total + parts[i].len()
+        if total > inspBreakLength() {
+            fits = false
+        }
+        if strHasNewline(parts[i]) {
+            fits = false
+        }
+        i = i + 1
+    }
+    if fits {
+        var out = pre + open + " "
+        i = 0
+        while i < n {
+            if i > 0 {
+                out = out + ", "
+            }
+            out = out + parts[i]
+            i = i + 1
+        }
+        return out + " " + close
+    }
+    let ind = spaces(indentLvl)
+    var out = pre + open + "\n"
+    i = 0
+    while i < n {
+        out = out + ind + "  " + parts[i]
+        // node emits no trailing comma on the last entry
+        if i + 1 < n {
+            out = out + ","
+        }
+        out = out + "\n"
+        i = i + 1
+    }
+    return out + ind + close
+}
+
+// node's groupArrayElements: an array of more than six entries is laid out in
+// columns rather than one-per-line. Returns the original parts unchanged when
+// the shape does not qualify (entries too wide, or too uneven in width).
+// `allNumeric` selects right-alignment, as node does for number/bigint arrays.
+fn inspectGroupArray(parts: &Vec<string>, indentLvl: i64, allNumeric: bool): Vec<string> {
+    let outputLength = parts.len()
+    let separatorSpace: i64 = 2
+    var totalLength: i64 = 0
+    var maxLength: i64 = 0
+    var dataLen: Vec<i64> = Vec.new()
+    var i: i64 = 0
+    while i < outputLength {
+        let len = parts[i].len()
+        dataLen.push(len)
+        totalLength = totalLength + len + separatorSpace
+        if maxLength < len {
+            maxLength = len
+        }
+        i = i + 1
+    }
+    let actualMax = maxLength + separatorSpace
+    // at least three entries must fit side by side, and one entry must not
+    // dwarf the rest — otherwise the padding between short entries is enormous
+    let evenEnough = ((totalLength as f64) / (actualMax as f64)) > 5.0 || maxLength <= 6
+    if !(actualMax * 3 + indentLvl < inspBreakLength() && evenEnough) {
+        var same: Vec<string> = Vec.new()
+        var c: i64 = 0
+        while c < outputLength {
+            same.push(parts[c].clone())
+            c = c + 1
+        }
+        return same
+    }
+    let approxCharHeights = 2.5
+    let averageBias = Math.sqrt((actualMax as f64) - (totalLength as f64) / (outputLength as f64))
+    var biasedMax = (actualMax as f64) - 3.0 - averageBias
+    if biasedMax < 1.0 {
+        biasedMax = 1.0
+    }
+    var columns = Math.round(Math.sqrt(approxCharHeights * biasedMax * (outputLength as f64)) / biasedMax) as i64
+    let byWidth = (inspBreakLength() - indentLvl) / actualMax
+    if columns > byWidth {
+        columns = byWidth
+    }
+    // node caps at ctx.compact * 4 (12) and at 15
+    if columns > 12 {
+        columns = 12
+    }
+    if columns > 15 {
+        columns = 15
+    }
+    if columns <= 1 {
+        var same: Vec<string> = Vec.new()
+        var c: i64 = 0
+        while c < outputLength {
+            same.push(parts[c].clone())
+            c = c + 1
+        }
+        return same
+    }
+    var maxLineLength: Vec<i64> = Vec.new()
+    var col: i64 = 0
+    while col < columns {
+        var lineLength: i64 = 0
+        var j = col
+        while j < outputLength {
+            if dataLen[j] > lineLength {
+                lineLength = dataLen[j]
+            }
+            j = j + columns
+        }
+        maxLineLength.push(lineLength + separatorSpace)
+        col = col + 1
+    }
+    var rows: Vec<string> = Vec.new()
+    var r: i64 = 0
+    while r < outputLength {
+        var maxJ = r + columns
+        if maxJ > outputLength {
+            maxJ = outputLength
+        }
+        var str = ""
+        var j = r
+        while j < maxJ - 1 {
+            let width = maxLineLength[j - r]
+            let cell = parts[j] + ", "
+            if allNumeric {
+                str = str + mjPadLeft(cell, width)
+            } else {
+                str = str + mjPadRight(cell, width)
+            }
+            j = j + 1
+        }
+        if allNumeric {
+            str = str + mjPadLeft(parts[j], maxLineLength[j - r] - separatorSpace)
+        } else {
+            str = str + parts[j]
+        }
+        rows.push(str)
+        r = r + columns
+    }
+    return rows
+}
+
+// A number renders through toStr except for -0, which JS stringifies as "0" but
+// node's inspect shows as -0.
+fn inspectNum(n: f64): string {
+    if n == 0.0 && (1.0 / n) < 0.0 {
+        return "-0"
+    }
+    return toStr(JSValue.Number(n))
+}
+
+fn inspectFuncLabel(name: &string): string {
+    if name.len() == 0 {
+        return "[Function (anonymous)]"
+    }
+    return "[Function: " + name + "]"
+}
+
+// A value as it appears INSIDE a container: strings are quoted, unlike the
+// top-level form (see inspectTop).
+fn inspectInner(st: &Interp, v: &JSValue, depth: i64, indentLvl: i64): string {
     match v {
         JSValue.Str(s) => {
             // a symbol is a tagged string internally; console.log shows it as
@@ -6751,14 +7087,20 @@ fn inspectInner(st: &Interp, v: &JSValue, depth: i64): string {
             if isSymbolStr(s) {
                 return symbolDisplay(s)
             }
-            return "\"" + s + "\""
+            return inspectQuoteStr(s)
+        }
+        JSValue.Number(n) => {
+            return inspectNum(n)
         }
         JSValue.BigInt(s) => {
             // console.log shows a BigInt with the trailing `n` (String() does not)
             return s + "n"
         }
+        JSValue.Func(fidx, _env) => {
+            return inspectFuncLabel(gProg.funcs[fidx].name)
+        }
         JSValue.Obj(o) => {
-            return inspectObj(st, o, depth)
+            return inspectObj(st, o, depth, indentLvl)
         }
         _ => {
             return toStr(v)
@@ -6766,8 +7108,7 @@ fn inspectInner(st: &Interp, v: &JSValue, depth: i64): string {
     }
 }
 
-// bun renders short arrays inline: `[ 1, 2, "x" ]`, empty as `[]`.
-fn inspectArr(st: &Interp, o: i64, depth: i64): string {
+fn inspectArr(st: &Interp, o: i64, depth: i64, indentLvl: i64): string {
     if depth > 2 {
         return "[Array]"
     }
@@ -6775,27 +7116,87 @@ fn inspectArr(st: &Interp, o: i64, depth: i64): string {
     if n == 0 {
         return "[]"
     }
-    var out = "[ "
+    var parts: Vec<string> = Vec.new()
+    var allNumeric = true
     var i: i64 = 0
     while i < n {
-        if i > 0 {
-            out = out + ", "
+        if arrIsHole(st, o, i) {
+            // node collapses a run of holes into one "<N empty items>" entry
+            // (singular for a run of one), rather than printing undefined
+            var run: i64 = 0
+            while i + run < n && arrIsHole(st, o, i + run) {
+                run = run + 1
+            }
+            var unit = " empty items>"
+            if run == 1 {
+                unit = " empty item>"
+            }
+            parts.push("<" + run.toString() + unit)
+            allNumeric = false
+            i = i + run
+            continue
+        }
+        // a separate clone for the match: matching moves the value, and the
+        // element is still needed for the render below
+        let probe = cloneValue(st.objects[o].elems[i])
+        match probe {
+            JSValue.Number(_x) => {
+            }
+            JSValue.BigInt(_b) => {
+            }
+            _ => {
+                allNumeric = false
+            }
         }
         let v = cloneValue(st.objects[o].elems[i])
-        out = out + inspectInner(st, v, depth + 1)
+        parts.push(inspectInner(st, v, depth + 1, indentLvl + 2))
         i = i + 1
     }
-    out = out + " ]"
-    return out
+    var grouped = false
+    if n > 6 {
+        let rows = inspectGroupArray(parts, indentLvl, allNumeric)
+        if rows.len() != parts.len() {
+            grouped = true
+            parts = rows
+        }
+    }
+    return inspectJoin(parts, "[", "]", "", indentLvl, grouped)
 }
 
 fn objIsoOrTag(st: &Interp, o: i64): string {
     return isoFromMillis(st.objExtras[st.objects[o].extra].dateMs)
 }
 
-fn inspectObj(st: &Interp, o: i64, depth: i64): string {
+fn inspectMapSet(st: &Interp, o: i64, depth: i64, indentLvl: i64): string {
+    let keys = st.objExtras[st.objects[o].extra].mapKeys.len()
+    var base = "Set(" + keys.toString() + ")"
+    if st.objects[o].isMap {
+        base = "Map(" + keys.toString() + ")"
+    }
+    if depth > 2 {
+        if st.objects[o].isMap {
+            return "[Map]"
+        }
+        return "[Set]"
+    }
+    var parts: Vec<string> = Vec.new()
+    var i: i64 = 0
+    while i < keys {
+        let k = cloneValue(st.objExtras[st.objects[o].extra].mapKeys[i])
+        if st.objects[o].isMap {
+            let val = cloneValue(st.objExtras[st.objects[o].extra].mapVals[i])
+            parts.push(inspectInner(st, k, depth + 1, indentLvl + 2) + " => " + inspectInner(st, val, depth + 1, indentLvl + 2))
+        } else {
+            parts.push(inspectInner(st, k, depth + 1, indentLvl + 2))
+        }
+        i = i + 1
+    }
+    return inspectJoin(parts, "{", "}", base, indentLvl, false)
+}
+
+fn inspectObj(st: &Interp, o: i64, depth: i64, indentLvl: i64): string {
     if st.objects[o].isArray {
-        return inspectArr(st, o, depth)
+        return inspectArr(st, o, depth, indentLvl)
     }
     // an Error prints as "Name: message [\n stack]", like node's console
     if st.objects[o].isError {
@@ -6823,38 +7224,48 @@ fn inspectObj(st: &Interp, o: i64, depth: i64): string {
     if st.objects[o].isDate {
         return objIsoOrTag(st, o)
     }
+    // a RegExp shows as its literal, not as its property bag
+    if st.objExtras[st.objects[o].extra].regexId >= 0 {
+        return "/" + toStr(objGet(st, o, "source")) + "/" + toStr(objGet(st, o, "flags"))
+    }
+    if st.objects[o].isMap || st.objects[o].isSet {
+        return inspectMapSet(st, o, depth, indentLvl)
+    }
+    if st.objects[o].isFunctionLike {
+        return inspectFuncLabel(toStr(objGet(st, o, "name")))
+    }
     if depth > 2 {
         return "[Object]"
     }
-    let n = st.objects[o].props.len()
-    if n == 0 {
-        return "{}"
-    }
-    let inner = spaces((depth + 1) * 2)
-    let outer = spaces(depth * 2)
-    var out = "{\n"
+    var parts: Vec<string> = Vec.new()
     var i: i64 = 0
-    while i < n {
-        if !st.objects[o].props[i].enumerable {
-            i = i + 1
-            continue
+    while i < st.objects[o].props.len() {
+        if st.objects[o].props[i].enumerable {
+            let key = st.objects[o].props[i].key.clone()
+            let val = cloneValue(st.objects[o].props[i].value)
+            parts.push(inspectKeyStr(key) + ": " + inspectInner(st, val, depth + 1, indentLvl + 2))
         }
-        let key = st.objects[o].props[i].key.clone()
-        let val = cloneValue(st.objects[o].props[i].value)
-        out = out + inner + key + ": " + inspectInner(st, val, depth + 1) + ",\n"
         i = i + 1
     }
-    out = out + outer + "}"
-    return out
+    if parts.len() == 0 {
+        return "{}"
+    }
+    return inspectJoin(parts, "{", "}", "", indentLvl, false)
 }
 
 pub fn inspectTop(st: &Interp, v: &JSValue): string {
     match v {
         JSValue.Obj(o) => {
-            return inspectObj(st, o, 0)
+            return inspectObj(st, o, 0, 0)
+        }
+        JSValue.Number(n) => {
+            return inspectNum(n)
         }
         JSValue.BigInt(s) => {
             return s + "n"
+        }
+        JSValue.Func(fidx, _env) => {
+            return inspectFuncLabel(gProg.funcs[fidx].name)
         }
         JSValue.Str(s) => {
             // a bare string logs unquoted (console.log("hi") → hi), but a symbol
