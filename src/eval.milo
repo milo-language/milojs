@@ -4356,16 +4356,20 @@ fn regexStrMatch(st: &mut Interp, s: &string, rid: i64): JSValue {
     var any = false
     var going = true
     while going {
-        let saves = regexExec(st.regexes[rid], s, pos)
-        if saves.len() == 0 {
+        // NOT named `saves`: a second local of that name already exists in this
+        // function (the non-global path above), and milo's bounds checks cache
+        // the length per source name — the checks here would compare against the
+        // other, empty `saves` and trap 0/0 on every match.
+        let gsaves = regexExec(st.regexes[rid], s, pos)
+        if gsaves.len() == 0 {
             going = false
         } else {
             any = true
-            arrPush(st, arr, JSValue.Str(strSlice(s, saves[0], saves[1])))
-            if saves[1] == saves[0] {
-                pos = saves[1] + 1
+            arrPush(st, arr, JSValue.Str(strSlice(s, gsaves[0], gsaves[1])))
+            if gsaves[1] == gsaves[0] {
+                pos = gsaves[1] + 1
             } else {
-                pos = saves[1]
+                pos = gsaves[1]
             }
             if pos > s.len() {
                 going = false
