@@ -1480,13 +1480,25 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
                 // `const { a, b } = expr` — bind the initializer to a temp, then
                 // let the desugared declarators read out of it
                 let save = p.pos
+                // An ARRAY pattern binds by iteration, not by index: `const [a, b]
+                // = gen` must drive gen's [Symbol.iterator]. The declarators below
+                // read `__dN[0]`, `__dN[1]`, so the temp is bound to `[...expr]` —
+                // spread is the iteration protocol this engine already implements.
+                // Object patterns read by key and must NOT be wrapped.
+                let isArrayPattern = peekKind(p) == T_LBRACKET
                 var pat: Vec<DeclItem> = Vec.new()
                 let tmp = "__d" + i64ToStr(save)
                 patternDecls(p, prog, tmp.clone(), pat)
                 var tinit: Option<ExprId> = Option.None
                 if peekKind(p) == T_EQ {
                     advance(p)
-                    tinit = Option.Some(parseExpr(p, prog))
+                    var initE = parseExpr(p, prog)
+                    if isArrayPattern {
+                        var spreadEls: Vec<Option<ExprId>> = Vec.new()
+                        spreadEls.push(Option.Some(addExpr(prog, Expr.Spread(initE))))
+                        initE = addExpr(prog, Expr.ArrLit(addArrLit(prog, spreadEls)))
+                    }
+                    tinit = Option.Some(initE)
                 } else {
                     tinit = Option.Some(addExpr(prog, Expr.UndefLit))
                 }

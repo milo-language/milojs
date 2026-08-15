@@ -1362,7 +1362,10 @@ fn assignTarget(prog: &Prog, targetId: ExprId, value: JSValue, st: &mut Interp, 
 fn assignPattern(prog: &Prog, patId: ExprId, value: JSValue, st: &mut Interp, scope: i64) {
     match prog.exprs[patId.index] {
         Expr.ArrLit(litIdx) => {
-            pushTemp(st, cloneValue(value))
+            // `const [a, b] = obj` reads obj[0], obj[1] — right for arrays and
+            // strings, empty for an object that is iterable and nothing else.
+            let items = iterableToArray(prog, value, st)
+            pushTemp(st, cloneValue(items))
             var i: i64 = 0
             while i < prog.arrLits[litIdx.index].len() {
                 match prog.arrLits[litIdx.index][i] {
@@ -1372,7 +1375,7 @@ fn assignPattern(prog: &Prog, patId: ExprId, value: JSValue, st: &mut Interp, sc
                         // ...rest — the remaining elements as a fresh array
                         let rest = newArray(st)
                         pushTemp(st, JSValue.Obj(rest))
-                        let vh = objHandle(value)
+                        let vh = objHandle(items)
                         if vh >= 0 {
                             let vn = arrLen(st, vh)
                             var j = i
@@ -1385,7 +1388,7 @@ fn assignPattern(prog: &Prog, patId: ExprId, value: JSValue, st: &mut Interp, sc
                         assignTarget(prog, target, JSValue.Obj(rest), st, scope)
                     }
                         _ => {
-                            let ev = destructElement(prog, value, i, st)
+                            let ev = destructElement(prog, items, i, st)
                             assignTarget(prog, e, ev, st, scope)
                         }
                     }
@@ -2279,7 +2282,10 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         pushTemp(st, JSValue.Obj(o))
         // new Map([[k, v], ...]) / new Set([v, ...])
         if argVals.len() > 0 {
-            let src = objHandle(argVals[0])
+            // new Set(gen) / new Map(gen) — anything iterable, not just an array
+            let srcVal = iterableToArray(gProg, cloneValue(argVals[0]), st)
+            pushTemp(st, cloneValue(srcVal))
+            let src = objHandle(srcVal)
             if src >= 0 && st.objects[src].isArray {
                 var i: i64 = 0
                 while i < arrLen(st, src) {
@@ -2295,6 +2301,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                     i = i + 1
                 }
             }
+            popTemp(st)
         }
         popTemp(st)
         return JSValue.Obj(o)
@@ -6556,6 +6563,15 @@ fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp)
             let iter = callValue(prog, itFn, noArgs, cloneValue(v), st)
             pushTemp(st, cloneValue(iter))
             let ih = objHandle(iter)
+            // `*[Symbol.iterator]() {}` hands back a GENERATOR, whose `next` is a
+            // native method rather than a stored property, so the getMember below
+            // finds nothing and the spread comes out empty. The generator branch
+            // at the top of this function is exactly the driver it needs.
+            if ih >= 0 && st.objects[ih].isGenerator && !st.throwing {
+                spreadInto(prog, out, JSValue.Obj(ih), st)
+                popTemp(st)
+                return
+            }
             var guard: i64 = 0
             while ih >= 0 && !st.throwing && guard < 100000000 {
                 let nextFn = getMember(st, ih, "next")
@@ -6577,6 +6593,38 @@ fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp)
         }
     }
     spreadBuiltin(out, v, st)
+}
+
+// A rooted array holding everything `v` iterates, or `v` unchanged when it is not
+// a user iterable. The index-reading consumers (array destructuring, the Map/Set
+// constructors) answer undefined for an object that has only [Symbol.iterator]
+// and no indexed properties, so they materialize through here first.
+//
+// Divergence: the spec pulls exactly as many elements as the consumer needs, so
+// an infinite iterator destructures fine there and spins here. Every eager path
+// in this engine has that shape today (Array.from, spread); a lazy pull needs an
+// element-count-limited driver, which spreadInto has no argument for.
+fn iterableToArray(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
+    let h = objHandle(v)
+    if h < 0 || st.objects[h].isArray {
+        return cloneValue(v)
+    }
+    let drivable = st.objects[h].isGenerator || st.objects[h].isMap || st.objects[h].isSet
+        || isCallableIn(st, getMember(st, h, symIteratorKey()))
+    if !drivable {
+        return cloneValue(v)
+    }
+    var items: Vec<JSValue> = Vec.new()
+    spreadInto(prog, items, cloneValue(v), st)
+    let arr = newArray(st)
+    pushTemp(st, JSValue.Obj(arr))
+    var i: i64 = 0
+    while i < items.len() {
+        arrPush(st, arr, cloneValue(items[i]))
+        i = i + 1
+    }
+    popTemp(st)
+    return JSValue.Obj(arr)
 }
 
 fn spreadBuiltin(out: &mut Vec<JSValue>, v: &JSValue, st: &Interp) {
@@ -11669,7 +11717,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             // A generator is its own iterator but its `next` is a native method,
             // not a stored property, so it drives through genNext rather than the
             // getMember(next)+callValue path a user iterator uses.
-            let isGen = srcH >= 0 && st.objects[srcH].isGenerator
+            var isGen = srcH >= 0 && st.objects[srcH].isGenerator
             var driveIter = isGen
             var iterVal = cloneValue(ov)
             if srcH >= 0 && !isGen && !st.objects[srcH].isArray && !st.objects[srcH].isMap && !st.objects[srcH].isSet {
@@ -11684,6 +11732,13 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 let iter = cloneValue(iterVal)
                 pushTemp(st, cloneValue(iter))
                 let iterH = objHandle(iter)
+                // `*[Symbol.iterator]() {}` returns a generator, and a generator's
+                // `next` is native rather than a stored property — without this the
+                // getMember(next) below reports "iterator has no next method" for an
+                // object that is perfectly iterable.
+                if iterH >= 0 && st.objects[iterH].isGenerator {
+                    isGen = true
+                }
                 let loopScope2 = newScope(st, scope)
                 pushActive(st, loopScope2)
                 var running = true
