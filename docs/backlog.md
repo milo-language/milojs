@@ -22,7 +22,7 @@ run by hand rather than in CI:
 
 | sweep | score | measured |
 |---|---:|---|
-| test262, 1500-case deterministic sample | 655/1470 = **44.6%** | 2026-08-15 |
+| test262, 1500-case deterministic sample | 660/1470 = **44.9%** | 2026-08-15 |
 | QuickJS `tests/` at `fced162` | 97/149 = **65.1%** | 2026-08-15 |
 
 Movement on 2026-08-15: the engine now runs the program on a green task, so
@@ -65,6 +65,52 @@ concrete constructor's `prototype` chaining to it, and the native's property bag
 | `built-ins/ArrayBuffer` | 43/221 = 19.5% | 43/221 = 19.5% |
 
 Locked by `tests/typedArrayPrototypes.js`.
+
+### Every remaining constructor got a prototype — 2026-08-15
+
+A probe over all 21 built-in constructors found **seven with no prototype object
+at all**: Number, Boolean, Symbol, BigInt, Map, Set and Promise. Same gap as the
+buffer family, Date and RegExp, so this sweep finishes the pattern — every
+constructor now has one, built by a shared `buildNativeProto`, with Map/Set/
+Promise instances linked to theirs.
+
+Promise needed its own step: its global binding is a plain OBJECT, not a
+`JSValue.Native`, so a prototype hung off the `NATIVE_PROMISE` bag is
+unreachable from it. The link is made in `setupRemainingProtos`, which runs
+after `setupGlobals` has built that object — attaching it earlier silently did
+nothing, because `st.promiseProtoObj` was still -1.
+
+Two more bugs came out of it:
+
+- **A primitive receiver reaching a built-in method value** fell through to the
+  generic object tag: `Number.prototype.toString.call(255, 16)` returned
+  `"[object Number]"` instead of `"ff"`, and likewise for Boolean and BigInt.
+- **Assignment to a native constructor's property ignored writability.** The
+  `JSValue.Native` branch of SetMember called `objSet` unconditionally, so
+  `Boolean.prototype = x` replaced it even though a built-in `prototype` is
+  `{writable: false, enumerable: false, configurable: false}`. Found because
+  test262's `verifyNotWritable` assigns and re-reads rather than trusting the
+  descriptor — the descriptor was already right.
+
+| area | before | after |
+|---|---:|---:|
+| `built-ins/Number` | 160/340 = 47.1% | **184/340 = 54.1%** |
+| `built-ins/Boolean` | 24/51 = 47.1% | 22/51 = 43.1% |
+
+Whole-suite 1500-sample 655 → 660. Locked by `tests/builtinPrototypes.js`.
+
+**Boolean went DOWN by 2, and that is real.** Four cases that used to fail on
+"prototype is undefined" now fail on stricter checks, against one newly passing.
+The two still outstanding need `isConstructor` semantics —
+`new Boolean.prototype.toString()` must throw a TypeError, and built-in methods
+are not constructors here. Related and also unfixed: `Number.prototype` and
+`Boolean.prototype` should be a Number/Boolean OBJECT wrapping 0/false, not a
+plain object, so `Boolean.prototype.toString()` should return `"false"`.
+
+**Sweep timing note:** `built-ins/Map` and `built-ins/Set` take far longer than
+their case counts suggest — the sweep allows 10s per case, so a directory with
+many slow or hanging cases stalls for many minutes. Neither was measured this
+round. Worth finding the slow case before relying on those numbers.
 
 ### RegExp — 2026-08-15
 

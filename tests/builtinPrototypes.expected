@@ -1,0 +1,39 @@
+Object object
+Array object
+String object
+Number object
+Boolean object
+Symbol object
+Date object
+RegExp object
+Error object
+Map object
+Set object
+WeakMap object
+WeakSet object
+Promise object
+ArrayBuffer object
+DataView object
+Int8Array object
+BigInt object
+true true
+1 true
+true 1,2
+1 1 2 true true
+true true function
+1.23 ff
+true false
+5.0 ff true
+function 10
+function
+false get 1
+Number false false false
+Boolean false false false
+Map false false false
+Set false false false
+RegExp false false false
+Date false false false
+Promise false false false
+ArrayBuffer false false false
+write dropped: true
+then still works 1

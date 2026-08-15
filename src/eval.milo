@@ -9,7 +9,7 @@ from "./value" import {
     JSValue, i64ToStr, daysFromCivil
 }
 from "./runtime" import {
-    Interp, Timer, Microtask, Reaction, PendingFetch, NATIVE_RESOLVER_BASE, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable
+    Interp, Timer, Microtask, Reaction, PendingFetch, NATIVE_RESOLVER_BASE, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr
 }
 from "./builtins" import {
     stringMethod, jsCharAt, mjStringifyVal, mjJsonParse, mjJsonOmitted
@@ -1997,6 +1997,24 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
         }
         return JSValue.Str("[object " + objectTypeTag(recv) + "]")
     }
+    // A primitive receiver reaching a built-in method value: this is
+    // `Number.prototype.toString.call(255, 16)` and friends, which fell through
+    // to the generic "[object Number]" tag above instead of dispatching.
+    if isPrimitiveMethodName(name) {
+        match recv {
+            JSValue.Number(_pn) => {
+                return primitiveMethod(name, recv, args)
+            }
+            JSValue.Bool(_pb) => {
+                return primitiveMethod(name, recv, args)
+            }
+            JSValue.BigInt(_pg) => {
+                return primitiveMethod(name, recv, args)
+            }
+            _ => {
+            }
+        }
+    }
     match recv {
         JSValue.Str(sv) => {
             if isSymbolStr(sv) && name == "toString" {
@@ -3633,8 +3651,14 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         let o = newObject(st)
         if id == NATIVE_MAP {
             st.objects[o].isMap = true
+            if st.mapProtoObj >= 0 {
+                st.objects[o].proto = st.mapProtoObj
+            }
         } else {
             st.objects[o].isSet = true
+            if st.setProtoObj >= 0 {
+                st.objects[o].proto = st.setProtoObj
+            }
         }
         // Map/Set entries live in the side table — allocate the slot up front so
         // every later mapKeys/mapVals access reaches a private extra, not the
@@ -6211,8 +6235,7 @@ fn setupTypedArrayProtos(st: &mut Interp) {
         objSet(st, sub, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64))
         objSetNonEnumerable(st, sub, "BYTES_PER_ELEMENT")
         let bag = getNativeProps(st, NATIVE_TA_BASE + tk)
-        objSet(st, bag, "prototype", JSValue.Obj(sub))
-        objSetNonEnumerable(st, bag, "prototype")
+        objDefineProtoAttr(st, bag, "prototype", JSValue.Obj(sub))
         objSet(st, bag, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64))
         objSetNonEnumerable(st, bag, "BYTES_PER_ELEMENT")
         objSet(st, bag, "name", JSValue.Str(taName(tk)))
@@ -6253,8 +6276,7 @@ fn setupBufferProtos(st: &mut Interp) {
     let abBag = getNativeProps(st, NATIVE_ARRAYBUFFER)
     objSet(st, abBag, "isView", JSValue.Native(NATIVE_ARRAYBUFFER_ISVIEW))
     objSetNonEnumerable(st, abBag, "isView")
-    objSet(st, abBag, "prototype", JSValue.Obj(abProto))
-    objSetNonEnumerable(st, abBag, "prototype")
+    objDefineProtoAttr(st, abBag, "prototype", JSValue.Obj(abProto))
 
     let dvProto = newObject(st)
     st.objects[dvProto].proto = st.objectProtoObj
@@ -6284,8 +6306,7 @@ fn setupBufferProtos(st: &mut Interp) {
     objSet(st, dvProto, "constructor", JSValue.Native(NATIVE_DATAVIEW))
     objSetNonEnumerable(st, dvProto, "constructor")
     let dvBag = getNativeProps(st, NATIVE_DATAVIEW)
-    objSet(st, dvBag, "prototype", JSValue.Obj(dvProto))
-    objSetNonEnumerable(st, dvBag, "prototype")
+    objDefineProtoAttr(st, dvBag, "prototype", JSValue.Obj(dvProto))
 }
 
 fn arrayBufferProto(st: &mut Interp): i64 {
@@ -6350,6 +6371,107 @@ fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>, st
     return JSValue.Number(byteToUtf16(s, saves[0]) as f64)
 }
 
+// Build a prototype object for a native constructor: the named methods as
+// bound-method values (the call site's receiver wins), a `constructor` back
+// link, and the object hung off the native's property bag as `prototype`.
+// Returns the prototype handle.
+//
+// Number, Boolean, Symbol, BigInt, Map, Set and Promise had NO prototype object
+// at all — `Number.prototype` read as undefined — which is the same gap the
+// buffer family, Date and RegExp each turned out to have. Anything that starts
+// from the prototype (every test262 property-descriptor case, and the common
+// `Map.prototype.get.call(m, k)` idiom) failed before doing anything.
+fn buildNativeProto(st: &mut Interp, nativeId: i64, names: &Vec<string>): i64 {
+    let proto = newObject(st)
+    st.objects[proto].proto = st.objectProtoObj
+    var i: i64 = 0
+    while i < names.len() {
+        objSet(st, proto, names[i].clone(), makeBoundMethod(st, JSValue.Undefined, names[i].clone()))
+        objSetNonEnumerable(st, proto, names[i])
+        i = i + 1
+    }
+    objSet(st, proto, "constructor", JSValue.Native(nativeId))
+    objSetNonEnumerable(st, proto, "constructor")
+    let bag = getNativeProps(st, nativeId)
+    objDefineProtoAttr(st, bag, "prototype", JSValue.Obj(proto))
+    return proto
+}
+
+fn setupRemainingProtos(st: &mut Interp) {
+    var bigNames: Vec<string> = Vec.new()
+    bigNames.push("toString")
+    bigNames.push("valueOf")
+    bigNames.push("toLocaleString")
+    let _gp = buildNativeProto(st, NATIVE_BIGINT, bigNames)
+
+    // Number / Boolean / BigInt / Symbol: primitives, so nothing links these as
+    // an instance proto — they exist so the prototype itself is reachable.
+    var numNames: Vec<string> = Vec.new()
+    numNames.push("toString")
+    numNames.push("valueOf")
+    numNames.push("toFixed")
+    numNames.push("toPrecision")
+    numNames.push("toExponential")
+    numNames.push("toLocaleString")
+    let _np = buildNativeProto(st, NATIVE_NUMBER, numNames)
+
+    var boolNames: Vec<string> = Vec.new()
+    boolNames.push("toString")
+    boolNames.push("valueOf")
+    let _bp = buildNativeProto(st, NATIVE_BOOLEAN, boolNames)
+
+    var symNames: Vec<string> = Vec.new()
+    symNames.push("toString")
+    symNames.push("valueOf")
+    let _sp = buildNativeProto(st, NATIVE_SYMBOL, symNames)
+
+    // Map and Set share one method list here because they share a dispatcher;
+    // only the names each actually answers are listed per side.
+    var mapNames: Vec<string> = Vec.new()
+    mapNames.push("get")
+    mapNames.push("set")
+    mapNames.push("has")
+    mapNames.push("delete")
+    mapNames.push("clear")
+    mapNames.push("forEach")
+    mapNames.push("keys")
+    mapNames.push("values")
+    mapNames.push("entries")
+    st.mapProtoObj = buildNativeProto(st, NATIVE_MAP, mapNames)
+
+    var setNames: Vec<string> = Vec.new()
+    setNames.push("add")
+    setNames.push("has")
+    setNames.push("delete")
+    setNames.push("clear")
+    setNames.push("forEach")
+    setNames.push("keys")
+    setNames.push("values")
+    setNames.push("entries")
+    setNames.push("union")
+    setNames.push("intersection")
+    setNames.push("difference")
+    setNames.push("isSubsetOf")
+    setNames.push("isSupersetOf")
+    setNames.push("isDisjointFrom")
+    st.setProtoObj = buildNativeProto(st, NATIVE_SET, setNames)
+
+    var promNames: Vec<string> = Vec.new()
+    promNames.push("then")
+    promNames.push("catch")
+    promNames.push("finally")
+    st.promiseProtoObj = buildNativeProto(st, NATIVE_PROMISE, promNames)
+    // Promise's global binding is a plain OBJECT, not a JSValue.Native, so the
+    // prototype hung off the NATIVE_PROMISE bag is unreachable from it — hang it
+    // on the constructor object too. This runs after setupGlobals built that
+    // object, which is why the link is made here rather than there.
+    if st.promiseCtorObj >= 0 {
+        objDefineProtoAttr(st, st.promiseCtorObj, "prototype", JSValue.Obj(st.promiseProtoObj))
+        objSet(st, st.promiseProtoObj, "constructor", JSValue.Obj(st.promiseCtorObj))
+        objSetNonEnumerable(st, st.promiseProtoObj, "constructor")
+    }
+}
+
 fn setupRegexProto(st: &mut Interp) {
     let rp = newObject(st)
     st.objects[rp].proto = st.objectProtoObj
@@ -6398,8 +6520,7 @@ fn setupRegexProto(st: &mut Interp) {
     objSet(st, rp, "constructor", JSValue.Native(NATIVE_REGEXP))
     objSetNonEnumerable(st, rp, "constructor")
     let rbag = getNativeProps(st, NATIVE_REGEXP)
-    objSet(st, rbag, "prototype", JSValue.Obj(rp))
-    objSetNonEnumerable(st, rbag, "prototype")
+    objDefineProtoAttr(st, rbag, "prototype", JSValue.Obj(rp))
     st.regexProtoObj = rp
 }
 
@@ -6566,6 +6687,7 @@ pub fn setupGlobals(st: &mut Interp) {
     setupTypedArrayProtos(st)
     setupBufferProtos(st)
     setupRegexProto(st)
+    setupRemainingProtos(st)
     // Object is itself an object, so it carries the Object.prototype methods.
     // Code borrows them from the constructor — `Object.hasOwnProperty.call(o, k)`
     // is a common way to avoid a shadowed own property — and the native's bag
@@ -6647,8 +6769,7 @@ pub fn setupGlobals(st: &mut Interp) {
     for dm in dateProtoMethodNames() {
         objSet(st, dateProto, dm.clone(), makeBoundMethod(st, JSValue.Undefined, dm.clone()))
     }
-    objSet(st, dateCtorObj, "prototype", JSValue.Obj(dateProto))
-    objSetNonEnumerable(st, dateCtorObj, "prototype")
+    objDefineProtoAttr(st, dateCtorObj, "prototype", JSValue.Obj(dateProto))
     objSet(st, dateProto, "constructor", JSValue.Native(NATIVE_DATE))
     objSetNonEnumerable(st, dateProto, "constructor")
     st.objects[dateProto].proto = st.objectProtoObj
@@ -7748,9 +7869,11 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                 }
                 JSValue.Native(nid) => {
                     // assigning onto a builtin constructor, e.g.
-                    // Error.captureStackTrace = fn
+                    // Error.captureStackTrace = fn. setMemberDyn, not objSet, so
+                    // a non-writable property (every built-in `prototype`) drops
+                    // the write instead of silently replacing itself.
                     let bag = getNativeProps(st, nid)
-                    objSet(st, bag, key, cloneValue(v))
+                    setMemberDyn(prog, bag, key, cloneValue(v), st)
                 }
                 JSValue.Func(sf, senv) => {
                     if key == "prototype" {
@@ -12036,6 +12159,9 @@ fn mapMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut I
         // union / intersection / difference all build a fresh Set
         let res = newObject(st)
         st.objects[res].isSet = true
+        if st.setProtoObj >= 0 {
+            st.objects[res].proto = st.setProtoObj
+        }
         let _re = ensureExtra(st, res)
         pushTemp(st, JSValue.Obj(res))
         if name == "union" {
