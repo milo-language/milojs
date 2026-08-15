@@ -22,7 +22,7 @@ run by hand rather than in CI:
 
 | sweep | score | measured |
 |---|---:|---|
-| test262, 1500-case deterministic sample | 649/1470 = **44.1%** | 2026-08-15 |
+| test262, 1500-case deterministic sample | 653/1470 = **44.4%** | 2026-08-15 |
 | QuickJS `tests/` at `fced162` | 97/149 = **65.1%** | 2026-08-15 |
 
 Movement on 2026-08-15: the engine now runs the program on a green task, so
@@ -65,6 +65,43 @@ concrete constructor's `prototype` chaining to it, and the native's property bag
 | `built-ins/ArrayBuffer` | 43/221 = 19.5% | 43/221 = 19.5% |
 
 Locked by `tests/typedArrayPrototypes.js`.
+
+### Date — 2026-08-15
+
+`Date.prototype` carried 20 of node's 47 methods. Most of the gap was not
+missing behaviour: the whole `set*` / `setUTC*` family was already implemented
+inside `dateMethod` and simply never listed on the prototype. Added the rest of
+the list, plus `toTimeString`, `toGMTString`, `getYear`, `setYear`,
+`toUTCString` in its real RFC 7231 form, and `toLocale*` in node's default
+en-US shape (all of these previously returned the ISO string).
+
+**Date also disagreed with itself.** The local getters decomposed in the HOST
+timezone (`DateTime.fromEpochLocal`), while the setters decomposed in UTC and
+`getTimezoneOffset` reported 0. So `d.setHours(d.getHours())` shifted the date
+by the host offset, and `getHours()` returned 3 where `getUTCHours()` returned
+10. Everything is UTC now, which makes milojs behave as node run under
+`TZ=UTC`. That is a deliberate simplification, not a fix in disguise: std
+exposes `localtime_r` but no `mktime`, so a correct LOCAL setter family is not
+expressible today — and a half-local Date is worse than a consistent UTC one.
+Anyone adding a timezone database must do the getters and setters together.
+
+Also: built-in CONSTRUCTORS had no own `name`/`length` (`Date.length` was
+undefined) — they are bound with `scopeDefine` rather than hung off a namespace
+object, so the `nameNativesOf` pass never reached them. There is now a
+`builtinCtorArity` table, generated from node like the other two. `Date.parse`
+is the one static whose name collides across namespaces (`JSON.parse` is 2), so
+it is set explicitly after the namespace pass.
+
+| area | before | after |
+|---|---:|---:|
+| `built-ins/Date` | 137/594 = 23.1% | **209/594 = 35.2%** |
+
+Whole-suite 1500-sample 649 → 653. Locked by `tests/dateSurface.js`, which
+asserts only the TZ-independent surface — the local-time forms cannot be pinned,
+since node's output for them depends on where the capture ran.
+
+`toLocale*` is en-US only and ignores any argument; real `Intl` support is not
+modelled.
 
 ### The uncurry-this idiom, and `name`/`length` on built-ins — 2026-08-15
 

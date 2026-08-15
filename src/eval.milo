@@ -588,6 +588,68 @@ fn brandName(brand: i64): string {
 // GENERATED from node: the `length` of a built-in STATIC. Kept separate from
 // builtinArity because the same name can differ — Object.keys is 1 while
 // Array.prototype.keys is 0.
+// GENERATED from node: a built-in CONSTRUCTOR own `length`.
+fn builtinCtorArity(n: &string): i64 {
+    if n == "Object" {
+        return 1
+    }
+    if n == "Array" {
+        return 1
+    }
+    if n == "String" {
+        return 1
+    }
+    if n == "Number" {
+        return 1
+    }
+    if n == "Boolean" {
+        return 1
+    }
+    if n == "Promise" {
+        return 1
+    }
+    if n == "Date" {
+        return 7
+    }
+    if n == "ArrayBuffer" {
+        return 1
+    }
+    if n == "Symbol" {
+        return 0
+    }
+    if n == "RegExp" {
+        return 2
+    }
+    if n == "Map" {
+        return 0
+    }
+    if n == "Set" {
+        return 0
+    }
+    if n == "Error" {
+        return 1
+    }
+    if n == "Function" {
+        return 1
+    }
+    if n == "WeakMap" {
+        return 0
+    }
+    if n == "WeakSet" {
+        return 0
+    }
+    if n == "Proxy" {
+        return 2
+    }
+    if n == "DataView" {
+        return 1
+    }
+    if n == "BigInt" {
+        return 1
+    }
+    return 0
+}
+
 fn builtinStaticArity(n: &string): i64 {
     if n == "UTC" {
         return 7
@@ -6176,12 +6238,26 @@ fn nameNativesOf(st: &mut Interp, owner: i64) {
     }
 }
 
+pub // A global built-in constructor's own `name` and `length`. They are bound with
+// scopeDefine rather than hung off a namespace object, so nameNativesOf never
+// reaches them and `Date.length` / `Array.name` were undefined.
+fn nameGlobalCtor(st: &mut Interp, gname: string, nid: i64) {
+    let bag = getNativeProps(st, nid)
+    objDefineBuiltinAttr(st, bag, "length", JSValue.Number(builtinCtorArity(gname) as f64))
+    objDefineBuiltinAttr(st, bag, "name", JSValue.Str(gname))
+}
+
 pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "Error", JSValue.Native(NATIVE_ERROR))
+    nameGlobalCtor(st, "Error", NATIVE_ERROR)
     scopeDefine(st, 0, "TypeError", JSValue.Native(NATIVE_TYPE_ERROR))
+    nameGlobalCtor(st, "TypeError", NATIVE_TYPE_ERROR)
     scopeDefine(st, 0, "RangeError", JSValue.Native(NATIVE_RANGE_ERROR))
+    nameGlobalCtor(st, "RangeError", NATIVE_RANGE_ERROR)
     scopeDefine(st, 0, "SyntaxError", JSValue.Native(NATIVE_SYNTAX_ERROR))
+    nameGlobalCtor(st, "SyntaxError", NATIVE_SYNTAX_ERROR)
     scopeDefine(st, 0, "ReferenceError", JSValue.Native(NATIVE_REFERENCE_ERROR))
+    nameGlobalCtor(st, "ReferenceError", NATIVE_REFERENCE_ERROR)
     // JSON is a plain object whose methods are native functions
     let json = newObject(st)
     objSet(st, json, "stringify", JSValue.Native(NATIVE_JSON_STRINGIFY))
@@ -6223,6 +6299,7 @@ pub fn setupGlobals(st: &mut Interp) {
     nameNativesOf(st, math)
     scopeDefine(st, 0, "Math", JSValue.Obj(math))
     scopeDefine(st, 0, "RegExp", JSValue.Native(NATIVE_REGEXP))
+    nameGlobalCtor(st, "RegExp", NATIVE_REGEXP)
     let promiseCtor = newObject(st)
     nameNativesOf(st, promiseCtor)
     st.promiseCtorObj = promiseCtor
@@ -6282,8 +6359,11 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, objectCtor, "valueOf", makeBoundMethod(st, JSValue.Undefined, "valueOf"))
     nameNativesOf(st, objectCtor)
     scopeDefine(st, 0, "Object", JSValue.Native(NATIVE_OBJECT_CTOR))
+    nameGlobalCtor(st, "Object", NATIVE_OBJECT_CTOR)
     scopeDefine(st, 0, "Number", JSValue.Native(NATIVE_NUMBER))
+    nameGlobalCtor(st, "Number", NATIVE_NUMBER)
     scopeDefine(st, 0, "BigInt", JSValue.Native(NATIVE_BIGINT))
+    nameGlobalCtor(st, "BigInt", NATIVE_BIGINT)
     let stringCtorObj = getNativeProps(st, NATIVE_STRING)
     objSet(st, stringCtorObj, "fromCharCode", JSValue.Native(NATIVE_STRING_FROMCHARCODE))
     objSet(st, stringCtorObj, "fromCodePoint", JSValue.Native(NATIVE_STRING_FROMCODEPOINT))
@@ -6304,7 +6384,9 @@ pub fn setupGlobals(st: &mut Interp) {
     st.stringProtoObj = stringProto
     st.stringProtoPristine = true
     scopeDefine(st, 0, "String", JSValue.Native(NATIVE_STRING))
+    nameGlobalCtor(st, "String", NATIVE_STRING)
     scopeDefine(st, 0, "Boolean", JSValue.Native(NATIVE_BOOLEAN))
+    nameGlobalCtor(st, "Boolean", NATIVE_BOOLEAN)
     scopeDefine(st, 0, "NaN", JSValue.Number(jsNan()))
     scopeDefine(st, 0, "Infinity", JSValue.Number(jsInfinity()))
     scopeDefine(st, 0, "isNaN", JSValue.Native(NATIVE_IS_NAN))
@@ -6323,6 +6405,7 @@ pub fn setupGlobals(st: &mut Interp) {
     st.objects[globalObj].isGlobal = true
     scopeDefine(st, 0, "globalThis", JSValue.Obj(globalObj))
     scopeDefine(st, 0, "Symbol", JSValue.Native(NATIVE_SYMBOL))
+    nameGlobalCtor(st, "Symbol", NATIVE_SYMBOL)
     let symbolCtorObj = getNativeProps(st, NATIVE_SYMBOL)
     objSet(st, symbolCtorObj, "iterator", JSValue.Str(symIteratorKey()))
     // other well-known symbols — interned keys like @@iterator, counter 0
@@ -6346,9 +6429,14 @@ pub fn setupGlobals(st: &mut Interp) {
     objSetNonEnumerable(st, dateProto, "constructor")
     st.objects[dateProto].proto = st.objectProtoObj
     nameNativesOf(st, dateCtorObj)
+    // after nameNativesOf, which would otherwise overwrite it: Date.parse is the
+    // one static whose name collides across namespaces (JSON.parse is 2), and
+    // builtinStaticArity is keyed by name alone
+    objDefineBuiltinAttr(st, getNativeProps(st, NATIVE_DATE_PARSE), "length", JSValue.Number(1.0))
     st.dateProtoObj = dateProto
     st.dateCtorProps = dateCtorObj
     scopeDefine(st, 0, "Date", JSValue.Native(NATIVE_DATE))
+    nameGlobalCtor(st, "Date", NATIVE_DATE)
     // Function.prototype.{call,apply,bind} are bound-method values: invoking
     // .call on them re-targets to whatever function is passed as the receiver,
     // which is how Function.prototype.apply.call(fn, ...) resolves
@@ -6386,15 +6474,19 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "encodeURI", JSValue.Native(NATIVE_ENCODE_URI))
     scopeDefine(st, 0, "decodeURI", JSValue.Native(NATIVE_DECODE_URI))
     scopeDefine(st, 0, "ArrayBuffer", JSValue.Native(NATIVE_ARRAYBUFFER))
+    nameGlobalCtor(st, "ArrayBuffer", NATIVE_ARRAYBUFFER)
     scopeDefine(st, 0, "DataView", JSValue.Native(NATIVE_DATAVIEW))
+    nameGlobalCtor(st, "DataView", NATIVE_DATAVIEW)
     var tk: i64 = 0
     while tk <= TA_U8C {
         scopeDefine(st, 0, taName(tk), JSValue.Native(NATIVE_TA_BASE + tk))
         tk = tk + 1
     }
     scopeDefine(st, 0, "Map", JSValue.Native(NATIVE_MAP))
+    nameGlobalCtor(st, "Map", NATIVE_MAP)
     scopeDefine(st, 0, "WeakMap", JSValue.Native(NATIVE_MAP))
     scopeDefine(st, 0, "Set", JSValue.Native(NATIVE_SET))
+    nameGlobalCtor(st, "Set", NATIVE_SET)
     scopeDefine(st, 0, "WeakSet", JSValue.Native(NATIVE_SET))
     // Array.prototype.<m> as a bound-method value, so the ES5 idiom
     // Array.prototype.slice.call(arguments) resolves
@@ -6473,6 +6565,7 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, consoleObj, "error", JSValue.Native(NATIVE_CONSOLE_LOG))
     scopeDefine(st, 0, "console", JSValue.Obj(consoleObj))
     scopeDefine(st, 0, "Proxy", JSValue.Native(NATIVE_PROXY))
+    nameGlobalCtor(st, "Proxy", NATIVE_PROXY)
 }
 
 // typeof: never throws, even for an unbound name (scopeLookup returns undefined).
@@ -11146,26 +11239,53 @@ fn dataViewMethod(o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): 
 
 fn dateProtoMethodNames(): Vec<string> {
     var out: Vec<string> = Vec.new()
-    out.push("getTime")
-    out.push("valueOf")
-    out.push("toISOString")
-    out.push("toJSON")
+    // the full Date.prototype surface, taken from node
     out.push("toString")
-    out.push("toUTCString")
     out.push("toDateString")
+    out.push("toTimeString")
+    out.push("toISOString")
+    out.push("toUTCString")
+    out.push("toGMTString")
+    out.push("getDate")
+    out.push("setDate")
+    out.push("getDay")
+    out.push("getFullYear")
+    out.push("setFullYear")
+    out.push("getHours")
+    out.push("setHours")
+    out.push("getMilliseconds")
+    out.push("setMilliseconds")
+    out.push("getMinutes")
+    out.push("setMinutes")
+    out.push("getMonth")
+    out.push("setMonth")
+    out.push("getSeconds")
+    out.push("setSeconds")
+    out.push("getTime")
+    out.push("setTime")
+    out.push("getTimezoneOffset")
+    out.push("getUTCDate")
+    out.push("setUTCDate")
+    out.push("getUTCDay")
+    out.push("getUTCFullYear")
+    out.push("setUTCFullYear")
+    out.push("getUTCHours")
+    out.push("setUTCHours")
+    out.push("getUTCMilliseconds")
+    out.push("setUTCMilliseconds")
+    out.push("getUTCMinutes")
+    out.push("setUTCMinutes")
+    out.push("getUTCMonth")
+    out.push("setUTCMonth")
+    out.push("getUTCSeconds")
+    out.push("setUTCSeconds")
+    out.push("valueOf")
+    out.push("getYear")
+    out.push("setYear")
+    out.push("toJSON")
     out.push("toLocaleString")
     out.push("toLocaleDateString")
     out.push("toLocaleTimeString")
-    out.push("getFullYear")
-    out.push("getMonth")
-    out.push("getDate")
-    out.push("getDay")
-    out.push("getHours")
-    out.push("getMinutes")
-    out.push("getSeconds")
-    out.push("getMilliseconds")
-    out.push("getTimezoneOffset")
-    out.push("setTime")
     return out
 }
 
@@ -11821,6 +11941,70 @@ fn mapMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut I
 
 // Date instance methods. Everything derives from the stored epoch milliseconds.
 // ISO-8601 in UTC, the format Date.prototype.toISOString produces.
+// Date's own three-letter abbreviations. std/datetime's weekdayName/monthName
+// spell the names out in full ("Friday", "January"); Date.prototype.toString and
+// toUTCString want "Fri" and "Jan".
+fn dateAbbrevDay(wd: i32): string {
+    let d = wd as i64
+    if d == 0 {
+        return "Sun"
+    }
+    if d == 1 {
+        return "Mon"
+    }
+    if d == 2 {
+        return "Tue"
+    }
+    if d == 3 {
+        return "Wed"
+    }
+    if d == 4 {
+        return "Thu"
+    }
+    if d == 5 {
+        return "Fri"
+    }
+    return "Sat"
+}
+
+fn dateAbbrevMonth(m: i32): string {
+    let i = m as i64
+    if i == 1 {
+        return "Jan"
+    }
+    if i == 2 {
+        return "Feb"
+    }
+    if i == 3 {
+        return "Mar"
+    }
+    if i == 4 {
+        return "Apr"
+    }
+    if i == 5 {
+        return "May"
+    }
+    if i == 6 {
+        return "Jun"
+    }
+    if i == 7 {
+        return "Jul"
+    }
+    if i == 8 {
+        return "Aug"
+    }
+    if i == 9 {
+        return "Sep"
+    }
+    if i == 10 {
+        return "Oct"
+    }
+    if i == 11 {
+        return "Nov"
+    }
+    return "Dec"
+}
+
 fn isoFromMillis(ms: f64): string {
     if ms != ms {
         return "Invalid Date"
@@ -11936,17 +12120,90 @@ fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSVa
     // getUTC* mirrors the local accessors but decomposes in UTC; normalise
     // getUTCFoo -> getFoo for the branch match and pick the decomposition by
     // whether the caller asked for UTC.
+    // The RFC 7231 form used by toUTCString/toGMTString, e.g.
+    // "Fri, 15 May 2020 10:30:45 GMT" — timezone-independent by definition.
+    if name == "toUTCString" || name == "toGMTString" {
+        if ms != ms {
+            return JSValue.Str("Invalid Date")
+        }
+        let u = DateTime.fromEpoch((ms / 1000.0) as i64)
+        return JSValue.Str(dateAbbrevDay(u.weekday) + ", " + pad2(u.day as i64) + " " + dateAbbrevMonth(u.month) + " " + i64ToStr(u.year as i64) + " " + pad2(u.hour as i64) + ":" + pad2(u.minute as i64) + ":" + pad2(u.second as i64) + " GMT")
+    }
+    // toString / toDateString / toTimeString. node renders these in the host
+    // timezone; with no timezone database these are the UTC rendering, which is
+    // what node prints under TZ=UTC.
+    if name == "toString" || name == "toDateString" || name == "toTimeString" {
+        if ms != ms {
+            return JSValue.Str("Invalid Date")
+        }
+        let u = DateTime.fromEpoch((ms / 1000.0) as i64)
+        let datePart = dateAbbrevDay(u.weekday) + " " + dateAbbrevMonth(u.month) + " " + pad2(u.day as i64) + " " + i64ToStr(u.year as i64)
+        let timePart = pad2(u.hour as i64) + ":" + pad2(u.minute as i64) + ":" + pad2(u.second as i64) + " GMT+0000 (Coordinated Universal Time)"
+        if name == "toDateString" {
+            return JSValue.Str(datePart)
+        }
+        if name == "toTimeString" {
+            return JSValue.Str(timePart)
+        }
+        return JSValue.Str(datePart + " " + timePart)
+    }
+    // node's default locale output (en-US), rendered in UTC like everything else
+    if name == "toLocaleString" || name == "toLocaleDateString" || name == "toLocaleTimeString" {
+        if ms != ms {
+            return JSValue.Str("Invalid Date")
+        }
+        let u = DateTime.fromEpoch((ms / 1000.0) as i64)
+        let dpart = i64ToStr(u.month as i64) + "/" + i64ToStr(u.day as i64) + "/" + i64ToStr(u.year as i64)
+        var h12 = (u.hour as i64) % 12
+        if h12 == 0 {
+            h12 = 12
+        }
+        var ampm = "AM"
+        if (u.hour as i64) >= 12 {
+            ampm = "PM"
+        }
+        let tpart = i64ToStr(h12) + ":" + pad2(u.minute as i64) + ":" + pad2(u.second as i64) + " " + ampm
+        if name == "toLocaleDateString" {
+            return JSValue.Str(dpart)
+        }
+        if name == "toLocaleTimeString" {
+            return JSValue.Str(tpart)
+        }
+        return JSValue.Str(dpart + ", " + tpart)
+    }
+    // the legacy annex-B pair: getYear is the year minus 1900
+    if name == "getYear" {
+        if ms != ms {
+            return JSValue.Number(ms)
+        }
+        let u = DateTime.fromEpoch((ms / 1000.0) as i64)
+        return JSValue.Number((u.year as f64) - 1900.0)
+    }
+    if name == "setYear" {
+        var yv = 0.0
+        if args.len() > 0 {
+            yv = toNum(args[0])
+        }
+        // 0..99 mean 1900..1999; anything else is a full year
+        if yv >= 0.0 && yv <= 99.0 {
+            yv = yv + 1900.0
+        }
+        var yArgs: Vec<JSValue> = Vec.new()
+        yArgs.push(JSValue.Number(yv))
+        return dateMethod(st, o, "setFullYear", yArgs)
+    }
+    // getUTCFoo and getFoo are the same here — see the UTC note below
     var gname = name.clone()
-    var isUtc = false
     if gname.len() >= 6 && strSlice(gname, 0, 6) == "getUTC" {
-        isUtc = true
         gname = "get" + strSlice(gname, 6, gname.len())
     }
     if gname == "getFullYear" || gname == "getMonth" || gname == "getDate" || gname == "getHours" || gname == "getMinutes" || gname == "getSeconds" || gname == "getMilliseconds" || gname == "getDay" {
-        var dt = DateTime.fromEpochLocal((ms / 1000.0) as i64)
-        if isUtc {
-            dt = DateTime.fromEpoch((ms / 1000.0) as i64)
-        }
+        // UTC, not the host timezone, for BOTH families. milojs carries no
+        // timezone database: the set* family already decomposes in UTC, and
+        // getTimezoneOffset reports 0, so a local getter was the one piece that
+        // disagreed — `d.setHours(d.getHours())` shifted the date by the host
+        // offset. Behaviour now matches node run under TZ=UTC throughout.
+        let dt = DateTime.fromEpoch((ms / 1000.0) as i64)
         if gname == "getFullYear" {
             return JSValue.Number(dt.year as f64)
         }
