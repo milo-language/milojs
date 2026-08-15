@@ -651,6 +651,7 @@ fn makeTypedArray(st: &mut Interp, kind: i64, args: &Vec<JSValue>): JSValue {
     if bufH < 0 {
         let nb = newObject(st)
         st.objects[nb].isArrayBuffer = true
+        st.objects[nb].proto = arrayBufferProto(st)
         let _e = ensureExtra(st, nb)
         var b: Vec<u8> = Vec.new()
         var i: i64 = 0
@@ -665,6 +666,7 @@ fn makeTypedArray(st: &mut Interp, kind: i64, args: &Vec<JSValue>): JSValue {
     let _ev = ensureExtra(st, view)
     st.objExtras[st.objects[view].extra].taBuf = bufH
     st.objExtras[st.objects[view].extra].taKind = kind
+    st.objects[view].proto = typedArrayProtoFor(st, kind)
     st.objExtras[st.objects[view].extra].taOffset = viewOffset
     st.objExtras[st.objects[view].extra].taLen = len
     var k: i64 = 0
@@ -779,6 +781,7 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 if name == "transfer" {
                     let nb = newObject(st)
                     st.objects[nb].isArrayBuffer = true
+        st.objects[nb].proto = arrayBufferProto(st)
                     let _e = ensureExtra(st, nb)
                     var tb: Vec<u8> = Vec.new()
                     var ti: i64 = 0
@@ -816,6 +819,7 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                     }
                     let nb = newObject(st)
                     st.objects[nb].isArrayBuffer = true
+        st.objects[nb].proto = arrayBufferProto(st)
                     let _e = ensureExtra(st, nb)
                     var b: Vec<u8> = Vec.new()
                     var i = a
@@ -1100,6 +1104,17 @@ fn objectTag(st: &Interp, o: i64): string {
     }
     if st.objects[o].promiseState >= 0 {
         return "Promise"
+    }
+    // @@toStringTag for the buffer family: a view reports its exact kind
+    // ("[object Int8Array]"), which test262 asserts throughout
+    if st.objects[o].isDataView {
+        return "DataView"
+    }
+    if st.objects[o].isArrayBuffer {
+        return "ArrayBuffer"
+    }
+    if st.objExtras[st.objects[o].extra].taBuf >= 0 {
+        return taName(st.objExtras[st.objects[o].extra].taKind)
     }
     if st.objects[o].isBound || st.objects[o].isFunctionLike {
         return "Function"
@@ -3438,6 +3453,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         let bo = newObject(st)
         st.objects[bo].isArrayBuffer = true
+        st.objects[bo].proto = arrayBufferProto(st)
         let _e = ensureExtra(st, bo)
         // new ArrayBuffer(n, { maxByteLength }) — resizable up to the cap
         if argVals.len() > 1 {
@@ -3499,6 +3515,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         let dv = newObject(st)
         st.objects[dv].isDataView = true
+        st.objects[dv].proto = dataViewProto(st)
         let _e = ensureExtra(st, dv)
         st.objExtras[st.objects[dv].extra].taBuf = bufH
         st.objExtras[st.objects[dv].extra].taOffset = off
@@ -4662,6 +4679,161 @@ fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
 // collector already walks, so they need no new GC root. Subtype prototypes chain
 // to Error.prototype the way the spec says, which is what makes
 // `Object.getPrototypeOf(TypeError.prototype) === Error.prototype` hold.
+// Every typed-array method name, as a list. isTypedArrayMethodName is the
+// predicate over the same set; both have to move together.
+fn typedArrayMethodNames(): Vec<string> {
+    var v: Vec<string> = Vec.new()
+    v.push("fill")
+    v.push("set")
+    v.push("subarray")
+    v.push("slice")
+    v.push("at")
+    v.push("indexOf")
+    v.push("includes")
+    v.push("join")
+    v.push("toString")
+    v.push("forEach")
+    v.push("map")
+    v.push("filter")
+    v.push("reduce")
+    v.push("reduceRight")
+    v.push("find")
+    v.push("findIndex")
+    v.push("findLast")
+    v.push("findLastIndex")
+    v.push("some")
+    v.push("every")
+    v.push("reverse")
+    v.push("sort")
+    v.push("with")
+    return v
+}
+
+// %TypedArray%, the intrinsic that every concrete typed-array constructor
+// inherits from, plus a real `prototype` object for each of them.
+//
+// Typed arrays were pure name dispatch here: `Int8Array.prototype` was
+// undefined and the methods existed only as a whitelist checked on the property
+// path. test262's testTypedArray.js harness opens with
+// `var TypedArray = Object.getPrototypeOf(Int8Array)` and then reads
+// TypedArray.prototype for nearly every assertion, so the whole
+// built-ins/TypedArray tree — 1446 cases — died on "cannot read property of
+// undefined" before running a line of its own.
+//
+// The methods go on as UNBOUND bound-methods, exactly as Array.prototype does:
+// the call site's receiver wins, which is what makes the generic
+// `TypedArray.prototype.map.call(ta, fn)` idiom resolve.
+fn setupTypedArrayProtos(st: &mut Interp) {
+    let taProto = newObject(st)
+    st.objects[taProto].proto = st.objectProtoObj
+    let names = typedArrayMethodNames()
+    var i: i64 = 0
+    while i < names.len() {
+        objSet(st, taProto, names[i].clone(), makeBoundMethod(st, JSValue.Undefined, names[i].clone()))
+        objSetNonEnumerable(st, taProto, names[i])
+        i = i + 1
+    }
+    let taCtor = newObject(st)
+    st.objects[taCtor].isFunctionLike = true
+    objSet(st, taCtor, "prototype", JSValue.Obj(taProto))
+    objSetNonEnumerable(st, taCtor, "prototype")
+    objSet(st, taCtor, "name", JSValue.Str("TypedArray"))
+    objSetNonEnumerable(st, taCtor, "name")
+    objSet(st, taProto, "constructor", JSValue.Obj(taCtor))
+    objSetNonEnumerable(st, taProto, "constructor")
+
+    var tk: i64 = 0
+    while tk <= TA_U8C {
+        let sub = newObject(st)
+        st.objects[sub].proto = taProto
+        objSet(st, sub, "constructor", JSValue.Native(NATIVE_TA_BASE + tk))
+        objSetNonEnumerable(st, sub, "constructor")
+        objSet(st, sub, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64))
+        objSetNonEnumerable(st, sub, "BYTES_PER_ELEMENT")
+        let bag = getNativeProps(st, NATIVE_TA_BASE + tk)
+        objSet(st, bag, "prototype", JSValue.Obj(sub))
+        objSetNonEnumerable(st, bag, "prototype")
+        objSet(st, bag, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64))
+        objSetNonEnumerable(st, bag, "BYTES_PER_ELEMENT")
+        objSet(st, bag, "name", JSValue.Str(taName(tk)))
+        objSetNonEnumerable(st, bag, "name")
+        // this is what makes Object.getPrototypeOf(Int8Array) === %TypedArray%:
+        // getPrototypeOf reads the proto of the native's property bag
+        st.objects[bag].proto = taCtor
+        tk = tk + 1
+    }
+}
+
+// The prototype a freshly created view of this kind links to, or -1 before
+// setupTypedArrayProtos has run.
+fn typedArrayProtoFor(st: &mut Interp, kind: i64): i64 {
+    let bag = getNativeProps(st, NATIVE_TA_BASE + kind)
+    return objHandle(objGet(st, bag, "prototype"))
+}
+
+// ArrayBuffer.prototype and DataView.prototype, for the same reason as
+// %TypedArray% above: both were undefined, and testTypedArray.js opens its
+// resizable-buffer section with `if (ArrayBuffer.prototype.resize)` — reading a
+// property of undefined, which threw before any test in the tree ran.
+fn setupBufferProtos(st: &mut Interp) {
+    let abProto = newObject(st)
+    st.objects[abProto].proto = st.objectProtoObj
+    var abNames: Vec<string> = Vec.new()
+    abNames.push("slice")
+    abNames.push("resize")
+    abNames.push("transfer")
+    var i: i64 = 0
+    while i < abNames.len() {
+        objSet(st, abProto, abNames[i].clone(), makeBoundMethod(st, JSValue.Undefined, abNames[i].clone()))
+        objSetNonEnumerable(st, abProto, abNames[i])
+        i = i + 1
+    }
+    objSet(st, abProto, "constructor", JSValue.Native(NATIVE_ARRAYBUFFER))
+    objSetNonEnumerable(st, abProto, "constructor")
+    let abBag = getNativeProps(st, NATIVE_ARRAYBUFFER)
+    objSet(st, abBag, "prototype", JSValue.Obj(abProto))
+    objSetNonEnumerable(st, abBag, "prototype")
+
+    let dvProto = newObject(st)
+    st.objects[dvProto].proto = st.objectProtoObj
+    var dvNames: Vec<string> = Vec.new()
+    dvNames.push("getInt8")
+    dvNames.push("getUint8")
+    dvNames.push("getInt16")
+    dvNames.push("getUint16")
+    dvNames.push("getInt32")
+    dvNames.push("getUint32")
+    dvNames.push("getFloat32")
+    dvNames.push("getFloat64")
+    dvNames.push("setInt8")
+    dvNames.push("setUint8")
+    dvNames.push("setInt16")
+    dvNames.push("setUint16")
+    dvNames.push("setInt32")
+    dvNames.push("setUint32")
+    dvNames.push("setFloat32")
+    dvNames.push("setFloat64")
+    var d: i64 = 0
+    while d < dvNames.len() {
+        objSet(st, dvProto, dvNames[d].clone(), makeBoundMethod(st, JSValue.Undefined, dvNames[d].clone()))
+        objSetNonEnumerable(st, dvProto, dvNames[d])
+        d = d + 1
+    }
+    objSet(st, dvProto, "constructor", JSValue.Native(NATIVE_DATAVIEW))
+    objSetNonEnumerable(st, dvProto, "constructor")
+    let dvBag = getNativeProps(st, NATIVE_DATAVIEW)
+    objSet(st, dvBag, "prototype", JSValue.Obj(dvProto))
+    objSetNonEnumerable(st, dvBag, "prototype")
+}
+
+fn arrayBufferProto(st: &mut Interp): i64 {
+    return objHandle(objGet(st, getNativeProps(st, NATIVE_ARRAYBUFFER), "prototype"))
+}
+
+fn dataViewProto(st: &mut Interp): i64 {
+    return objHandle(objGet(st, getNativeProps(st, NATIVE_DATAVIEW), "prototype"))
+}
+
 fn setupErrorProtos(st: &mut Interp) {
     let errorProto = newObject(st)
     objSet(st, errorProto, "name", JSValue.Str("Error"))
@@ -4782,6 +4954,8 @@ pub fn setupGlobals(st: &mut Interp) {
     st.objectProtoObj = objectProto
     // after objectProtoObj exists: Error.prototype chains to it
     setupErrorProtos(st)
+    setupTypedArrayProtos(st)
+    setupBufferProtos(st)
     // Object is itself an object, so it carries the Object.prototype methods.
     // Code borrows them from the constructor — `Object.hasOwnProperty.call(o, k)`
     // is a common way to avoid a shadowed own property — and the native's bag
@@ -9195,6 +9369,7 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
             let _ev = ensureExtra(st, view)
             st.objExtras[st.objects[view].extra].taBuf = st.objExtras[st.objects[o].extra].taBuf
             st.objExtras[st.objects[view].extra].taKind = kind
+    st.objects[view].proto = typedArrayProtoFor(st, kind)
             st.objExtras[st.objects[view].extra].taOffset = st.objExtras[st.objects[o].extra].taOffset + start * w
             st.objExtras[st.objects[view].extra].taLen = count
             return JSValue.Obj(view)
@@ -9202,6 +9377,7 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
         // slice COPIES into a fresh buffer
         let nb = newObject(st)
         st.objects[nb].isArrayBuffer = true
+        st.objects[nb].proto = arrayBufferProto(st)
         let _eb = ensureExtra(st, nb)
         pushTemp(st, JSValue.Obj(nb))
         var bytes: Vec<u8> = Vec.new()
@@ -9215,6 +9391,7 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
         let _ev = ensureExtra(st, view)
         st.objExtras[st.objects[view].extra].taBuf = nb
         st.objExtras[st.objects[view].extra].taKind = kind
+    st.objects[view].proto = typedArrayProtoFor(st, kind)
         st.objExtras[st.objects[view].extra].taOffset = 0
         st.objExtras[st.objects[view].extra].taLen = count
         var i: i64 = 0

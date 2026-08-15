@@ -22,7 +22,7 @@ run by hand rather than in CI:
 
 | sweep | score | measured |
 |---|---:|---|
-| test262, 1500-case deterministic sample | 577/1470 = **39.3%** | 2026-08-15 |
+| test262, 1500-case deterministic sample | 586/1470 = **39.9%** | 2026-08-15 |
 | QuickJS `tests/` at `fced162` | 97/149 = **65.1%** | 2026-08-15 |
 
 Movement on 2026-08-15: the engine now runs the program on a green task, so
@@ -35,7 +35,50 @@ Denominators move between runs as cases start or stop being scored — compare
 the numerator and the fraction from the same table row, not across rows. The
 `96/166` and `473/1476` rows this replaced were 2026-07-24/30 measurements.
 
-Weakest areas: `built-ins/TypedArray` 0%, `ArrayBuffer` 0%, `Atomics` 0%,
+### The buffer family got real prototypes — 2026-08-15
+
+`Int8Array.prototype`, `ArrayBuffer.prototype` and `DataView.prototype` were all
+**undefined**: typed arrays were pure name dispatch, with the methods existing
+only as a whitelist checked on the property path. Nothing in this repo noticed,
+because milojs's own fixtures only ever call methods on instances.
+
+test262 notices immediately. `testTypedArray.js` opens with
+`var TypedArray = Object.getPrototypeOf(Int8Array)` and reads
+`TypedArray.prototype` for nearly every assertion, and its resizable-buffer
+section starts with `if (ArrayBuffer.prototype.resize)`. Both read a property of
+undefined, so **all 1446 cases threw before running a line of their own** — the
+`built-ins/TypedArray` 0% in the old table was one missing object, not 1446 bugs.
+
+Now built the way Array.prototype already was: a `%TypedArray%` intrinsic whose
+`prototype` carries every shared method as an UNBOUND bound-method (so the call
+site's receiver wins and `TypedArray.prototype.map.call(ta, fn)` resolves), each
+concrete constructor's `prototype` chaining to it, and the native's property bag
+`proto` pointing at `%TypedArray%` — which is what makes
+`Object.getPrototypeOf(Int8Array)` return it. Plus `BYTES_PER_ELEMENT`, `name`,
+`constructor`, and `@@toStringTag` for the whole family.
+
+| area | before | after |
+|---|---:|---:|
+| `built-ins/TypedArray` | 0/1446 = 0% | **149/1446 = 10.3%** |
+| `built-ins/TypedArrayConstructors` | 29/738 = 3.9% | **134/738 = 18.2%** |
+| `built-ins/DataView` | 137/561 = 24.4% | **153/561 = 27.3%** |
+| `built-ins/ArrayBuffer` | 43/221 = 19.5% | 43/221 = 19.5% |
+
+Locked by `tests/typedArrayPrototypes.js`.
+
+**Next in this cluster, in order of size:**
+1. **`BigInt64Array` / `BigUint64Array` do not exist** — now the top bucket in
+   `built-ins/TypedArray` at **538 cases**. Needs two new `TA_*` kinds at width
+   8 and, more invasively, element access that yields a `JSValue.BigInt` rather
+   than an f64: `taElem` returns f64 today and every typed-array method is
+   written against that.
+2. `ArrayBuffer` did not move at all (19.5%) — its own prototype exists now, but
+   `maxByteLength`/`resizable`/`detached` accessors and the options-bag
+   constructor are still missing.
+3. Property descriptors: `length`/`name` "should be an own property" is ~42
+   cases suite-wide, across all builtins, not just this cluster.
+
+Weakest areas (before this change): `built-ins/TypedArray` 0%, `ArrayBuffer` 0%, `Atomics` 0%,
 `language/eval-code` 0%, `Temporal` 1%, `TypedArrayConstructors` 5%, `Map` 14%.
 Strongest: `language/block-scope` 100%, `literals` 77%, `identifiers` 75%.
 
