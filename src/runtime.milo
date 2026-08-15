@@ -320,6 +320,10 @@ pub struct PendingFetch {
 // activation.
 struct ExecCtx {
     throwing: bool,
+    // A `gen.return(v)` unwind rides on `throwing` so it uses the same unwinding
+    // machinery, but it must be invisible to `catch` while still running every
+    // `finally`. This flag is what tells the two apart. Per-task like `throwing`.
+    genReturning: bool,
     thrownValue: JSValue,
     callDepth: i64,
     // set before a constructor call and cleared only after it returns, so it is
@@ -367,6 +371,7 @@ pub fn saveExecCtx(st: &mut Interp): ExecCtx {
     }
     let ctx = ExecCtx {
         throwing: st.throwing,
+        genReturning: st.genReturning,
         thrownValue: cloneValue(st.thrownValue),
         callDepth: st.callDepth,
         newTarget: cloneValue(st.newTarget),
@@ -377,6 +382,7 @@ pub fn saveExecCtx(st: &mut Interp): ExecCtx {
         modPathStack: paths,
     }
     st.throwing = false
+    st.genReturning = false
     st.thrownValue = JSValue.Undefined
     st.callDepth = 0
     st.newTarget = JSValue.Undefined
@@ -392,6 +398,7 @@ pub fn saveExecCtx(st: &mut Interp): ExecCtx {
 // must have saved it first.
 pub fn restoreExecCtx(st: &mut Interp, ctx: ExecCtx) {
     st.throwing = ctx.throwing
+    st.genReturning = ctx.genReturning
     st.thrownValue = ctx.thrownValue
     st.callDepth = ctx.callDepth
     st.newTarget = ctx.newTarget
@@ -656,6 +663,9 @@ pub struct Interp {
     // (A flag, not a Flow variant, because exceptions cross function-call
     // boundaries where the call returns a JSValue, not a Flow.)
     throwing: bool,
+    // set alongside `throwing` while a `gen.return(v)` unwinds the generator
+    // body: `finally` still runs, but `catch` must not see it (see execTryBody)
+    genReturning: bool,
     thrownValue: JSValue,
     // set when a `?.` link short-circuits on a nullish base; propagates up through
     // the enclosing chain's Member/Index/Call nodes so the whole chain yields
@@ -775,6 +785,9 @@ pub struct Interp {
     genYielded: Vec<JSValue>,
     // value passed into next(v) (→ the yield expression's result)
     genSent: Vec<JSValue>,
+    // how the body resumes from its parked `yield`: 0 = next(v), 1 = throw(e),
+    // 2 = return(v). Parallel to genSent.
+    genResumeMode: Vec<i64>,
     genDone: Vec<bool>,
     // body ended by throwing: rethrow genErr at the next() site
     genThrew: Vec<bool>,
@@ -836,10 +849,10 @@ pub var gInterp: Interp = Interp {
     scopes: Vec.new(), freeList: Vec.new(), active: Vec.new(),
     objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: Arena { id: 0, data: Vec.new(), gens: Vec.new(), freeList: Vec.new(), live: 0 }, funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), hostRoots: Vec.new(), hostRootLive: Vec.new(),
     modPaths: Vec.new(), modBlocks: Vec.new(), modExports: Vec.new(), modState: Vec.new(), modDirStack: Vec.new(), modPathStack: Vec.new(),
-    throwing: false, thrownValue: JSValue.Undefined,
+    throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 104,
     rngState: 88172645463325252,
-    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, nativeProps: Vec.new(), dateCtorProps: -1, iterProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, symbolCounter: 0, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actEnv: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, reportedMissing: Vec.new(), httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false
+    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, nativeProps: Vec.new(), dateCtorProps: -1, iterProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, symbolCounter: 0, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actEnv: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, reportedMissing: Vec.new(), httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false
 }
 
 fn allocObj(st: &mut Interp, isArray: bool): i64 {

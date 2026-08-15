@@ -1,0 +1,64 @@
+a
+caught boom
+cleanup
+{ value: undefined, done: true }
+a
+cleanup
+{ value: 'early', done: true }
+{ value: undefined, done: true }
+propagated: up
+{ value: undefined, done: true }
+unstarted throw: early
+{ value: undefined, done: true }
+{ value: 'r', done: true } { value: undefined, done: true }
+[ 1, 2 ]
+{ value: 'after', done: true } { value: undefined, done: true }
+1
+{ value: 'fin', done: true }
+inner fin
+outer fin
+{ value: 'done', done: true }
+saw 1
+loop cleanup
+c X
+0 1 2
+i1
+inner cleanup
+outer cleanup
+{ value: 'stop', done: true }
+inner cleanup
+outer cleanup
+escaped: deep
+1 20 { value: 15, done: true }
+destructure cleanup
+1 2
+destructure cleanup
+ret2
+destructure cleanup
+caught body
+destructure cleanup
+destructure cleanup
+after labeled
+destructure cleanup
+{ value: 'a', done: true } { value: 'b', done: true } { value: undefined, done: true }
+spread cleanup
+[ 1, 2 ]
+manual close
+after manual
+after bare
+manual close
+deleg fin
+{ value: undefined, done: true }
+class fin
+{ value: 'cr', done: true }
+obj fin
+{ value: 'or', done: true }
+re:orig
+{ value: undefined, done: true }
+{ value: 'tv', done: true } { value: undefined, done: true }
+nums fin
+[ 1, 2, 3 ]
+nums fin
+3
+rest fin
+1 [ 2, 3 ]

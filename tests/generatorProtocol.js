@@ -1,7 +1,7 @@
 // Generator protocol beyond plain iteration: two-way next(v), and yield* over a
 // generator, an array, a string, a Set, a Map, and a hand-rolled iterator — all
 // driven from the ENGINE, which until 2026-08-15 threw "generators require the
-// milojs runtime". gen.throw()/gen.return() are not implemented; see docs/backlog.md.
+// milojs runtime". gen.throw()/gen.return() live in generatorCompletions.js.
 //
 // Output is joined into strings on purpose: console.log's object/array rendering
 // still follows bun rather than node (nested strings double-quoted), so an

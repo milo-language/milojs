@@ -41,11 +41,35 @@ Strongest: `language/block-scope` 100%, `literals` 77%, `identifiers` 75%.
 
 ### Open, in rough value order
 
-- **`gen.throw()` / `gen.return()`** are not implemented at all — `g.throw(e)`
-  returns undefined and the caller traps reading `.value`. `throw` is the easy
-  half (set `st.throwing` at the resume point in `genYield`); `return` has to
-  unwind the body through its `finally` blocks, which the Flow machinery does
-  not currently express across a park.
+- **`gen.throw()` / `gen.return()`** — DONE 2026-08-15. `genResume(o, args,
+  mode, st)` drives the parked body for all three completions; `genYield` reads
+  the mode at its resume point. `return(v)` unwinds on the throw machinery with
+  a separate per-task `genReturning` flag (in `ExecCtx`, so it is saved and
+  restored across a park like `throwing`): `execTryBody` will not let a `catch`
+  intercept it, `execTry` carries it across `finally`, and `genFinish` turns it
+  back into a normal completion. Also implemented alongside it:
+  - **IteratorClose** — for-of abandoned by break/return/a throw out of the body
+    now calls the iterator's `return()`, which is what runs a generator's
+    `finally`. An error from `return()` is discarded if the loop was already
+    unwinding, as in node.
+  - **`yield*` forwards completions inward** — throw()/return() reaching a
+    delegating generator go to the INNER iterator first, so its catch/finally
+    runs and whatever it does continues outward. Both the generator and the
+    hand-rolled-iterator delegation paths. This also gave `yield*` two-way
+    `next(v)` threading, which it never had.
+
+  Measured on test262 (whole-suite 1500-sample moved only 539→540 — it is thin
+  here, so these are the directories that matter):
+  `built-ins/GeneratorPrototype` **26.2% → 75.4%**,
+  `language/expressions/yield` **41.3% → 57.1%**,
+  `language/statements/for-of` **50.5% → 51.4%**. QuickJS 97→98/149.
+  `language/statements/generators` did not move (48.9%), and is where the
+  remaining generator work is. Locked by `tests/generatorCompletions.js`.
+
+- **No duplicate-declaration check.** `const x = 1; const x = 2;` in one scope is
+  accepted; node raises `SyntaxError: Identifier 'x' has already been declared`.
+  Found while assembling `tests/generatorCompletions.js`, whose groups had to be
+  braced to avoid relying on this.
 - **Async generators.** `async *m() {}` produces an object with no `next`, in
   both object literals and classes, and `for await (... of ...)` does not parse.
 - **`await` of an already-settled promise resumes inline** instead of after a
