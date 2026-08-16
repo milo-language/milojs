@@ -8284,6 +8284,28 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Inter
         }
     }
     if op == "in" {
+        // `#x in o` — the ergonomic brand check. The left side is a private NAME,
+        // not an expression: evaluating it as an identifier is a ReferenceError,
+        // which is what this used to do. Private names are stored as ordinary
+        // own properties keyed with the leading '#', so presence is the answer.
+        match prog.exprs[a.index] {
+            Expr.Ident(pn) => {
+                if pn.len() > 0 && pn[0] == '#' {
+                    let ov0 = evalExpr(prog, b, st, scope)
+                    let oh = objHandle(ov0)
+                    if oh < 0 {
+                        // the right side of `in` must be an object, private name
+                        // or not
+                        st.throwing = true
+                        st.thrownValue = makeError(st, "TypeError", "Cannot use 'in' operator to search for '" + pn.clone() + "' in " + toStr(ov0) + currentModule(st))
+                        return JSValue.Undefined
+                    }
+                    return JSValue.Bool(objOwnIndex(st, oh, pn) >= 0)
+                }
+            }
+            _ => {
+            }
+        }
         let kv = evalExpr(prog, a, st, scope)
         let ov = evalExpr(prog, b, st, scope)
         return evalInOperator(prog, toStr(kv), ov, st)

@@ -1,0 +1,15 @@
+unicode binding -> 7
+unicode fn name -> 42
+greek ident -> lambda
+cjk ident -> 5
+unicode property -> 3
+escape in binding -> 1
+braced escape -> 2
+escape matches plain name -> 9
+private unicode field -> 4
+private escaped field -> 5
+private static unicode -> 6
+zero-width joiner in name -> 8
+brand check true -> true
+brand check false -> false
+brand check primitive THREW TypeError

@@ -2335,3 +2335,52 @@ the f64 path was never an option.
 test262: 713 to 719 of 1470.
 
 Locked by `tests/bigIntTypedArrays.js`.
+
+## Identifiers were ASCII-only, so every non-ASCII name was a ReferenceError — DONE 2026-08-16
+
+The lexer's `isIdentStart` accepted `[A-Za-z_$]` and nothing else, so `℘`, `ñ`
+and `変数` were not identifier characters at all. Four failure buckets in the
+test262 sample were the same defect wearing different names — "static is not
+defined" (7), "#ZW_ is not defined" (3), "u2118 is not defined" (3), "ZW_ is not
+defined" (1) — because the class-element tests are built on exactly this:
+
+    static #$; static #_; static #\u{6F}; static #℘; static #ZW_<U+200C>_NJ;
+
+Identifiers are scanned byte by byte, so the fix is to accept any byte at or
+above 0x80 and let the whole UTF-8 sequence through verbatim: the lexer never
+needs to decode it, only to keep it together. `\uXXXX` and `\u{X...}` escapes are
+decoded to UTF-8 as they are scanned, in identifiers and private names alike, so
+`#\u{6F}` names the same field as `#o`. An identifier may also START with an
+escape, which needed the same allowance at the dispatch.
+
+Also fixed here, found by the fixture rather than the corpus:
+
+- **`#x in o`, the ergonomic brand check, threw.** Its left side is a private
+  NAME, not an expression, and evaluating it as an identifier is a
+  ReferenceError. It is answered from the own-property table now, and the right
+  side must be an object.
+- **`#\u{6F} = 5` declared a PUBLIC field named `o`.** The `#` branch required an
+  identifier character to follow, and a backslash is not one, so the `#` lexed
+  alone and the escape became an ordinary name.
+
+test262: 719 to 735 of 1470 — 16 cases from one lexer predicate.
+
+Locked by `tests/unicodeIdentifiersAndPrivateNames.js`.
+
+## OPEN: private names share one keyspace, and private methods are not own properties
+
+Two brand-check answers are still wrong, both from how private members are
+stored — as ordinary own properties keyed with a leading `#`:
+
+- `#x in b`, where `b` is an instance of a DIFFERENT class that also declares
+  `#x`, answers true. Node answers false: each class gets its own private
+  keyspace. A fix would key the property per class (the parser already tracks
+  `curClass` for `super`), which also removes a real collision hazard in bundled
+  code where `#x` is ubiquitous.
+- `#m in o` for a private METHOD answers false. Node answers true. Methods live
+  on the prototype, so the instance has no own property to find; the brand check
+  needs to consult the class's private method list too.
+
+Neither is reachable from ordinary code that only reads its own fields, which is
+why they survived this long. `tests/unicodeIdentifiersAndPrivateNames.js` names
+both in a comment rather than asserting them.
