@@ -6,7 +6,7 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "2c5585e1339a20da20f75d9d822b87da9c308ea4",
+    "revision": "ce8e2a2dc20c9082c9af8201366918eddd6a47e7",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -33,7 +33,7 @@
   "failureBuckets": [
     {
       "reason": "Uncaught Error: assertion failed: got |…|, expected |…|",
-      "count": 20,
+      "count": 21,
       "cases": [
         "bug1301.js:<whole>",
         "bug1302.js:<whole>",
@@ -48,6 +48,7 @@
         "parse-error-column.js:<whole>",
         "test_bigint.js:test_bigint_asintn",
         "test_builtin.js:test_array",
+        "test_builtin.js:test_rope",
         "test_builtin.js:test_eval",
         "test_builtin.js:test_date",
         "test_builtin.js:test_exception_source_pos",
@@ -65,15 +66,6 @@
         "test_builtin.js:test_function",
         "test_builtin.js:test_exception_capture_stack_trace",
         "test_builtin.js:test_cur_pc"
-      ]
-    },
-    {
-      "reason": "timeout/crash (SIGTERM)",
-      "count": 3,
-      "cases": [
-        "bug1355.js:<whole>",
-        "test_builtin.js:test_rope",
-        "test_builtin.js:test_proxy_is_array"
       ]
     },
     {
@@ -100,6 +92,14 @@
       "cases": [
         "array-fromasync-enumerable.js:<whole>",
         "callsite-isconstructor.js:<whole>"
+      ]
+    },
+    {
+      "reason": "timeout/crash (SIGTERM)",
+      "count": 2,
+      "cases": [
+        "bug1355.js:<whole>",
+        "test_builtin.js:test_proxy_is_array"
       ]
     },
     {

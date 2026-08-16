@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "2c5585e1339a20da20f75d9d822b87da9c308ea4",
+    "revision": "ce8e2a2dc20c9082c9af8201366918eddd6a47e7",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 735,
-    "fail": 735,
+    "pass": 761,
+    "fail": 709,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -26,14 +26,14 @@
   "areas": [
     {
       "area": "language/expressions",
-      "pass": 220,
-      "fail": 114,
+      "pass": 229,
+      "fail": 105,
       "total": 334
     },
     {
       "area": "language/statements",
-      "pass": 159,
-      "fail": 123,
+      "pass": 168,
+      "fail": 114,
       "total": 282
     },
     {
@@ -44,8 +44,8 @@
     },
     {
       "area": "built-ins/Object",
-      "pass": 65,
-      "fail": 62,
+      "pass": 68,
+      "fail": 59,
       "total": 127
     },
     {
@@ -104,8 +104,8 @@
     },
     {
       "area": "built-ins/Date",
-      "pass": 10,
-      "fail": 11,
+      "pass": 11,
+      "fail": 10,
       "total": 21
     },
     {
@@ -116,8 +116,8 @@
     },
     {
       "area": "built-ins/Math",
-      "pass": 7,
-      "fail": 10,
+      "pass": 9,
+      "fail": 8,
       "total": 17
     },
     {
@@ -194,8 +194,8 @@
     },
     {
       "area": "built-ins/NativeErrors",
-      "pass": 3,
-      "fail": 2,
+      "pass": 4,
+      "fail": 1,
       "total": 5
     },
     {
@@ -278,8 +278,8 @@
     },
     {
       "area": "built-ins/FinalizationRegistry",
-      "pass": 1,
-      "fail": 1,
+      "pass": 2,
+      "fail": 0,
       "total": 2
     },
     {
@@ -719,34 +719,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: m descriptor should not be enumerable",
-      "count": 22,
-      "cases": [
-        "language/statements/class/elements/same-line-async-method-rs-private-method.js",
-        "language/expressions/class/elements/same-line-gen-rs-static-privatename-identifier-alt.js",
-        "language/statements/class/elements/after-same-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
-        "language/expressions/class/elements/after-same-line-method-rs-static-async-method-privatename-identifier-alt.js",
-        "language/expressions/class/elements/after-same-line-gen-rs-static-privatename-identifier-by-classname.js",
-        "language/expressions/class/elements/new-no-sc-line-method-rs-static-generator-method-privatename-identifier-alt.js",
-        "language/expressions/class/elements/same-line-gen-rs-static-privatename-identifier.js",
-        "language/statements/class/elements/new-no-sc-line-method-rs-static-method-privatename-identifier-alt.js",
-        "language/statements/class/elements/same-line-gen-rs-static-generator-method-privatename-identifier.js",
-        "language/expressions/class/elements/after-same-line-gen-computed-symbol-names.js",
-        "language/statements/class/elements/same-line-method-rs-privatename-identifier-initializer.js",
-        "language/statements/class/elements/multiple-definitions-private-method-usage.js",
-        "language/statements/class/elements/multiple-definitions-literal-names-asi.js",
-        "language/expressions/class/elements/after-same-line-method-rs-privatename-identifier-initializer-alt.js",
-        "language/expressions/class/elements/new-no-sc-line-method-rs-static-privatename-identifier-by-classname.js",
-        "language/expressions/class/elements/new-sc-line-gen-rs-static-generator-method-privatename-identifier-alt.js",
-        "language/expressions/class/elements/same-line-async-method-static-private-methods.js",
-        "language/expressions/class/elements/same-line-method-rs-static-method-privatename-identifier.js",
-        "language/expressions/class/elements/new-sc-line-method-private-names.js",
-        "language/expressions/class/elements/same-line-async-method-computed-symbol-names.js",
-        "language/statements/class/elements/new-sc-line-gen-rs-private-getter-alt.js",
-        "language/statements/class/elements/multiple-definitions-grammar-privatename-identifier-semantics-stringvalue.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Expected SameValue(«N», «N») to be true",
       "count": 15,
       "cases": [
@@ -856,7 +828,7 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: m descriptor should not be enumerable; m descriptor should be configur",
+      "reason": "Uncaught undefined: m descriptor should be configurable",
       "count": 7,
       "cases": [
         "language/expressions/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt.js",
@@ -968,16 +940,6 @@
         "language/expressions/class/dstr/meth-dflt-obj-ptrn-id-init-fn-name-arrow.js",
         "language/statements/for-of/dstr/var-ary-ptrn-elem-id-init-fn-name-arrow.js",
         "language/expressions/class/dstr/meth-obj-ptrn-id-init-fn-name-arrow.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: desc.enumerable Expected SameValue(«true», «false») to be true",
-      "count": 4,
-      "cases": [
-        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-25.js",
-        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-97.js",
-        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-158.js",
-        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-100.js"
       ]
     },
     {
@@ -1359,6 +1321,14 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: test N",
+      "count": 2,
+      "cases": [
+        "language/statements/class/elements/regular-definitions-private-names.js",
+        "language/expressions/class/elements/new-sc-line-method-private-names.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: value is not updated following evaluation Expected SameValue(«function",
       "count": 2,
       "cases": [
@@ -1406,6 +1376,20 @@
       "count": 1,
       "cases": [
         "language/expressions/class/async-gen-method/yield-promise-reject-next-yield-star-sync-iterator.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Symbol() should be an own property",
+      "count": 1,
+      "cases": [
+        "language/expressions/class/elements/same-line-async-method-computed-symbol-names.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: test N",
+      "count": 1,
+      "cases": [
+        "language/expressions/class/elements/same-line-async-method-static-private-methods.js"
       ]
     },
     {
@@ -2179,17 +2163,17 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: desc.enumerable Expected SameValue(«true», «false») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-25.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: desc1.hasOwnProperty(\"get\") !== true",
       "count": 1,
       "cases": [
         "built-ins/Object/defineProperty/15.2.3.6-4-448.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: E descriptor should not be enumerable; E descriptor should not be writ",
-      "count": 1,
-      "cases": [
-        "built-ins/Math/E/prop-desc.js"
       ]
     },
     {
@@ -2536,13 +2520,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: message descriptor should not be enumerable",
-      "count": 1,
-      "cases": [
-        "built-ins/NativeErrors/TypeError/prototype/message.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Method must exist. Expected SameValue(«\"undefined\"», «\"function\"») to ",
       "count": 1,
       "cases": [
@@ -2718,13 +2695,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: random descriptor should not be enumerable",
-      "count": 1,
-      "cases": [
-        "built-ins/Math/random/prop-desc.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: RegExp(\"(?-:a)\", \"\"):  Expected a SyntaxError to be thrown but no exce",
       "count": 1,
       "cases": [
@@ -2837,10 +2807,10 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: test N",
+      "reason": "Uncaught undefined: Symbol() should be an own property",
       "count": 1,
       "cases": [
-        "language/statements/class/elements/regular-definitions-private-names.js"
+        "language/expressions/class/elements/after-same-line-gen-computed-symbol-names.js"
       ]
     },
     {
@@ -2921,13 +2891,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: toLocaleTimeString descriptor should not be enumerable",
-      "count": 1,
-      "cases": [
-        "built-ins/Date/prototype/toLocaleTimeString/prop-desc.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: toStringTag value Expected SameValue(«undefined», «\"AsyncFunction\"») t",
       "count": 1,
       "cases": [
@@ -2946,13 +2909,6 @@
       "count": 1,
       "cases": [
         "built-ins/String/prototype/search/regexp-prototype-search-v-u-flag.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: unregister descriptor should not be enumerable",
-      "count": 1,
-      "cases": [
-        "built-ins/FinalizationRegistry/prototype/unregister/prop-desc.js"
       ]
     },
     {
