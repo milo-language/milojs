@@ -6,10 +6,10 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "b53e14238eb575e9ac80c9605c1b58b37842c49d",
+    "revision": "d00b6105438a56c9ea1bec2d1da3fb3752a317d1",
     "dirty": false
   },
-  "engine": "~/git/milo-language/milojs/.dev/mj-engine",
+  "engine": ".dev/mj-engine",
   "selection": {
     "directory": null,
     "sample": 1500,
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 699,
-    "fail": 771,
+    "pass": 705,
+    "fail": 765,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -26,8 +26,8 @@
   "areas": [
     {
       "area": "language/expressions",
-      "pass": 211,
-      "fail": 123,
+      "pass": 210,
+      "fail": 124,
       "total": 334
     },
     {
@@ -62,8 +62,8 @@
     },
     {
       "area": "built-ins/String",
-      "pass": 14,
-      "fail": 25,
+      "pass": 20,
+      "fail": 19,
       "total": 39
     },
     {
@@ -122,8 +122,8 @@
     },
     {
       "area": "built-ins/Number",
-      "pass": 7,
-      "fail": 6,
+      "pass": 8,
+      "fail": 5,
       "total": 13
     },
     {
@@ -680,7 +680,7 @@
     },
     {
       "reason": "Uncaught undefined: Expected a Test262Error to be thrown but no exception was thrown at al",
-      "count": 40,
+      "count": 38,
       "cases": [
         "built-ins/TypedArrayConstructors/ctors/buffer-arg/custom-proto-access-throws.js",
         "built-ins/Promise/allSettled/ctx-ctor-throws.js",
@@ -692,7 +692,6 @@
         "built-ins/String/prototype/trimStart/this-value-object-toprimitive-meth-err.js",
         "language/expressions/class/dstr/gen-meth-static-obj-ptrn-list-err.js",
         "language/expressions/async-generator/dstr/obj-ptrn-prop-eval-err.js",
-        "built-ins/String/prototype/repeat/return-abrupt-from-count.js",
         "built-ins/Proxy/getPrototypeOf/return-is-abrupt.js",
         "language/expressions/class/dstr/gen-meth-static-obj-ptrn-prop-id-get-value-err.js",
         "language/expressions/class/dstr/gen-meth-static-dflt-ary-init-iter-get-err.js",
@@ -701,7 +700,6 @@
         "language/statements/class/dstr/async-gen-meth-dflt-obj-ptrn-id-init-throws.js",
         "language/expressions/async-generator/dstr/named-obj-ptrn-id-init-throws.js",
         "built-ins/TypedArray/prototype/toLocaleString/return-abrupt-from-firstelement-valueof.js",
-        "built-ins/String/prototype/endsWith/return-abrupt-from-searchstring.js",
         "built-ins/Array/prototype/reduce/15.4.4.21-8-c-8.js",
         "language/expressions/object/dstr/gen-meth-obj-ptrn-prop-id-get-value-err.js",
         "language/statements/async-generator/dstr/obj-ptrn-id-get-value-err.js",
@@ -1021,16 +1019,6 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: cannot read property '…' of a non-object (in /var/folders/zc/m2tbb4v54",
-      "count": 4,
-      "cases": [
-        "built-ins/String/prototype/split/call-split-1-math-pow-2-32-1-instance-is-number.js",
-        "built-ins/String/prototype/toUpperCase/S15.5.4.18_A1_T8.js",
-        "built-ins/Date/prototype/Symbol.toPrimitive/hint-default-first-invalid.js",
-        "built-ins/String/prototype/charAt/S15.5.4.4_A1_T1.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: desc.enumerable Expected SameValue(«true», «false») to be true",
       "count": 4,
       "cases": [
@@ -1225,6 +1213,14 @@
       "cases": [
         "language/statements/for/dstr/const-obj-ptrn-prop-ary-trailing-comma.js",
         "language/statements/for/dstr/const-obj-ptrn-prop-id-init.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: cannot read property '…' of a non-object (in /var/folders/zc/m2tbb4v54",
+      "count": 2,
+      "cases": [
+        "built-ins/String/prototype/toUpperCase/S15.5.4.18_A1_T8.js",
+        "built-ins/Date/prototype/Symbol.toPrimitive/hint-default-first-invalid.js"
       ]
     },
     {
@@ -1609,13 +1605,6 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: cannot read property '…' of a non-object (in /var/folders/zc/m2tbb4",
-      "count": 1,
-      "cases": [
-        "built-ins/Number/S15.7.5_A1_T04.js"
-      ]
-    },
-    {
       "reason": "Uncaught TypeError: cannot read property '…' of null",
       "count": 1,
       "cases": [
@@ -1826,24 +1815,10 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: #N: __str = new String(new Array(N,N,N)); typeof __str === \"object\". A",
+      "reason": "Uncaught undefined: #N: -new Boolean(true) === -N. Actual: NaN",
       "count": 1,
       "cases": [
-        "built-ins/String/S15.5.2.1_A1_T19.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: #N: \"Hello, WoRlD!\".toLocaleLowerCase() !== new String(\"hello, world!\"",
-      "count": 1,
-      "cases": [
-        "built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A2_T1.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: #N: (var y = new Boolean(false); (y ? y : true) === y",
-      "count": 1,
-      "cases": [
-        "language/expressions/conditional/S11.12_A4_T1.js"
+        "language/expressions/unary-minus/S11.4.7_A3_T1.js"
       ]
     },
     {
@@ -1868,24 +1843,10 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: #N: new Object() !== new Object()",
-      "count": 1,
-      "cases": [
-        "language/expressions/strict-does-not-equals/S11.9.5_A7.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: #N: test failed with error TypeError: value is not a constructor (in /",
       "count": 1,
       "cases": [
         "built-ins/Function/S15.3.2.1_A3_T15.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: #N: true !== new Number(true)",
-      "count": 1,
-      "cases": [
-        "language/expressions/strict-equals/S11.9.4_A8_T1.js"
       ]
     },
     {
@@ -1903,17 +1864,31 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: #N: var __obj = {valueOf:function(){return N;}}; var __str = \"5ABBBABA",
-      "count": 1,
-      "cases": [
-        "built-ins/String/prototype/substring/S15.5.4.15_A1_T10.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: #N: var object = {valueOf: function() {return N}}; String.fromCharCode",
       "count": 1,
       "cases": [
         "built-ins/String/fromCharCode/S9.7_A3.1_T4.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: x = new Boolean(true); x -= \"N\"; x === N. Actual: NaN",
+      "count": 1,
+      "cases": [
+        "language/expressions/compound-assignment/S11.13.2_A4.5_T2.5.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: x = new Boolean(true); x -= N; x === N. Actual: NaN",
+      "count": 1,
+      "cases": [
+        "language/expressions/compound-assignment/S11.13.2_A4.5_T2.1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: x = new String(\"N\"); x *= \"N\"; x === N. Actual: NaN",
+      "count": 1,
+      "cases": [
+        "language/expressions/compound-assignment/S11.13.2_A4.1_T1.3.js"
       ]
     },
     {
@@ -2981,17 +2956,17 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: The value of __split.constructor is expected to equal the value of Arr",
+      "count": 1,
+      "cases": [
+        "built-ins/String/prototype/split/call-split-1-math-pow-2-32-1-instance-is-number.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: The value of __split.length is expected to equal the value of __expect",
       "count": 1,
       "cases": [
         "built-ins/String/prototype/split/arguments-are-new-reg-exp-and-0-and-instance-is-string-hello.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: The value of `typeof Object(N)` is expected to be \"object\" Expected Sa",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/S9.9_A4.js"
       ]
     },
     {
@@ -3006,6 +2981,13 @@
       "count": 1,
       "cases": [
         "built-ins/Array/prototype/flatMap/this-value-ctor-object-species.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: The value of n_obj is expected to equal the value of func Expected Sam",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/S15.2.1.1_A2_T8.js"
       ]
     },
     {

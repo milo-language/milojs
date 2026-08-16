@@ -6,10 +6,10 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "b53e14238eb575e9ac80c9605c1b58b37842c49d",
+    "revision": "d00b6105438a56c9ea1bec2d1da3fb3752a317d1",
     "dirty": false
   },
-  "engine": "~/git/milo-language/milojs/.dev/mj-engine",
+  "engine": ".dev/mj-engine",
   "selection": {
     "filter": null,
     "skippedFiles": [

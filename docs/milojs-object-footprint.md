@@ -3,7 +3,7 @@ system: milojs-object-footprint
 purpose: measured per-object memory cost in milojs, and the JSObjExtra side table that shrank it
 key-files: src/runtime.milo
 update-when: JSObj gains or loses fields, or the side-table split lands
-last-verified: 2026-08-15
+last-verified: 2026-08-16 (JSObjExtra gained `boxed`, the primitive a wrapper object wraps; a plain object still pays nothing for it)
 -->
 
 # milojs: object footprint
@@ -33,7 +33,7 @@ Those fields now live in `JSObjExtra`, a side table reached through a single
 | | fields |
 |---|---:|
 | `JSObj` (the hot header) | 28 |
-| `JSObjExtra` (the side table) | 25 |
+| `JSObjExtra` (the side table) | 26 |
 
 The header keeps what a plain object actually touches: `props`, `elems`,
 `holes`, `logicalLen`, `proto`, `ctor`, the boolean brand flags the dispatcher
