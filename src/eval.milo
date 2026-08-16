@@ -7618,6 +7618,9 @@ fn setupErrorProtos(st: &mut Interp) {
     objSet(st, errorProto, "message", JSValue.Str(""))
     objSet(st, errorProto, "constructor", JSValue.Native(NATIVE_ERROR))
     objSet(st, errorProto, "toString", makeBoundMethod(st, JSValue.Undefined, "toString"))
+    for ep in ["name", "message", "constructor", "toString"] {
+        objSetNonEnumerable(st, errorProto, ep)
+    }
     let errBag = getNativeProps(st, NATIVE_ERROR)
     objSet(st, errBag, "prototype", JSValue.Obj(errorProto))
     st.objects[errorProto].proto = st.objectProtoObj
@@ -7636,6 +7639,9 @@ fn setupOneErrorProto(st: &mut Interp, eid: i64, errorProto: i64) {
     objSet(st, sub, "name", JSValue.Str(nativeErrorName(eid)))
     objSet(st, sub, "message", JSValue.Str(""))
     objSet(st, sub, "constructor", JSValue.Native(eid))
+    for sp in ["name", "message", "constructor"] {
+        objSetNonEnumerable(st, sub, sp)
+    }
     st.objects[sub].proto = errorProto
     let bag = getNativeProps(st, eid)
     objSet(st, bag, "prototype", JSValue.Obj(sub))
@@ -7735,6 +7741,20 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, math, "PI", JSValue.Number(3.141592653589793))
     objSet(st, math, "E", JSValue.Number(2.718281828459045))
     nameNativesOf(st, math)
+    // every own property of Math is non-enumerable, and its CONSTANTS are also
+    // non-writable and non-configurable. test262 has a prop-desc.js per member.
+    var mki: i64 = 0
+    while mki < st.objects[math].props.len() {
+        st.objects[math].props[mki].enumerable = false
+        mki = mki + 1
+    }
+    for mc in ["PI", "E", "LN2", "LN10", "LOG2E", "LOG10E", "SQRT2", "SQRT1_2"] {
+        let ci = objOwnIndex(st, math, mc)
+        if ci >= 0 {
+            st.objects[math].props[ci].writable = false
+            st.objects[math].props[ci].configurable = false
+        }
+    }
     scopeDefine(st, 0, "Math", JSValue.Obj(math))
     scopeDefine(st, 0, "RegExp", JSValue.Native(NATIVE_REGEXP))
     nameGlobalCtor(st, "RegExp", NATIVE_REGEXP)
@@ -7886,6 +7906,7 @@ pub fn setupGlobals(st: &mut Interp) {
     let dateProto = newObject(st)
     for dm in dateProtoMethodNames() {
         objSet(st, dateProto, dm.clone(), makeBrandedMethod(st, dm.clone(), BRAND_DATE))
+        objSetNonEnumerable(st, dateProto, dm)
     }
     objDefineProtoAttr(st, dateCtorObj, "prototype", JSValue.Obj(dateProto))
     objSet(st, dateProto, "constructor", JSValue.Native(NATIVE_DATE))
@@ -13123,9 +13144,15 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
             } else {
                 sfn = mv
             }
-            objDefineAccessor(st, target, mName, g, sfn)
+            objDefineAccessor(st, target, mName.clone(), g, sfn)
+            objSetNonEnumerable(st, target, mName)
         } else {
-            objSet(st, target, mName, mv)
+            objSet(st, target, mName.clone(), mv)
+            // class methods, statics and accessors are NON-enumerable. Only
+            // FIELDS are enumerable, and they are installed as `this.x = ...` in
+            // the constructor rather than here. Without this, `for (k in obj)`
+            // over any class instance listed every method it inherits.
+            objSetNonEnumerable(st, target, mName)
         }
         i = i + 1
     }

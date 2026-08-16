@@ -1,0 +1,26 @@
+Math.E w=false e=false c=false
+Math.PI w=false e=false c=false
+Math.LN2 w=false e=false c=false
+Math.random w=true e=false c=true
+Math.max w=true e=false c=true
+Date.p.toLocaleTimeString w=true e=false c=true
+Date.p.getTime w=true e=false c=true
+Error.p.message w=true e=false c=true
+Error.p.name w=true e=false c=true
+TypeError.p.message w=true e=false c=true
+TypeError.p.name w=true e=false c=true
+RangeError.p.name w=true e=false c=true
+FinReg.p.unregister w=true e=false c=true
+Object.p.hasOwnProperty w=true e=false c=true
+Array.p.map w=true e=false c=true
+String.p.slice w=true e=false c=true
+class method w=true e=false c=true
+class static w=true e=false c=true
+class accessor w=undefined e=false c=true
+class constructor w=true e=false c=true
+for-in over instance: ["field"]
+Object.keys of instance: ["field"]
+JSON of instance: {"field":2}
+for-in over subclass: ["field"]
+literal for-in: ["a","m","g"]
+Math.PI write ignored: true

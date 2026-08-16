@@ -2384,3 +2384,30 @@ stored — as ordinary own properties keyed with a leading `#`:
 Neither is reachable from ordinary code that only reads its own fields, which is
 why they survived this long. `tests/unicodeIdentifiersAndPrivateNames.js` names
 both in a comment rather than asserting them.
+
+## Almost nothing that should be non-enumerable was — DONE 2026-08-16
+
+Class methods, statics and accessors; every Date.prototype method; Error.prototype
+and each native error subclass's `name`/`message`/`constructor`; every own
+property of Math. All enumerable.
+
+The descriptor mismatch is the least of it. The visible consequence is that
+`for (k in obj)` over ANY class instance listed every method it inherits, so
+object iteration over user classes was simply wrong — `for-in` on a `class C { m()
+{} get g() {} }` instance yielded `["m","g"]` where node yields `[]`. Anything
+that walks an object generically (serialisers, diffing, shallow copies) saw
+methods as data.
+
+Fixed at the four places that install these: `instantiateClass` for class
+members, the `dateProtoMethodNames` loop, `setupErrorProtos`/`setupOneErrorProto`,
+and the Math block — which also freezes the CONSTANTS, since `Math.PI` is
+non-writable and non-configurable as well as non-enumerable.
+
+Only FIELDS stay enumerable on a class, and they are installed as `this.x = ...`
+in the constructor rather than through the member path, so they were never
+affected. An object LITERAL's members are enumerable and must stay that way; the
+fixture pins that too, because the obvious over-broad fix breaks it.
+
+test262: 735 to 761 of 1470. Predicted 29 from two failure buckets, got 26.
+
+Locked by `tests/propertyEnumerability.js`.
