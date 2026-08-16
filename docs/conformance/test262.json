@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "ce8e2a2dc20c9082c9af8201366918eddd6a47e7",
+    "revision": "0a77a74b26d7c0aaa11ecaa26a29d712e4f7f10e",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 761,
-    "fail": 709,
+    "pass": 804,
+    "fail": 666,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -26,26 +26,26 @@
   "areas": [
     {
       "area": "language/expressions",
-      "pass": 229,
-      "fail": 105,
+      "pass": 230,
+      "fail": 104,
       "total": 334
     },
     {
       "area": "language/statements",
-      "pass": 168,
-      "fail": 114,
+      "pass": 170,
+      "fail": 112,
       "total": 282
     },
     {
       "area": "built-ins/Temporal",
-      "pass": 3,
-      "fail": 128,
+      "pass": 38,
+      "fail": 93,
       "total": 131
     },
     {
       "area": "built-ins/Object",
-      "pass": 68,
-      "fail": 59,
+      "pass": 73,
+      "fail": 54,
       "total": 127
     },
     {
@@ -459,177 +459,12 @@
   ],
   "failureBuckets": [
     {
-      "reason": "Uncaught TypeError: cannot read property '…' of undefined",
-      "count": 156,
-      "cases": [
-        "built-ins/Temporal/ZonedDateTime/prototype/epochNanoseconds/prop-desc.js",
-        "built-ins/ThrowTypeError/extensible.js",
-        "language/expressions/generators/eval-body-proto-realm.js",
-        "built-ins/Temporal/Duration/prototype/add/argument-mixed-sign.js",
-        "built-ins/Temporal/Duration/prototype/round/relativeto-string-invalid.js",
-        "built-ins/Temporal/PlainMonthDay/prototype/toLocaleString/name.js",
-        "built-ins/Temporal/PlainYearMonth/prototype/until/throws-if-year-outside-valid-iso-range.js",
-        "built-ins/Atomics/and/not-a-constructor.js",
-        "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/argument-string-calendar-annotation.js",
-        "built-ins/Temporal/Duration/prototype/round/end-of-month-round-up.js",
-        "built-ins/Temporal/Instant/prototype/toJSON/basic.js",
-        "built-ins/Temporal/PlainDate/prototype/since/argument-propertybag-calendar-leap-second.js",
-        "built-ins/Temporal/PlainDate/prototype/since/argument-string-multiple-calendar.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/toJSON/builtin.js",
-        "built-ins/Temporal/PlainDateTime/prototype/subtract/blank-duration.js",
-        "built-ins/Temporal/ZonedDateTime/compare/argument-string-sub-minute-offset.js",
-        "built-ins/Temporal/Instant/prototype/subtract/infinity-throws-rangeerror.js",
-        "built-ins/Temporal/Instant/prototype/subtract/order-of-operations.js",
-        "built-ins/Temporal/PlainDate/from/name.js",
-        "built-ins/Temporal/Instant/prototype/until/roundingincrement-non-integer.js",
-        "built-ins/Temporal/Duration/prototype/round/relativeto-duration-out-of-range-added-to-relative-date.js",
-        "built-ins/Temporal/PlainYearMonth/prototype/add/negative-infinity-throws-rangeerror.js",
-        "built-ins/ShadowRealm/prototype/evaluate/wrapped-function-arguments-are-wrapped-into-the-inner-realm.js",
-        "built-ins/Temporal/Duration/from/not-a-constructor.js",
-        "built-ins/Temporal/PlainDate/prototype/toZonedDateTime/timezone-string-year-zero.js",
-        "built-ins/ShadowRealm/prototype/evaluate/name.js",
-        "built-ins/GeneratorFunction/instance-length.js",
-        "built-ins/Temporal/Duration/prototype/round/invalid-increments.js",
-        "built-ins/SuppressedError/prototype/constructor.js",
-        "built-ins/DisposableStack/prototype/defer/prop-desc.js",
-        "built-ins/ShadowRealm/prototype/evaluate/wrapped-function-arguments-are-wrapped-into-the-inner-realm-extended.js",
-        "built-ins/Temporal/Instant/prototype/toJSON/negative-epochnanoseconds.js",
-        "built-ins/Temporal/PlainDate/prototype/equals/argument-string-unknown-annotation.js",
-        "built-ins/Temporal/PlainDateTime/prototype/subtract/argument-duration-out-of-range.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/toString/calendarname-undefined.js",
-        "built-ins/Temporal/Instant/from/argument-zoneddatetime.js",
-        "built-ins/Temporal/PlainYearMonth/prototype/with/builtin.js",
-        "built-ins/Set/Symbol.species/return-value.js",
-        "built-ins/Temporal/PlainMonthDay/prototype/with/order-of-operations.js",
-        "built-ins/Temporal/PlainTime/prototype/nanosecond/prop-desc.js",
-        "built-ins/Temporal/PlainTime/prototype/since/argument-number.js",
-        "built-ins/Temporal/Now/zonedDateTimeISO/return-value.js",
-        "built-ins/Temporal/Duration/prototype/round/relativeto-string.js",
-        "built-ins/Temporal/PlainTime/compare/use-internal-slots.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/since/zoneddatetime-string.js",
-        "built-ins/Temporal/PlainTime/prototype/prop-desc.js",
-        "built-ins/Array/prototype/filter/15.4.4.20-1-9.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/since/does-not-include-higher-units-than-necessary.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-propertybag-timezone-string-leap-second.js",
-        "built-ins/Temporal/ZonedDateTime/compare/argument-propertybag-calendar-invalid-iso-string.js",
-        "built-ins/Temporal/PlainYearMonth/prototype/monthsInYear/branding.js",
-        "built-ins/Temporal/Duration/prototype/toJSON/options.js",
-        "built-ins/Object/freeze/proxy-with-defineProperty-handler.js",
-        "built-ins/Proxy/construct/return-not-object-throws-undefined-realm.js",
-        "built-ins/Array/prototype/map/create-proto-from-ctor-realm-non-array.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/withPlainTime/argument-string-unknown-annotation.js",
-        "built-ins/Temporal/ZonedDateTime/from/argument-string-variant-decimal-separator.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/equals/argument-string-limits.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/until/options-wrong-type.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/dayOfWeek/prop-desc.js",
-        "built-ins/Temporal/PlainYearMonth/prototype/subtract/infinity-throws-rangeerror.js",
-        "built-ins/Temporal/PlainYearMonth/prototype/since/largestunit-auto.js",
-        "built-ins/ArrayBuffer/Symbol.species/return-value.js",
-        "language/eval-code/direct/switch-case-decl-eval-source-is-strict-nostrict.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/until/smallestunit-undefined.js",
-        "built-ins/Temporal/PlainDateTime/prototype/toString/fractionalseconddigits-out-of-range.js",
-        "built-ins/Temporal/PlainDate/prototype/with/options-object.js",
-        "built-ins/Proxy/construct/return-not-object-throws-symbol-realm.js",
-        "built-ins/Temporal/PlainYearMonth/prototype/add/options-object.js",
-        "built-ins/Temporal/PlainDateTime/prototype/add/branding.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/since/largestunit-plurals-accepted.js",
-        "built-ins/Temporal/PlainYearMonth/compare/argument-propertybag-calendar-case-insensitive.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/with/options-object.js",
-        "built-ins/Temporal/PlainMonthDay/from/argument-string-calendar-annotation.js",
-        "built-ins/Temporal/PlainTime/prototype/since/branding.js",
-        "built-ins/Temporal/PlainDate/prototype/until/prop-desc.js",
-        "language/expressions/class/elements/arrow-body-private-derived-cls-direct-eval-contains-superproperty-2.js",
-        "built-ins/Temporal/Duration/prototype/round/roundingmode-undefined.js",
-        "built-ins/Temporal/PlainDate/prototype/subtract/balance-smaller-units.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/since/largestunit-invalid-string.js",
-        "built-ins/Temporal/PlainDateTime/prototype/with/not-a-constructor.js",
-        "built-ins/Temporal/ZonedDateTime/from/argument-propertybag-timezone-string.js",
-        "built-ins/Temporal/Instant/from/argument-string-time-separators.js",
-        "built-ins/Temporal/PlainDateTime/prototype/since/not-a-constructor.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-wrong-type.js",
-        "built-ins/Temporal/PlainTime/prototype/until/roundingincrement-non-integer.js",
-        "built-ins/Temporal/Duration/prototype/toLocaleString/builtin.js",
-        "built-ins/Temporal/Instant/prototype/since/argument-string-date-with-utc-offset.js",
-        "built-ins/Temporal/PlainDate/prototype/subtract/argument-propertybag-optional-properties.js",
-        "built-ins/AsyncDisposableStack/prototype/move/length.js",
-        "built-ins/ArrayBuffer/prototype/sliceToImmutable/argument-coercion.js",
-        "built-ins/Temporal/PlainTime/prototype/until/argument-string-too-many-decimals.js",
-        "built-ins/Error/prototype/stack/getter-error-as-prototype.js",
-        "built-ins/TypedArrayConstructors/internals/GetOwnProperty/BigInt/detached-buffer-realm.js",
-        "annexB/built-ins/RegExp/legacy-accessors/lastParen/prop-desc.js",
-        "built-ins/Temporal/Instant/prototype/until/options-wrong-type.js",
-        "built-ins/Temporal/PlainTime/prototype/toJSON/branding.js",
-        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-5.js",
-        "built-ins/Temporal/PlainTime/prototype/add/argument-singular-properties.js",
-        "built-ins/Temporal/PlainDate/prototype/until/order-of-operations.js",
-        "built-ins/Temporal/Instant/prototype/toString/fractionalseconddigits-negative.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/since/no-fractional-minutes-hours.js",
-        "built-ins/Temporal/PlainDateTime/prototype/add/ambiguous-date.js",
-        "built-ins/Temporal/PlainDate/from/argument-leap-second.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/toPlainTime/length.js",
-        "language/statements/for/dstr/var-obj-ptrn-id-init-fn-name-gen.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/withPlainTime/get-start-of-day-throws.js",
-        "built-ins/Temporal/PlainDateTime/prototype/withCalendar/name.js",
-        "built-ins/Temporal/PlainTime/prototype/round/roundto-invalid-string.js",
-        "built-ins/Temporal/Instant/prototype/round/roundingmode-halfTrunc.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/toInstant/prop-desc.js",
-        "built-ins/Temporal/PlainDateTime/prototype/since/largestunit-wrong-type.js",
-        "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/not-a-constructor.js",
-        "built-ins/Temporal/PlainDateTime/prototype/toPlainDate/builtin.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/subtract/options-read-before-algorithmic-validation.js",
-        "language/function-code/block-decl-onlystrict.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/until/name.js",
-        "built-ins/Temporal/PlainDate/prototype/dayOfWeek/basic.js",
-        "built-ins/Temporal/Duration/prototype/with/negative-infinity-throws-rangeerror.js",
-        "built-ins/Array/prototype/reduceRight/15.4.4.22-9-c-ii-1.js",
-        "built-ins/Temporal/PlainDateTime/compare/argument-propertybag-calendar-leap-second.js",
-        "built-ins/Temporal/PlainYearMonth/prototype/until/prop-desc.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/weekOfYear/branding.js",
-        "built-ins/Temporal/PlainDateTime/prototype/add/basic-arithmetic.js",
-        "built-ins/Temporal/PlainYearMonth/prototype/until/argument-propertybag-calendar-string.js",
-        "built-ins/Temporal/Instant/prototype/since/instant-string.js",
-        "built-ins/Temporal/PlainDate/prototype/toString/branding.js",
-        "language/expressions/class/private-static-setter-multiple-evaluations-of-class-realm.js",
-        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-47.js",
-        "language/statements/for-of/dstr/array-elem-iter-rtrn-close-err.js",
-        "built-ins/Object/S15.2_A1.js",
-        "built-ins/Temporal/PlainTime/prototype/toString/roundingmode-halfExpand.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/second/prop-desc.js",
-        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-178.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/withPlainTime/argument-string-no-implicit-midnight.js",
-        "built-ins/Temporal/Instant/prototype/round/smallestunit-invalid-string.js",
-        "built-ins/Temporal/Duration/prototype/round/relativeto-propertybag-timezone-wrong-type.js",
-        "built-ins/DisposableStack/prototype/dispose/prop-desc.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-propertybag-timezone-string-year-zero.js",
-        "built-ins/Atomics/waitAsync/undefined-index-defaults-to-zero-agent.js",
-        "built-ins/Temporal/PlainDateTime/prototype/withCalendar/calendar-temporal-object.js",
-        "built-ins/Temporal/PlainMonthDay/prototype/with/subclassing-ignored.js",
-        "built-ins/Temporal/Instant/compare/argument-string-time-separators.js",
-        "built-ins/Temporal/ZonedDateTime/compare/length.js",
-        "built-ins/Temporal/PlainDateTime/prototype/until/roundingincrement-nan.js",
-        "built-ins/AsyncGeneratorPrototype/next/length.js",
-        "built-ins/Temporal/PlainDateTime/prototype/until/float64-representable-integer.js",
-        "built-ins/Temporal/PlainDateTime/prototype/round/rounding-direction.js",
-        "built-ins/Temporal/PlainDateTime/compare/year-zero.js",
-        "built-ins/Temporal/PlainYearMonth/name.js",
-        "built-ins/Temporal/PlainYearMonth/subclass.js",
-        "built-ins/Set/Symbol.species/symbol-species.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/since/options-wrong-type.js",
-        "built-ins/Temporal/PlainTime/prototype/until/options-read-before-algorithmic-validation.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/toPlainDateTime/length.js",
-        "built-ins/Temporal/PlainDateTime/prototype/toZonedDateTime/options-object.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all",
-      "count": 50,
+      "count": 43,
       "cases": [
         "built-ins/Symbol/prototype/toString/toString-default-attributes-strict.js",
-        "built-ins/Object/defineProperties/property-description-must-be-an-object-not-null.js",
         "built-ins/Error/prototype/toString/called-as-function.js",
         "built-ins/Object/assign/target-set-not-writable.js",
-        "built-ins/Object/defineProperties/15.2.3.7-1.js",
-        "built-ins/Object/defineProperties/15.2.3.7-6-a-186.js",
         "language/statements/class/elements/privatefieldset-typeerror-5.js",
         "language/statements/variable/dstr/ary-init-iter-get-err-array-prototype.js",
         "language/statements/generators/dstr/dflt-ary-ptrn-elem-ary-val-null.js",
@@ -641,9 +476,7 @@
         "built-ins/MapIteratorPrototype/next/does-not-have-mapiterator-internal-slots-map.js",
         "built-ins/Array/prototype/reduceRight/15.4.4.22-4-15.js",
         "built-ins/TypedArrayConstructors/Int8Array/prototype/not-typedarray-object.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-22.js",
         "language/statements/const/dstr/ary-init-iter-get-err-array-prototype.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-192.js",
         "language/expressions/async-generator/dstr/obj-ptrn-prop-ary-value-null.js",
         "language/statements/class/definition/invalid-extends.js",
         "built-ins/Promise/all/S25.4.4.1_A4.1_T1.js",
@@ -667,13 +500,54 @@
         "language/statements/for/dstr/let-obj-ptrn-prop-obj-value-null.js",
         "built-ins/Object/keys/15.2.3.14-1-4.js",
         "built-ins/TypedArray/prototype/filter/resizable-buffer.js",
-        "built-ins/Object/defineProperty/property-description-must-be-an-object-not-string.js",
-        "built-ins/Object/defineProperties/15.2.3.7-6-a-9.js",
         "language/statements/class/dstr/gen-meth-obj-init-null.js",
         "language/statements/class/dstr/meth-dflt-ary-init-iter-get-err-array-prototype.js",
         "built-ins/Object/defineProperty/15.2.3.6-4-527.js",
         "built-ins/isFinite/return-abrupt-from-tonumber-number-symbol.js",
         "built-ins/Promise/prototype/then/ctor-null.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: cannot read property '…' of undefined",
+      "count": 37,
+      "cases": [
+        "built-ins/ThrowTypeError/extensible.js",
+        "language/expressions/generators/eval-body-proto-realm.js",
+        "built-ins/Atomics/and/not-a-constructor.js",
+        "built-ins/ShadowRealm/prototype/evaluate/wrapped-function-arguments-are-wrapped-into-the-inner-realm.js",
+        "built-ins/ShadowRealm/prototype/evaluate/name.js",
+        "built-ins/SuppressedError/prototype/constructor.js",
+        "built-ins/DisposableStack/prototype/defer/prop-desc.js",
+        "built-ins/ShadowRealm/prototype/evaluate/wrapped-function-arguments-are-wrapped-into-the-inner-realm-extended.js",
+        "built-ins/Set/Symbol.species/return-value.js",
+        "built-ins/Array/prototype/filter/15.4.4.20-1-9.js",
+        "built-ins/Object/freeze/proxy-with-defineProperty-handler.js",
+        "built-ins/Proxy/construct/return-not-object-throws-undefined-realm.js",
+        "built-ins/Array/prototype/map/create-proto-from-ctor-realm-non-array.js",
+        "built-ins/ArrayBuffer/Symbol.species/return-value.js",
+        "language/eval-code/direct/switch-case-decl-eval-source-is-strict-nostrict.js",
+        "built-ins/Proxy/construct/return-not-object-throws-symbol-realm.js",
+        "language/expressions/class/elements/arrow-body-private-derived-cls-direct-eval-contains-superproperty-2.js",
+        "built-ins/AsyncDisposableStack/prototype/move/length.js",
+        "built-ins/ArrayBuffer/prototype/sliceToImmutable/argument-coercion.js",
+        "built-ins/Error/prototype/stack/getter-error-as-prototype.js",
+        "built-ins/TypedArrayConstructors/internals/GetOwnProperty/BigInt/detached-buffer-realm.js",
+        "annexB/built-ins/RegExp/legacy-accessors/lastParen/prop-desc.js",
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-5.js",
+        "language/statements/for/dstr/var-obj-ptrn-id-init-fn-name-gen.js",
+        "built-ins/Temporal/Instant/prototype/round/roundingmode-halfTrunc.js",
+        "language/function-code/block-decl-onlystrict.js",
+        "built-ins/Array/prototype/reduceRight/15.4.4.22-9-c-ii-1.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/weekOfYear/branding.js",
+        "language/expressions/class/private-static-setter-multiple-evaluations-of-class-realm.js",
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-47.js",
+        "language/statements/for-of/dstr/array-elem-iter-rtrn-close-err.js",
+        "built-ins/Object/S15.2_A1.js",
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-178.js",
+        "built-ins/DisposableStack/prototype/dispose/prop-desc.js",
+        "built-ins/Atomics/waitAsync/undefined-index-defaults-to-zero-agent.js",
+        "built-ins/AsyncGeneratorPrototype/next/length.js",
+        "built-ins/Set/Symbol.species/symbol-species.js"
       ]
     },
     {
@@ -740,25 +614,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: name should be an own property",
-      "count": 13,
-      "cases": [
-        "built-ins/TypedArrayConstructors/Uint8ClampedArray/name.js",
-        "annexB/built-ins/String/prototype/small/name.js",
-        "language/statements/const/fn-name-class.js",
-        "built-ins/ArrayIteratorPrototype/next/name.js",
-        "built-ins/Math/cosh/name.js",
-        "language/expressions/object/fn-name-arrow.js",
-        "language/expressions/assignment/dstr/obj-prop-elem-init-fn-name-fn.js",
-        "built-ins/Math/cos/name.js",
-        "built-ins/String/fromCodePoint/name.js",
-        "built-ins/Math/exp/name.js",
-        "built-ins/Object/getOwnPropertyDescriptor/name.js",
-        "language/statements/const/fn-name-gen.js",
-        "language/expressions/object/fn-name-fn.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Expected SameValue(«undefined», «null») to be true",
       "count": 10,
       "cases": [
@@ -775,30 +630,19 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected TypeError, got Test262Error: Expected an exception.",
-      "count": 8,
+      "reason": "Uncaught undefined: name should be an own property",
+      "count": 10,
       "cases": [
-        "built-ins/Object/defineProperty/15.2.3.6-4-319.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-87.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-305.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-218.js",
-        "built-ins/Object/defineProperties/15.2.3.7-6-a-309.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-307.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-246.js",
-        "built-ins/Object/defineProperties/15.2.3.7-6-a-289.js"
-      ]
-    },
-    {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«N», «N») to be tr",
-      "count": 7,
-      "cases": [
-        "built-ins/Promise/all/S25.4.4.1_A7.2_T1.js",
-        "language/statements/async-generator/dstr/ary-ptrn-elision.js",
-        "language/statements/class/dstr/async-private-gen-meth-dflt-ary-ptrn-elem-id-iter-val-array-prototype.js",
-        "language/expressions/async-generator/dstr/dflt-ary-ptrn-rest-obj-id.js",
-        "language/expressions/async-generator/yield-star-getiter-async-null-sync-get-abrupt.js",
-        "built-ins/Promise/any/invoke-resolve-get-once-multiple-calls.js",
-        "language/expressions/object/dstr/async-gen-meth-dflt-ary-ptrn-elision.js"
+        "built-ins/TypedArrayConstructors/Uint8ClampedArray/name.js",
+        "annexB/built-ins/String/prototype/small/name.js",
+        "built-ins/Temporal/PlainMonthDay/prototype/toLocaleString/name.js",
+        "built-ins/ArrayIteratorPrototype/next/name.js",
+        "built-ins/Math/cos/name.js",
+        "built-ins/String/fromCodePoint/name.js",
+        "built-ins/Temporal/PlainDateTime/prototype/withCalendar/name.js",
+        "built-ins/Math/exp/name.js",
+        "built-ins/Object/getOwnPropertyDescriptor/name.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/until/name.js"
       ]
     },
     {
@@ -812,6 +656,19 @@
         "harness/asyncHelpers-asyncTest-return-not-thenable.js",
         "built-ins/Promise/allSettledKeyed/get-value-throws-reject.js",
         "harness/asyncHelpers-throwsAsync-custom-typeerror.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: calendar must be string in canonicalizeCalendarEra Expected SameValue(",
+      "count": 7,
+      "cases": [
+        "built-ins/Temporal/PlainDateTime/prototype/subtract/blank-duration.js",
+        "built-ins/Temporal/PlainDate/prototype/with/options-object.js",
+        "built-ins/Temporal/PlainYearMonth/prototype/add/options-object.js",
+        "built-ins/Temporal/PlainDate/prototype/subtract/balance-smaller-units.js",
+        "built-ins/Temporal/PlainDateTime/prototype/add/ambiguous-date.js",
+        "built-ins/Temporal/PlainDate/from/argument-leap-second.js",
+        "built-ins/Temporal/PlainDateTime/prototype/add/basic-arithmetic.js"
       ]
     },
     {
@@ -841,6 +698,18 @@
       ]
     },
     {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«N», «N») to be tr",
+      "count": 6,
+      "cases": [
+        "built-ins/Promise/all/S25.4.4.1_A7.2_T1.js",
+        "language/statements/async-generator/dstr/ary-ptrn-elision.js",
+        "language/statements/class/dstr/async-private-gen-meth-dflt-ary-ptrn-elem-id-iter-val-array-prototype.js",
+        "language/expressions/async-generator/dstr/dflt-ary-ptrn-rest-obj-id.js",
+        "built-ins/Promise/any/invoke-resolve-get-once-multiple-calls.js",
+        "language/expressions/object/dstr/async-gen-meth-dflt-ary-ptrn-elision.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Expected a TypeError but got a Test262Error",
       "count": 6,
       "cases": [
@@ -862,6 +731,18 @@
         "language/statements/generators/dstr/obj-ptrn-id-init-fn-name-gen.js",
         "language/statements/class/dstr/private-meth-obj-ptrn-id-init-fn-name-gen.js",
         "language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-id-init-fn-name-gen.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: name descriptor should be configurable",
+      "count": 6,
+      "cases": [
+        "built-ins/Temporal/PlainDate/from/name.js",
+        "built-ins/Math/cosh/name.js",
+        "language/expressions/object/fn-name-arrow.js",
+        "language/statements/const/fn-name-gen.js",
+        "language/expressions/object/fn-name-fn.js",
+        "built-ins/Temporal/PlainYearMonth/name.js"
       ]
     },
     {
@@ -888,17 +769,6 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: TypeError Expected SameValue(«functio",
-      "count": 5,
-      "cases": [
-        "language/statements/class/async-gen-method/yield-star-getiter-async-not-callable-string-throw.js",
-        "language/expressions/async-generator/yield-star-getiter-sync-not-callable-object-throw.js",
-        "language/expressions/object/method-definition/async-gen-yield-star-getiter-sync-returns-boolean-throw.js",
-        "language/statements/class/async-gen-method/yield-star-next-not-callable-undefined-throw.js",
-        "language/statements/class/async-gen-method/yield-star-getiter-sync-returns-symbol-throw.js"
-      ]
-    },
-    {
       "reason": "Uncaught ReferenceError: with is not defined",
       "count": 5,
       "cases": [
@@ -907,6 +777,17 @@
         "language/statements/with/S12.10_A3.8_T1.js",
         "language/statements/with/S12.10_A3.7_T2.js",
         "language/identifier-resolution/S10.2.2_A1_T9.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: until is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh00",
+      "count": 5,
+      "cases": [
+        "built-ins/Temporal/Instant/prototype/until/roundingincrement-non-integer.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-propertybag-timezone-string-leap-second.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/until/smallestunit-undefined.js",
+        "built-ins/Temporal/PlainTime/prototype/until/roundingincrement-non-integer.js",
+        "built-ins/Temporal/PlainDateTime/prototype/until/float64-representable-integer.js"
       ]
     },
     {
@@ -943,6 +824,58 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Expected TypeError, got Test262Error: Expected an exception.",
+      "count": 5,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-319.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-87.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-218.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-307.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-246.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: isConstructor invoked with a non-function value",
+      "count": 5,
+      "cases": [
+        "annexB/built-ins/String/prototype/fontcolor/not-a-constructor.js",
+        "built-ins/Temporal/PlainDateTime/prototype/since/not-a-constructor.js",
+        "built-ins/Math/atanh/not-a-constructor.js",
+        "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/not-a-constructor.js",
+        "built-ins/JSON/rawJSON/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: round is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh00",
+      "count": 4,
+      "cases": [
+        "built-ins/Temporal/Duration/prototype/round/end-of-month-round-up.js",
+        "built-ins/Temporal/Duration/prototype/round/relativeto-string.js",
+        "built-ins/Temporal/Duration/prototype/round/roundingmode-undefined.js",
+        "built-ins/Temporal/PlainDateTime/prototype/round/rounding-direction.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Built-in objects must be extensible. Expected SameValue(«false», «true",
+      "count": 4,
+      "cases": [
+        "built-ins/Temporal/ZonedDateTime/prototype/toJSON/builtin.js",
+        "built-ins/Temporal/PlainYearMonth/prototype/with/builtin.js",
+        "built-ins/Temporal/Duration/prototype/toLocaleString/builtin.js",
+        "built-ins/Temporal/PlainDateTime/prototype/toPlainDate/builtin.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a RangeError but got a TypeError",
+      "count": 4,
+      "cases": [
+        "built-ins/Temporal/Duration/prototype/round/invalid-increments.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/withPlainTime/get-start-of-day-throws.js",
+        "built-ins/Iterator/prototype/includes/skipped-elements-negative-integral-rangeerror.js",
+        "built-ins/Temporal/PlainDateTime/prototype/until/roundingincrement-nan.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Expected SameValue(«\"\"», «\"cls\"») to be true",
       "count": 4,
       "cases": [
@@ -963,13 +896,13 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: length should be an own property",
+      "reason": "Uncaught undefined: length descriptor should be configurable",
       "count": 4,
       "cases": [
         "built-ins/Iterator/prototype/toArray/length.js",
-        "built-ins/Promise/reject/length.js",
-        "annexB/built-ins/String/prototype/blink/length.js",
-        "built-ins/Symbol/length.js"
+        "built-ins/Temporal/ZonedDateTime/prototype/toPlainTime/length.js",
+        "built-ins/Temporal/ZonedDateTime/compare/length.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/toPlainDateTime/length.js"
       ]
     },
     {
@@ -1029,6 +962,15 @@
       ]
     },
     {
+      "reason": "Uncaught TypeError: since is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh00",
+      "count": 3,
+      "cases": [
+        "built-ins/Temporal/ZonedDateTime/prototype/since/does-not-include-higher-units-than-necessary.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/since/largestunit-plurals-accepted.js",
+        "built-ins/Temporal/Instant/prototype/since/argument-string-date-with-utc-offset.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: #gen does not appear as an own property on C prototype",
       "count": 3,
       "cases": [
@@ -1056,12 +998,21 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: isConstructor invoked with a non-function value",
+      "reason": "Uncaught undefined: Expected a TypeError but got a RangeError",
       "count": 3,
       "cases": [
-        "annexB/built-ins/String/prototype/fontcolor/not-a-constructor.js",
-        "built-ins/Math/atanh/not-a-constructor.js",
-        "built-ins/JSON/rawJSON/not-a-constructor.js"
+        "built-ins/DataView/prototype/setInt16/return-abrupt-from-tonumber-byteoffset-symbol.js",
+        "built-ins/DataView/prototype/setFloat32/return-abrupt-from-tonumber-byteoffset-symbol.js",
+        "built-ins/Temporal/PlainMonthDay/from/options-invalid.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: length should be an own property",
+      "count": 3,
+      "cases": [
+        "built-ins/Promise/reject/length.js",
+        "annexB/built-ins/String/prototype/blink/length.js",
+        "built-ins/Symbol/length.js"
       ]
     },
     {
@@ -1073,7 +1024,15 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: it should not get Symbol.iterator",
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: TypeError Expected SameValue(«functio",
+      "count": 2,
+      "cases": [
+        "language/expressions/object/method-definition/async-gen-yield-star-getiter-sync-returns-boolean-throw.js",
+        "language/statements/class/async-gen-method/yield-star-getiter-sync-returns-symbol-throw.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:TypeError: [object Object] is not iterable",
       "count": 2,
       "cases": [
         "language/statements/async-generator/yield-star-next-then-non-callable-number-fulfillpromise.js",
@@ -1129,14 +1088,6 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: Cannot use '…' operator to search for '…' in undefined",
-      "count": 2,
-      "cases": [
-        "language/eval-code/direct/gen-meth-a-preceding-parameter-is-named-arguments-declare-arguments-and-assign.js",
-        "language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--21.js"
-      ]
-    },
-    {
       "reason": "Uncaught TypeError: concat is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh0",
       "count": 2,
       "cases": [
@@ -1169,6 +1120,22 @@
       ]
     },
     {
+      "reason": "Uncaught TypeError: withPlainTime is not a function (in /var/folders/zc/m2tbb4v542b9c11gk1",
+      "count": 2,
+      "cases": [
+        "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/argument-string-calendar-annotation.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/withPlainTime/argument-string-unknown-annotation.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: \"era\" is not a valid value for smallest unit Expected a RangeError but",
+      "count": 2,
+      "cases": [
+        "built-ins/Temporal/PlainTime/prototype/round/roundto-invalid-string.js",
+        "built-ins/Temporal/Instant/prototype/round/smallestunit-invalid-string.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: arr.some(callbackfn) !== true",
       "count": 2,
       "cases": [
@@ -1185,11 +1152,11 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected a RangeError but got a TypeError",
+      "reason": "Uncaught undefined: empty string does not convert to a valid ISO string Expected a RangeEr",
       "count": 2,
       "cases": [
-        "built-ins/Temporal/PlainMonthDay/infinity-throws-rangeerror.js",
-        "built-ins/Iterator/prototype/includes/skipped-elements-negative-integral-rangeerror.js"
+        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-wrong-type.js",
+        "built-ins/Temporal/Duration/prototype/round/relativeto-propertybag-timezone-wrong-type.js"
       ]
     },
     {
@@ -1217,19 +1184,19 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected a TypeError but got a RangeError",
-      "count": 2,
-      "cases": [
-        "built-ins/DataView/prototype/setInt16/return-abrupt-from-tonumber-byteoffset-symbol.js",
-        "built-ins/DataView/prototype/setFloat32/return-abrupt-from-tonumber-byteoffset-symbol.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Expected SameValue(«\"\"», «\"cover\"») to be true",
       "count": 2,
       "cases": [
         "language/statements/class/dstr/private-gen-meth-ary-ptrn-elem-id-init-fn-name-cover.js",
         "language/expressions/class/dstr/gen-meth-static-dflt-obj-ptrn-id-init-fn-name-cover.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«\"undefined\"», «\"function\"») to be true",
+      "count": 2,
+      "cases": [
+        "built-ins/Temporal/PlainTime/prototype/since/branding.js",
+        "built-ins/Date/prototype/Symbol.toPrimitive/this-val-non-obj.js"
       ]
     },
     {
@@ -1254,14 +1221,6 @@
       "cases": [
         "language/statements/switch/cptn-dflt-b-abrupt-empty.js",
         "language/statements/if/cptn-no-else-false.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Expected SameValue(«true», «false») to be true",
-      "count": 2,
-      "cases": [
-        "built-ins/Reflect/defineProperty/return-boolean.js",
-        "language/statements/for-of/dstr/obj-prop-elem-target-yield-expr.js"
       ]
     },
     {
@@ -1305,11 +1264,35 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: N value should be N",
+      "count": 2,
+      "cases": [
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-200.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-305.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: object's valueOf Expected SameValue(«N», «N») to be true",
       "count": 2,
       "cases": [
         "built-ins/ArrayBuffer/toindex-length.js",
         "built-ins/DataView/toindex-bytelength.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: prototype should be an own property",
+      "count": 2,
+      "cases": [
+        "built-ins/TypedArrayConstructors/BigInt64Array/prototype.js",
+        "built-ins/Temporal/PlainTime/prototype/prop-desc.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: reject minus zero as extended year Expected a RangeError but got a Typ",
+      "count": 2,
+      "cases": [
+        "built-ins/Temporal/PlainDate/prototype/toZonedDateTime/timezone-string-year-zero.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-propertybag-timezone-string-year-zero.js"
       ]
     },
     {
@@ -1379,6 +1362,13 @@
       ]
     },
     {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: reject reason Expected SameValue(«Typ",
+      "count": 1,
+      "cases": [
+        "language/expressions/async-generator/yield-star-getiter-async-null-sync-get-abrupt.js"
+      ]
+    },
+    {
       "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Symbol() should be an own property",
       "count": 1,
       "cases": [
@@ -1411,6 +1401,34 @@
       "count": 1,
       "cases": [
         "language/function-code/10.4.3-1-95gs.js"
+      ]
+    },
+    {
+      "reason": "Uncaught [object Object]",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainTime/compare/use-internal-slots.js"
+      ]
+    },
+    {
+      "reason": "Uncaught RangeError: invalid instant string: N-N-09T01:N:N.N+N:N[UTC]",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/Instant/from/argument-zoneddatetime.js"
+      ]
+    },
+    {
+      "reason": "Uncaught RangeError: invalid ISO date string: N-N-N[foo=bar]",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDate/prototype/equals/argument-string-unknown-annotation.js"
+      ]
+    },
+    {
+      "reason": "Uncaught RangeError: invalid ISO month-day string: N-N-N[u-ca=iso8601]",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainMonthDay/from/argument-string-calendar-annotation.js"
       ]
     },
     {
@@ -1533,6 +1551,27 @@
       ]
     },
     {
+      "reason": "Uncaught TypeError: Cannot redefine property: foo (in /var/folders/zc/m2tbb4v542b9c11gk103",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-63.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: Cannot redefine property: p2 (in /var/folders/zc/m2tbb4v542b9c11gk103t",
+      "count": 1,
+      "cases": [
+        "built-ins/Reflect/defineProperty/return-boolean.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: Cannot use '…' operator to search for '…' in undefined",
+      "count": 1,
+      "cases": [
+        "language/eval-code/direct/gen-meth-a-preceding-parameter-is-named-arguments-declare-arguments-and-assign.js"
+      ]
+    },
+    {
       "reason": "Uncaught TypeError: drop is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh000",
       "count": 1,
       "cases": [
@@ -1561,10 +1600,24 @@
       ]
     },
     {
+      "reason": "Uncaught TypeError: Object.defineProperty called on non-object (in /var/folders/zc/m2tbb4v",
+      "count": 1,
+      "cases": [
+        "language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--21.js"
+      ]
+    },
+    {
       "reason": "Uncaught TypeError: Object.getPrototypeOf called on null or undefined (in /case.js)",
       "count": 1,
       "cases": [
         "language/statements/async-generator/yield-star-async-from-sync-iterator-inaccessible.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: Property description must be an object (in /var/folders/zc/m2tbb4v542b",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperties/15.2.3.7-5-b-246.js"
       ]
     },
     {
@@ -1589,6 +1642,34 @@
       ]
     },
     {
+      "reason": "Uncaught TypeError: toZonedDateTime is not a function (in /var/folders/zc/m2tbb4v542b9c11g",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDateTime/prototype/toZonedDateTime/options-object.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: undefined is not iterable (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh",
+      "count": 1,
+      "cases": [
+        "built-ins/Set/prototype/symmetricDifference/combines-Map.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: with is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh000",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/ZonedDateTime/prototype/with/options-object.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: withCalendar is not a function (in /var/folders/zc/m2tbb4v542b9c11gk10",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDateTime/prototype/withCalendar/calendar-temporal-object.js"
+      ]
+    },
+    {
       "reason": "Uncaught TypeError: zipKeyed is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcm",
       "count": 1,
       "cases": [
@@ -1603,7 +1684,7 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: -N:N:N.N is not a valid time zone string Expected a RangeError but got",
+      "reason": "Uncaught undefined: -N:N:N.N is not a valid time zone string Expected a RangeError to be t",
       "count": 1,
       "cases": [
         "built-ins/Temporal/Now/plainDateISO/timezone-string-sub-minute-offset.js"
@@ -1628,6 +1709,20 @@
       "count": 1,
       "cases": [
         "built-ins/String/prototype/trim/15.5.4.20-4-8.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: \"-N-N-19T23:N-N:N[-N:N]\" is outside the representable range of ZonedD",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/ZonedDateTime/prototype/equals/argument-string-limits.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: \"era\" is not a valid value for largestUnit Expected a RangeError but g",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/ZonedDateTime/prototype/since/largestunit-invalid-string.js"
       ]
     },
     {
@@ -1981,6 +2076,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: −∞ is out of range for fractionalSecondDigits Expected a RangeError to",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDateTime/prototype/toString/fractionalseconddigits-out-of-range.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: a.concat() throws a TypeError exception Expected a TypeError to be thr",
       "count": 1,
       "cases": [
@@ -2016,13 +2118,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Actual [] and expected [N, N] should have the same contents. ",
-      "count": 1,
-      "cases": [
-        "built-ins/Set/prototype/symmetricDifference/combines-Map.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Actual [] and expected [toString, cause] should have the same contents",
       "count": 1,
       "cases": [
@@ -2030,10 +2125,31 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Actual [get fields.month, get fields.day, get fields.day, get fields.m",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainMonthDay/prototype/with/order-of-operations.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Actual [get fields[Symbol('…')], get fields.years, get fields.months",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/Instant/prototype/subtract/order-of-operations.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Actual [get originalIter.next, get originalIter[Symbol.iterator]] and ",
       "count": 1,
       "cases": [
         "built-ins/Iterator/from/get-return-method-when-call-return.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Actual [get other[Symbol('…')], get other[Symbol('…')], ",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDate/prototype/until/order-of-operations.js"
       ]
     },
     {
@@ -2065,6 +2181,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: arbitrary string Expected a RangeError but got a TypeError",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/Duration/prototype/round/relativeto-string-invalid.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: arr.flatMap(mapperFn) throws a TypeError exception Expected a TypeErro",
       "count": 1,
       "cases": [
@@ -2083,6 +2206,13 @@
       "count": 1,
       "cases": [
         "built-ins/Object/defineProperties/15.2.3.7-6-a-127.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: arr[N] Expected SameValue(«undefined», «\"ownDataProperty\"») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-186.js"
       ]
     },
     {
@@ -2128,6 +2258,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: arrObj[N] Expected SameValue(«undefined», «N») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-192.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: assign should be an own property",
       "count": 1,
       "cases": [
@@ -2142,10 +2279,31 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: bare date-time string is not a time zone Expected a RangeError but got",
+      "reason": "Uncaught undefined: auto largestUnit is year (pos): years result: Expected SameValue(«N», ",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainYearMonth/prototype/since/largestunit-auto.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: bare date-time string is not a time zone Expected a RangeError to be t",
       "count": 1,
       "cases": [
         "built-ins/Temporal/Now/plainDateISO/timezone-string-datetime.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: bare date-time string is not a ZonedDateTime Expected a RangeError but",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/ZonedDateTime/prototype/since/zoneddatetime-string.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: bare date-time string is not an instant Expected a RangeError but got ",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/Instant/prototype/since/instant-string.js"
       ]
     },
     {
@@ -2156,10 +2314,52 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: calendar ID is capital dotted I is not lowercased (first argument) Exp",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainYearMonth/compare/argument-propertybag-calendar-case-insensitive.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: calendar string should be iso8601 Expected SameValue(«undefined», «\"is",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/Now/zonedDateTimeISO/return-value.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Calling as constructor Expected a TypeError but got a RangeError",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/Duration/from/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Cannot use minus zero as extended year (first argument) Expected a Ran",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDateTime/compare/year-zero.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Date-only string throws, does not implicitly convert to midnight Expec",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/ZonedDateTime/prototype/withPlainTime/argument-string-no-implicit-midnight.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Date.prototype.toUTCString serializes year -N to \"-N\" Expected SameVal",
       "count": 1,
       "cases": [
         "built-ins/Date/prototype/toUTCString/negative-year.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: days out of range, positive, smallestUnit years Expected a RangeError ",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/Duration/prototype/round/relativeto-duration-out-of-range-added-to-relative-date.js"
       ]
     },
     {
@@ -2174,6 +2374,20 @@
       "count": 1,
       "cases": [
         "built-ins/Object/defineProperty/15.2.3.6-4-448.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: empty string is not a valid calendar ID (first argument) Expected a Ra",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/ZonedDateTime/compare/argument-propertybag-calendar-invalid-iso-string.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: exception thrown when largestUnit disallowed Expected a RangeError but",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainTime/prototype/until/options-read-before-algorithmic-validation.js"
       ]
     },
     {
@@ -2226,6 +2440,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Expected obj[length] to be configurable, but was not.",
+      "count": 1,
+      "cases": [
+        "built-ins/GeneratorFunction/instance-length.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Expected obj[N] to equal N, actually N",
       "count": 1,
       "cases": [
@@ -2268,13 +2489,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected SameValue(«\"undefined\"», «\"function\"») to be true",
-      "count": 1,
-      "cases": [
-        "built-ins/Date/prototype/Symbol.toPrimitive/this-val-non-obj.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Expected SameValue(«[object Function]», «function Error() { [native co",
       "count": 1,
       "cases": [
@@ -2307,6 +2521,13 @@
       "count": 1,
       "cases": [
         "built-ins/TypedArray/prototype/includes/search-undefined-after-shrinking-buffer-index-is-oob.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«true», «false») to be true",
+      "count": 1,
+      "cases": [
+        "language/statements/for-of/dstr/obj-prop-elem-target-yield-expr.js"
       ]
     },
     {
@@ -2383,7 +2604,7 @@
       "reason": "Uncaught undefined: Fractional minutes not allowed in time string Expected a RangeError bu",
       "count": 1,
       "cases": [
-        "built-ins/Temporal/ZonedDateTime/from/no-fractional-minutes-hours.js"
+        "built-ins/Temporal/ZonedDateTime/prototype/since/no-fractional-minutes-hours.js"
       ]
     },
     {
@@ -2415,17 +2636,17 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: instanceof",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainYearMonth/subclass.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: invalid access to a private getter Expected a TypeError but got a Test",
       "count": 1,
       "cases": [
         "language/statements/class/elements/private-getter-visible-to-direct-eval.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Invalid string processed before throwing TypeError Expected a RangeErr",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainDate/from/options-wrong-type.js"
       ]
     },
     {
@@ -2506,6 +2727,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: isConstructor(Temporal.PlainDateTime.prototype.with) Expected SameValu",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDateTime/prototype/with/not-a-constructor.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: isConstructor(TypedArray.prototype.filter) must return false Expected ",
       "count": 1,
       "cases": [
@@ -2527,6 +2755,27 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: minYearMonth.until(maxYearMonth) Expected a RangeError to be thrown bu",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainYearMonth/prototype/until/throws-if-year-outside-valid-iso-range.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: mixed positive and negative values always throw Expected a RangeError ",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/Duration/prototype/add/argument-mixed-sign.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: month code N should be rejected Expected a TypeError but got a RangeEr",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDateTime/from/month-code-wrong-type.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: N setter should be unreachable! (Testing with BigInt64Array and makePa",
       "count": 1,
       "cases": [
@@ -2534,10 +2783,10 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: N value should be N",
+      "reason": "Uncaught undefined: N-N-19T17:N:N.N-N:N:N.N[-N:N:N.N] is not a valid ISO string ",
       "count": 1,
       "cases": [
-        "built-ins/Object/defineProperties/15.2.3.7-6-a-200.js"
+        "built-ins/Temporal/ZonedDateTime/compare/argument-string-sub-minute-offset.js"
       ]
     },
     {
@@ -2552,6 +2801,20 @@
       "count": 1,
       "cases": [
         "built-ins/RegExp/prototype/Symbol.replace/name.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: name descriptor value should be cls; name value should be cls; name de",
+      "count": 1,
+      "cases": [
+        "language/statements/const/fn-name-class.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: name descriptor value should be fn; name value should be fn; name desc",
+      "count": 1,
+      "cases": [
+        "language/expressions/assignment/dstr/obj-prop-elem-init-fn-name-fn.js"
       ]
     },
     {
@@ -2586,7 +2849,21 @@
       "reason": "Uncaught undefined: no more than N decimal places are allowed Expected a RangeError but go",
       "count": 1,
       "cases": [
+        "built-ins/Temporal/PlainTime/prototype/until/argument-string-too-many-decimals.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: no more than N decimal places are allowed Expected a RangeError to be ",
+      "count": 1,
+      "cases": [
         "built-ins/Temporal/PlainMonthDay/from/argument-string-too-many-decimals.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: null Expected a RangeError but got a TypeError",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDateTime/prototype/since/largestunit-wrong-type.js"
       ]
     },
     {
@@ -2667,6 +2944,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: overflow reject exception thrown Expected a RangeError to be thrown bu",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/ZonedDateTime/prototype/subtract/options-read-before-algorithmic-validation.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: prop descriptor should be enumerable; prop descriptor should be config",
       "count": 1,
       "cases": [
@@ -2688,10 +2972,10 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: prototype should be an own property",
+      "reason": "Uncaught undefined: referenceISOYear result: Expected SameValue(«N», «N») to be true",
       "count": 1,
       "cases": [
-        "built-ins/TypedArrayConstructors/BigInt64Array/prototype.js"
+        "built-ins/Temporal/PlainMonthDay/prototype/with/subclassing-ignored.js"
       ]
     },
     {
@@ -2723,17 +3007,17 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: reject minus zero as extended year Expected a RangeError but got a Typ",
+      "reason": "Uncaught undefined: reject minus zero as extended year Expected a RangeError to be thrown ",
       "count": 1,
       "cases": [
         "built-ins/Temporal/Duration/compare/relativeto-propertybag-timezone-string-year-zero.js"
       ]
     },
     {
-      "reason": "Uncaught undefined: reject unknown annotation with critical flag: N-N-01T00:N[!foo=bar] Ex",
+      "reason": "Uncaught undefined: reject more than one calendar annotation if any critical: N-N-01T00:N[",
       "count": 1,
       "cases": [
-        "built-ins/Temporal/PlainDateTime/from/argument-string-critical-unknown-annotation.js"
+        "built-ins/Temporal/PlainDate/prototype/since/argument-string-multiple-calendar.js"
       ]
     },
     {
@@ -2765,6 +3049,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: roundingMode is halfExpand (with N digits from smallestUnit) Expected ",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainTime/prototype/toString/roundingmode-halfExpand.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Same date value Expected SameValue(«NaN», «N») to be true",
       "count": 1,
       "cases": [
@@ -2790,6 +3081,13 @@
       "count": 1,
       "cases": [
         "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/key-is-numericindex-desc-configurable.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: string with years > max is out of range Expected a RangeError to be th",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDateTime/prototype/subtract/argument-duration-out-of-range.js"
       ]
     },
     {
@@ -2895,6 +3193,13 @@
       "count": 1,
       "cases": [
         "built-ins/AsyncFunction/AsyncFunctionPrototype-to-string.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: TypeError on wrong options type object Expected a TypeError to be thro",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDate/from/options-wrong-type.js"
       ]
     },
     {
