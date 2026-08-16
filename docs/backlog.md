@@ -1910,3 +1910,49 @@ to pass, which is the entire argument for having built it a run earlier.
 Corpus: 666 to 701 assertions, 20 to 26 suites complete.
 
 Locked by `tests/receiverBrandChecks.js`.
+
+## `this` in a receiver-less call was undefined, and Function was not callable — DONE 2026-08-16
+
+Two defects that only look separate. `Function("return this")()` is how a
+library finds the global object, and it needed both halves to work.
+
+**`Function` was a plain object holding `.prototype`.** Calling it reported
+"Function is not a function", and `new Function(a, b, body)` reported "value is
+not a constructor". It is now a Native built on the same evaluator `eval` uses,
+producing node's exact source layout (`function anonymous(a\n) {\nbody\n}`)
+because `Function.prototype.toString` on the result is observable. Always the
+global scope: a function built this way never closes over its caller, which is
+the difference from direct eval. es-get-iterator (140 assertions) and
+function-bind (46) build their test subjects with it and could not start.
+
+**`this` in a call with no receiver was `undefined`, not `globalThis`.** This is
+OrdinaryCallBindThis and it was simply absent, so every UMD wrapper, every
+`var global = (function(){ return this })()`, and every sloppy-mode method
+extraction saw the wrong value. Fixed at the single point where a frame binds
+`this`. The engine tracks no strict mode, so it applies the sloppy rule
+throughout, which is also the mode the test262 sweep runs in.
+
+Also: **`fn.constructor === Function`** and **`fn instanceof Function`** were
+both false. Functions are not objects in this value model, so nothing linked
+them to `Function` and the instanceof walk never saw them.
+
+Corpus: 701 to 760 assertions.
+
+Locked by `tests/functionConstructor.js`.
+
+## OPEN: Function.prototype.toString returns "[object Function]", never source
+
+Every function stringifies to `[object Function]` — declared, expression,
+arrow, or built by `new Function`. Node returns the verbatim source text, and
+libraries read it: lodash distinguishes native from user functions by looking
+for `[native code]`, and several detectors parse the parameter list out of it.
+
+Blocked on the lexer, not on the printer. `Token` carries `kind`, `num`, `text`,
+`nlBefore` and `raw` but no byte offset, and `FuncDef` keeps no span, so there is
+nothing to slice the original source with. Reconstructing text from the AST would
+not fix it either: the `.expected` files are byte-exact against node, and a
+pretty-printer cannot reproduce the author's spacing.
+
+The fix is offsets on Token, a start/end span on FuncDef, and the source text
+retained per module. Worth doing, but it touches the hot lexer path and should
+be measured, not assumed free.

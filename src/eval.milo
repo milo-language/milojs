@@ -3591,6 +3591,10 @@ let NATIVE_URI_ERROR: i64 = 149
 // to being required by a large slice of npm. The direct-call form
 // `eval("bareIdent")` is handled at the call site and still works.
 let NATIVE_EVAL: i64 = 150
+// `Function(body)` / `new Function(a, b, body)`. Built on the same evaluator as
+// eval: `Function("return this")()` is the classic globalThis probe, and
+// es-get-iterator and function-bind both build their test subjects with it.
+let NATIVE_FUNCTION_CTOR: i64 = 153
 // __callFrames() → the module paths currently executing, innermost first. This
 // is what Error.captureStackTrace turns into V8 CallSite objects: `bindings`
 // (under better-sqlite3 and most native addons) discovers the filename of its
@@ -5298,6 +5302,26 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Null
     }
+    if id == NATIVE_FUNCTION_CTOR {
+        // node's exact source layout, because Function.prototype.toString on the
+        // result is observable and libraries compare against it
+        var params = ""
+        var body = ""
+        if argVals.len() > 0 {
+            var pi: i64 = 0
+            while pi + 1 < argVals.len() {
+                if pi > 0 {
+                    params = params + ","
+                }
+                params = params + toStr(argVals[pi])
+                pi = pi + 1
+            }
+            body = toStr(argVals[argVals.len() - 1])
+        }
+        // always the GLOBAL scope: a function built this way never closes over
+        // the caller, which is the difference from direct eval
+        return runEvalSource("(function anonymous(" + params + "\n) {\n" + body + "\n})", st, 0)
+    }
     if id == NATIVE_EVAL {
         // INDIRECT eval (`const e = eval; e(src)`) runs in the GLOBAL scope,
         // not the caller's, which is the whole difference from the direct form
@@ -6775,6 +6799,17 @@ fn requireModuleFrom(prog: &Prog, spec: &string, st: &mut Interp, dirIn: string)
 }
 
 fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
+    // `f instanceof Function` for a plain function value: functions are not Objs
+    // here, so the object walk below never saw them and answered false.
+    match ctor {
+        JSValue.Native(cid) => {
+            if cid == NATIVE_FUNCTION_CTOR {
+                return isCallableIn(st, val)
+            }
+        }
+        _ => {
+        }
+    }
     match val {
         JSValue.Obj(o) => {
             match ctor {
@@ -7595,10 +7630,16 @@ pub fn setupGlobals(st: &mut Interp) {
     // Function.prototype.toString.call(fn)
     objSet(st, functionProto, "toString", makeBoundMethod(st, JSValue.Undefined, "toString"))
     st.objects[functionProto].isFunctionLike = true
-    let functionCtor = newObject(st)
-    st.objects[functionCtor].isFunctionLike = true
-    objSet(st, functionCtor, "prototype", JSValue.Obj(functionProto))
-    scopeDefine(st, 0, "Function", JSValue.Obj(functionCtor))
+    // Function is a Native rather than a plain object so that CALLING it reaches
+    // callNativeProg; as an object it was only ever a namespace holding
+    // .prototype, and `Function("return 1")` reported "Function is not a
+    // function".
+    let functionCtorBag = getNativeProps(st, NATIVE_FUNCTION_CTOR)
+    objDefineProtoAttr(st, functionCtorBag, "prototype", JSValue.Obj(functionProto))
+    objSet(st, functionProto, "constructor", JSValue.Native(NATIVE_FUNCTION_CTOR))
+    objSetNonEnumerable(st, functionProto, "constructor")
+    scopeDefine(st, 0, "Function", JSValue.Native(NATIVE_FUNCTION_CTOR))
+    nameGlobalCtor(st, "Function", NATIVE_FUNCTION_CTOR)
     scopeDefine(st, 0, "setTimeout", JSValue.Native(NATIVE_SET_TIMEOUT))
     scopeDefine(st, 0, "setInterval", JSValue.Native(NATIVE_SET_INTERVAL))
     scopeDefine(st, 0, "clearTimeout", JSValue.Native(NATIVE_CLEAR_TIMER))
@@ -8494,6 +8535,14 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     if name == "prototype" {
                         return JSValue.Obj(getFuncProto(st, fIdx))
                     }
+                    // `fn.constructor === Function`: functions are not objects in
+                    // this value model, so nothing linked them to Function.
+                    if name == "constructor" {
+                        let statics1 = getFuncStatics(st, fIdx, fe)
+                        if objOwnIndex(st, statics1, name) < 0 {
+                            return JSValue.Native(NATIVE_FUNCTION_CTOR)
+                        }
+                    }
                     // fn.call / fn.apply / fn.bind as VALUES. They already work
                     // when invoked directly; this is the extraction form real
                     // bundles use (var slice = Array.prototype.slice; slice.call).
@@ -9178,6 +9227,12 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     // missing case — @trpc's `procedure?._def.type`.
                     if name == "prototype" {
                         return JSValue.Obj(getFuncProto(st, fIdx))
+                    }
+                    if name == "constructor" {
+                        let statics2 = getFuncStatics(st, fIdx, fe)
+                        if objOwnIndex(st, statics2, name) < 0 {
+                            return JSValue.Native(NATIVE_FUNCTION_CTOR)
+                        }
                     }
                     if name == "length" {
                         return JSValue.Number(funcArity(prog, fIdx) as f64)
@@ -10015,7 +10070,23 @@ fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
     pushActive(st, callScope)
     // arrows have no own `this` — it stays lexical (resolved up the scope chain)
     if !prog.funcs[fIdx].isArrow {
-        scopeDefine(st, callScope, "this", thisVal)
+        // A non-strict function called with no receiver gets globalThis, not
+        // undefined. That is OrdinaryCallBindThis, and it is what
+        // `Function("return this")()` — the standard global probe, and the core
+        // of every UMD wrapper — depends on. This engine has no strict-mode
+        // tracking, so it applies the sloppy rule throughout, which is also the
+        // mode the test262 sweep runs in.
+        var boundThisVal = thisVal
+        match boundThisVal {
+            JSValue.Undefined => {
+                if scopeHas(st, 0, "globalThis") {
+                    boundThisVal = scopeLookup(st, 0, "globalThis")
+                }
+            }
+            _ => {
+            }
+        }
+        scopeDefine(st, callScope, "this", boundThisVal)
         // new.target is the constructor this frame was invoked with, or
         // undefined for a plain call
         scopeDefine(st, callScope, "new.target", cloneValue(st.newTarget))

@@ -1,0 +1,15 @@
+typeof Function -> function
+call form -> 1
+new form -> 3
+several params -> 6
+no args -> undefined
+body only, no params -> x
+closes over global not caller -> undefined
+globalThis probe -> true
+instanceof Function -> true
+arrow instanceof -> true
+built-in instanceof -> true
+constructed instanceof -> true
+object is not -> false
+Function.prototype -> function
+ctor round trip -> true
