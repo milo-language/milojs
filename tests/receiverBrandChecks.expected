@@ -1,0 +1,44 @@
+String.valueOf [object Array] THREW TypeError
+Number.valueOf [object Array] THREW TypeError
+Boolean.valueOf [object Array] THREW TypeError
+Date.getDay [object Array] THREW TypeError
+String.valueOf [object Object] THREW TypeError
+Number.valueOf [object Object] THREW TypeError
+Boolean.valueOf [object Object] THREW TypeError
+Date.getDay [object Object] THREW TypeError
+String.valueOf [object RegExp] THREW TypeError
+Number.valueOf [object RegExp] THREW TypeError
+Boolean.valueOf [object RegExp] THREW TypeError
+Date.getDay [object RegExp] THREW TypeError
+String.valueOf [object Number] THREW TypeError
+Number.valueOf [object Number] -> 42
+Boolean.valueOf [object Number] THREW TypeError
+Date.getDay [object Number] THREW TypeError
+String.valueOf [object String] -> s
+Number.valueOf [object String] THREW TypeError
+Boolean.valueOf [object String] THREW TypeError
+Date.getDay [object String] THREW TypeError
+String.valueOf primitive -> abc
+String.valueOf wrapper -> abc
+Number.valueOf primitive -> 5
+Boolean.valueOf wrapper -> true
+Date.getDay date -> number
+Number.toFixed on [] THREW TypeError
+String.prototype + '' -> string
+Number.prototype + 0 -> 0
+Boolean.prototype valueOf -> false
+tag of String.prototype -> [object String]
+String.prototype.length -> 0
+Symbol.prototype valueOf THREW TypeError
+BigInt.prototype valueOf THREW TypeError
+Date.prototype getDay THREW TypeError
+String.indexOf on array -> 2
+String.slice on number -> 23
+Date.prototype != null -> true
+String.prototype == null -> false
+throwing valueOf == null -> false
+throwing valueOf == undefined -> false
+obj == number -> true
+obj == string -> true
+WeakRef.deref on {} THREW TypeError
+FinReg.register on {} THREW TypeError

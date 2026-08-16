@@ -1867,3 +1867,46 @@ number moves with the corpus as well as with the engine.
 
 Today: 53 suites run, 666/1699 assertions, 20 suites complete. Before this
 session's three fixes: 0/1699 and 0 complete.
+
+## Prototype methods accepted any receiver, so every is-* detector answered true — DONE 2026-08-16
+
+`String.prototype.valueOf.call([])` returned `""` instead of throwing. Same for
+`Number.prototype.valueOf`, `Boolean.prototype.valueOf` and every Date getter.
+Not a quiet deviation: calling a prototype method on a candidate and catching
+the TypeError IS the detector that `is-string`, `is-number-object`,
+`is-boolean-object`, `is-date-object`, `is-weakref` and
+`is-finalizationregistry` are built on, so each of them reported arrays,
+objects and regexes as instances of its type.
+
+The existing `boundBrand` mechanism (built for the buffer family) already had the
+shape; it needed four more brands and a receiver rule that accepts the PRIMITIVE
+as well as the wrapper, since `String.prototype.valueOf.call("abc")` is legal and
+`.call([])` is not. Three related fixes fell out of it:
+
+- **`String.prototype.valueOf` on a primitive returned undefined.** It was never
+  implemented in `stringMethod`, so the detector failed in the other direction.
+- **`String.prototype` really is a String object.** The spec gives it, and
+  Number.prototype and Boolean.prototype, a [[StringData]]/[[NumberData]]/
+  [[BooleanData]] slot holding `""`, `0` and `false`. That is why
+  `String.prototype + ""` is `""`, and it is why the brand check must accept the
+  prototype as a receiver for its own valueOf. Symbol.prototype, BigInt.prototype
+  and Date.prototype are ORDINARY objects by contrast, and node throws for their
+  branded methods called on themselves; the fixture pins both halves.
+- **The REST of String.prototype is generic** and ToStrings whatever receiver it
+  gets: `String.prototype.indexOf.call(["a","b"], "b")` is 2, because the
+  receiver becomes `"a,b"` and the array is not searched as an array. milojs
+  answered 1 by dispatching on the array. Branding those methods generic and
+  converting the receiver at the bound-method call sites fixes it while keeping
+  null/undefined a TypeError.
+
+**A defect of my own, caught by the new gate.** The `==` object-vs-primitive
+conversion added with the wrapper work converted `obj == null` too. The spec
+resolves that to false with NO conversion, and get-intrinsic opens with exactly
+that null guard against `Date.prototype`, whose valueOf now correctly throws. So
+a correct fix (brand checks) turned an already-shipped bug (over-eager `==`
+coercion) fatal. `tools/check-packages.sh` went 666 to 0 assertions and refused
+to pass, which is the entire argument for having built it a run earlier.
+
+Corpus: 666 to 701 assertions, 20 to 26 suites complete.
+
+Locked by `tests/receiverBrandChecks.js`.

@@ -624,7 +624,10 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
     if name == "trim" {
         return JSValue.Str(jsTrim(s))
     }
-    if name == "toString" {
+    if name == "toString" || name == "valueOf" {
+        // String.prototype.valueOf.call("abc") is "abc". It reached here and
+        // fell through to undefined, which made every is-string style detector
+        // that calls it on a PRIMITIVE answer wrongly in the other direction.
         return JSValue.Str(s.clone())
     }
     if name == "charAt" {

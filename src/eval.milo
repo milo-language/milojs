@@ -724,6 +724,21 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
     return direct
 }
 
+// Receiver brands. 0 none, 1 %TypedArray%, 2 ArrayBuffer, 3 DataView are the
+// original set; these extend it to the prototypes whose methods the spec
+// brand-checks against an internal slot rather than coercing the receiver.
+let BRAND_STRING: i64 = 4
+let BRAND_NUMBER: i64 = 5
+let BRAND_BOOLEAN: i64 = 6
+let BRAND_BIGINT: i64 = 7
+let BRAND_SYMBOL: i64 = 8
+let BRAND_DATE: i64 = 9
+// Everything on String.prototype that is NOT valueOf/toString: generic, so it
+// ToStrings whatever receiver it is handed. `String.prototype.indexOf.call(["a",
+// "b"], "b")` is 2, because the receiver becomes "a,b" — the array is not
+// searched as an array. Only null and undefined are rejected.
+let BRAND_STRING_GENERIC: i64 = 10
+
 // A bound method that first checks its receiver really is of `brand`. See
 // JSObjExtra.boundBrand for why the buffer family needs this and Array does not.
 fn makeBrandedMethod(st: &mut Interp, name: string, brand: i64): JSValue {
@@ -737,9 +752,56 @@ fn brandMatches(st: &Interp, brand: i64, recv: &JSValue): bool {
     if brand == 0 {
         return true
     }
+    // The wrapper brands accept the PRIMITIVE too: String.prototype.valueOf
+    // called on "abc" is fine, on [] is a TypeError. That asymmetry is exactly
+    // what the is-string / is-number-object / is-boolean-object family uses as
+    // its detector, and without the throw they answered true for everything.
+    if brand == BRAND_STRING_GENERIC {
+        match recv {
+            JSValue.Null => {
+                return false
+            }
+            JSValue.Undefined => {
+                return false
+            }
+            _ => {
+                return true
+            }
+        }
+    }
+    if brand >= BRAND_STRING && brand <= BRAND_SYMBOL {
+        var prim = cloneValue(recv)
+        let wh = objHandle(recv)
+        if wh >= 0 {
+            prim = boxedPrimitive(st, wh)
+        }
+        match prim {
+            JSValue.Str(ps) => {
+                if isSymbolStr(ps) {
+                    return brand == BRAND_SYMBOL
+                }
+                return brand == BRAND_STRING
+            }
+            JSValue.Number(_pn) => {
+                return brand == BRAND_NUMBER
+            }
+            JSValue.Bool(_pb) => {
+                return brand == BRAND_BOOLEAN
+            }
+            JSValue.BigInt(_pg) => {
+                return brand == BRAND_BIGINT
+            }
+            _ => {
+                return false
+            }
+        }
+    }
     let h = objHandle(recv)
     if h < 0 {
         return false
+    }
+    if brand == BRAND_DATE {
+        return st.objects[h].isDate
     }
     if brand == 2 {
         return st.objects[h].isArrayBuffer
@@ -761,6 +823,22 @@ fn brandOk(st: &mut Interp, boundObj: i64, mname: &string, recv: &JSValue): bool
     return false
 }
 
+// A generic String.prototype method converts its receiver rather than
+// dispatching on it, so the array/number/regex cases must arrive as strings.
+fn coerceGenericStringReceiver(prog: &Prog, st: &mut Interp, boundObj: i64, recv: JSValue): JSValue {
+    if st.objExtras[st.objects[boundObj].extra].boundBrand != BRAND_STRING_GENERIC {
+        return recv
+    }
+    match recv {
+        JSValue.Str(sv) => {
+            return JSValue.Str(sv)
+        }
+        _ => {
+            return JSValue.Str(toStrProg(prog, recv, st))
+        }
+    }
+}
+
 fn brandName(brand: i64): string {
     if brand == 2 {
         return "ArrayBuffer"
@@ -768,7 +846,54 @@ fn brandName(brand: i64): string {
     if brand == 3 {
         return "DataView"
     }
+    if brand == BRAND_STRING {
+        return "String"
+    }
+    if brand == BRAND_NUMBER {
+        return "Number"
+    }
+    if brand == BRAND_BOOLEAN {
+        return "Boolean"
+    }
+    if brand == BRAND_BIGINT {
+        return "BigInt"
+    }
+    if brand == BRAND_SYMBOL {
+        return "Symbol"
+    }
+    if brand == BRAND_STRING_GENERIC {
+        return "String"
+    }
+    if brand == BRAND_DATE {
+        return "Date"
+    }
     return "TypedArray"
+}
+
+// A prototype method whose receiver must carry the matching internal slot. The
+// spec brand-checks exactly these: the wrapper prototypes' valueOf/toString, and
+// every Date getter. The rest of String.prototype is generic (it ToStrings any
+// receiver), so branding it would break Array.prototype.map.call("abc", f) and
+// the uncurry-this idiom that depends on the same genericity.
+// String.prototype, Number.prototype and Boolean.prototype are themselves
+// WRAPPER objects in the spec, holding "" , 0 and false. Not a curiosity:
+// `String.prototype + ""` is "" precisely because the prototype has a
+// [[StringData]] slot, and the brand checks above would otherwise reject the
+// prototype as a receiver for its own valueOf. Symbol.prototype,
+// BigInt.prototype and Date.prototype are ORDINARY objects by contrast, and
+// node throws for their branded methods called on themselves.
+fn boxProtoItself(st: &mut Interp, proto: i64, v: JSValue) {
+    let _ = ensureExtra(st, proto)
+    st.objExtras[st.objects[proto].extra].boxed = v
+}
+
+fn brandProtoMethods(st: &mut Interp, proto: i64, brand: i64, names: &Vec<string>) {
+    var i: i64 = 0
+    while i < names.len() {
+        objSet(st, proto, names[i].clone(), makeBrandedMethod(st, names[i].clone(), brand))
+        objSetNonEnumerable(st, proto, names[i])
+        i = i + 1
+    }
 }
 
 // GENERATED from node (see docs/backlog.md): the `length` every built-in
@@ -7033,7 +7158,11 @@ fn setupRemainingProtos(st: &mut Interp) {
     bigNames.push("toString")
     bigNames.push("valueOf")
     bigNames.push("toLocaleString")
-    let _gp = buildNativeProto(st, NATIVE_BIGINT, bigNames)
+    let gp = buildNativeProto(st, NATIVE_BIGINT, bigNames)
+    var vt: Vec<string> = Vec.new()
+    vt.push("valueOf")
+    vt.push("toString")
+    brandProtoMethods(st, gp, BRAND_BIGINT, vt)
 
     // Number / Boolean / BigInt / Symbol: primitives, so nothing links these as
     // an instance proto — they exist so the prototype itself is reachable.
@@ -7044,17 +7173,34 @@ fn setupRemainingProtos(st: &mut Interp) {
     numNames.push("toPrecision")
     numNames.push("toExponential")
     numNames.push("toLocaleString")
-    let _np = buildNativeProto(st, NATIVE_NUMBER, numNames)
+    let np = buildNativeProto(st, NATIVE_NUMBER, numNames)
+    var numBrand: Vec<string> = Vec.new()
+    numBrand.push("valueOf")
+    numBrand.push("toString")
+    numBrand.push("toFixed")
+    numBrand.push("toPrecision")
+    numBrand.push("toExponential")
+    brandProtoMethods(st, np, BRAND_NUMBER, numBrand)
+    boxProtoItself(st, np, JSValue.Number(0.0))
 
     var boolNames: Vec<string> = Vec.new()
     boolNames.push("toString")
     boolNames.push("valueOf")
-    let _bp = buildNativeProto(st, NATIVE_BOOLEAN, boolNames)
+    let bp = buildNativeProto(st, NATIVE_BOOLEAN, boolNames)
+    var boolBrand: Vec<string> = Vec.new()
+    boolBrand.push("valueOf")
+    boolBrand.push("toString")
+    brandProtoMethods(st, bp, BRAND_BOOLEAN, boolBrand)
+    boxProtoItself(st, bp, JSValue.Bool(false))
 
     var symNames: Vec<string> = Vec.new()
     symNames.push("toString")
     symNames.push("valueOf")
-    let _sp = buildNativeProto(st, NATIVE_SYMBOL, symNames)
+    let sp = buildNativeProto(st, NATIVE_SYMBOL, symNames)
+    var symBrand: Vec<string> = Vec.new()
+    symBrand.push("valueOf")
+    symBrand.push("toString")
+    brandProtoMethods(st, sp, BRAND_SYMBOL, symBrand)
 
     // Map and Set share one method list here because they share a dispatcher;
     // only the names each actually answers are listed per side.
@@ -7362,9 +7508,15 @@ pub fn setupGlobals(st: &mut Interp) {
     // String.prototype.replace.call(str, ...) — the qs module's pattern — works
     let stringProto = newObject(st)
     for sm in strProtoMethodNames() {
-        objSet(st, stringProto, sm.clone(), makeBoundMethod(st, JSValue.Undefined, sm.clone()))
+        objSet(st, stringProto, sm.clone(), makeBrandedMethod(st, sm.clone(), BRAND_STRING_GENERIC))
         objSetNonEnumerable(st, stringProto, sm)
     }
+    var strBrand: Vec<string> = Vec.new()
+    strBrand.push("valueOf")
+    strBrand.push("toString")
+    brandProtoMethods(st, stringProto, BRAND_STRING, strBrand)
+    boxProtoItself(st, stringProto, JSValue.Str(""))
+    objSetFrozenOwn(st, stringProto, "length", JSValue.Number(0.0), false)
     objSet(st, stringProto, "constructor", JSValue.Native(NATIVE_STRING))
     objSetNonEnumerable(st, stringProto, "constructor")
     st.objects[stringProto].proto = objectProto
@@ -7417,7 +7569,7 @@ pub fn setupGlobals(st: &mut Interp) {
     // Date.prototype.toISOString.call(d) — qs's pattern — works
     let dateProto = newObject(st)
     for dm in dateProtoMethodNames() {
-        objSet(st, dateProto, dm.clone(), makeBoundMethod(st, JSValue.Undefined, dm.clone()))
+        objSet(st, dateProto, dm.clone(), makeBrandedMethod(st, dm.clone(), BRAND_DATE))
     }
     objDefineProtoAttr(st, dateCtorObj, "prototype", JSValue.Obj(dateProto))
     objSet(st, dateProto, "constructor", JSValue.Native(NATIVE_DATE))
@@ -7762,6 +7914,23 @@ fn evalBigIntBin(op: &string, va: JSValue, vb: JSValue, st: &mut Interp): JSValu
 // tree-walk keeps this frame live while evaluating either operand. Keeping only
 // binary locals here prevents rare expression arms from inflating every
 // recursive JavaScript call's native stack usage.
+// Whether a `==` operand takes part in the object-to-primitive conversion.
+// Null and Undefined never do: they compare equal to each other and to nothing
+// else, so a loose comparison against them must not run user code.
+fn isEqCoercible(v: &JSValue): bool {
+    match v {
+        JSValue.Null => {
+            return false
+        }
+        JSValue.Undefined => {
+            return false
+        }
+        _ => {
+            return true
+        }
+    }
+}
+
 fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Interp, scope: i64): JSValue {
     if op == "&&" {
         let va = evalExpr(prog, a, st, scope)
@@ -7813,7 +7982,11 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Inter
     // `==` between an object and a primitive converts the OBJECT side, which is
     // how `new String("a") == "a"` is true while `===` stays false. Two objects
     // still compare by reference, so this fires only on a mixed pair.
-    if (op == "==" || op == "!=") && (objHandle(va) >= 0) != (objHandle(vb) >= 0) {
+    // ...but ONLY against a Number/String/BigInt/Symbol. `obj == null` and
+    // `obj == undefined` are false by definition, with no conversion at all, so
+    // converting there calls valueOf on an object whose valueOf may legitimately
+    // throw: `Date.prototype != null` is the null-guard get-intrinsic opens with.
+    if (op == "==" || op == "!=") && (objHandle(va) >= 0) != (objHandle(vb) >= 0) && isEqCoercible(va) && isEqCoercible(vb) {
         pushTemp(st, cloneValue(va))
         pushTemp(st, cloneValue(vb))
         var ea = cloneValue(va)
@@ -12537,6 +12710,10 @@ fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSValue,
                     if !brandOk(st, o, mname, recvV) {
                         return JSValue.Undefined
                     }
+                    recvV = coerceGenericStringReceiver(prog, st, o, recvV)
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
                     return callBuiltinByName(prog, recvV, mname, args, st)
                 }
                 let target = cloneValue(st.objExtras[ex].boundTarget)
@@ -14784,7 +14961,11 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                     if !brandOk(st, o, mname, newThis) {
                         return JSValue.Undefined
                     }
-                    return callBuiltinByName(prog, newThis, mname, rest, st)
+                    let recvS = coerceGenericStringReceiver(prog, st, o, newThis)
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
+                    return callBuiltinByName(prog, recvS, mname, rest, st)
                 }
                 let target = cloneValue(st.objExtras[exo].boundTarget)
                 return callValue(prog, target, rest, newThis, st)
