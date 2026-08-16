@@ -1655,6 +1655,10 @@ fn isSymbolKey(s: &string): bool {
     return s.len() >= 6 && s[0] == '@' && s[1] == '@' && s[2] == 's' && s[3] == 'y' && s[4] == 'm' && s[5] == ':'
 }
 
+pub fn isPrivateKey(k: &string): bool {
+    return k.len() > 0 && k[0] == '#'
+}
+
 pub fn enumOrder(st: &Interp, o: i64): Vec<i64> {
     let np = st.objects[o].props.len()
     var ints: Vec<i64> = Vec.new()
@@ -1662,6 +1666,14 @@ pub fn enumOrder(st: &Interp, o: i64): Vec<i64> {
     var i: i64 = 0
     while i < np {
         if isSymbolKey(st.objects[o].props[i].key) {
+            i = i + 1
+            continue
+        }
+        // a PRIVATE member is stored as an ordinary property keyed "#name@class"
+        // so the existing property machinery carries it, but it must not appear
+        // in Object.keys, getOwnPropertyNames, for-in or JSON — it is not a
+        // property of the object as far as JS is concerned.
+        if isPrivateKey(st.objects[o].props[i].key) {
             i = i + 1
             continue
         }

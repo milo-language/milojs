@@ -1,0 +1,9 @@
+private method brand -> true
+private gen brand -> true
+private getter brand -> true
+private static brand -> true
+private method callable -> 7
+private method not on other class -> false
+private field not on other class -> false
+private get on wrong object throws THREW TypeError
+private not enumerable -> []

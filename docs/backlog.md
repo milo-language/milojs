@@ -2282,24 +2282,6 @@ test262: 719 to 735 of 1470 — 16 cases from one lexer predicate.
 
 Locked by `tests/unicodeIdentifiersAndPrivateNames.js`.
 
-## OPEN: private names share one keyspace, and private methods are not own properties
-
-Two brand-check answers are still wrong, both from how private members are
-stored — as ordinary own properties keyed with a leading `#`:
-
-- `#x in b`, where `b` is an instance of a DIFFERENT class that also declares
-  `#x`, answers true. Node answers false: each class gets its own private
-  keyspace. A fix would key the property per class (the parser already tracks
-  `curClass` for `super`), which also removes a real collision hazard in bundled
-  code where `#x` is ubiquitous.
-- `#m in o` for a private METHOD answers false. Node answers true. Methods live
-  on the prototype, so the instance has no own property to find; the brand check
-  needs to consult the class's private method list too.
-
-Neither is reachable from ordinary code that only reads its own fields, which is
-why they survived this long. `tests/unicodeIdentifiersAndPrivateNames.js` names
-both in a comment rather than asserting them.
-
 ## Almost nothing that should be non-enumerable was — DONE 2026-08-16
 
 Class methods, statics and accessors; every Date.prototype method; Error.prototype
@@ -2690,3 +2672,38 @@ test262 869 of 1470, corpus 911 to 919.
 
 Locked by `tests/arrayCallbackValidation.js`, which pins the ordering as well as
 the validation.
+
+## Private class members shared one keyspace — DONE 2026-08-16
+
+Filed open three rounds ago, and worse than the entry described. Private members
+were ordinary properties keyed `#x`, in a single namespace across every class:
+
+- **Two classes that both declare `#x` shared the key.** `#x in b` answered true
+  for an instance of a different class. In bundled code, where `#x` is
+  ubiquitous, one class could read another's private state — a real containment
+  failure, not a conformance detail.
+- **`#x` appeared in `getOwnPropertyNames`.**
+- **The brand check missed private METHODS**, which live on the prototype rather
+  than the instance, so `#m in o` was false for a genuine instance.
+- **Reading a private member from an object that never had it returned
+  undefined**, which reads as "absent field" rather than "wrong object".
+- **`#s in C` for a private static threw**, because a class value is a Func here
+  and the check demanded an Obj.
+
+Private names are now keyed per class, reusing the unique key each class already
+carries for `super`. Enumeration skips them centrally in `enumOrder`, the brand
+check walks the prototype chain (so methods count, and a different class's
+mangled key still answers false), and the diagnostic prints `#x` rather than the
+mangled form.
+
+**One half could not land.** Node throws when a private member is WRITTEN to an
+object whose class did not declare it. A guard there rejects every instance field
+initialiser, because fields are installed by the constructor as `this.#x = init`
+at a point where the object does not yet carry the key — three fixtures said so
+immediately. Distinguishing the two needs field installation to use a definition
+path of its own rather than ordinary assignment. The read guard, which is the
+half that matters for containment, is in.
+
+test262: 869 to 873 of 1470.
+
+Locked by `tests/privateClassMembers.js`.

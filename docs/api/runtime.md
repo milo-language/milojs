@@ -221,6 +221,14 @@ Property bag for a function's own (static) properties. Separate from
 funcProtos, which holds what instances inherit.
 Lazily created property bag for a native constructor.
 
+### `isPrivateKey`
+
+```milo
+pub fn isPrivateKey(k: &string): bool
+```
+
+_Undocumented._
+
 ### `isPromise`
 
 ```milo

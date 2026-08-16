@@ -9,7 +9,7 @@ from "./value" import {
     JSValue, i64ToStr, daysFromCivil
 }
 from "./runtime" import {
-    Interp, Timer, Microtask, Reaction, PendingFetch, NATIVE_RESOLVER_BASE, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn, TA_MAX, TA_I64, TA_U64, taIsBigKind, taLoadBig, taStoreBig
+    Interp, Timer, Microtask, Reaction, PendingFetch, NATIVE_RESOLVER_BASE, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn, TA_MAX, TA_I64, TA_U64, taIsBigKind, taLoadBig, taStoreBig, isPrivateKey
 }
 from "./builtins" import {
     stringMethod, jsCharAt, mjStringifyVal, mjJsonParse, mjJsonOmitted
@@ -603,6 +603,19 @@ fn joinArrayProg(prog: &Prog, st: &mut Interp, o: i64, sep: &string): string {
     return out
 }
 
+// `#x@Foo$3` reads back as `#x` in a diagnostic; the mangling is an
+// implementation detail and should not leak into a message.
+fn privDisplay(key: &string): string {
+    var i: i64 = 0
+    while i < key.len() {
+        if key[i] == '@' {
+            return strSlice(key.clone(), 0, i)
+        }
+        i = i + 1
+    }
+    return key.clone()
+}
+
 pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue {
     if st.objects[o].isProxy {
         let trap = proxyTrap(st, o, "get")
@@ -626,6 +639,27 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
     // `typeof x.then === "function"`, which that silently failed — hand back a
     // bound method instead.
     if objOwnIndex(st, o, key) < 0 {
+        // Reading a PRIVATE member from an object that does not carry it is a
+        // TypeError, not undefined: the brand check is the whole point of
+        // private state, and answering undefined let `other.#x` read as "absent
+        // field" instead of "wrong object".
+        if isPrivateKey(key) {
+            var pw = st.objects[o].proto
+            var found = false
+            while pw >= 0 {
+                if objOwnIndex(st, pw, key) >= 0 {
+                    found = true
+                    pw = -1
+                } else {
+                    pw = st.objects[pw].proto
+                }
+            }
+            if !found {
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", "Cannot read private member " + privDisplay(key) + " from an object whose class did not declare it" + currentModule(st))
+                return JSValue.Undefined
+            }
+        }
         // obj.__proto__ mirrors Object.getPrototypeOf (a Object.prototype accessor
         // in the spec); resolve it through the same type-based helper
         if key == "__proto__" {
@@ -3232,6 +3266,12 @@ fn objectTypeTag(v: &JSValue): string {
 }
 
 fn setMemberDyn(prog: &Prog, o: i64, key: string, v: JSValue, st: &mut Interp) {
+    // NOTE: there is deliberately no write guard here. Node throws when a
+    // private member is written to an object whose class did not declare it,
+    // but instance FIELDS are installed by the constructor as `this.#x = init`
+    // — at which point the object does not carry the key yet, so a guard here
+    // rejects every field initialiser. Distinguishing the two needs the field
+    // installation to use a definition path of its own; see docs/backlog.md.
     if st.objects[o].isProxy {
         let trap = proxyTrap(st, o, "set")
         let target = cloneValue(st.objExtras[st.objects[o].extra].proxyTarget)
@@ -8457,7 +8497,9 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Inter
             Expr.Ident(pn) => {
                 if pn.len() > 0 && pn[0] == '#' {
                     let ov0 = evalExpr(prog, b, st, scope)
-                    let oh = objHandle(ov0)
+                    // a class VALUE is a Func here, and `#s in C` for a private
+                    // static asks about it
+                    let oh = propertyBagOf(st, ov0)
                     if oh < 0 {
                         // the right side of `in` must be an object, private name
                         // or not
@@ -8465,7 +8507,18 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Inter
                         st.thrownValue = makeError(st, "TypeError", "Cannot use 'in' operator to search for '" + pn.clone() + "' in " + toStr(ov0) + currentModule(st))
                         return JSValue.Undefined
                     }
-                    return JSValue.Bool(objOwnIndex(st, oh, pn) >= 0)
+                    // private METHODS are installed on the prototype rather
+                    // than per instance, so the brand is "somewhere on this
+                    // object's own chain" — a different class's instance has a
+                    // different mangled key and still answers false
+                    var ph = oh
+                    while ph >= 0 {
+                        if objOwnIndex(st, ph, pn) >= 0 {
+                            return JSValue.Bool(true)
+                        }
+                        ph = st.objects[ph].proto
+                    }
+                    return JSValue.Bool(false)
                 }
             }
             _ => {

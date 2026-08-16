@@ -710,7 +710,8 @@ fn parsePrimary(p: &mut PState, prog: &mut Prog): ExprId {
             return makeArrow(p, prog, ap, false, noPrelude, -1, arrowStart)
         }
         advance(p)
-        return addExpr(prog, Expr.Ident(name))
+        // `#x in o` — the only place a private name appears as a bare primary
+        return addExpr(prog, Expr.Ident(privName(p, name)))
     }
     if k == T_LPAREN {
         if looksLikeArrow(p) {
@@ -1088,7 +1089,7 @@ fn parsePostfix(p: &mut PState, prog: &mut Prog): ExprId {
             // property names may be reserved words: obj.catch, obj.default,
             // obj.function, obj.delete. Keyword tokens still carry their text.
             if isPropName(p) {
-                name = p.toks[p.pos].text.clone()
+                name = privName(p, p.toks[p.pos].text)
                 advance(p)
             }
             e = addExpr(prog, Expr.Member(e, name))
@@ -1532,6 +1533,17 @@ fn parseExpr(p: &mut PState, prog: &mut Prog): ExprId {
 // binding name is known statically, so set it on the anonymous FuncDef at parse
 // time — no per-instance runtime name slot needed. Only anonymous functions are
 // affected; a named function expression keeps its own name.
+// A private name belongs to ONE class. Stored as a plain `#x` property, two
+// classes that both declare `#x` shared a key: `#x in b` answered true for an
+// instance of the other class, and a bundle where `#x` is ubiquitous could read
+// across class boundaries. The class's unique super key makes it per-class.
+fn privName(p: &PState, name: &string): string {
+    if name.len() > 0 && name[0] == '#' && p.curClass.len() > 0 {
+        return name.clone() + "@" + p.curClass.clone()
+    }
+    return name.clone()
+}
+
 fn inferFuncName(prog: &mut Prog, initId: ExprId, name: &string) {
     if name.len() == 0 {
         return
@@ -2145,7 +2157,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                 expect(p, T_RBRACKET)
             } else {
                 if isPropName(p) || peekKind(p) == T_STR {
-                    mname = p.toks[p.pos].text.clone()
+                    mname = privName(p, p.toks[p.pos].text)
                 }
                 advance(p)
             }
