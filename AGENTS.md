@@ -200,10 +200,34 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/check-docs-exec.mjs` | runs the `<!-- exec -->`-tagged examples in the docs and diffs them against the output the docs claim. Needs built binaries; part of `dev.sh`. |
 | `tools/check-docs.mjs` | doc-meta present, key-files real, AGENTS tables complete, and a staleness ratchet against each doc's key-files |
 | `tools/gen-facts.mjs` | compiles the numbers prose quotes (line counts, fixture counts, entry points) into `<!--fact:...-->` spans. `--check` gates, `--list` prints them all. |
-| `tools/precommit.sh` | lint + fixture registry + docs freshness; wire with `git config core.hooksPath .githooks` |
+| `tools/precommit.sh` | every cheap gate below, in one command. See "Wiring the hook". |
 
 Build more of these. If you find yourself running the same multi-step incantation
 twice, it belongs in `tools/` with a line in this table.
+
+## Wiring the hook
+
+`tools/precommit.sh` runs every gate that costs no build. It is opt-in, and the
+obvious way to wire it is wrong if you already have a global hook:
+
+```sh
+# If you have NO global core.hooksPath:
+git config core.hooksPath .githooks
+
+# If you DO (check with: git config --global core.hooksPath) — setting the above
+# REPLACES your global hook instead of adding to it. Install a shim where the
+# global hook chains to, so both run:
+printf '#!/usr/bin/env bash\nexec "$(git rev-parse --show-toplevel)/tools/precommit.sh"\n' \
+  > .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+```
+
+Check it actually fires before trusting it — `git config core.hooksPath` reads
+global config when there is no local setting, so a repo can look wired and not be.
+This repo's hook silently never ran on the author's machine for that exact reason.
+
+**CI is the real gate.** Every check the hook runs is also a CI step, so a missing
+hook costs a round trip, not correctness. Nothing here depends on the hook being
+installed.
 
 ## Mechanize it, don't maintain it
 
