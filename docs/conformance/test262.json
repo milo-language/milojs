@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "33959047f8ae43a75633414a0c7ea34c83711a08",
+    "revision": "2c5585e1339a20da20f75d9d822b87da9c308ea4",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 713,
-    "fail": 757,
+    "pass": 735,
+    "fail": 735,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -26,14 +26,14 @@
   "areas": [
     {
       "area": "language/expressions",
-      "pass": 211,
-      "fail": 123,
+      "pass": 220,
+      "fail": 114,
       "total": 334
     },
     {
       "area": "language/statements",
-      "pass": 153,
-      "fail": 129,
+      "pass": 159,
+      "fail": 123,
       "total": 282
     },
     {
@@ -68,8 +68,8 @@
     },
     {
       "area": "built-ins/TypedArray",
-      "pass": 17,
-      "fail": 21,
+      "pass": 20,
+      "fail": 18,
       "total": 38
     },
     {
@@ -110,8 +110,8 @@
     },
     {
       "area": "built-ins/TypedArrayConstructors",
-      "pass": 5,
-      "fail": 14,
+      "pass": 8,
+      "fail": 11,
       "total": 19
     },
     {
@@ -182,8 +182,8 @@
     },
     {
       "area": "language/identifiers",
-      "pass": 5,
-      "fail": 1,
+      "pass": 6,
+      "fail": 0,
       "total": 6
     },
     {
@@ -622,7 +622,7 @@
     },
     {
       "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all",
-      "count": 49,
+      "count": 50,
       "cases": [
         "built-ins/Symbol/prototype/toString/toString-default-attributes-strict.js",
         "built-ins/Object/defineProperties/property-description-must-be-an-object-not-null.js",
@@ -666,6 +666,7 @@
         "built-ins/String/prototype/trimEnd/this-value-object-tostring-returns-object-err.js",
         "language/statements/for/dstr/let-obj-ptrn-prop-obj-value-null.js",
         "built-ins/Object/keys/15.2.3.14-1-4.js",
+        "built-ins/TypedArray/prototype/filter/resizable-buffer.js",
         "built-ins/Object/defineProperty/property-description-must-be-an-object-not-string.js",
         "built-ins/Object/defineProperties/15.2.3.7-6-a-9.js",
         "language/statements/class/dstr/gen-meth-obj-init-null.js",
@@ -718,37 +719,39 @@
       ]
     },
     {
-      "reason": "Uncaught ReferenceError: BigInt64Array is not defined",
-      "count": 21,
+      "reason": "Uncaught undefined: m descriptor should not be enumerable",
+      "count": 22,
       "cases": [
-        "built-ins/TypedArrayConstructors/internals/Set/BigInt/detached-buffer-key-is-symbol.js",
-        "built-ins/TypedArrayConstructors/BigInt64Array/prototype.js",
-        "built-ins/TypedArray/prototype/set/BigInt/typedarray-arg-set-values-same-buffer-same-type.js",
-        "built-ins/TypedArray/prototype/map/BigInt/callbackfn-arguments-without-thisarg.js",
-        "built-ins/TypedArrayConstructors/ctors-bigint/buffer-arg/length-is-symbol-throws-sab.js",
-        "built-ins/TypedArray/prototype/every/BigInt/callbackfn-this.js",
-        "built-ins/TypedArray/prototype/slice/coerced-start-end-grow.js",
-        "built-ins/TypedArrayConstructors/internals/Set/BigInt/key-is-canonical-invalid-index-reflect-set.js",
-        "built-ins/TypedArrayConstructors/ctors-bigint/buffer-arg/byteoffset-to-number-detachbuffer.js",
-        "built-ins/TypedArrayConstructors/prototype/map/bigint-inherited.js",
-        "built-ins/TypedArrayConstructors/ctors-bigint/buffer-arg/is-referenced.js",
-        "built-ins/TypedArray/prototype/map/BigInt/speciesctor-destination-resizable.js",
-        "built-ins/Array/prototype/findIndex/resizable-buffer.js",
-        "built-ins/TypedArray/prototype/set/BigInt/array-arg-return-abrupt-from-src-length.js",
-        "built-ins/TypedArray/prototype/slice/BigInt/return-abrupt-from-start-symbol.js",
-        "built-ins/TypedArray/prototype/forEach/resizable-buffer-shrink-mid-iteration.js",
-        "built-ins/TypedArray/prototype/subarray/BigInt/speciesctor-get-species-use-default-ctor.js",
-        "built-ins/TypedArray/prototype/fill/BigInt/get-length-ignores-length-prop.js",
-        "built-ins/TypedArray/prototype/filter/resizable-buffer.js",
-        "built-ins/TypedArray/prototype/reduce/BigInt/get-length-uses-internal-arraylength.js",
-        "built-ins/Array/prototype/values/resizable-buffer-shrink-mid-iteration.js"
+        "language/statements/class/elements/same-line-async-method-rs-private-method.js",
+        "language/expressions/class/elements/same-line-gen-rs-static-privatename-identifier-alt.js",
+        "language/statements/class/elements/after-same-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
+        "language/expressions/class/elements/after-same-line-method-rs-static-async-method-privatename-identifier-alt.js",
+        "language/expressions/class/elements/after-same-line-gen-rs-static-privatename-identifier-by-classname.js",
+        "language/expressions/class/elements/new-no-sc-line-method-rs-static-generator-method-privatename-identifier-alt.js",
+        "language/expressions/class/elements/same-line-gen-rs-static-privatename-identifier.js",
+        "language/statements/class/elements/new-no-sc-line-method-rs-static-method-privatename-identifier-alt.js",
+        "language/statements/class/elements/same-line-gen-rs-static-generator-method-privatename-identifier.js",
+        "language/expressions/class/elements/after-same-line-gen-computed-symbol-names.js",
+        "language/statements/class/elements/same-line-method-rs-privatename-identifier-initializer.js",
+        "language/statements/class/elements/multiple-definitions-private-method-usage.js",
+        "language/statements/class/elements/multiple-definitions-literal-names-asi.js",
+        "language/expressions/class/elements/after-same-line-method-rs-privatename-identifier-initializer-alt.js",
+        "language/expressions/class/elements/new-no-sc-line-method-rs-static-privatename-identifier-by-classname.js",
+        "language/expressions/class/elements/new-sc-line-gen-rs-static-generator-method-privatename-identifier-alt.js",
+        "language/expressions/class/elements/same-line-async-method-static-private-methods.js",
+        "language/expressions/class/elements/same-line-method-rs-static-method-privatename-identifier.js",
+        "language/expressions/class/elements/new-sc-line-method-private-names.js",
+        "language/expressions/class/elements/same-line-async-method-computed-symbol-names.js",
+        "language/statements/class/elements/new-sc-line-gen-rs-private-getter-alt.js",
+        "language/statements/class/elements/multiple-definitions-grammar-privatename-identifier-semantics-stringvalue.js"
       ]
     },
     {
       "reason": "Uncaught undefined: Expected SameValue(«N», «N») to be true",
-      "count": 14,
+      "count": 15,
       "cases": [
         "language/statements/class/dstr/meth-static-ary-ptrn-rest-obj-id.js",
+        "built-ins/TypedArray/prototype/slice/coerced-start-end-grow.js",
         "language/statements/for/dstr/let-ary-ptrn-rest-ary-elision.js",
         "built-ins/Iterator/prototype/forEach/fn-throws.js",
         "language/expressions/object/dstr/meth-dflt-ary-ptrn-elision.js",
@@ -814,19 +817,6 @@
       ]
     },
     {
-      "reason": "milojs: /case.js: unexpected '…' after declaration",
-      "count": 7,
-      "cases": [
-        "language/statements/await-using/function-local-use-before-initialization-in-declaration-statement.js",
-        "language/statements/class/elements/same-line-async-method-rs-private-method.js",
-        "language/expressions/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt.js",
-        "language/statements/class/elements/after-same-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
-        "language/statements/await-using/throws-if-initializer-Symbol.dispose-property-is-null.js",
-        "language/statements/class/elements/after-same-line-static-async-method-rs-static-generator-method-privatename-identifier-alt.js",
-        "language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt-by-classname.js"
-      ]
-    },
-    {
       "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«N», «N») to be tr",
       "count": 7,
       "cases": [
@@ -837,19 +827,6 @@
         "language/expressions/async-generator/yield-star-getiter-async-null-sync-get-abrupt.js",
         "built-ins/Promise/any/invoke-resolve-get-once-multiple-calls.js",
         "language/expressions/object/dstr/async-gen-meth-dflt-ary-ptrn-elision.js"
-      ]
-    },
-    {
-      "reason": "Uncaught ReferenceError: static is not defined",
-      "count": 7,
-      "cases": [
-        "language/expressions/class/elements/same-line-gen-rs-static-privatename-identifier-alt.js",
-        "language/expressions/class/elements/after-same-line-gen-rs-static-privatename-identifier-by-classname.js",
-        "language/expressions/class/elements/new-no-sc-line-method-rs-static-generator-method-privatename-identifier-alt.js",
-        "language/expressions/class/elements/same-line-gen-rs-static-privatename-identifier.js",
-        "language/statements/class/elements/new-no-sc-line-method-rs-static-method-privatename-identifier-alt.js",
-        "language/expressions/class/elements/new-no-sc-line-method-rs-static-privatename-identifier-by-classname.js",
-        "language/expressions/class/elements/new-sc-line-gen-rs-static-generator-method-privatename-identifier-alt.js"
       ]
     },
     {
@@ -879,16 +856,28 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: m descriptor should not be enumerable",
+      "reason": "Uncaught undefined: m descriptor should not be enumerable; m descriptor should be configur",
       "count": 7,
       "cases": [
-        "language/expressions/class/elements/after-same-line-method-rs-static-async-method-privatename-identifier-alt.js",
-        "language/expressions/class/elements/after-same-line-gen-computed-symbol-names.js",
-        "language/statements/class/elements/multiple-definitions-private-method-usage.js",
-        "language/statements/class/elements/multiple-definitions-literal-names-asi.js",
-        "language/expressions/class/elements/same-line-async-method-static-private-methods.js",
-        "language/expressions/class/elements/new-sc-line-method-private-names.js",
-        "language/expressions/class/elements/same-line-async-method-computed-symbol-names.js"
+        "language/expressions/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt.js",
+        "language/statements/class/elements/after-same-line-static-async-method-rs-static-generator-method-privatename-identifier-alt.js",
+        "language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt-by-classname.js",
+        "language/expressions/class/elements/after-same-line-static-method-rs-static-async-method-privatename-identifier-alt.js",
+        "language/statements/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
+        "language/statements/class/elements/after-same-line-static-async-method-static-private-methods.js",
+        "language/statements/class/elements/after-same-line-static-async-method-computed-symbol-names.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a TypeError but got a Test262Error",
+      "count": 6,
+      "cases": [
+        "built-ins/DataView/prototype/getInt32/resizable-buffer.js",
+        "built-ins/DataView/prototype/setInt16/resizable-buffer.js",
+        "language/expressions/compound-assignment/S11.13.2_A7.1_T2.js",
+        "built-ins/DataView/prototype/setUint8/resizable-buffer.js",
+        "language/expressions/compound-assignment/S11.13.2_A7.11_T1.js",
+        "built-ins/Array/prototype/values/resizable-buffer-shrink-mid-iteration.js"
       ]
     },
     {
@@ -960,14 +949,14 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected a TypeError but got a Test262Error",
+      "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all (",
       "count": 5,
       "cases": [
-        "built-ins/DataView/prototype/getInt32/resizable-buffer.js",
-        "built-ins/DataView/prototype/setInt16/resizable-buffer.js",
-        "language/expressions/compound-assignment/S11.13.2_A7.1_T2.js",
-        "built-ins/DataView/prototype/setUint8/resizable-buffer.js",
-        "language/expressions/compound-assignment/S11.13.2_A7.11_T1.js"
+        "built-ins/TypedArrayConstructors/ctors-bigint/buffer-arg/length-is-symbol-throws-sab.js",
+        "built-ins/TypedArray/prototype/map/speciesctor-get-species-custom-ctor-length-throws-resizable-arraybuffer.js",
+        "built-ins/TypedArrayConstructors/ctors-bigint/buffer-arg/byteoffset-to-number-detachbuffer.js",
+        "built-ins/TypedArray/prototype/map/BigInt/speciesctor-destination-resizable.js",
+        "built-ins/TypedArray/prototype/slice/BigInt/return-abrupt-from-start-symbol.js"
       ]
     },
     {
@@ -979,27 +968,6 @@
         "language/expressions/class/dstr/meth-dflt-obj-ptrn-id-init-fn-name-arrow.js",
         "language/statements/for-of/dstr/var-ary-ptrn-elem-id-init-fn-name-arrow.js",
         "language/expressions/class/dstr/meth-obj-ptrn-id-init-fn-name-arrow.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: property exists Expected SameValue(«undefined», «N») to be true",
-      "count": 5,
-      "cases": [
-        "language/expressions/assignment/member-expr-ident-name-case-escaped.js",
-        "language/expressions/object/ident-name-prop-name-literal-finally-escaped.js",
-        "language/expressions/assignment/member-expr-ident-name-catch-escaped.js",
-        "language/expressions/assignment/dstr/ident-name-prop-name-literal-try-escaped.js",
-        "language/expressions/assignment/member-expr-ident-name-interface-escaped.js"
-      ]
-    },
-    {
-      "reason": "Uncaught ReferenceError: value is not defined",
-      "count": 4,
-      "cases": [
-        "language/expressions/class/elements/wrapped-in-sc-rs-static-generator-method-privatename-identifier.js",
-        "language/statements/class/elements/same-line-gen-rs-static-generator-method-privatename-identifier.js",
-        "language/expressions/class/elements/multiple-stacked-definitions-rs-static-generator-method-privatename-identifier.js",
-        "language/expressions/class/elements/same-line-method-rs-static-method-privatename-identifier.js"
       ]
     },
     {
@@ -1043,16 +1011,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: m descriptor should not be enumerable; m descriptor should be configur",
-      "count": 4,
-      "cases": [
-        "language/expressions/class/elements/after-same-line-static-method-rs-static-async-method-privatename-identifier-alt.js",
-        "language/statements/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
-        "language/statements/class/elements/after-same-line-static-async-method-static-private-methods.js",
-        "language/statements/class/elements/after-same-line-static-async-method-computed-symbol-names.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Number.prototype.toString(N) must return \"N\" Expected SameValue(«\"[obj",
       "count": 4,
       "cases": [
@@ -1091,21 +1049,12 @@
       ]
     },
     {
-      "reason": "Uncaught ReferenceError: #ZW_ is not defined",
+      "reason": "Uncaught SyntaxError: Unexpected token in eval",
       "count": 3,
       "cases": [
-        "language/statements/class/elements/same-line-method-rs-privatename-identifier-initializer.js",
-        "language/statements/class/elements/multiple-stacked-definitions-rs-static-privatename-identifier-initializer-alt-by-classname.js",
-        "language/expressions/class/elements/after-same-line-method-rs-privatename-identifier-initializer-alt.js"
-      ]
-    },
-    {
-      "reason": "Uncaught ReferenceError: u2118 is not defined",
-      "count": 3,
-      "cases": [
-        "language/expressions/class/elements/wrapped-in-sc-grammar-privatename-identifier-semantics-stringvalue.js",
-        "language/statements/class/elements/wrapped-in-sc-rs-privatename-identifier.js",
-        "language/statements/class/elements/multiple-definitions-grammar-privatename-identifier-semantics-stringvalue.js"
+        "language/expressions/modulus/S11.5.3_A1.js",
+        "language/expressions/greater-than/S11.8.2_A1.js",
+        "annexB/language/eval-code/indirect/global-if-decl-no-else-eval-global-skip-early-err-try.js"
       ]
     },
     {
@@ -1154,6 +1103,14 @@
       ]
     },
     {
+      "reason": "milojs: /case.js: unexpected '…' after declaration",
+      "count": 2,
+      "cases": [
+        "language/statements/await-using/function-local-use-before-initialization-in-declaration-statement.js",
+        "language/statements/await-using/throws-if-initializer-Symbol.dispose-property-is-null.js"
+      ]
+    },
+    {
       "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: it should not get Symbol.iterator",
       "count": 2,
       "cases": [
@@ -1183,14 +1140,6 @@
       "cases": [
         "language/expressions/dynamic-import/syntax/valid/nested-do-while-import-source-script-code-valid.js",
         "language/expressions/dynamic-import/syntax/valid/nested-while-empty-str-is-valid-assign-expr.js"
-      ]
-    },
-    {
-      "reason": "Uncaught ReferenceError: sw is not defined",
-      "count": 2,
-      "cases": [
-        "language/expressions/object/ident-name-prop-name-literal-switch-escaped.js",
-        "language/expressions/object/covered-ident-name-prop-name-literal-switch-escaped.js"
       ]
     },
     {
@@ -1495,13 +1444,6 @@
       ]
     },
     {
-      "reason": "Uncaught ReferenceError: _ is not defined",
-      "count": 1,
-      "cases": [
-        "language/statements/class/elements/new-sc-line-gen-rs-private-getter-alt.js"
-      ]
-    },
-    {
       "reason": "Uncaught ReferenceError: __super$C$N is not defined",
       "count": 1,
       "cases": [
@@ -1537,10 +1479,10 @@
       ]
     },
     {
-      "reason": "Uncaught ReferenceError: st is not defined",
+      "reason": "Uncaught ReferenceError: new Number is not defined",
       "count": 1,
       "cases": [
-        "language/expressions/object/ident-name-method-def-static-escaped.js"
+        "language/expressions/new/S11.2.2_A1.2.js"
       ]
     },
     {
@@ -1551,10 +1493,10 @@
       ]
     },
     {
-      "reason": "Uncaught ReferenceError: u is not defined",
+      "reason": "Uncaught ReferenceError: typeof x is not defined",
       "count": 1,
       "cases": [
-        "language/identifiers/part-digits-via-escape-hex.js"
+        "language/expressions/typeof/syntax.js"
       ]
     },
     {
@@ -1562,20 +1504,6 @@
       "count": 1,
       "cases": [
         "language/statements/using/syntax/using-outer-inner-using-bindings.js"
-      ]
-    },
-    {
-      "reason": "Uncaught ReferenceError: ZW_ is not defined",
-      "count": 1,
-      "cases": [
-        "language/statements/class/elements/syntax/valid/grammar-field-identifier-alt.js"
-      ]
-    },
-    {
-      "reason": "Uncaught SyntaxError: Unexpected token in eval",
-      "count": 1,
-      "cases": [
-        "annexB/language/eval-code/indirect/global-if-decl-no-else-eval-global-skip-early-err-try.js"
       ]
     },
     {
@@ -1621,20 +1549,6 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: case is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh000",
-      "count": 1,
-      "cases": [
-        "language/expressions/class/ident-name-method-def-case-escaped.js"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: default is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh",
-      "count": 1,
-      "cases": [
-        "language/expressions/class/ident-name-method-def-default-escaped.js"
-      ]
-    },
-    {
       "reason": "Uncaught TypeError: drop is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh000",
       "count": 1,
       "cases": [
@@ -1663,20 +1577,6 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: in is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh0000g",
-      "count": 1,
-      "cases": [
-        "language/statements/class/ident-name-method-def-in-escaped.js"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: instanceof is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103t",
-      "count": 1,
-      "cases": [
-        "language/statements/class/ident-name-method-def-instanceof-escaped.js"
-      ]
-    },
-    {
       "reason": "Uncaught TypeError: Object.getPrototypeOf called on null or undefined (in /case.js)",
       "count": 1,
       "cases": [
@@ -1702,13 +1602,6 @@
       "count": 1,
       "cases": [
         "built-ins/Uint8Array/prototype/toHex/results.js"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: while is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh00",
-      "count": 1,
-      "cases": [
-        "language/statements/class/ident-name-method-def-while-escaped.js"
       ]
     },
     {
@@ -2160,6 +2053,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Actual [N, N, N, N] and expected [N, N, undefined, undefined] should h",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArray/prototype/forEach/resizable-buffer-shrink-mid-iteration.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Actual [N, N, N] and expected [N, N, N, undefined, undefined, undefine",
       "count": 1,
       "cases": [
@@ -2335,13 +2235,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all (",
-      "count": 1,
-      "cases": [
-        "built-ins/TypedArray/prototype/map/speciesctor-get-species-custom-ctor-length-throws-resizable-arraybuffer.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Expected obj[foo] to equal N, actually N",
       "count": 1,
       "cases": [
@@ -2409,6 +2302,13 @@
       "count": 1,
       "cases": [
         "built-ins/Object/prototype/isPrototypeOf/arg-is-proxy.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«N», «-N») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/findIndex/resizable-buffer.js"
       ]
     },
     {
@@ -2650,6 +2550,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: N setter should be unreachable! (Testing with BigInt64Array and makePa",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArrayConstructors/internals/Set/BigInt/key-is-canonical-invalid-index-reflect-set.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: N value should be N",
       "count": 1,
       "cases": [
@@ -2762,6 +2669,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: offset: N, result: N,N,N,N (Testing with BigInt64Array and makePassthr",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArray/prototype/set/BigInt/typedarray-arg-set-values-same-buffer-same-type.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: ordinary object Expected a TypeError to be thrown but no exception was",
       "count": 1,
       "cases": [
@@ -2794,6 +2708,13 @@
       "count": 1,
       "cases": [
         "built-ins/Object/defineProperty/15.2.3.6-4-354-1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: prototype should be an own property",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArrayConstructors/BigInt64Array/prototype.js"
       ]
     },
     {
@@ -2857,6 +2778,13 @@
       "count": 1,
       "cases": [
         "built-ins/Array/prototype/forEach/15.4.4.18-1-15.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: results[N].length Expected SameValue(«N», «N») to be true (Testing wit",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArray/prototype/map/BigInt/callbackfn-arguments-without-thisarg.js"
       ]
     },
     {
@@ -3028,6 +2956,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: using thisArg - [N] Expected SameValue(«[object Object]», «[object Obj",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArray/prototype/every/BigInt/callbackfn-this.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: value: Infinity Expected SameValue(«N», «N») to be true",
       "count": 1,
       "cases": [
@@ -3039,6 +2974,13 @@
       "count": 1,
       "cases": [
         "built-ins/Date/prototype/setUTCSeconds/date-value-read-before-tonumber-when-date-is-invalid.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: valueOf Expected a Test262Error to be thrown but no exception was thro",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArray/prototype/set/BigInt/array-arg-return-abrupt-from-src-length.js"
       ]
     },
     {
