@@ -42,7 +42,7 @@ reproducible release artifact.
 
 | measure | result | corpus |
 |---|---:|---|
-| deterministic test262 sample (1500 selected, 30 skipped) | **662/1470 = 45.0%** | test262 `b363f29d`, seed `0x2f6e2b1` |
+| deterministic test262 sample (1500 selected, 30 skipped) | **664/1470 = 45.2%** | test262 `b363f29d`, seed `0x2f6e2b1` |
 | QuickJS `tests/` | **97/149 = 65.1%** | quickjs `ef7a3a74`, 58 files |
 | locked engine fixtures (`tests/*.js`) | 170 | byte-exact differential output vs node |
 | locked runtime fixtures (`tests/runtime/*.js`) | 28 | module, async, fetch, HTTP, sqlite, host behavior |
@@ -51,7 +51,7 @@ reproducible release artifact.
 
 Fixture counts are not conformance percentages.
 
-**test262 moved 34.6% → 45.0% on 2026-08-15**, from one structural finding
+**test262 moved 34.6% → 45.2% on 2026-08-15**, from one structural finding
 repeated across the whole builtin surface: constructors that had no `prototype`
 object at all. See the backlog for the per-change attribution, including the two
 places where the harness rather than the engine was at fault, and the one area
@@ -72,7 +72,7 @@ Where the remaining failures are, by absolute count in the sample:
 
 `Temporal` is 16% of all failures in the sample and is an unimplemented API
 rather than a defect. Excluding it, the score is 659/1339 = 49.2%. Report the
-45.0% figure — the exclusion is context, not a headline.
+45.2% figure — the exclusion is context, not a headline.
 
 The top failure bucket, at 154 cases, is
 `TypeError: cannot read property '…' of undefined` — still the signature of
