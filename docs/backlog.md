@@ -2664,3 +2664,29 @@ test262: 856 to 869 of 1470. dstr failures 106 to 55 across the two rounds.
 Locked by `tests/destructuringIterator.js`, which traces the exact call sequence
 (`next0,next1,return`) rather than only the bound values — the sequence is the
 part that was wrong.
+
+## Every callback-taking Array method accepted a non-callable — DONE 2026-08-16
+
+`[1].map()` gave `[]`. `[1].reduce(null)` gave `1`. `[1].some()` gave `false`.
+Twelve methods, none of them validating, all returning a plausible default. That
+is the worst shape for this failure: a typo, an undefined import or an unresolved
+method reference produced an ANSWER rather than an error, so the mistake showed
+up somewhere else entirely. Fixed centrally in `arrayMethod`, together with
+`reduce` over an empty array with no seed (counting PRESENT elements, so a
+hole-only array counts as empty) and `sort` with a non-callable comparator.
+
+**The first version regressed two cases, and the reason is ordering.** The spec
+performs LengthOfArrayLike BEFORE validating the callback, so
+`Array.prototype.map.call(obj, undefined)` where `obj`'s length getter throws
+must surface the GETTER's error. Adapting an array-like receiver already read
+that length, but the pending throw was then overwritten by the callback
+TypeError. `arrayMethodGeneric` now bails as soon as adaptation throws.
+
+Worth keeping: the sweep went 869 to 868 on the first attempt, and diffing the
+failure SETS rather than the totals named the two regressed cases immediately.
+A net +7 with a hidden -2 would have looked like a clean win.
+
+test262 869 of 1470, corpus 911 to 919.
+
+Locked by `tests/arrayCallbackValidation.js`, which pins the ordering as well as
+the validation.

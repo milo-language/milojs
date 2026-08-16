@@ -1,0 +1,45 @@
+forEach non-callable THREW TypeError
+forEach no arg THREW TypeError
+map non-callable THREW TypeError
+map no arg THREW TypeError
+filter non-callable THREW TypeError
+filter no arg THREW TypeError
+some non-callable THREW TypeError
+some no arg THREW TypeError
+every non-callable THREW TypeError
+every no arg THREW TypeError
+find non-callable THREW TypeError
+find no arg THREW TypeError
+findIndex non-callable THREW TypeError
+findIndex no arg THREW TypeError
+flatMap non-callable THREW TypeError
+flatMap no arg THREW TypeError
+reduce non-callable THREW TypeError
+reduce no arg THREW TypeError
+reduceRight non-callable THREW TypeError
+reduceRight no arg THREW TypeError
+reduce empty no init THREW TypeError
+reduceRight empty no init THREW TypeError
+reduce empty with init -> 5
+reduce skips holes -> 4
+reduce index order -> 0,1,2
+reduceRight order -> 2,1,0
+reduce no init uses first -> 7
+reduceRight no init uses last -> 7
+forEach thisArg -> 7
+map thisArg -> 8
+filter holes skipped -> [1,3]
+some holes skipped -> 2
+concat spreadable -> [1,2,[3]]
+concat non-array -> [1,2,"a"]
+copyWithin -> [4,5,3,4,5]
+copyWithin negative -> [1,2,3,1,2]
+reduce holes-only no init THREW TypeError
+sort non-callable comparator THREW TypeError
+sort undefined comparator ok -> [1,2]
+sort no comparator ok -> [1,2]
+callable bound method ok -> ["1","2"]
+arrow ok -> [2,4]
+length getter beats callback check (map) THREW RangeError
+length getter beats callback check (reduceRight) THREW RangeError
+generic with good length still checks cb THREW TypeError

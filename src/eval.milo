@@ -14277,6 +14277,21 @@ fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSVa
 // distinct function from Object.prototype.toString in the spec. It does not
 // shadow the type-tag path, which travels under the private @@objProtoToString
 // name precisely so the two cannot collide.
+// How many indices actually hold a value — holes do not count, and reduce's
+// empty-array check is about present elements rather than length.
+fn arrCountPresent(st: &Interp, o: i64): i64 {
+    var c: i64 = 0
+    var i: i64 = 0
+    let n = arrLen(st, o)
+    while i < n {
+        if !arrIsHole(st, o, i) {
+            c = c + 1
+        }
+        i = i + 1
+    }
+    return c
+}
+
 fn arrayMethodNames(): Vec<string> {
     var v: Vec<string> = Vec.new()
     v.push("map")
@@ -14575,6 +14590,13 @@ ensures result >= 0 && result <= ARRAY_LIKE_MAX
 // Run an Array.prototype method against a receiver that is not a real array.
 fn arrayMethodGeneric(prog: &Prog, recv: &JSValue, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     let tmp = arrayLikeToArray(prog, recv, st)
+    // adapting the receiver READS its length, and that read can run a getter
+    // that throws. The spec performs it before validating the callback, so a
+    // pending throw here must win rather than be replaced by the callback
+    // TypeError raised further down.
+    if st.throwing {
+        return JSValue.Undefined
+    }
     if tmp < 0 {
         return JSValue.Undefined
     }
@@ -14590,8 +14612,45 @@ fn arrayMethodGeneric(prog: &Prog, recv: &JSValue, name: &string, args: &Vec<JSV
     return r
 }
 
+// The Array.prototype methods that REQUIRE a callable first argument. Every one
+// of them accepted a non-callable — or no argument at all — and quietly returned
+// a default: `[1].map()` gave [], `[1].reduce(null)` gave 1. A caller that
+// passed the wrong thing got a plausible-looking answer instead of an error.
+//
+// The check runs AFTER the receiver's length has been read: the spec orders
+// LengthOfArrayLike first, so a length getter that throws wins over the callback
+// TypeError. Two test262 cases assert exactly that ordering.
+fn arrayNeedsCallback(name: &string): bool {
+    return name == "map" || name == "filter" || name == "forEach" || name == "some" || name == "every"
+        || name == "find" || name == "findIndex" || name == "findLast" || name == "findLastIndex"
+        || name == "flatMap" || name == "reduce" || name == "reduceRight"
+}
+
 fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     let n = arrLen(st, o)
+    if arrayNeedsCallback(name) {
+        var cb = JSValue.Undefined
+        if args.len() > 0 {
+            cb = cloneValue(args[0])
+        }
+        if !isCallableIn(st, cb) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", toStr(cb) + " is not a function" + currentModule(st))
+            return JSValue.Undefined
+        }
+        // reduce over an empty array with no seed has nothing to return
+        if (name == "reduce" || name == "reduceRight") && args.len() < 2 && arrCountPresent(st, o) == 0 {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Reduce of empty array with no initial value" + currentModule(st))
+            return JSValue.Undefined
+        }
+    }
+    // a comparator, when given, must be callable too
+    if name == "sort" && args.len() > 0 && !isUndefinedValue(args[0]) && !isCallableIn(st, args[0]) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "The comparison function must be either a function or undefined" + currentModule(st))
+        return JSValue.Undefined
+    }
     // the mutating methods write through arrPush/elems directly, bypassing
     // setMember's frozen check, so a frozen array has to be caught here too
     if st.objects[o].frozen {
