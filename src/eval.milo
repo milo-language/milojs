@@ -2940,6 +2940,19 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 return JSValue.Bool(objOwnIndex(st, o, key) >= 0 || (st.objects[o].isArray && asArrayIndex(key) >= 0 && asArrayIndex(key) < arrLen(st, o) && !arrIsHole(st, o, asArrayIndex(key))))
             }
             if name == "toString" {
+                // a Symbol WRAPPER prints its description, not the object tag:
+                // Symbol.prototype.toString.call(Object(sym)) is "Symbol(x)"
+                if isWrapperObj(st, o) {
+                    match boxedPrimitive(st, o) {
+                        JSValue.Str(ws) => {
+                            if isSymbolStr(ws) {
+                                return JSValue.Str(symbolDisplay(ws))
+                            }
+                        }
+                        _ => {
+                        }
+                    }
+                }
                 // Array.prototype.toString is join(","), not the type tag. The
                 // tag path is @@objProtoToString, a different name entirely.
                 if st.objects[o].isArray {
@@ -2964,6 +2977,14 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 return JSValue.Str("[object Object]")
             }
             if name == "valueOf" {
+                // a WRAPPER unwraps. `BigInt.prototype.valueOf.call(Object(42n))`
+                // returning the wrapper made object-inspect recurse for ever —
+                // it unwraps a boxed primitive by calling valueOf and prints
+                // "Object(" around the result, so a result that is still an
+                // object nests until the stack is gone.
+                if isWrapperObj(st, o) {
+                    return boxedPrimitive(st, o)
+                }
                 return JSValue.Obj(o)
             }
             if name == "isPrototypeOf" {

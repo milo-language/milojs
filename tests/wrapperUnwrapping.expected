@@ -1,0 +1,10 @@
+typeof boxed bigint -> object
+bigint valueOf -> bigint
+bigint valueOf value -> 42
+symbol valueOf -> symbol
+symbol toString -> Symbol(x)
+number valueOf -> number
+boxed bigint tag -> [object BigInt]
+boxed symbol tag -> [object Symbol]
+b.valueOf() -> bigint
+s.valueOf() -> symbol

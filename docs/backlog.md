@@ -2500,14 +2500,6 @@ them. es-get-iterator's and object.assign's own suites did.
 
 Locked by `tests/spreadIterableEdges.js`.
 
-## OPEN: es-get-iterator still overflows the stack after 73 assertions
-
-Stops at the same point before and after this round's fixes, in its
-`non-iterables` section, with RangeError: Maximum call stack size exceeded. 67
-assertions behind it. Not yet diagnosed; the lesson from the deep-equal hunt
-applies — instrument the recursion's ARGUMENTS rather than its depth, since three
-rounds of depth measurement there described the loop without identifying it.
-
 ## Temporal, stages 1 and 2 — 2026-08-16
 
 The largest single block in the test262 sample: 128 failures, 18% of everything
@@ -2707,3 +2699,36 @@ half that matters for containment, is in.
 test262: 869 to 873 of 1470.
 
 Locked by `tests/privateClassMembers.js`.
+
+## An uncurried valueOf on a wrapper returned the wrapper — DONE 2026-08-16
+
+`Object(42n).valueOf()` was correct. `BigInt.prototype.valueOf.call(Object(42n))`
+returned the WRAPPER. The direct form went through the wrapper delegation path;
+the uncurried form landed on the generic object `valueOf`, which answers with the
+receiver. Every library uses the uncurried form.
+
+object-inspect is built on it: to print a boxed primitive it calls valueOf and
+wraps the result in `Object(...)`. A result that is still an object nests again,
+so `inspect(Object(42n))` recursed until the stack was gone — which is what took
+out es-get-iterator's suite. Symbol wrappers had the matching defect in
+`toString`, printing the object tag instead of the description.
+
+Corpus 919 to 925, test262 873 to 874.
+
+Locked by `tests/wrapperUnwrapping.js`.
+
+## OPEN: es-get-iterator overflows in tape's nested-test machinery
+
+Still stops after 76 assertions with RangeError, at the same point before and
+after the valueOf fix. What the fix DID rule out, by direct measurement rather
+than inference:
+
+- `object-inspect` no longer recurses on any of the values that section uses —
+  boxed symbols, bigints, numbers, functions and regexes all print correctly,
+  with and without an added Symbol.iterator.
+- `getIterator` answers undefined for all twelve non-iterables the section tests.
+
+So the recursion is in tape's own scheduling of `t.test` nested inside a
+`forEach`, not in the values or in the package under test. 67 assertions sit
+behind it. Next step: instrument tape's Test constructor and its results stream
+rather than the values, since the values are now accounted for.
