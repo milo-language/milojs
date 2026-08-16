@@ -10,8 +10,12 @@
 //   bun scripts/quickjs-sweep.ts            # summary + top error buckets
 //   bun scripts/quickjs-sweep.ts -v         # also list every failing case
 //   bun scripts/quickjs-sweep.ts -f loop    # only files whose name matches
-//   bun scripts/quickjs-sweep.ts --json quickjs-status.json
-import { readdirSync, readFileSync, writeFileSync, mkdtempSync, copyFileSync } from "fs";
+//   bun scripts/quickjs-sweep.ts                        # writes docs/conformance/quickjs.json
+//   bun scripts/quickjs-sweep.ts --json other.json
+//
+// The report is COMMITTED evidence. After a sweep, run `node tools/gen-facts.mjs`
+// so the numbers in status.md/README are recompiled from it, and commit both.
+import { readdirSync, readFileSync, writeFileSync, mkdtempSync, copyFileSync, mkdirSync } from "fs";
 import { execFileSync } from "child_process";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -22,7 +26,26 @@ const verbose = process.argv.includes("-v");
 const filterIdx = process.argv.indexOf("-f");
 const filter = filterIdx >= 0 ? process.argv[filterIdx + 1] : null;
 const arg = (name: string) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : null; };
-const jsonPath = arg("--json");
+const jsonPath = arg("--json") ?? "docs/conformance/quickjs.json";
+
+
+// The published score has to be traceable to something committed, not to a file
+// under .dev/ that is gitignored and reaped. Default the report into the repo:
+// running a sweep now produces the evidence, and `node tools/gen-facts.mjs`
+// compiles that evidence into the numbers the docs quote. Recording WHICH milojs
+// commit produced it is the other half — a score with no engine revision cannot
+// be told apart from a score measured forty commits ago.
+function selfRevision(): { revision: string | null; dirty: boolean } {
+  try {
+    const revision = execFileSync("git", ["rev-parse", "HEAD"], {
+      encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    const dirty = execFileSync("git", ["status", "--porcelain"], {
+      encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"],
+    }).trim().length > 0;
+    return { revision, dirty };
+  } catch { return { revision: null, dirty: false }; }
+}
 
 function revision(dir: string): string | null {
   try {
@@ -144,11 +167,13 @@ if (jsonPath) {
     schemaVersion: 1,
     suite: "quickjs",
     corpus: { path: QJS, revision: revision(QJS) },
+    milojs: selfRevision(),
     engine: ENGINE,
     selection: { filter, skippedFiles: [...SKIP_FILES].sort() },
     totals: { pass, fail, total, files: files.length },
     failureBuckets: ranked.map(([reason, cases]) => ({ reason, count: cases.length, cases })),
   };
+  mkdirSync(jsonPath.replace(/\/[^/]+$/, ""), { recursive: true });
   writeFileSync(jsonPath, JSON.stringify(report, null, 2) + "\n");
   console.log(`\nwrote ${jsonPath}`);
 }

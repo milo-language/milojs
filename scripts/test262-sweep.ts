@@ -10,8 +10,12 @@
 //   bun scripts/test262-sweep.ts --sample 3000      # random sample, whole suite
 //   bun scripts/test262-sweep.ts --dir built-ins/Array
 //   bun scripts/test262-sweep.ts --sample 2000 -v   # also list failing files
-//   bun scripts/test262-sweep.ts --sample 1500 --json test262-status.json
-import { readdirSync, readFileSync, writeFileSync, statSync, mkdtempSync } from "fs";
+//   bun scripts/test262-sweep.ts --sample 1500          # writes docs/conformance/test262.json
+//   bun scripts/test262-sweep.ts --sample 1500 --json other.json
+//
+// The report is COMMITTED evidence. After a sweep, run `node tools/gen-facts.mjs`
+// so the numbers in status.md/README are recompiled from it, and commit both.
+import { readdirSync, readFileSync, writeFileSync, statSync, mkdtempSync, mkdirSync } from "fs";
 import { execFileSync } from "child_process";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -24,7 +28,26 @@ const arg = (name: string) => { const i = process.argv.indexOf(name); return i >
 const sampleN = arg("--sample") ? parseInt(arg("--sample")!) : null;
 const subDir = arg("--dir") ?? "";
 const limit = arg("--limit") ? parseInt(arg("--limit")!) : Infinity;
-const jsonPath = arg("--json");
+const jsonPath = arg("--json") ?? "docs/conformance/test262.json";
+
+
+// The published score has to be traceable to something committed, not to a file
+// under .dev/ that is gitignored and reaped. Default the report into the repo:
+// running a sweep now produces the evidence, and `node tools/gen-facts.mjs`
+// compiles that evidence into the numbers the docs quote. Recording WHICH milojs
+// commit produced it is the other half — a score with no engine revision cannot
+// be told apart from a score measured forty commits ago.
+function selfRevision(): { revision: string | null; dirty: boolean } {
+  try {
+    const revision = execFileSync("git", ["rev-parse", "HEAD"], {
+      encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    const dirty = execFileSync("git", ["status", "--porcelain"], {
+      encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"],
+    }).trim().length > 0;
+    return { revision, dirty };
+  } catch { return { revision: null, dirty: false }; }
+}
 
 function revision(dir: string): string | null {
   try {
@@ -181,6 +204,7 @@ if (jsonPath) {
     schemaVersion: 1,
     suite: "test262",
     corpus: { path: T262, revision: revision(T262) },
+    milojs: selfRevision(),
     engine: ENGINE,
     selection: {
       directory: subDir || null,
@@ -196,6 +220,7 @@ if (jsonPath) {
       .map(([reason, cases]) => ({ reason, count: cases.length, cases }))
       .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)),
   };
+  mkdirSync(jsonPath.replace(/\/[^/]+$/, ""), { recursive: true });
   writeFileSync(jsonPath, JSON.stringify(report, null, 2) + "\n");
   console.log(`\nwrote ${jsonPath}`);
 }

@@ -24,6 +24,7 @@
 // so a renamed fact fails loudly instead of leaving a stale value in place.
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -72,6 +73,23 @@ const FACTS = {
   // rather than being published wrong from a guess at the source.
   "napi-entry-points": () => String(napiEntryPoints()),
 
+  // --- conformance ---
+  // These come from a COMMITTED report written by the sweep, never from prose.
+  // The published 45.2% previously had no artifact behind it at all: the only
+  // machine-readable file on disk lived under a gitignored .dev/ and said
+  // something else entirely, and nobody could tell which was real.
+  "t262-pct": () => pct(report("test262").totals.pass, report("test262").totals.scored),
+  "t262-pass": () => String(report("test262").totals.pass),
+  "t262-scored": () => String(report("test262").totals.scored),
+  "t262-skipped": () => String(report("test262").totals.skip),
+  "t262-sample": () => String(report("test262").selection.sample),
+  "t262-seed": () => String(report("test262").selection.seed),
+  "t262-corpus": () => short(report("test262").corpus.revision),
+  "qjs-pct": () => pct(report("quickjs").totals.pass, report("quickjs").totals.total ?? report("quickjs").totals.scored),
+  "qjs-pass": () => String(report("quickjs").totals.pass),
+  "qjs-total": () => String(report("quickjs").totals.total ?? report("quickjs").totals.scored),
+  "qjs-corpus": () => short(report("quickjs").corpus.revision),
+
   "node-modules-shimmed": () =>
     String(
       new Set(
@@ -79,6 +97,44 @@ const FACTS = {
       ).size
     ),
 };
+
+const pct = (a, b) => ((a / b) * 100).toFixed(1) + "%";
+const short = (rev) => (rev ? rev.slice(0, 8) : "unknown");
+
+const reportCache = new Map();
+function report(suite) {
+  if (reportCache.has(suite)) return reportCache.get(suite);
+  const f = p("docs/conformance", `${suite}.json`);
+  if (!existsSync(f)) {
+    throw new Error(
+      `docs cite a ${suite} number but docs/conformance/${suite}.json does not exist. ` +
+      `A published score needs committed evidence — run the sweep (see AGENTS.md §Conformance sweeps).`
+    );
+  }
+  const r = JSON.parse(readFileSync(f, "utf8"));
+  // A score measured on a dirty tree cannot be reproduced by anyone, including
+  // the person who measured it, so it is not evidence and will not be published.
+  if (r.milojs?.dirty) {
+    throw new Error(`docs/conformance/${suite}.json was measured on a DIRTY tree; re-run the sweep from a clean checkout`);
+  }
+  reportCache.set(suite, r);
+  return r;
+}
+
+// Not a fact — a note. How far the published score has drifted from HEAD is worth
+// saying out loud, but gating on it would go red on every unrelated commit.
+function reportAge(suite) {
+  const f = p("docs/conformance", `${suite}.json`);
+  if (!existsSync(f)) return null;
+  const rev = JSON.parse(readFileSync(f, "utf8")).milojs?.revision;
+  if (!rev) return null;
+  try {
+    const n = execFileSync("git", ["rev-list", "--count", `${rev}..HEAD`], {
+      encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], cwd: ROOT,
+    }).trim();
+    return { rev: rev.slice(0, 8), behind: parseInt(n, 10) };
+  } catch { return { rev: rev.slice(0, 8), behind: null }; }
+}
 
 function napiEntryPoints() {
   const src = readFileSync(p("src/napi.milo"), "utf8");
@@ -97,7 +153,11 @@ const RE = /<!--fact:([a-z0-9-]+)-->([\s\S]*?)<!--\/fact-->/g;
 
 const argv = process.argv.slice(2);
 if (argv.includes("--list")) {
-  for (const [name, fn] of Object.entries(FACTS)) console.log(`${name.padEnd(24)} ${fn()}`);
+  for (const [name, fn] of Object.entries(FACTS)) {
+    let v;
+    try { v = fn(); } catch (e) { v = `(unavailable: ${e.message.split(".")[0]})`; }
+    console.log(`${name.padEnd(24)} ${v}`);
+  }
   process.exit(0);
 }
 const CHECK = argv.includes("--check");
@@ -116,7 +176,14 @@ for (const rel of DOCS) {
       unknown++;
       return whole;
     }
-    const want = fn();
+    let want;
+    try {
+      want = fn();
+    } catch (e) {
+      console.error(`ERROR    ${rel}: ${name}: ${e.message}`);
+      unknown++;
+      return whole;
+    }
     if (current === want) return whole;
     if (CHECK) {
       console.error(`STALE    ${rel}: ${name} says "${current}", tree says "${want}"`);
@@ -129,6 +196,13 @@ for (const rel of DOCS) {
     writeFileSync(file, after);
     console.log(`rewrote  ${rel}`);
     rewrote++;
+  }
+}
+
+for (const suite of ["test262", "quickjs"]) {
+  const age = reportAge(suite);
+  if (age?.behind) {
+    console.log(`note: the ${suite} score was measured at ${age.rev}, ${age.behind} commit(s) before HEAD`);
   }
 }
 
