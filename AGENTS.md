@@ -133,6 +133,11 @@ parallel (`MILOJS_JOBS`, default: core count) and takes an optional
 - `tests/runtime/*.js` — runtime fixtures (async, fetch, event loop, fs).
 - `tests/milo/*.milo` — invariants asserted from Milo directly (GC roots under a
   parked activation, exec-context identity).
+- **The docs are fixtures too.** An example in a `.md` preceded by `<!-- exec -->`
+  is run by `tools/check-docs-exec.mjs` against the built binaries and diffed
+  against the ```text block that follows it. Add the marker to any example that
+  claims an output; leave it off recipes that download a release or drive a full
+  build, which the suites already cover.
 
 **Adding a fixture:** write the `.js`, then `tools/verify-expected.sh --update
 <name>` captures node's output into `.expected`. Confirm milojs matches with
@@ -191,6 +196,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/verify-expected.sh` | proves every `.expected` is what node prints. `--update` captures a new one, `--structure` is the instant registry-only half the hook runs. |
 | `tools/verify-contracts.sh` | static contract gate: fails on a refuted contract, or one that quietly stopped being proven. `--update` re-baselines. |
 | `tools/gen-unicase.mjs` | regenerates `src/unicase.milo` (case-mapping tables) from node's ICU |
+| `tools/check-docs-exec.mjs` | runs the `<!-- exec -->`-tagged examples in the docs and diffs them against the output the docs claim. Needs built binaries; part of `dev.sh`. |
 | `tools/check-docs.mjs` | doc-meta present, key-files real, AGENTS tables complete, and a staleness ratchet against each doc's key-files |
 | `tools/gen-facts.mjs` | compiles the numbers prose quotes (line counts, fixture counts, entry points) into `<!--fact:...-->` spans. `--check` gates, `--list` prints them all. |
 | `tools/precommit.sh` | lint + fixture registry + docs freshness; wire with `git config core.hooksPath .githooks` |

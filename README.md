@@ -38,6 +38,7 @@ Verify the downloaded binaries:
 
 ## Quick Example
 
+<!-- exec -->
 ```sh
 printf 'const name = "Milo"; console.log(`hello from ${name}`);\n' > hello.js
 ./milojs-engine hello.js

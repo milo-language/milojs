@@ -109,6 +109,12 @@ jobs:
       - name: js fixtures
         run: MILOJS_ENGINE_BIN=/tmp/milojs-engine MILOJS_RUNTIME_BIN=/tmp/milojs ./tests/run.sh
 
+      # The README's examples, run against the binaries just built. A doc that
+      # promises output the engine no longer produces fails here instead of in
+      # front of whoever followed the README.
+      - name: docs examples
+        run: MILOJS_ENGINE_BIN=/tmp/milojs-engine MILOJS_RUNTIME_BIN=/tmp/milojs node tools/check-docs-exec.mjs
+
       # tests/milo/*.milo — milojs invariants asserted from Milo directly
       # (async park/resume, exec-context identity, GC roots under a parked
       # activation), also inherited from the milo repo's fixture suite.

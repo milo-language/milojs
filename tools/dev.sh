@@ -141,6 +141,10 @@ else
   run_suite "run-repl.sh"  ./tests/run-repl.sh
   run_suite "run-embed.sh" ./tests/run-embed.sh
   run_suite "run-napi.sh"  ./tests/run-napi.sh
+  # The README's examples are fixtures too — they run against the binaries just
+  # built, so a doc that promises output the engine no longer produces fails here
+  # rather than in front of whoever followed the README.
+  run_suite "docs-exec"    node ./tools/check-docs-exec.mjs
 fi
 
 echo
