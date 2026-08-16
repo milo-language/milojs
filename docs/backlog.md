@@ -1699,3 +1699,34 @@ For scale: Bun's V8 compatibility layer is ~4,300 lines and its own notes
 describe it as "V8-compatible object layouts that inline V8 functions can read"
 plus tagged pointers and handle-scope buffers. The three sqlite apps need a
 sqlite package that is napi-native instead.
+
+## console had 11 missing methods, could not be overridden, and wrote diagnostics to stdout — DONE 2026-08-16
+
+Found by running `html-escaper`'s own test suite, whose first statement is
+`console.assert(...)`. Three separate defects, in increasing order of how much
+they matter:
+
+**Missing methods.** `assert`, `table`, `group`, `groupEnd`, `groupCollapsed`,
+`time`, `timeEnd`, `timeLog`, `count`, `countReset` and `clear` did not exist.
+Each was not a degraded log line but a `TypeError` that killed the program: a
+library that instruments itself with `console.time` cannot even be imported.
+Added in `lib/prelude.js` with node's semantics, including group indentation
+applied to every stream and `console.assert` printing only on a falsy first
+argument.
+
+**`console.log` could not be overridden.** `evalCall` had a fast path that fired
+on the receiver being named `console` and the method being a known name, so
+`console.log = fn` was accepted and then ignored. Monkey-patching console is how
+loggers, test harnesses and output capture all work, so this silently broke a
+whole class of library. The fast path now consults `consoleMethodIsPristine`,
+which checks the live binding is still the native before taking the shortcut.
+
+**`console.error` and `console.warn` wrote to stdout.** Any program whose stdout
+is piped or parsed got its diagnostics interleaved into its data. Both the native
+(`NATIVE_CONSOLE_ERROR`) and the fast path now select `eprint`. The two sites had
+to be fixed together: fixing only the native left the shortcut still wrong, which
+is exactly what the first verification pass caught.
+
+Locked by `tests/runtime/consoleSurface.js`, which diffs stdout and stderr
+against node separately — the combined-stream capture that `tests/run.sh` uses
+cannot see a stream mix-up at all.

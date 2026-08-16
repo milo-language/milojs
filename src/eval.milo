@@ -3232,6 +3232,8 @@ let NATIVE_NAPI_LOAD: i64 = 105
 // runtime does `console.debug || console.log` — needs `console` to be a real
 // object whose properties are callable values.
 pub let NATIVE_CONSOLE_LOG: i64 = 106
+// console.error/warn: same formatting, stderr instead of stdout
+let NATIVE_CONSOLE_ERROR: i64 = 152
 // new Proxy(target, handler)
 let NATIVE_PROXY: i64 = 107
 // Object.is — SameValue: like ===, except NaN equals itself and +0 differs
@@ -5190,7 +5192,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Obj(o)
     }
-    if id == NATIVE_CONSOLE_LOG {
+    if id == NATIVE_CONSOLE_LOG || id == NATIVE_CONSOLE_ERROR {
         var line = ""
         var j: i64 = 0
         while j < argVals.len() {
@@ -5200,8 +5202,15 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             line = line + inspectTop(st, argVals[j])
             j = j + 1
         }
-        print(line)
-        flush()
+        // console.error and console.warn belong on STDERR. Both went to stdout,
+        // so any program whose output is piped or parsed got its diagnostics
+        // mixed into its data, and 2>/dev/null hid nothing.
+        if id == NATIVE_CONSOLE_ERROR {
+            eprint(line)
+        } else {
+            print(line)
+            flush()
+        }
         return JSValue.Undefined
     }
     if id == NATIVE_NAPI_LOAD {
@@ -7356,8 +7365,8 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, consoleObj, "debug", JSValue.Native(NATIVE_CONSOLE_LOG))
     objSet(st, consoleObj, "trace", JSValue.Native(NATIVE_CONSOLE_LOG))
     objSet(st, consoleObj, "dir", JSValue.Native(NATIVE_CONSOLE_LOG))
-    objSet(st, consoleObj, "warn", JSValue.Native(NATIVE_CONSOLE_LOG))
-    objSet(st, consoleObj, "error", JSValue.Native(NATIVE_CONSOLE_LOG))
+    objSet(st, consoleObj, "warn", JSValue.Native(NATIVE_CONSOLE_ERROR))
+    objSet(st, consoleObj, "error", JSValue.Native(NATIVE_CONSOLE_ERROR))
     scopeDefine(st, 0, "console", JSValue.Obj(consoleObj))
     scopeDefine(st, 0, "Proxy", JSValue.Native(NATIVE_PROXY))
     nameGlobalCtor(st, "Proxy", NATIVE_PROXY)
@@ -14952,6 +14961,28 @@ fn errorStackFrames(st: &Interp): string {
     return out
 }
 
+// True while `console.<name>` still holds the builtin this fast path implements.
+// A user assignment replaces it with a Func/Obj, and then the call has to go
+// through ordinary property dispatch or the assignment is silently ignored.
+fn consoleMethodIsPristine(st: &mut Interp, scope: i64, name: &string): bool {
+    if !scopeHas(st, scope, "console") {
+        return true
+    }
+    let c = scopeLookup(st, scope, "console")
+    let h = objHandle(c)
+    if h < 0 {
+        return true
+    }
+    match getMember(st, h, name) {
+        JSValue.Native(_n) => {
+            return true
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
 fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {
     // builtin: console.log(...)
     match prog.exprs[calleeId.index] {
@@ -15025,7 +15056,13 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
         Expr.Member(objIdx, name) => {
             match prog.exprs[objIdx.index] {
                 Expr.Ident(objName) => {
-                    if objName == "console" && (name == "log" || name == "error" || name == "warn" || name == "info" || name == "debug" || name == "trace" || name == "dir") {
+                    // The fast path only applies while console.<name> is still
+                    // the ORIGINAL native. It used to fire on the name alone, so
+                    // assigning `console.log = fn` had no effect at all: the
+                    // call went straight to the builtin and the replacement was
+                    // never consulted. Monkey-patching console is how loggers,
+                    // test harnesses and output capture all work.
+                    if objName == "console" && (name == "log" || name == "error" || name == "warn" || name == "info" || name == "debug" || name == "trace" || name == "dir") && consoleMethodIsPristine(st, scope, name) {
                         let argVals = evalArgs(prog, argsIdx, st, scope)
                         // an argument that threw must not still be printed
                         if st.throwing {
@@ -15040,7 +15077,12 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                             line = line + inspectTop(st, argVals[j])
                             j = j + 1
                         }
-                        print(line)
+                        // same split as the native: diagnostics on stderr
+                        if name == "error" || name == "warn" {
+                            eprint(line)
+                        } else {
+                            print(line)
+                        }
                         // node line-buffers to a terminal; without flushing here
                         // a Ctrl-C or SIGKILL discards everything the program
                         // printed, which makes a long-running server look silent
