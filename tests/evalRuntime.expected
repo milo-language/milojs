@@ -1,0 +1,24 @@
+expression 2
+string expr abcd
+last expr wins 3
+empty source undefined
+var declaration undefined
+var is visible after 6
+function declaration 8
+reads a local 10
+writes a local 42
+nested eval 6
+arrow 12
+template literal a2b
+regex true
+object literal 14
+throw propagates THREW TypeError
+non-string passes through 123
+object arg passes through {"a":1}
+class does not leak undefined
+let does not leak undefined
+var does leak number
+indirect defines a global number
+indirect cannot see a local undefined
+400 escaped closures sum: 79800
+eval at recursion depth 50: 2

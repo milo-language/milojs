@@ -119,6 +119,23 @@ pub fn resumeExecCtx(st: &mut Interp, task: *u8)
 Take back the execution belonging to `task`, wherever it sits in the parked
 set. Parks and wakes interleave, so position says nothing about ownership.
 
+### `runEvalSource`
+
+```milo
+pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue
+```
+
+Parse `src` into the shared program and run it in `scope`, answering the
+completion value (the last value-producing statement), which is what eval
+returns.
+
+Appending to gProg mid-evaluation is the part worth understanding: the arena
+Vecs can reallocate while an outer evalExpr walk is live. It holds because
+Milo's `&Prog` is a second-class reference that is re-read through rather than
+cached across a call, so the walk picks up the new buffer. The stress case is
+covered by tests/evalRuntime.js: 400 eval'd closures escaping into an array,
+each forcing more appends, then all called afterwards.
+
 ### `runEventLoop`
 
 ```milo

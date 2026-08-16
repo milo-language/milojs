@@ -840,6 +840,63 @@ Two smaller things found by the same probe, not yet fixed:
   precisely to obtain the real value); shadowing does not. The fix is to make
   `undefined` an ordinary global binding rather than a literal token.
 
+## eval is real now, and "no runtime compiler" was never true — DONE 2026-08-15
+
+`eval` resolved a bare identifier and hard-errored on everything else, under a
+comment in `evalCall` saying milojs has no runtime compiler. That comment was
+wrong, and I wrote it. `src/repl.milo` has always called `lex()` and
+`parseProgram()` on new source at runtime and executed the result: eval is that
+same operation with the CALLER's scope instead of the REPL's global one.
+
+`runEvalSource(src, st, scope)` parses into the shared `gProg` and runs the
+statements, answering the completion value. Three details that are not wiring:
+
+- **`var` and function declarations belong to the caller's scope, `let`, `const`
+  and `class` do not.** Hoisting into the caller and executing in a fresh child
+  scope gives both: `eval("var vv = 2")` is visible afterwards, `eval("class Ce {}")`
+  leaves nothing behind.
+- **Indirect eval runs in the GLOBAL scope.** `const e = eval; e(src)` goes
+  through the `NATIVE_EVAL` native at scope 0, so it cannot see the caller's
+  locals. That is the whole difference between the two forms.
+- **Appending to `gProg` mid-evaluation is safe here** because Milo's `&Prog` is
+  a second-class reference, re-read through rather than cached across a call, so
+  an outer `evalExpr` walk picks up a reallocated arena. Stressed by the fixture:
+  400 eval'd closures escape into an array, each append able to reallocate under
+  a live walk, then all are called afterwards.
+
+| suite | before | after |
+|---|---:|---:|
+| test262 1500-sample | 680/1470 = 46.3% | **699/1470 = 47.6%** |
+| QuickJS `tests/` | 97/149 = 65.1% | **98/149 = 65.8%** |
+
++19 on test262, the largest single move this session outside the constructor
+prototype work. QuickJS moved only 1 because its remaining eval cases need more
+than eval (`new.target` in a function context, `var_obj` semantics).
+
+Locked by `tests/evalRuntime.js`.
+
+## The parser accepts truncated input instead of failing
+
+Found while giving eval a SyntaxError path. `expect()` sets `p.errored`, but a
+truncated EXPRESSION never reaches an `expect`: the primary parser runs off the
+end and returns, and `atStatementEnd` treats EOF as a legal statement end. So the
+parser silently accepts input that is not a program. Measured on ten malformed
+sources, six are accepted:
+
+| source | node | milojs |
+|---|---|---|
+| `var =` | SyntaxError | accepted |
+| `1 +` | SyntaxError | accepted |
+| `}` | SyntaxError | accepted |
+| `a b c` | SyntaxError | runs `a`, ReferenceError |
+| `return 1` | SyntaxError | accepted |
+| `()=>` | SyntaxError | accepted |
+
+`eval` now reports a SyntaxError when the parser flags an error OR leaves tokens
+unconsumed, which catches the rest, but the underlying gap is the parser's. It
+also costs test262 the `Expected a SyntaxError to be thrown` bucket, and it is
+why a typo in a source file can execute the wreckage rather than being rejected.
+
 ## What a real application found that the suites did not — 2026-08-15
 
 Pointing milojs at `tahoeroads` (express 4 + Prisma + tRPC, a deployed backend)

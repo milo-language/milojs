@@ -4911,9 +4911,19 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         return JSValue.Null
     }
     if id == NATIVE_EVAL {
-        st.throwing = true
-        st.thrownValue = makeError(st, "EvalError", "indirect eval is not supported: milojs has no runtime compiler")
-        return JSValue.Undefined
+        // INDIRECT eval (`const e = eval; e(src)`) runs in the GLOBAL scope,
+        // not the caller's, which is the whole difference from the direct form
+        if argVals.len() == 0 {
+            return JSValue.Undefined
+        }
+        match cloneValue(argVals[0]) {
+            JSValue.Str(src) => {
+                return runEvalSource(src, st, 0)
+            }
+            _ => {
+                return cloneValue(argVals[0])
+            }
+        }
     }
     if id == NATIVE_OBJECT_SETPROTO {
         if argVals.len() > 1 {
@@ -14579,6 +14589,60 @@ fn throwNullMember(st: &mut Interp, name: &string, base: &string): JSValue {
     return JSValue.Undefined
 }
 
+// Parse `src` into the shared program and run it in `scope`, answering the
+// completion value (the last value-producing statement), which is what eval
+// returns.
+//
+// Appending to gProg mid-evaluation is the part worth understanding: the arena
+// Vecs can reallocate while an outer evalExpr walk is live. It holds because
+// Milo's `&Prog` is a second-class reference that is re-read through rather than
+// cached across a call, so the walk picks up the new buffer. The stress case is
+// covered by tests/evalRuntime.js: 400 eval'd closures escaping into an array,
+// each forcing more appends, then all called afterwards.
+pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
+    var ep = PState {
+        toks: lex(src.clone()), pos: 0, curClass: "", file: "<eval>", errored: false, eofError: false, quiet: true
+    }
+    let top = parseProgram(ep, gProg)
+    // The parser recovers by skipping tokens rather than stopping, so `errored`
+    // alone misses input like `var =`. Unconsumed tokens are the other half of
+    // the signal: a clean parse ends on EOF.
+    var leftover = false
+    if ep.pos < ep.toks.len() && ep.toks[ep.pos].kind != T_EOF {
+        leftover = true
+    }
+    if ep.errored || ep.eofError || leftover {
+        st.throwing = true
+        st.thrownValue = makeError(st, "SyntaxError", "Unexpected token in eval")
+        return JSValue.Undefined
+    }
+    // `var` and function declarations belong to the CALLER's scope (that is what
+    // makes `eval("var q = 6")` visible afterwards), but `let`, `const` and
+    // `class` are scoped to the eval itself and must not leak. Hoisting into the
+    // caller and executing in a child of it gives both.
+    hoistBlock(gProg, top, st, scope)
+    let evalScope = newScope(st, scope)
+    var result = JSValue.Undefined
+    let n = gProg.blocks[top.index].len()
+    var i: i64 = 0
+    while i < n {
+        let sIdx = gProg.blocks[top.index][i]
+        match getStmt(gProg, sIdx) {
+            Stmt.ExprStmt(e) => {
+                result = evalExpr(gProg, e, st, evalScope)
+            }
+            _ => {
+                execStmt(gProg, sIdx, st, evalScope)
+            }
+        }
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        i = i + 1
+    }
+    return result
+}
+
 fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {
     // builtin: console.log(...)
     match prog.exprs[calleeId.index] {
@@ -14610,26 +14674,27 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                 }
                 return callValue(prog, baseVal, argVals, thisVal, st)
             }
-            // eval of a bare identifier, resolved in the calling scope. Not a
-            // real eval — there is no runtime compiler — but it covers the one
-            // shape bundled libraries actually use to reach past a bundler:
-            // `eval("__dirname")` (prisma) and `eval("require")`. Anything else
-            // is a hard error rather than a silent wrong answer.
+            // Direct eval. This used to resolve a bare identifier and hard-error
+            // on anything else, with a comment saying there is no runtime
+            // compiler. That was never true: src/repl.milo has always lexed and
+            // parsed new source into the shared Prog at runtime and executed it,
+            // and eval is that same operation with the CALLER's scope instead of
+            // the REPL's global one.
             if fname == "eval" && !scopeHasBelowGlobal(st, scope, "eval") {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
-                var src = ""
-                if argVals.len() > 0 {
-                    src = toStr(argVals[0])
+                if argVals.len() == 0 {
+                    return JSValue.Undefined
                 }
-                if isIdentifierText(src) && scopeHas(st, scope, src) {
-                    return scopeLookup(st, scope, src)
+                match cloneValue(argVals[0]) {
+                    JSValue.Str(src) => {
+                        return runEvalSource(src, st, scope)
+                    }
+                    _ => {
+                        // eval of a non-string returns the argument untouched
+                        return cloneValue(argVals[0])
+                    }
                 }
-                st.throwing = true
-                st.thrownValue = makeError(st, "EvalError", "eval is limited to a bare identifier in scope, got: " + src)
-                return JSValue.Undefined
             }
-            // require(spec) is handled here rather than as a native because it
-            // needs the program (to run the required module's block)
             if fname == "require" {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
                 var spec = ""
