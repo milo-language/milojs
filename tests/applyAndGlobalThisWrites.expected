@@ -3,6 +3,7 @@ apply with array-like -> 3
 apply with arguments -> 7
 apply with no args object -> 0
 apply length getter runs -> 7/true
+apply aborts on a throwing getter -> threw/false
 apply length getter throws -> marker
 Reflect.apply array-like -> 42
 call is unaffected -> 11

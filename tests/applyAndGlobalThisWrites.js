@@ -25,6 +25,14 @@ t("apply length getter runs", () => {
   var got = (function (a) { return a; }).apply(null, like);
   return got + "/" + seen;
 });
+// the throw from a length getter must ABORT the call, not let it proceed with a
+// partial argument list and leave the throw pending for an unrelated later point
+t("apply aborts on a throwing getter", () => {
+  var ran = false;
+  var like = Object.defineProperty({ 0: 1 }, "length", { get: function () { throw new Error("boom"); } });
+  try { (function () { ran = true; return 1; }).apply(null, like); } catch (e) { return "threw/" + ran; }
+  return "no throw/" + ran;
+});
 t("apply length getter throws", () => {
   var marker = {};
   var like = Object.defineProperty({}, "length", { get: function () { throw marker; } });

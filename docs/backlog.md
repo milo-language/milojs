@@ -2114,6 +2114,127 @@ is-callable rather than about the tracer.
 
 Locked by `tests/applyAndGlobalThisWrites.js`.
 
+## OPEN: deep-equal cannot load — the stack is already exhausted when it is reached
+
+`require('deep-equal')` then calling it throws "iterator must be a function"
+from `for-each`, reached through `which-typed-array`. The title of the previous
+version of this entry blamed is-callable, and that was wrong. is-callable is
+answering correctly for what it sees:
+
+    reflectApply(value, null, badArrayLike)
+
+throws **RangeError: Maximum call stack size exceeded** where a private marker
+was expected, so `e !== isCallableMarker` and it returns false. The engine is
+reporting a real recursion limit, not misclassifying a function.
+
+Measured, using a probe that counts remaining frames by recursing until it
+catches:
+
+| point | frames remaining |
+|---|---:|
+| top level | 499 (of 500) |
+| after `require('deep-equal')` | 499 |
+| entry to the exported `deepEqual` | 498 |
+| entry to `which-typed-array`'s `tryTypedArrays` | **2** |
+
+So ~496 frames are consumed between deep-equal's entry and a call three frames
+deep inside it. Two things this rules out:
+
+- **Not a limit that is merely too low.** Raising `callDepthLimit` to 2000 (on a
+  32 MB task stack) leaves the remaining-frames figure at `2` — the consumption
+  scales with whatever the limit is, which is the signature of a runaway, not of
+  a budget.
+- **Not a leaked counter.** Plain calls, caught throws, throws from 400 frames
+  deep, and throwing property getters all restore the count exactly.
+
+Also measured, since it will come up: the green-task stack is committed EAGERLY,
+so RSS tracks it 1:1 — 8 MB stack is 23 MB RSS for `console.log("hi")`, 32 MB is
+47 MB, 64 MB is 78 MB. Raising the limit is therefore not free, and on this
+evidence it does not help anyway. (A lazily-committed task stack would be a milo
+runtime improvement worth having regardless.)
+
+Next step: find what recurses between deep-equal's entry and `tryTypedArrays`.
+Instrument deep-equal's own internals rather than the engine — the frames are
+being spent inside its dispatch, and the engine is only reporting the ceiling.
+
+It blocks a large share of the corpus: tape's `deepEqual` is what function-bind
+(37 assertions), array.prototype.flatmap (16) and object.assign (44) die on.
+
+## OPEN: require() of an absolute path to a package directory
+
+`require('/abs/path/to/node_modules/function-bind')` fails with "no such
+package", where node resolves the directory through its package.json `main`.
+Relative and bare specifiers both work; only the absolute-directory form is
+missing. Found while writing a probe against the package corpus.
+
+## Function.prototype.toString now returns real source — DONE 2026-08-16
+
+Every function stringified to `[object Function]`. Not merely imprecise: lodash
+and friends tell a built-in from a user function by looking for the exact string
+`[native code]`, so every user function looked native; and is-callable decides
+whether a value is callable by whether `Function.prototype.toString` throws on
+it, so every object looked callable.
+
+Answering it needs the VERBATIM text — the `.expected` files are byte-exact
+against node, and a pretty-printer cannot reproduce the author's spacing. So:
+
+- `Token` gains `at` and `end` byte offsets. Stamped centrally in the lex loop
+  rather than at each of the ten Token literals, several of which are built in
+  helpers that never see the cursor. Each iteration consumes exactly one token
+  or only whitespace, so at the top of the NEXT iteration the cursor is exactly
+  the previous token's end.
+- `FuncDef` gains `srcStart`/`srcEnd`, filled at all six construction sites.
+  `async` is included because the caller consumed it and node's output has it;
+  a class METHOD starts at its name while a static BLOCK starts at `static`.
+- `Prog` keeps each file's text once, so a span can be sliced back out. Once per
+  file, not per function: a function's text contains every nested function's
+  text, so per-function slices would duplicate the program at each nesting level.
+
+Built-ins keep node's `function <name>() { [native code] }`, and a genuine
+bind() result prints anonymously where a built-in METHOD value keeps its name.
+ToString of a function is its source everywhere, not only through `.toString()`:
+`String(fn)`, `"" + fn` and `${fn}` all had to be routed through the Prog.
+
+**Two latent bugs this exposed.** `Object.getPrototypeOf(fn)` answered
+Object.prototype for every function: a function's property BAG is an ordinary
+object, and the bag was what got asked. A bag with a DELIBERATE prototype still
+wins, which matters because `Object.getPrototypeOf(Int8Array)` is the
+%TypedArray% intrinsic and test262's whole TypedArray tree opens with that read.
+And `String(x)` used the prog-free `toStr`, so a user `toString` never ran there.
+
+With those fixed, branding `Function.prototype.toString` to require a callable
+receiver is net POSITIVE — the earlier attempt cost 9 assertions and was
+reverted, and the reason was this getPrototypeOf bug, not the brand. Corpus 797
+to 800 assertions and 26 to 28 complete suites.
+
+Follow-up, done the same day: classes now carry a span too, recorded on the
+constructor FuncDef (declared or synthesised) since that is the function value a
+class becomes. `isCallable(class {})` is false, as node has it.
+
+Locked by `tests/functionSourceText.js`.
+
+## Function.prototype.apply took an array only, and globalThis.x += y read undefined — DONE 2026-08-16
+
+Both found while tracing why `deep-equal` cannot load.
+
+**apply took an ARRAY; the spec takes an array-LIKE.** It reads `length` and then
+the index properties, and reading `length` can run a getter that throws.
+Accepting arrays alone silently called the function with NO arguments, which is
+wrong for the commonest form there is, `fn.apply(null, arguments)`. is-callable's
+feature probe is built on precisely the throwing-length-getter case, so its
+`reflectApply` branch was disabled on this engine.
+
+**`globalThis.x += y` read `undefined` for its own left-hand side.** A plain read
+goes through `getMemberDyn`, which resolves a global binding; the
+compound-assignment read goes through `getMember`, which did not. So
+`globalThis.x` and `globalThis.x += 1` disagreed about the same property. Worth
+recording separately: this bug also corrupted my own instrumentation while
+debugging the above — a trace that stashed state on globalThis reported
+"undefined" for a value it had just written, and I read that as evidence about
+is-callable rather than about the tracer.
+
+Locked by `tests/applyAndGlobalThisWrites.js`.
+
 ## OPEN: deep-equal cannot load — is-callable answers false inside its dependency chain
 
 `require('deep-equal')` then calling it throws "iterator must be a function" from
@@ -2138,3 +2259,15 @@ itself, not the exported function. The exported function's behaviour differs
 between programs, which points at load-time state (`badArrayLike`,
 `isCallableMarker`, whether `reflectApply` survived the probe) rather than at the
 value being tested.
+
+## apply's argument read did not abort the call when it threw — DONE 2026-08-16
+
+`Function.prototype.apply` reads `length` and the index properties off its
+array-like argument, and any of those reads can run a getter that throws. The
+new array-like handling set the throw flag but the five call sites went on to
+invoke the function anyway, with a partial argument list, leaving the pending
+throw to surface at an unrelated later point. Each site now returns immediately.
+
+Found while measuring the deep-equal chain, which is built on exactly this shape:
+is-callable probes a candidate with `Reflect.apply(value, null, badArrayLike)`
+where `badArrayLike`'s length getter throws a private marker.

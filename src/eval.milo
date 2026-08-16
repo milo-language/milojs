@@ -2604,6 +2604,13 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 if name == "apply" {
                     if args.len() > 1 {
                         applyArgsInto(prog, st, args[1], uRest)
+                        // reading `length` or an index can run a getter that
+                        // THROWS; without this the call went ahead with a partial
+                        // argument list and left the pending throw to surface at
+                        // an unrelated point later
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                     }
                 } else {
                     var ai: i64 = 1
@@ -2862,6 +2869,13 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 if name == "apply" {
                     if args.len() > 1 {
                         applyArgsInto(prog, st, args[1], rest)
+                        // reading `length` or an index can run a getter that
+                        // THROWS; without this the call went ahead with a partial
+                        // argument list and left the pending throw to surface at
+                        // an unrelated point later
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                     }
                 } else {
                     var ai: i64 = 1
@@ -2911,6 +2925,13 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 if name == "apply" {
                     if args.len() > 1 {
                         applyArgsInto(prog, st, args[1], rest)
+                        // reading `length` or an index can run a getter that
+                        // THROWS; without this the call went ahead with a partial
+                        // argument list and left the pending throw to surface at
+                        // an unrelated point later
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                     }
                 } else {
                     var ai: i64 = 1
@@ -15305,6 +15326,13 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                 if name == "apply" {
                     if argVals.len() > 1 {
                         applyArgsInto(prog, st, argVals[1], rest)
+                        // reading `length` or an index can run a getter that
+                        // THROWS; without this the call went ahead with a partial
+                        // argument list and left the pending throw to surface at
+                        // an unrelated point later
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                     }
                 } else {
                     var ai: i64 = 1
@@ -15621,6 +15649,13 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                     // apply takes the args as one array
                     if argVals.len() > 1 {
                         applyArgsInto(prog, st, argVals[1], rest)
+                        // reading `length` or an index can run a getter that
+                        // THROWS; without this the call went ahead with a partial
+                        // argument list and left the pending throw to surface at
+                        // an unrelated point later
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                     }
                 } else {
                     var ai: i64 = 1
