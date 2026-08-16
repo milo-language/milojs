@@ -512,9 +512,21 @@ _Undocumented._
 pub fn scopeHas(st: &Interp, scope: i64, name: &string): bool
 ```
 
+_Undocumented._
+
+### `scopeHasBelowGlobal`
+
+```milo
+pub fn scopeHasBelowGlobal(st: &Interp, scope: i64, name: &string): bool
+```
+
 Is `name` bound anywhere on the scope chain? Distinguishes an undeclared
 identifier from one declared and holding undefined — the two are otherwise
 indistinguishable, which silently turns typos into undefined.
+Like scopeHas, but stops before the GLOBAL scope. `eval` now has a global
+binding (get-intrinsic reads it as a value), and the direct-call form must
+still work — it is only a user binding that shadows it that should turn
+`eval(x)` into an ordinary call.
 
 ### `scopeHasOwn`
 

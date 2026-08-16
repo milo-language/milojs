@@ -3188,6 +3188,18 @@ pub let NATIVE_INSPECT: i64 = 146
 // ArrayBuffer.isView(x): true for a typed-array view or a DataView, and
 // crucially FALSE for an ArrayBuffer itself
 let NATIVE_ARRAYBUFFER_ISVIEW: i64 = 147
+// EvalError and URIError are core ECMAScript constructors that simply did not
+// exist: `EvalError` was a ReferenceError at the first mention, and get-intrinsic
+// (a dependency of a large slice of npm) reads all seven error constructors on
+// its first line. They do not fit the contiguous NATIVE_ERROR..NATIVE_REFERENCE_ERROR
+// range — 0..4 is full — so the range checks below name them explicitly.
+let NATIVE_EVAL_ERROR: i64 = 148
+let NATIVE_URI_ERROR: i64 = 149
+// `eval` as a VALUE. There is no runtime compiler, so calling this throws — but
+// it has to EXIST, because get-intrinsic tabulates `'%eval%': eval` on its way
+// to being required by a large slice of npm. The direct-call form
+// `eval("bareIdent")` is handled at the call site and still works.
+let NATIVE_EVAL: i64 = 150
 
 // sqlite3_column_name is not wrapped by std/sqlite, but node:sqlite's get()/all()
 // return row objects keyed by column name, so it is declared here directly. The
@@ -3259,11 +3271,17 @@ fn nativeErrorName(id: i64): string {
     if id == NATIVE_REFERENCE_ERROR {
         return "ReferenceError"
     }
+    if id == NATIVE_EVAL_ERROR {
+        return "EvalError"
+    }
+    if id == NATIVE_URI_ERROR {
+        return "URIError"
+    }
     return "Error"
 }
 
 fn isErrorCtor(id: i64): bool {
-    return id >= NATIVE_ERROR && id <= NATIVE_REFERENCE_ERROR
+    return (id >= NATIVE_ERROR && id <= NATIVE_REFERENCE_ERROR) || id == NATIVE_EVAL_ERROR || id == NATIVE_URI_ERROR
 }
 
 // Reverse of nativeErrorName: the constructor id for a kind string, so an error
@@ -3282,6 +3300,12 @@ fn errorCtorIdFor(kind: &string): i64 {
     }
     if kind == "ReferenceError" {
         return NATIVE_REFERENCE_ERROR
+    }
+    if kind == "EvalError" {
+        return NATIVE_EVAL_ERROR
+    }
+    if kind == "URIError" {
+        return NATIVE_URI_ERROR
     }
     return NATIVE_ERROR
 }
@@ -4850,6 +4874,11 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
         return JSValue.Null
+    }
+    if id == NATIVE_EVAL {
+        st.throwing = true
+        st.thrownValue = makeError(st, "EvalError", "indirect eval is not supported: milojs has no runtime compiler")
+        return JSValue.Undefined
     }
     if id == NATIVE_OBJECT_SETPROTO {
         if argVals.len() > 1 {
@@ -6651,15 +6680,21 @@ fn setupErrorProtos(st: &mut Interp) {
 
     var eid = NATIVE_ERROR + 1
     while eid <= NATIVE_REFERENCE_ERROR {
-        let sub = newObject(st)
-        objSet(st, sub, "name", JSValue.Str(nativeErrorName(eid)))
-        objSet(st, sub, "message", JSValue.Str(""))
-        objSet(st, sub, "constructor", JSValue.Native(eid))
-        st.objects[sub].proto = errorProto
-        let bag = getNativeProps(st, eid)
-        objSet(st, bag, "prototype", JSValue.Obj(sub))
+        setupOneErrorProto(st, eid, errorProto)
         eid = eid + 1
     }
+    setupOneErrorProto(st, NATIVE_EVAL_ERROR, errorProto)
+    setupOneErrorProto(st, NATIVE_URI_ERROR, errorProto)
+}
+
+fn setupOneErrorProto(st: &mut Interp, eid: i64, errorProto: i64) {
+    let sub = newObject(st)
+    objSet(st, sub, "name", JSValue.Str(nativeErrorName(eid)))
+    objSet(st, sub, "message", JSValue.Str(""))
+    objSet(st, sub, "constructor", JSValue.Native(eid))
+    st.objects[sub].proto = errorProto
+    let bag = getNativeProps(st, eid)
+    objSet(st, bag, "prototype", JSValue.Obj(sub))
 }
 
 // The prototype object a freshly constructed error of this kind should link to,
@@ -6711,6 +6746,12 @@ pub fn setupGlobals(st: &mut Interp) {
     nameGlobalCtor(st, "SyntaxError", NATIVE_SYNTAX_ERROR)
     scopeDefine(st, 0, "ReferenceError", JSValue.Native(NATIVE_REFERENCE_ERROR))
     nameGlobalCtor(st, "ReferenceError", NATIVE_REFERENCE_ERROR)
+    scopeDefine(st, 0, "EvalError", JSValue.Native(NATIVE_EVAL_ERROR))
+    nameGlobalCtor(st, "EvalError", NATIVE_EVAL_ERROR)
+    scopeDefine(st, 0, "URIError", JSValue.Native(NATIVE_URI_ERROR))
+    nameGlobalCtor(st, "URIError", NATIVE_URI_ERROR)
+    scopeDefine(st, 0, "eval", JSValue.Native(NATIVE_EVAL))
+    nameGlobalCtor(st, "eval", NATIVE_EVAL)
     // JSON is a plain object whose methods are native functions
     let json = newObject(st)
     objSet(st, json, "stringify", JSValue.Native(NATIVE_JSON_STRINGIFY))
@@ -14533,7 +14574,7 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
             // shape bundled libraries actually use to reach past a bundler:
             // `eval("__dirname")` (prisma) and `eval("require")`. Anything else
             // is a hard error rather than a silent wrong answer.
-            if fname == "eval" && !scopeHas(st, scope, "eval") {
+            if fname == "eval" && !scopeHasBelowGlobal(st, scope, "eval") {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
                 var src = ""
                 if argVals.len() > 0 {

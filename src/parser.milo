@@ -46,6 +46,31 @@ fn advance(p: &mut PState) {
 
 // Can the current token serve as a property name? Identifiers and any keyword
 // (obj.catch / obj.default / obj.function are all legal JS), but not literals.
+// Tokens that get their own kind in the lexer but are NOT reserved words: they
+// are legal binding names in ordinary (sloppy) script code. `var undefined` is
+// the one that mattered — get-intrinsic, a dependency of a large fraction of
+// npm, opens with `var undefined;`, and a parse error is fatal, so express-free
+// apps died on their first require.
+//
+// This is only consulted where a NAME is expected (declarator, parameter,
+// function name, catch parameter). In expression position `await` and `yield`
+// keep their operator meaning, which is the same context rule the spec uses.
+fn isBindingName(p: &PState): bool {
+    if p.pos >= p.toks.len() {
+        return false
+    }
+    let k = p.toks[p.pos].kind
+    return k == T_IDENT || k == T_UNDEFINED || k == T_ASYNC || k == T_AWAIT || k == T_YIELD || k == T_LET
+}
+
+fn isBindingNameAt(p: &PState, at: i64): bool {
+    if at >= p.toks.len() {
+        return false
+    }
+    let k = p.toks[at].kind
+    return k == T_IDENT || k == T_UNDEFINED || k == T_ASYNC || k == T_AWAIT || k == T_YIELD || k == T_LET
+}
+
 fn isPropName(p: &PState): bool {
     if p.pos >= p.toks.len() {
         return false
@@ -511,7 +536,7 @@ fn parseParam(p: &mut PState, prog: &mut Prog, params: &mut Vec<string>, prelude
         advance(p)
         isRest = true
     }
-    if peekKind(p) == T_IDENT {
+    if isBindingName(p) {
         let name = p.toks[p.pos].text.clone()
         advance(p)
         if peekKind(p) == T_EQ {
@@ -1432,7 +1457,7 @@ fn parseFunction(p: &mut PState, prog: &mut Prog, isAsync: bool): i64 {
         isGenerator = true
     }
     var name = ""
-    if peekKind(p) == T_IDENT {
+    if isBindingName(p) {
         name = p.toks[p.pos].text.clone()
         advance(p)
     }
@@ -1539,7 +1564,7 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
                 }
             } else {
                 var name = ""
-                if peekKind(p) == T_IDENT {
+                if isBindingName(p) {
                     name = p.toks[p.pos].text.clone()
                     advance(p)
                 }
@@ -1585,7 +1610,7 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
         if nameAt < p.toks.len() && p.toks[nameAt].kind == T_STAR {
             nameAt = nameAt + 1
         }
-        if nameAt < p.toks.len() && p.toks[nameAt].kind != T_IDENT && !p.errored {
+        if nameAt < p.toks.len() && !isBindingNameAt(p, nameAt) && !p.errored {
             p.errored = true
             if !p.quiet {
                 eprint("milojs: " + p.file + ": function statements require a name")
@@ -1815,7 +1840,7 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
             advance(p)
             if peekKind(p) == T_LPAREN {
                 advance(p)
-                if peekKind(p) == T_IDENT {
+                if isBindingName(p) {
                     param = p.toks[p.pos].text.clone()
                     advance(p)
                 }

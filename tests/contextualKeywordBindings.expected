@@ -1,0 +1,20 @@
+var undefined: undefined
+in function: undefined
+var async ok
+1 2
+catch param ok
+function name ok 1
+yield still an operator: 3,4
+async fn is a function: function
+async arrow is a function: function
+typeof async/undefined: undefined undefined
+Error function Error Error Error: m true true [object Error]
+TypeError function TypeError TypeError TypeError: m true true [object Error]
+RangeError function RangeError RangeError RangeError: m true true [object Error]
+SyntaxError function SyntaxError SyntaxError SyntaxError: m true true [object Error]
+ReferenceError function ReferenceError ReferenceError ReferenceError: m true true [object Error]
+EvalError function EvalError EvalError EvalError: m true true [object Error]
+URIError function URIError URIError URIError: m true true [object Error]
+decodeURIComponent throws URIError true
+typeof eval: function
+direct eval of a bare ident: 42

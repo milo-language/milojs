@@ -30,7 +30,7 @@ The project deliberately has two deliverables:
 Engine maturity comes first. Runtime compatibility cannot be credible while the
 language engine and embedding contract are unstable.
 
-About <!--fact:loc-total-->38.8k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
+About <!--fact:loc-total-->38.9k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
 program, with no V8, JavaScriptCore, or C JavaScript engine underneath.
 
 ## Evidence
@@ -44,7 +44,7 @@ reproducible release artifact.
 |---|---:|---|
 | deterministic test262 sample (1500 selected, 30 skipped) | **664/1470 = 45.2%** | test262 `b363f29d`, seed `0x2f6e2b1` |
 | QuickJS `tests/` | **97/149 = 65.1%** | quickjs `ef7a3a74`, 58 files |
-| locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->175<!--/fact--> | byte-exact differential output vs node |
+| locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->176<!--/fact--> | byte-exact differential output vs node |
 | locked runtime fixtures (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->29<!--/fact--> | module, async, fetch, HTTP, sqlite, host behavior |
 | Milo invariant fixtures (`tests/milo/`, `tests/milo-errors/`) | <!--fact:fixtures-milo-->3<!--/fact--> + <!--fact:fixtures-milo-errors-->8<!--/fact--> | scheduler/context and GC-root invariants |
 | ESM / Node-API / embedding fixtures | 2 / 2 / 1 | lowering, addon callbacks, C ABI |

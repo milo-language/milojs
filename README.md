@@ -8,7 +8,7 @@
 
 A JavaScript engine and runtime written in the [Milo](https://github.com/milo-language/milo) programming language.
 
-MiloJS owns its parser, tree-walking evaluator, garbage collector, regular expression engine, BigInt implementation, module loader, and event loop. It has no V8, JavaScriptCore, or C JavaScript engine underneath it — about <!--fact:loc-milo-->34.2k<!--/fact--> lines of Milo from source text to running program, plus a <!--fact:loc-js-->4.6k<!--/fact-->-line JavaScript specification layer for the builtins that read better written in JavaScript. It starts in a few milliseconds and embeds into a C program as a static library.
+MiloJS owns its parser, tree-walking evaluator, garbage collector, regular expression engine, BigInt implementation, module loader, and event loop. It has no V8, JavaScriptCore, or C JavaScript engine underneath it — about <!--fact:loc-milo-->34.3k<!--/fact--> lines of Milo from source text to running program, plus a <!--fact:loc-js-->4.6k<!--/fact-->-line JavaScript specification layer for the builtins that read better written in JavaScript. It starts in a few milliseconds and embeds into a C program as a static library.
 
 This is an experimental implementation, not yet a drop-in replacement for QuickJS or Node. It passes 45.2% of a deterministic 1500-case test262 sample and 65.1% of the QuickJS test suite as of 2026-08-15. See [the current status](docs/status.md) for shipped capabilities, measured evidence, known gaps, and product gates.
 

@@ -780,6 +780,66 @@ nothing, which gets the interleaving with static fields right for free (they run
 in one declaration-ordered pass). `language/statements/class` 2011/4361 →
 **2024/4361**. Locked by `tests/classStaticBlocks.js`.
 
+## Four more real applications, and the npm floor — 2026-08-15
+
+Four other node apps in the same tree (`chat`, `todo`, `milo-list`, `smith`) all
+died in the same place, and none of it was app code: **`node_modules/get-intrinsic/index.js`,
+whose first line is `var undefined;`**. get-intrinsic sits under a large fraction
+of npm, so this was closer to a floor than to four bugs. Fixed in order as each
+one uncovered the next:
+
+- **Contextual keywords could not be binding names — DONE.** `undefined`, `async`,
+  `await`, `yield` and `let` get their own lexer tokens but are NOT reserved
+  words. Every name slot (declarator, parameter, function name, catch parameter)
+  tested `peekKind(p) == T_IDENT`, so `var undefined;` was a **parse error**, and
+  a parse error is fatal. Relaxed through one `isBindingName` predicate, used
+  only where a NAME is expected — `await` and `yield` keep their operator meaning
+  in expression position, which is the context rule the spec uses anyway.
+- **`EvalError` and `URIError` did not exist — DONE.** Both are core ECMAScript.
+  `EvalError` was a ReferenceError at first mention, and the comment on
+  `errorCtorIdFor` already admitted they were "thrown by name but with no native
+  constructor". They do not fit the contiguous `NATIVE_ERROR..NATIVE_REFERENCE_ERROR`
+  range (0..4 is full), so the range checks name them explicitly.
+  `decodeURIComponent("%")` now throws a real `URIError`.
+- **`eval` did not exist as a VALUE — DONE.** It was handled only at the call
+  site, so `typeof eval` was `"undefined"` and get-intrinsic's `'%eval%': eval`
+  table entry blew up. There is now a global binding whose native throws
+  `EvalError` when called indirectly (there is no runtime compiler), while the
+  direct `eval("bareIdent")` form still works — the guard moved from `scopeHas`
+  to a new `scopeHasBelowGlobal`, so only a USER binding shadows it.
+
+Whole-suite 1500-sample **677 → 680**. Locked by
+`tests/contextualKeywordBindings.js`.
+
+**Still blocked, next in line:** all four apps now get through get-intrinsic's
+parse and its global table and fail inside it with
+`base intrinsic for %String.prototype.indexOf% exists, but the property is not
+available`. `String.prototype.indexOf` itself is fine (typeof, `hasOwnProperty`,
+`getOwnPropertyDescriptor` and `in` all agree with node), so the fault is in
+whatever get-intrinsic uses to walk from `%String.prototype%` to the member.
+One measured lead: `Object.getOwnPropertyNames(String.prototype)` returns 28
+names where node returns 52.
+
+Two smaller things found by the same probe, not yet fixed:
+
+- Running `scripts/test262-sweep.ts` without `--json` writes
+  `docs/conformance/test262.json` containing ABSOLUTE paths
+  (`/Users/<you>/git/test262`), which the pre-commit hook then rejects as a
+  home-directory leak. Either the report should record `$HOME`-relative paths or
+  the default output belongs outside `docs/`.
+
+- **`globalThis` is missing most builtins in the RUNTIME.** `typeof Symbol` is
+  `"function"` but `typeof globalThis.Symbol` is `"undefined"`, and likewise for
+  `Function`, `RegExp`, `Proxy`, `Reflect`, every typed array, `decodeURI`,
+  `escape` and more. The engine's `globalThis` is much more complete than the
+  runtime's, so the runtime is putting a different object in front of it.
+- Reading a contextual keyword still yields the KEYWORD, not the binding:
+  `var undefined = 5; console.log(undefined)` prints `undefined`, not `5`,
+  because `undefined` in expression position lexes as the literal. Declaring
+  works (which is all get-intrinsic needs, since it declares `var undefined;`
+  precisely to obtain the real value); shadowing does not. The fix is to make
+  `undefined` an ordinary global binding rather than a literal token.
+
 ## What a real application found that the suites did not — 2026-08-15
 
 Pointing milojs at `tahoeroads` (express 4 + Prisma + tRPC, a deployed backend)
