@@ -33,3 +33,10 @@ console.log("straße".toUpperCase(), "ﬁn".toUpperCase());
 
 // unchanged: digits, punctuation, CJK, emoji
 console.log("123 -_= 漢字 😀".toUpperCase(), "123 -_= 漢字 😀".toLowerCase());
+
+// toLocaleUpperCase/toLocaleLowerCase existed as names with an arity and no
+// dispatch, so both answered undefined. There is no locale data here, so they
+// are the locale-independent mappings.
+console.log("abcß".toLocaleUpperCase(), "ABCÄ".toLocaleLowerCase());
+console.log("привет".toLocaleUpperCase("en-US"), "ΑΒΓ".toLocaleLowerCase("el"));
+console.log(typeof "".toLocaleUpperCase, typeof "".toLocaleLowerCase);

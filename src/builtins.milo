@@ -559,10 +559,13 @@ pub fn utf16Slice(s: &string, start: i64, end: i64): string {
 }
 
 pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
-    if name == "toUpperCase" {
+    if name == "toUpperCase" || name == "toLocaleUpperCase" {
+        // the locale forms are the locale-independent ones here: this engine has
+        // no locale data (see the Intl stub in lib/prelude.js), and node only
+        // diverges for tr/az/lt
         return JSValue.Str(strUpper(s))
     }
-    if name == "toLowerCase" {
+    if name == "toLowerCase" || name == "toLocaleLowerCase" {
         return JSValue.Str(strLower(s))
     }
     if name == "trim" {
