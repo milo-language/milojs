@@ -757,23 +757,49 @@ value distinct from `undefined`. Everything else follows from it, including
 - `structuredClone` is not defined.
 - `String.prototype.isWellFormed` / `toWellFormed` (ES2024) are missing.
 
-## The runtime shadows the engine's native typed arrays
+## The runtime shadowed the engine's native typed arrays — DONE 2026-08-15
 
-`lib/prelude.js`'s `_taFactory` defines `Uint8Array` and friends as ordinary JS
-arrays with `_isTypedArray = true` and per-instance `set`/`subarray` closures.
-It runs in the runtime, where it overwrites the engine's real typed arrays, so
-`milojs` is strictly worse than `milojs-engine` here:
+`lib/prelude.js` redefined `ArrayBuffer`, seven of the typed arrays and
+`DataView` as plain JS arrays carrying an `_isTypedArray` marker. Because the
+prelude runs in the runtime, `milojs` was strictly worse than `milojs-engine`
+on every one of them:
 
-```
-$ .dev/mj-engine  sub.js   # len 3  buf? true   proto true   own subarray? false
-$ .dev/mj-runtime sub.js   # len 3  buf? false  proto false  own subarray? true
-```
+| | shim (runtime) | node / engine |
+|---|---|---|
+| `u8[0] = 300` | stays `300` | `44` |
+| `Object.getPrototypeOf(u8)` | `Array.prototype` | `Uint8Array.prototype` |
+| `Object.prototype.toString.call(u8)` | `[object Array]` | `[object Uint8Array]` |
+| `DataView.prototype.setUint16` | missing | present |
+| `ArrayBuffer.prototype.slice` | missing | present |
+| `new TextEncoder().encode("héllo")` | 5 latin-1 bytes | 6 UTF-8 bytes |
 
-`a.buffer` is null, `Object.getPrototypeOf(a) !== Int8Array.prototype`, and every
-instance carries own method properties node puts on the prototype. The engine
-grew real `%TypedArray%` prototypes on 2026-08-15; the prelude copy was never
-removed. Deleting `_taFactory` (and the `DataView` next to it) should be mostly
-subtraction — check `lib/buffer.js`, which builds on `this.bytes`.
+It was also inconsistent with itself: the comment noted that `Int16Array` and
+`Float32Array` "are provided natively by the engine and are left as-is", so the
+runtime shipped a mixed set where the element type decided whether you got a real
+typed array. Deleted — the whole block is now a comment saying why it is empty.
+
+`TextEncoder`/`TextDecoder` stay in the prelude, because they are host APIs the
+engine does not provide, but they were rewritten to do real UTF-8 (including
+surrogate pairs and U+FFFD for a truncated or lone one) over a real `Uint8Array`.
+
+Removing the shim exposed one genuine engine gap, now also fixed:
+**`makeTypedArray` ignored every argument that was not an Array, an ArrayBuffer
+or another typed array.** Anything else fell through to the length branch, where
+`toNum` of an object is NaN, so `new Uint8Array(buf)` came back EMPTY instead of
+throwing — silent, and exactly what the runtime's own `typedArrayCoerce` fixture
+caught. Both spec paths now exist: the iterable one (using the same drivability
+test `iterableToArray` uses, since a Set carries no `Symbol.iterator` PROPERTY
+here) and the array-like one (`length` plus indexed reads).
+
+`built-ins/TypedArrayConstructors` 162/738 → **172/738** from the constructor
+fix alone (measured against a baseline binary; the other typed-array directories
+moved this session for reasons outside this change, so they are not attributed
+here). Locked by `tests/runtime/typedArrayNative.js` and the rewritten
+`tests/runtime/typedArrayCoerce.js`.
+
+Still missing on the constructors themselves: `%TypedArray%.of` and
+`%TypedArray%.from`. Both need a native id that knows which element type it was
+reached through, which `Array.from`'s single `NATIVE_ARRAY_FROM` does not model.
 
 ## The milo compiler at `d6adecc5` could not build this repo — RESOLVED
 

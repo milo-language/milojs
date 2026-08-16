@@ -1862,7 +1862,7 @@ fn relIndex(raw: f64, n: i64): i64 {
     return i
 }
 
-fn makeTypedArray(st: &mut Interp, kind: i64, args: &Vec<JSValue>): JSValue {
+fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValue>): JSValue {
     let w = taWidth(kind)
     var bufH: i64 = -1
     var viewOffset: i64 = 0
@@ -1907,6 +1907,46 @@ fn makeTypedArray(st: &mut Interp, kind: i64, args: &Vec<JSValue>): JSValue {
             while i < st.objExtras[st.objects[h].extra].taLen {
                 seed.push(taElem(st, h, i))
                 i = i + 1
+            }
+            len = seed.len()
+        } else if h >= 0 {
+            // any other OBJECT: the spec takes the iterable path when it has
+            // Symbol.iterator (a Set, a generator, and here a Buffer) and the
+            // array-like path otherwise (`length` plus indexed reads). Neither
+            // existed — every such argument fell through to the length branch,
+            // where toNum of an object is NaN, so `new Uint8Array(buf)` came
+            // back EMPTY rather than throwing.
+            // same drivability test iterableToArray itself uses — a Set/Map
+            // carries no Symbol.iterator PROPERTY, so probing for one alone
+            // would send `new Uint8Array(new Set([1,2,3]))` down the array-like
+            // path and produce an empty view
+            let drivable = st.objects[h].isGenerator || st.objects[h].isMap
+                || st.objects[h].isSet
+                || isCallableIn(st, getMember(st, h, symIteratorKey()))
+            var srcH: i64 = -1
+            if drivable {
+                let arr = iterableToArray(prog, cloneValue(args[0]), st)
+                srcH = objHandle(arr)
+            }
+            if srcH >= 0 {
+                pushTemp(st, JSValue.Obj(srcH))
+                var i: i64 = 0
+                while i < arrLen(st, srcH) {
+                    seed.push(toNum(arrGet(st, srcH, i)))
+                    i = i + 1
+                }
+                popTemp(st)
+            } else {
+                let lv = toNum(getMemberDyn(prog, h, "length", st))
+                var ln: i64 = 0
+                if lv == lv && lv > 0.0 {
+                    ln = lv as i64
+                }
+                var i: i64 = 0
+                while i < ln {
+                    seed.push(toNum(getMemberDyn(prog, h, i64ToStr(i), st)))
+                    i = i + 1
+                }
             }
             len = seed.len()
         } else {
@@ -4853,7 +4893,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         let kind = id - NATIVE_TA_BASE
         // Float32/Float64 now store real IEEE-754 bytes via taStore's f32/f64
         // reinterpret (runtime.milo), so every kind is constructible.
-        return makeTypedArray(st, kind, argVals)
+        return makeTypedArray(gProg, st, kind, argVals)
     }
     if id == NATIVE_DATAVIEW {
         // new DataView(buffer, byteOffset = 0, byteLength = buffer.byteLength - offset)
@@ -11223,7 +11263,7 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
     if name == "map" {
         var lenArgs: Vec<JSValue> = Vec.new()
         lenArgs.push(JSValue.Number(n as f64))
-        let out = makeTypedArray(st, kind, lenArgs)
+        let out = makeTypedArray(prog, st, kind, lenArgs)
         let oh = objHandle(out)
         pushTemp(st, cloneValue(out))
         var i: i64 = 0
@@ -11253,7 +11293,7 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
         }
         var lenArgs: Vec<JSValue> = Vec.new()
         lenArgs.push(JSValue.Number(kept.len() as f64))
-        let out = makeTypedArray(st, kind, lenArgs)
+        let out = makeTypedArray(prog, st, kind, lenArgs)
         let oh = objHandle(out)
         var k: i64 = 0
         while k < kept.len() {
@@ -11342,7 +11382,7 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
         }
         var lenArgs: Vec<JSValue> = Vec.new()
         lenArgs.push(JSValue.Number(n as f64))
-        let out = makeTypedArray(st, kind, lenArgs)
+        let out = makeTypedArray(prog, st, kind, lenArgs)
         let oh = objHandle(out)
         pushTemp(st, cloneValue(out))
         var i: i64 = 0
@@ -11441,7 +11481,7 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
     if name == "toReversed" {
         var lenArgs: Vec<JSValue> = Vec.new()
         lenArgs.push(JSValue.Number(n as f64))
-        let out = makeTypedArray(st, kind, lenArgs)
+        let out = makeTypedArray(prog, st, kind, lenArgs)
         let oh = objHandle(out)
         pushTemp(st, cloneValue(out))
         var i: i64 = 0
@@ -11455,7 +11495,7 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
     if name == "toSorted" {
         var lenArgs: Vec<JSValue> = Vec.new()
         lenArgs.push(JSValue.Number(n as f64))
-        let out = makeTypedArray(st, kind, lenArgs)
+        let out = makeTypedArray(prog, st, kind, lenArgs)
         let oh = objHandle(out)
         pushTemp(st, cloneValue(out))
         var c: i64 = 0
