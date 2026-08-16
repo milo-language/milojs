@@ -1,0 +1,14 @@
+closes on short pattern -> next0,return
+two elements -> next0,next1,return
+rest drains, no return -> next0,next1,next2,next3,next4,next5 r=4
+generator is closed -> 1/true
+generator not drained -> 1
+next throws at element 2 -> 1
+next throwing is reached when needed THREW TypeError
+return throwing propagates THREW TypeError
+array still works -> 3
+string still works -> hi
+set still works -> 9
+map still works -> 1/2
+holes consume -> 1 next0,next1,return
+fewer values than slots -> 1,undefined,undefined

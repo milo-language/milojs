@@ -442,6 +442,14 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
         expect(p, T_RBRACE)
         return
     }
+    // An array pattern must STEP the iterator, once per element, and close it
+    // when the pattern is shorter than the sequence. The old desugaring bound a
+    // temp to `[...src]` and indexed that, which drains the iterator completely
+    // and never calls return() — so early exit was unobservable and a next()
+    // that threw on element 3 surfaced even when the pattern only wanted 2.
+    let readName = srcName.clone() + "$it"
+    var items: Vec<DeclItem> = Vec.new()
+    var sawRest = false
     expect(p, T_LBRACKET)
     var i: i64 = 0
     while peekKind(p) != T_RBRACKET && peekKind(p) != T_EOF {
@@ -451,15 +459,16 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
             i = i + 1
         } else if peekKind(p) == T_SPREAD {
             // [a, ...rest] — rest is everything from this position on
+            sawRest = true
             advance(p)
             let restName = p.toks[p.pos].text.clone()
             advance(p)
-            let srcIdx = addExpr(prog, Expr.Ident(srcName.clone()))
+            let srcIdx = addExpr(prog, Expr.Ident(readName.clone()))
             var sliceArgs: Vec<ExprId> = Vec.new()
             sliceArgs.push(addExpr(prog, Expr.Num(i as f64)))
             let sliceArgsId = addArgList(prog, sliceArgs)
             let callee = addExpr(prog, Expr.Member(srcIdx, "slice"))
-            out.push(DeclItem {
+            items.push(DeclItem {
                 name: restName, init: addExpr(prog, Expr.Call(callee, sliceArgsId)), isVar: false
             }
             )
@@ -467,7 +476,7 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
                 advance(p)
             }
         } else {
-            let srcIdx = addExpr(prog, Expr.Ident(srcName.clone()))
+            let srcIdx = addExpr(prog, Expr.Ident(readName.clone()))
             let idxE = addExpr(prog, Expr.Num(i as f64))
             var valExpr = addExpr(prog, Expr.Index(srcIdx, idxE))
             if peekKind(p) == T_LBRACE || peekKind(p) == T_LBRACKET {
@@ -482,13 +491,13 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
                     let dflt = parseExpr(p, prog)
                     initExpr = withDefault(prog, initExpr, dflt)
                 }
-                out.push(DeclItem {
+                items.push(DeclItem {
                     name: tmp.clone(), init: initExpr, isVar: false
                 }
                 )
                 var di: i64 = 0
                 while di < inner.len() {
-                    out.push(DeclItem {
+                    items.push(DeclItem {
                         name: inner[di].name.clone(), init: inner[di].init, isVar: inner[di].isVar
                     }
                     )
@@ -503,7 +512,7 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
                     inferFuncName(prog, dflt, name)
                     valExpr = withDefault(prog, valExpr, dflt)
                 }
-                out.push(DeclItem {
+                items.push(DeclItem {
                     name: name, init: valExpr, isVar: false
                 }
                 )
@@ -515,6 +524,25 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
         }
     }
     expect(p, T_RBRACKET)
+    // the stepping binding must come BEFORE the element reads it feeds
+    var stepArgs: Vec<ExprId> = Vec.new()
+    stepArgs.push(addExpr(prog, Expr.Ident(srcName.clone())))
+    stepArgs.push(addExpr(prog, Expr.Num(i as f64)))
+    stepArgs.push(addExpr(prog, Expr.BoolLit(sawRest)))
+    let stepArgsId = addArgList(prog, stepArgs)
+    let stepCallee = addExpr(prog, Expr.Ident("__iterSteps"))
+    out.push(DeclItem {
+        name: readName.clone(), init: addExpr(prog, Expr.Call(stepCallee, stepArgsId)), isVar: false
+    }
+    )
+    var ii: i64 = 0
+    while ii < items.len() {
+        out.push(DeclItem {
+            name: items[ii].name.clone(), init: items[ii].init, isVar: items[ii].isVar
+        }
+        )
+        ii = ii + 1
+    }
 }
 
 // Parse one parameter. A destructuring pattern becomes a synthetic parameter
@@ -1634,11 +1662,8 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
                 if peekKind(p) == T_EQ {
                     advance(p)
                     var initE = parseExpr(p, prog)
-                    if isArrayPattern {
-                        var spreadEls: Vec<Option<ExprId>> = Vec.new()
-                        spreadEls.push(Option.Some(addExpr(prog, Expr.Spread(initE))))
-                        initE = addExpr(prog, Expr.ArrLit(addArrLit(prog, spreadEls)))
-                    }
+                    // no spread wrapper any more: __iterSteps drives the
+                    // iterator itself, so the temp holds the raw source
                     tinit = Option.Some(initE)
                 } else {
                     tinit = Option.Some(addExpr(prog, Expr.UndefLit))

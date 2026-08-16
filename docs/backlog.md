@@ -2633,3 +2633,34 @@ test262: 815 to 856 of 1470, the largest single jump of the session. dstr
 failures 106 to 67.
 
 Locked by `tests/destructuringDefaults.js`.
+
+## Array destructuring now drives the iterator instead of draining it — DONE 2026-08-16
+
+The architectural change flagged three rounds ago. Array patterns were desugared
+to `[...src]` bound to a temp, then indexed — which drains the iterator
+completely and never closes it. Three things follow from that and none were
+observable:
+
+- **`const [a] = gen()` drained the generator.** It must pull ONE value and then
+  call `gen.return()`. A generator with a `finally` block never ran it, and one
+  with side effects per step ran all of them.
+- **A `next()` that throws on element 3 surfaced even when the pattern wanted 2.**
+- **IteratorClose was never performed**, so a `return()` that throws could not
+  propagate, and an iterator could not tell it had been abandoned.
+
+The desugaring now emits `__iterSteps(src, n, hasRest)`: get the iterator, step
+it exactly n times, drain only if the pattern ends in a rest element, otherwise
+call `return()`. Element reads index the RESULT of that, so the existing indexed
+desugaring is untouched — the change is what the temp is bound to.
+
+Ordering mattered: the stepping binding has to be emitted BEFORE the element
+reads that consume it, and the element decls are built during parsing while the
+count is only known at the closing bracket. The array branch collects its
+declarations locally and emits the binding first once the count and rest flag are
+settled.
+
+test262: 856 to 869 of 1470. dstr failures 106 to 55 across the two rounds.
+
+Locked by `tests/destructuringIterator.js`, which traces the exact call sequence
+(`next0,next1,return`) rather than only the bound values — the sequence is the
+part that was wrong.
