@@ -1,0 +1,31 @@
+String(d) is toString true
+d+'' is toString true
+[d].join is toString true
+`${d}` is toString true
+'x'.concat(d) true
+valueOf is getTime true
++d is a number true
+toString.call(d) [object Date]
+typeof {}.toString function
+typeof {}.valueOf function
+class inst toString function
+{}.toString() [object Object]
+{}.valueOf() is self true
+String(valueOf-only) [object Object]
+`${valueOf-only}` [object Object]
++ takes valueOf 5
+both, string hint T
+both, template T
+both, plus V
+Symbol.toPrimitive template hint:string
+Symbol.toPrimitive plus hint:default
+Symbol.toPrimitive String hint:string
+`${sym}` THREW TypeError
+String(sym) Symbol(s)
+concat obj xT
+concat array x1,2
+concat number x1truenull
+String(err) Error: m
+String(re) /ab/g
+String([1,2]) 1,2
+String(new Number(5)) 5

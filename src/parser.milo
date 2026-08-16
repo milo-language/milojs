@@ -150,7 +150,9 @@ fn parseTemplate(p: &mut PState, prog: &mut Prog): ExprId {
     var result = addExpr(prog, Expr.StrLit(first))
     while peekKind(p) != T_TEMPLATE_END && peekKind(p) != T_EOF {
         let e = parseExpr(p, prog)
-        result = addExpr(prog, Expr.Bin("+", result, e))
+        // NOT a bare `+`: a hole converts with the string hint (see ToStrHole)
+        let hole = addExpr(prog, Expr.ToStrHole(e))
+        result = addExpr(prog, Expr.Bin("+", result, hole))
         if peekKind(p) == T_TEMPLATE_CHUNK {
             let chunk = p.toks[p.pos].text.clone()
             advance(p)

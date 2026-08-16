@@ -22,6 +22,12 @@ pub enum Expr {
     Call(ExprId, ArgListId),
     Member(ExprId, string),
     FuncExpr(i64),
+    // one hole of an untagged template literal. It exists as its own node
+    // because a template converts its holes with the STRING ToPrimitive hint,
+    // and the `"" + x` chain this used to desugar to takes the DEFAULT one —
+    // observable for any object with both valueOf and toString (a Date, or
+    // anything with Symbol.toPrimitive, which sees the wrong hint name).
+    ToStrHole(ExprId),
     // object literal: index into prog.objLits (a list of key/value-expr pairs)
     ObjLit(ObjLitId),
     // computed member read: obj[keyExpr]
@@ -310,6 +316,9 @@ fn cloneExpr(e: &Expr): Expr {
         }
         Expr.FuncExpr(f) => {
             return Expr.FuncExpr(f)
+        }
+        Expr.ToStrHole(e2) => {
+            return Expr.ToStrHole(e2)
         }
         Expr.ObjLit(i) => {
             return Expr.ObjLit(i)

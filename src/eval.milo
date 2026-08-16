@@ -296,6 +296,13 @@ fn toPrimitiveDefault(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     if st.objects[h].isArray {
         return JSValue.Str(joinArrayProg(prog, st, h, ","))
     }
+    // Date is the one built-in whose @@toPrimitive turns the DEFAULT hint into
+    // the STRING one, which is why `"" + d` is the date string and not the
+    // epoch number. Without this, fixing Date.prototype.valueOf to answer a
+    // number (it used to answer the ISO string) would have made `d + ""` worse.
+    if st.objects[h].isDate {
+        return toPrimitiveString(prog, v, st)
+    }
     pushTemp(st, JSValue.Obj(h))
     let vf = getMemberDyn(prog, h, "valueOf", st)
     if isCallableIn(st, vf) {
@@ -370,6 +377,20 @@ pub fn toStrProg(prog: &Prog, v: &JSValue, st: &mut Interp): string {
     }
     let p = toPrimitiveString(prog, v, st)
     return toStr(p)
+}
+
+// String.prototype.concat, converting each argument through `prog`. It cannot
+// live in stringMethod with the rest of the string methods: that function has no
+// Prog, so its `toStr` answered "[object Object]" for every object argument —
+// including an array or a Date, which have perfectly good toStrings.
+fn strConcatProg(prog: &Prog, s: &string, args: &Vec<JSValue>, st: &mut Interp): string {
+    var out = s.clone()
+    var i: i64 = 0
+    while i < args.len() {
+        out = out + toStrProg(prog, args[i], st)
+        i = i + 1
+    }
+    return out
 }
 
 // join with each element converted through `prog`. The prog-free joinArray
@@ -476,6 +497,20 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
             if !objHasInChain(st, o, key) {
                 return makeBoundMethod(st, JSValue.Obj(o), key.clone())
             }
+        }
+        // Object.prototype.toString/valueOf were unreachable from an ordinary
+        // object: a plain `{}` has proto == -1 and the fallback to
+        // Object.prototype lives in protoOfHandle, which the chain walk below
+        // does not use. So `({}).toString` read as undefined — and ToPrimitive
+        // with the STRING hint then skipped straight to valueOf, which is the
+        // wrong order (`String({valueOf: () => 5})` answered "5").
+        if key == "toString" && !objHasInChain(st, o, key) {
+            // unbound, so the call-site receiver wins, exactly as the copy
+            // stored on Object.prototype is
+            return makeBoundMethod(st, JSValue.Undefined, "@@objProtoToString")
+        }
+        if key == "valueOf" && !objHasInChain(st, o, key) {
+            return makeBoundMethod(st, JSValue.Obj(o), "valueOf")
         }
         if st.objects[o].isError && (key == "toString" || key == "valueOf") {
             return makeBoundMethod(st, JSValue.Obj(o), key.clone())
@@ -2070,6 +2105,9 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
             if isStringRegexOp(st, name, args) {
                 return stringRegexOp(prog, sv, name, args, st)
             }
+            if name == "concat" {
+                return JSValue.Str(strConcatProg(prog, sv, args, st))
+            }
             return stringMethod(name, sv, args, st)
         }
         JSValue.Obj(o) => {
@@ -2205,7 +2243,13 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
             // Date-specific methods dispatch here (Date.prototype.toISOString.call);
             // toString/valueOf are left to the Object.prototype type-tag logic
             // below, so Object.prototype.toString.call(date) stays [object Date]
-            if st.objects[o].isDate && name != "toString" && name != "valueOf" {
+            if st.objects[o].isDate {
+                // `toString` and `valueOf` were excluded here, so a Date reached
+                // through a bound method value — which is every generic
+                // conversion, since ToPrimitive reads them off the prototype —
+                // fell through to the object tag: `String(d)` and `"" + d` both
+                // answered "[object Date]", and `d.valueOf.call(d)` answered the
+                // ISO string instead of the epoch number.
                 return dateMethod(st, o, name, args)
             }
             if st.objects[o].isMap || st.objects[o].isSet {
@@ -8027,6 +8071,26 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             return JSValue.Obj(obj)
         }
 
+        Expr.ToStrHole(inner) => {
+            let hv = evalExpr(prog, inner, st, scope)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            // String(sym) is legal, `${sym}` is not — the template's implicit
+            // ToString has no symbol case, so it throws where String() does not
+            match cloneValue(hv) {
+                JSValue.Str(hs) => {
+                    if isSymbolStr(hs) {
+                        st.throwing = true
+                        st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a string")
+                        return JSValue.Undefined
+                    }
+                }
+                _ => {
+                }
+            }
+            return JSValue.Str(toStrProg(prog, hv, st))
+        }
         Expr.TemplateStrings(litIdx, rawIdx) => {
             // cooked chunks, plus the parallel un-escaped chunks as `raw`
             let arr = newArray(st)
@@ -14031,6 +14095,9 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             // regex-based string ops when the first arg is a RegExp
             if isStringRegexOp(st, name, argVals) {
                 return stringRegexOp(prog, s, name, argVals, st)
+            }
+            if name == "concat" {
+                return JSValue.Str(strConcatProg(prog, s, argVals, st))
             }
             return stringMethod(name, s, argVals, st)
         }

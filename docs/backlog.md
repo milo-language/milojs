@@ -653,11 +653,6 @@ against node with a two-line script.
 
 ## Smaller known gaps
 
-- A template literal desugars to `"" + x`, so its holes convert with the DEFAULT
-  ToPrimitive hint rather than the string hint the spec requires. Observable only
-  for an object with both `valueOf` and `toString`: `` `${x}` `` answers valueOf
-  where node answers toString. `String(x)` and `join` take the string hint
-  correctly. Fixing it needs a template-concat node rather than a chain of `+`.
 
 ## Explicit `undefined` meant absent — DONE 2026-08-15
 
@@ -788,9 +783,62 @@ in one declaration-ordered pass). `language/statements/class` 2011/4361 →
 - `structuredClone` is not defined.
 - `String.prototype.isWellFormed` / `toWellFormed` (ES2024) are missing.
 - Unicode property escapes do not match: `/\p{L}/u.test("é")` is `false`.
-- `` `${x}` `` takes the DEFAULT ToPrimitive hint, so an object with a
-  `Symbol.toPrimitive` sees `"default"` where node passes `"string"`. Same root
-  as the template-literal entry under "Smaller known gaps".
+
+## ToString reached neither Date.prototype nor Object.prototype — DONE 2026-08-15
+
+`String(someDate)` answered `"[object Date]"`. So did `"" + d`, `[d].join("")`
+and `` `${d}` `` — every way a date reaches a string except calling
+`d.toString()` by hand. Any `console.log("at " + date)` was wrong.
+
+Four separate defects, found by probing ToPrimitive rather than Date:
+
+- **`callBuiltinByName` excluded `toString` and `valueOf` from date dispatch**
+  (`isDate && name != "toString" && name != "valueOf"`). Every generic conversion
+  reads those off the prototype as bound method values and calls them, so all of
+  them fell through to the object tag; `d.valueOf.call(d)` answered the ISO
+  string instead of the epoch number.
+- **Date's default ToPrimitive hint.** Date is the one built-in whose
+  `@@toPrimitive` turns the DEFAULT hint into the STRING one. Without it, fixing
+  `valueOf` to answer a number made `"" + d` WORSE — it started printing the
+  epoch. `toPrimitiveDefault` now routes a Date to the string ordering.
+- **`({}).toString` and `({}).valueOf` read as `undefined`.** A plain object has
+  `proto == -1`, and the fallback to `Object.prototype` lives in `protoOfHandle`,
+  which the property-chain walk does not use — so the copies stored on
+  `Object.prototype` were unreachable from any ordinary object or class instance.
+  ToPrimitive with the string hint then skipped straight to `valueOf`, which is
+  the wrong order: `String({valueOf: () => 5})` answered `"5"` where node answers
+  `"[object Object]"`. Resolved with the same shape of arm
+  `hasOwnProperty`/`isPrototypeOf`/`propertyIsEnumerable` already had.
+- **`String.prototype.concat` converted with the prog-free `toStr`**, so every
+  object argument became `"[object Object]"` — including an array or a Date.
+  Split out as `strConcatProg`; `stringMethod` has no Prog to re-enter user code
+  with, which is why it could not be fixed in place.
+
+Template literals were fixed alongside, and needed the AST node the old entry
+predicted: **`Expr.ToStrHole`**, one per hole. The `"" + x` chain they desugared
+to takes the DEFAULT hint, so an object with `Symbol.toPrimitive` saw `"default"`
+where the spec passes `"string"`. The node also carries the one case where a
+template is stricter than `String()`: `` `${Symbol()}` `` is a TypeError, while
+`String(Symbol())` is not.
+
+| area | before | after |
+|---|---:|---:|
+| `built-ins/Object/prototype/valueOf` | 9/20 = 45.0% | **13/20 = 65.0%** |
+| `built-ins/String/prototype/concat` | 17/22 = 77.3% | **18/22 = 81.8%** |
+| `built-ins/Object/prototype/toString` | 17/41 = 41.5% | **18/41 = 43.9%** |
+
+The 1500-sample did not move (673 either way) — test262 is thin here, and the
+value is that ordinary string building stopped printing `[object Date]`. Locked
+by `tests/toPrimitiveHints.js`, whose Date assertions are written as identities
+(`String(d) === d.toString()`) so the fixture says nothing about the host
+timezone.
+
+Still open, and needing a representation change rather than a fix: **an object
+with a null prototype is indistinguishable from one with a default prototype**
+(both `proto == -1`), so `String(Object.create(null))` answers
+`"[object Object]"` where node throws `TypeError: Cannot convert object to
+primitive value`. This is the same missing bit that keeps `util.inspect` from
+printing node's `[Object: null prototype]` prefix.
 
 ## The runtime shadowed the engine's native typed arrays — DONE 2026-08-15
 
