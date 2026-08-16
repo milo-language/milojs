@@ -1047,14 +1047,10 @@ Both are recorded in `docs/status.md` under Evidence. Keep doing this.
 
 ## Smaller gaps found by probe on 2026-08-15
 
-- `Object.groupBy` / `Map.groupBy` (ES2024) are missing — `groupBy is not a
-  function`.
 - `String.prototype.normalize` returns its input unchanged, so
   `"e\u0301".normalize("NFC").length` is 2 where node gives 1. Needs
   composition/decomposition tables; the same generator approach as
   `tools/gen-unicase.mjs` would work.
-- `structuredClone` is not defined.
-- `String.prototype.isWellFormed` / `toWellFormed` (ES2024) are missing.
 - Unicode property escapes do not match: `/\p{L}/u.test("é")` is `false`.
 
 ## ToString reached neither Date.prototype nor Object.prototype — DONE 2026-08-15
@@ -1166,6 +1162,68 @@ and the build succeeded, which is why the suite was green mid-session and red an
 hour later against unchanged milojs source. Gone as of milo `b5a40d2b`. Recorded
 because the failure mode is worth recognising: `milo` is a symlink to
 `~/git/milo/milo`, so a red build here can be a compiler that moved underneath.
+
+## The runtime hid globalThis behind a whitelist, and four missing members — DONE 2026-08-15
+
+- **`globalThis` was a hand-written object in the RUNTIME.** The engine installs
+  a real one whose property reads resolve through the global scope, and
+  `src/milojs.milo` then overwrote it with a bare `{}` (plus a prelude object
+  listing about twenty well-known names). So `globalThis.Symbol`,
+  `globalThis.Reflect`, `globalThis.Proxy` and every typed array read as
+  undefined under `milojs` while working under `milojs-engine`. Feature detection
+  is written that way constantly. The comment in milojs.milo claimed the engine
+  exposed no global-object reflection; it does, through the `isGlobal` flag.
+  Now identical to node across 12 probed globals, plus `global === globalThis`
+  and the self-reference.
+- **`Object.groupBy` / `Map.groupBy`** (ES2024) added.
+- **`String.prototype.isWellFormed` / `toWellFormed`** (ES2024) added. milojs
+  strings are UTF-8, which cannot represent a lone surrogate, so every string
+  here is well-formed by construction and saying so is more useful than omitting
+  the methods.
+- **`%TypedArray%.of` / `.from`** added, `from` taking an iterable or array-like
+  plus an optional map function.
+- **`structuredClone` was already implemented** and the backlog entry was stale.
+
+Two things worth keeping from how this went wrong:
+
+- **Adding `isWellFormed` via `String.prototype` broke `normalize` and
+  `localeCompare`.** Assigning to that prototype marks it touched, which turns
+  off the by-name string dispatch, and any method living only on that path
+  disappears. They are implemented in `stringMethod` instead. Anything added to
+  `String.prototype` from JS carries the same risk.
+- **`Set` is iterable but its `Symbol.iterator` is not readable as a property**,
+  so `typeof src[Symbol.iterator] === "function"` is a broken iterability test
+  here. `%TypedArray%.from` spreads instead.
+
+Locked by `tests/runtime/modernSurfaceAndGlobal.js`.
+
+## A milo compiler regression has main red — NOT a milojs bug
+
+Between milo `b5a40d2b` and `03635d2b`, `await` on a BOUND async function
+silently stopped working: no error, exit code 0, the body's output simply never
+appears.
+
+```js
+function C(x){ this.x = x; }
+C.prototype.m = async function(a){ return this.x + a; };
+var mm = new C(7).m.bind(c);
+async function main(){ console.log(await mm(3)); }   // expected 10, prints nothing
+main();
+```
+
+Evidence it is the compiler: identical milojs source. Rebuilt at four different
+milojs commits (bb9d347, 2a44b84, 408fad0, 7d3f485) with the current compiler,
+all fail; binaries built earlier from the same tree at `b5a40d2b` all print 10.
+
+Failing at clean milojs HEAD because of it: `doubleBind`, `generatorProtocol`,
+`microtaskHandlerGcRoot`, `objectGeneratorMethods`, `promises`, `r2r3Barrier`,
+`r6LocalsLiveAcrossSuspend`, `staticAccessors`. All async/generator/green-task
+shaped.
+
+**Do not republish conformance numbers until this is fixed.** The 1500-sample
+reads 682 against the 699 recorded, and that 17-case drop is the compiler, not a
+regression in this repo. Publishing it would record a decline that did not
+happen here.
 
 ## Node-API: 20 entry points added, and three real addons load — 2026-08-15
 

@@ -11261,7 +11261,7 @@ fn isPrimitiveMethodName(n: &string): bool {
 }
 
 fn isStringMethodName(n: &string): bool {
-    return n == "charAt" || n == "charCodeAt" || n == "codePointAt" || n == "at" || n == "indexOf" || n == "lastIndexOf" || n == "includes" || n == "startsWith" || n == "endsWith" || n == "slice" || n == "substring" || n == "substr" || n == "split" || n == "replace" || n == "replaceAll" || n == "toUpperCase" || n == "toLowerCase" || n == "toLocaleUpperCase" || n == "toLocaleLowerCase" || n == "trim" || n == "trimStart" || n == "trimEnd" || n == "trimLeft" || n == "trimRight" || n == "padStart" || n == "padEnd" || n == "repeat" || n == "concat" || n == "localeCompare" || n == "normalize" || n == "match" || n == "matchAll" || n == "search" || n == "toString" || n == "valueOf"
+    return n == "charAt" || n == "charCodeAt" || n == "codePointAt" || n == "at" || n == "indexOf" || n == "lastIndexOf" || n == "includes" || n == "startsWith" || n == "endsWith" || n == "slice" || n == "substring" || n == "substr" || n == "split" || n == "replace" || n == "replaceAll" || n == "toUpperCase" || n == "toLowerCase" || n == "toLocaleUpperCase" || n == "toLocaleLowerCase" || n == "isWellFormed" || n == "toWellFormed" || n == "trim" || n == "trimStart" || n == "trimEnd" || n == "trimLeft" || n == "trimRight" || n == "padStart" || n == "padEnd" || n == "repeat" || n == "concat" || n == "localeCompare" || n == "normalize" || n == "match" || n == "matchAll" || n == "search" || n == "toString" || n == "valueOf"
 }
 
 fn stringPrimitiveMember(st: &mut Interp, value: &string, key: &string): JSValue {
@@ -11956,6 +11956,8 @@ fn strProtoMethodNames(): Vec<string> {
     out.push("toLowerCase")
     out.push("toLocaleUpperCase")
     out.push("toLocaleLowerCase")
+    out.push("isWellFormed")
+    out.push("toWellFormed")
     out.push("trim")
     out.push("trimStart")
     out.push("trimEnd")

@@ -159,9 +159,16 @@ fn setupNodeGlobals(st: &mut Interp, entryPath: string) {
 
     scopeDefine(st, 0, "process", JSValue.Obj(proc))
 
-    // `global` mirrors the global object; a bare {} for now (getters would need
-    // real global-object reflection the engine doesn't expose yet)
+    // `global` is node's alias for the global object, so it must BE the global
+    // object. This used to bind a bare {} to both names, overwriting the real
+    // globalThis the engine had already installed (a real object whose property
+    // reads resolve through the global scope). The comment here claimed the
+    // engine exposed no global-object reflection; it does, via the isGlobal
+    // flag, and overwriting it made `globalThis.Symbol`, `globalThis.Reflect`
+    // and every typed array read as undefined under the runtime while working
+    // under the engine.
     let glob = newObject(st)
+    st.objects[glob].isGlobal = true
     scopeDefine(st, 0, "global", JSValue.Obj(glob))
     scopeDefine(st, 0, "globalThis", JSValue.Obj(glob))
 }

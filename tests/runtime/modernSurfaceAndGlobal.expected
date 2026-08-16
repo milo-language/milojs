@@ -1,0 +1,17 @@
+{"odd":[1,3,5],"even":[2,4]}
+{}
+1:1|3 0:2|4 2
+[1,2]
+isWellFormed: true toWellFormed: ab
+typeof: function function
+normalize still works: a localeCompare: -1
+TA.of: 1,2,3
+TA.from array: 4,5
+TA.from mapfn: 2,4
+TA.from iterable: 7,8
+TA.of coerces: 44,255
+function,object,function,function,function,function,function,function,object,object,function,function
+global === globalThis: true self ref: true
+structuredClone deep: {"a":[1,{"b":2}]} {"a":[1,{"b":9}]}
+Map/Set intact: a 2
+typed arrays intact: 1,2 1

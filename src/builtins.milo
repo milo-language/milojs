@@ -565,6 +565,16 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         // diverges for tr/az/lt
         return JSValue.Str(strUpper(s))
     }
+    // ES2024. milojs strings are UTF-8, which cannot represent a lone surrogate,
+    // so every string here is well-formed by construction: callers use these to
+    // decide whether to sanitise before encoding, and there is nothing to
+    // sanitise.
+    if name == "isWellFormed" {
+        return JSValue.Bool(true)
+    }
+    if name == "toWellFormed" {
+        return JSValue.Str(s.clone())
+    }
     if name == "toLowerCase" || name == "toLocaleLowerCase" {
         return JSValue.Str(strLower(s))
     }
