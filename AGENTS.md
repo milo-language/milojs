@@ -111,6 +111,32 @@ the repl/embed/napi suites — for iterating on one fixture without paying for
 the rest. `tools/dev.sh --rebuild` forces a rebuild even if the binaries look
 current; see `tools/dev.sh -h` for the rest.
 
+## A shell trap that cost two agents a day between them
+
+When a script backgrounds a server, `$!` is the SUBSHELL, not the server:
+
+```sh
+( cd "$dir" && env FOO=1 "$bin" "$entry" ) &
+kill -9 $!        # kills the subshell; the server keeps running, holding the port
+```
+
+Put `exec` in front and `$!` is the process you meant:
+
+```sh
+( cd "$dir" && exec env FOO=1 "$bin" "$entry" ) &
+```
+
+Without it every invocation leaks a process and holds its port, and the next run
+fails to bind. That reads exactly like a bug in the thing you are testing. It
+nearly became a milojs bug report here, and the same class (stale processes left
+running, competing for the machine) produced a day of wrong numbers on the milo
+side: full-suite runs reporting 19, then 202, then 21, then 32 failures with
+different membership each time, every fixture passing when run alone.
+
+Neither of us was wrong about the code. We were wrong about what was still
+running. Before believing a number that moved without a code change, check
+`uptime` and look for strays.
+
 ## Real applications are a separate gate
 
 ```sh
