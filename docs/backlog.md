@@ -780,6 +780,35 @@ nothing, which gets the interleaving with static fields right for free (they run
 in one declaration-ordered pass). `language/statements/class` 2011/4361 →
 **2024/4361**. Locked by `tests/classStaticBlocks.js`.
 
+## What a real application found that the suites did not — 2026-08-15
+
+Pointing milojs at `tahoeroads` (express 4 + Prisma + tRPC, a deployed backend)
+turned up two defects in ten minutes that test262 and every fixture here had
+missed, and the app now serves bytes identical to node on every route tried.
+Both are recorded in `docs/status.md` under Evidence. Keep doing this.
+
+- **`require` inside a closure resolved against the wrong module — DONE.**
+  `requireModule` took its base directory from `st.modDirStack`, which is
+  DYNAMIC: it is popped when a module body finishes. body-parser exports its
+  parsers through `Object.defineProperty(exports, 'json', {get: ... require('./lib/types/json')})`,
+  so the require fires long after body-parser's body ended and resolved against
+  whoever touched the getter — express — producing
+  `node_modules/express/lib/lib/types/json`. **express 4 could not load at all.**
+  Now resolved through the lexical `__dirname` binding in the closure's own env
+  chain, which names the module the code was WRITTEN in. Locked by the lazypkg
+  fixtures under `tests/modfix/`.
+
+- **`\S`, `\D` and `\W` inside a character class became the literal letters —
+  DONE.** `reParseClass` recognised only the lowercase shorthands; the uppercase
+  ones fell through to `reEscapedChar`. So `[\s\S]` meant "whitespace or the
+  letter S": it matched a newline but not a letter, `[\s\S]*` matched the EMPTY
+  string, and `[\s\S]+` matched nothing. The app rewrites page metadata with
+  `/<title>[\s\S]*?<\/title>/` and silently served the untouched template.
+  Fixed by adding the complement ranges over the byte domain — the domain `[^]`
+  already matches over. `built-ins/RegExp` 724/1879 → **725/1879**: test262
+  barely notices, which is exactly why a real app was needed to find it. Locked
+  by `tests/regexClassShorthands.js`.
+
 ## Smaller gaps found by probe on 2026-08-15
 
 - `Object.groupBy` / `Map.groupBy` (ES2024) are missing — `groupBy is not a

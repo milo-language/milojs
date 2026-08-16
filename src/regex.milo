@@ -151,6 +151,45 @@ fn reAddShorthand(cls: &mut ReClass, kind: u8) {
     }
 }
 
+// The NEGATED shorthands as they appear INSIDE a class — `[\s\S]`, the standard
+// "any character, newline included" idiom, plus `[\d\D]` and `[\w\W]`.
+//
+// reParseClass only recognised the lowercase forms, so `\S` fell through to
+// reEscapedChar and became the literal letter S. `[\s\S]` therefore meant
+// "whitespace or the letter S": it matched a newline but not a letter, so
+// `[\s\S]*` matched the EMPTY string and `[\s\S]+` matched nothing at all.
+// Found in the wild — express apps rewrite HTML with /<title>[\s\S]*?<\/title>/.
+//
+// A ReClass holds ranges rather than a predicate, so the negation goes in as the
+// complement ranges over the byte domain — the same domain `[^]` already matches
+// over in this engine.
+fn reAddShorthandNeg(cls: &mut ReClass, kind: u8) {
+    if kind == 'd' {
+        cls.lo.push(0 as u8)
+        cls.hi.push(47 as u8)
+        cls.lo.push(58 as u8)
+        cls.hi.push(255 as u8)
+    } else if kind == 'w' {
+        cls.lo.push(0 as u8)
+        cls.hi.push(47 as u8)
+        cls.lo.push(58 as u8)
+        cls.hi.push(64 as u8)
+        cls.lo.push(91 as u8)
+        cls.hi.push(94 as u8)
+        cls.lo.push(96 as u8)
+        cls.hi.push(96 as u8)
+        cls.lo.push(123 as u8)
+        cls.hi.push(255 as u8)
+    } else if kind == 's' {
+        cls.lo.push(0 as u8)
+        cls.hi.push(8 as u8)
+        cls.lo.push(14 as u8)
+        cls.hi.push(31 as u8)
+        cls.lo.push(33 as u8)
+        cls.hi.push(255 as u8)
+    }
+}
+
 // Build a single-shorthand class node (\d \w \s and negations \D \W \S).
 fn reShorthandClass(p: &mut ReParse, kind: u8, negated: bool): i64 {
     var cls = ReClass {
@@ -204,6 +243,9 @@ fn reParseClass(p: &mut ReParse): i64 {
                 let e = p.pat[p.pos + 1]
                 if e == 'd' || e == 'w' || e == 's' {
                     reAddShorthand(cls, e)
+                    p.pos = p.pos + 2
+                } else if e == 'D' || e == 'W' || e == 'S' {
+                    reAddShorthandNeg(cls, e + 32 as u8)
                     p.pos = p.pos + 2
                 } else {
                     let ch = reEscapedChar(e)

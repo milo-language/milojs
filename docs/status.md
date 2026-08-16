@@ -44,12 +44,49 @@ reproducible release artifact.
 |---|---:|---|
 | deterministic test262 sample (1500 selected, 30 skipped) | **664/1470 = 45.2%** | test262 `b363f29d`, seed `0x2f6e2b1` |
 | QuickJS `tests/` | **97/149 = 65.1%** | quickjs `ef7a3a74`, 58 files |
-| locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->174<!--/fact--> | byte-exact differential output vs node |
+| locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->175<!--/fact--> | byte-exact differential output vs node |
 | locked runtime fixtures (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->29<!--/fact--> | module, async, fetch, HTTP, sqlite, host behavior |
 | Milo invariant fixtures (`tests/milo/`, `tests/milo-errors/`) | <!--fact:fixtures-milo-->3<!--/fact--> + <!--fact:fixtures-milo-errors-->8<!--/fact--> | scheduler/context and GC-root invariants |
 | ESM / Node-API / embedding fixtures | 2 / 2 / 1 | lowering, addon callbacks, C ABI |
 
 Fixture counts are not conformance percentages.
+
+### A real application, end to end — 2026-08-15
+
+Suites are not enough on their own: two of the three defects below were invisible
+to test262 and to every fixture here, and turned up in the first ten minutes of
+pointing milojs at a production Node app.
+
+`tahoeroads` (express 4 + Prisma + tRPC + compression + cookie-parser, a real
+deployed backend) now **boots under `milojs`, binds its port and serves bytes
+identical to node** — `/`, `/health`, `/sitemap.xml`, `/robots.txt` and the
+404 page compared as one 14,239-byte capture, no diff.
+
+Reproduce (needs the app checkout and its `node_modules`):
+
+```sh
+cd <app>/backend && JWT_SECRET=x <path>/mj-runtime dist/index.js &
+curl -s localhost:3009/health
+```
+
+Three defects stood between "cannot load" and that, all now fixed and locked:
+
+1. **`require` inside a closure resolved against the wrong module.** The resolver
+   used a dynamic stack that is popped when a module body ends, so body-parser's
+   lazy `require('./lib/types/json')` resolved against whoever triggered it —
+   express — giving `node_modules/express/lib/lib/types/json`. **express 4 would
+   not load at all.** No test262 case covers module resolution.
+2. **`\S`, `\D`, `\W` inside a character class became the literal letters.**
+   `[\s\S]` meant "whitespace or the letter S", so `[\s\S]*` matched the empty
+   string. The app rewrites page metadata with `/<title>[\s\S]*?<\/title>/` and
+   silently served the untouched template. Worth **+1** on test262 and the
+   difference between a wrong page and a right one.
+3. A trailing comma in a call argument list was a parse error (fixed separately,
+   same day) — fatal on any prettier-formatted source.
+
+Not every remaining difference is milojs's: `/api/v2/roads` hangs under node too
+(it needs a live upstream), and `analytics/middleware` keeps both runtimes alive
+because it installs a `setInterval` at module scope.
 
 **test262 moved 34.6% → 45.2% on 2026-08-15**, from one structural finding
 repeated across the whole builtin surface: constructors that had no `prototype`

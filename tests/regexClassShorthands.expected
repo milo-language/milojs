@@ -1,0 +1,23 @@
+[\s\S]* "aXbX"
+[\s\S]+ "aXbX"
+[\s\S]{1,9} "aXbX"
+[\s\S]{2} "ab"
+[\s\S]* alone "abc"
+[\d\D]* "aXbX"
+[\w\W]* "aXbX"
+[\S]* "aXbX"
+[^]* "aXbX"
+[\S] 101101
+[\D] 110111
+[\W] 010110
+[\s] 010010
+[\d] 001000
+[\w] 101001
+[^\S] on 'a' null
+[^\S] on ' ' " "
+[a\S] "b"
+[\S-] "b"
+title rewrite "<title>T</title>\n<meta\n  name=\"description\"\n  content=\"x\"\n/>"
+meta rewrite "<title>\n  A & B\n</title>\n<meta/>"
+greedy across "aXbX"
+nested lazy "X"
