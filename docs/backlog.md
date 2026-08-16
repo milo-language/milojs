@@ -1956,3 +1956,47 @@ pretty-printer cannot reproduce the author's spacing.
 The fix is offsets on Token, a start/end span on FuncDef, and the source text
 retained per module. Worth doing, but it touches the hot lexer path and should
 be measured, not assumed free.
+
+## getPrototypeOf/setPrototypeOf ignored primitives, and Symbol.iterator was unreadable on Map/Set/String — DONE 2026-08-16
+
+`Object.getPrototypeOf` and `Reflect.getPrototypeOf` differ in exactly one way:
+Object BOXES its argument, so `Object.getPrototypeOf(42)` is `Number.prototype`,
+while Reflect does not and throws for the same input. milojs returned `null` for
+every primitive from both and threw from neither. Four packages test precisely
+that boundary — get-proto, reflect.getprototypeof, dunder-proto, set-proto — and
+between them account for 30 failing assertions.
+
+Fixed: `Object.getPrototypeOf`/`setPrototypeOf` follow ToObject (nullish throws,
+a primitive resolves to its wrapper prototype), and every `Reflect` entry point
+requires a real object. `__proto__` reads on primitives resolve the same way, and
+`Object.prototype.__proto__` is now a visible accessor descriptor — the evaluator
+still short-circuits `__proto__` before any chain walk, so the property makes the
+descriptor VISIBLE rather than implementing the behaviour, which is what
+dunder-proto reads off it.
+
+**Two latent bugs surfaced by the Reflect check, in the same pattern as the
+`obj == null` one.** Making Reflect reject a non-object turned two silent wrong
+answers into hard failures, and the corpus went to 0 twice more:
+
+- **%IteratorPrototype% was not linked to Object.prototype.** The array-iterator
+  chain was one link shorter than node's, so walking it three deep answered null.
+- **`Map.prototype[Symbol.iterator]`, `Set`'s and `String`'s did not exist as
+  readable values.** for-of and spread always worked because they drive the
+  collection directly and never read the member. get-intrinsic resolves
+  `%MapIteratorPrototype%` by CALLING it, which is a different thing.
+
+That second one needed fixing in two places, and the reason is worth recording:
+`m[Symbol.iterator]` extracted and then called goes through the member-read path,
+while `m[Symbol.iterator]()` written as one expression dispatches by the symbol
+KEY. The extracted form worked as soon as the member read was fixed, so the
+direct form looked fixed too until the corpus said otherwise.
+
+Corpus: 760 to 796 assertions.
+
+Known divergence, not fixed: `Object.getOwnPropertyDescriptor(Object.prototype,
+'__proto__').get.call(undefined)` returns Object.prototype where node throws. The
+getter is a strict built-in, so node leaves `this` undefined; milojs has no
+strict-mode tracking and substitutes globalThis for every receiver-less call. The
+two are indistinguishable at the call site without tracking strictness.
+
+Locked by `tests/prototypeOpsAndIterators.js`.

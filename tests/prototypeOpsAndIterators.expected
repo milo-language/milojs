@@ -1,0 +1,36 @@
+Reflect.getPrototypeOf true THREW TypeError
+Object.getPrototypeOf true -> object
+Reflect.getPrototypeOf 42 THREW TypeError
+Object.getPrototypeOf 42 -> object
+Reflect.getPrototypeOf s THREW TypeError
+Object.getPrototypeOf s -> object
+Reflect.getPrototypeOf null THREW TypeError
+Object.getPrototypeOf null THREW TypeError
+Reflect.getPrototypeOf undefined THREW TypeError
+Object.getPrototypeOf undefined THREW TypeError
+Reflect.getPrototypeOf symbol THREW TypeError
+Object.getPrototypeOf symbol -> object
+Reflect.getPrototypeOf 1 THREW TypeError
+Object.getPrototypeOf 1 -> object
+Reflect.getPrototypeOf() THREW TypeError
+Reflect.setPrototypeOf primitive THREW TypeError
+Object.setPrototypeOf null THREW TypeError
+Object.getPrototypeOf({}) -> true
+Object.getPrototypeOf([]) -> true
+boxed number proto -> true
+boxed string proto -> true
+(42).__proto__ -> true
+'s'.__proto__ -> true
+true.__proto__ -> true
+__proto__ descriptor -> object function function
+map iterator typeof -> function
+set iterator typeof -> function
+string iterator typeof -> function
+map extracted -> [[1,2]]
+map direct -> [[1,2]]
+set direct -> [3]
+string direct -> ["a","b"]
+string astral -> ["a","😀"]
+map iter is object -> object
+iterator next -> {"value":3,"done":false}
+array iter proto chain -> true

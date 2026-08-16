@@ -683,6 +683,15 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
     if st.objects[o].isArray && key == symIteratorKey() && objOwnIndex(st, o, key) < 0 {
         return makeBoundMethod(st, JSValue.Obj(o), "values")
     }
+    // The same for Map and Set. for-of and spread already worked, because those
+    // drive the collection directly, but READING the member gave undefined —
+    // and get-intrinsic resolves %MapIteratorPrototype% by calling it.
+    if st.objects[o].isMap && key == symIteratorKey() && objOwnIndex(st, o, key) < 0 {
+        return makeBoundMethod(st, JSValue.Obj(o), "entries")
+    }
+    if st.objects[o].isSet && key == symIteratorKey() && objOwnIndex(st, o, key) < 0 {
+        return makeBoundMethod(st, JSValue.Obj(o), "values")
+    }
     // globalThis.x reads the global binding, so it stays in step with bare `x`
     if st.objects[o].isGlobal && objOwnIndex(st, o, key) < 0 {
         if scopeHasOwn(st, 0, key) {
@@ -2138,6 +2147,21 @@ fn makeBoundMethodOn(st: &mut Interp, recv: JSValue, name: string, host: string)
 // `next` and `[Symbol.iterator]` as bound builtin methods. Built this way because
 // a native has no per-instance state and JSValue has nowhere to carry a cursor.
 // kind: 0 values, 1 keys, 2 entries.
+// An array iterator over a string's CODE POINTS: the same yields node's string
+// iterator produces, and the object shape callers walk. Shared by the two string
+// dispatch sites — the extracted-then-called form and the direct
+// `"ab"[Symbol.iterator]()` form take different paths and both need it.
+fn makeStringIterator(st: &mut Interp, sv: &string): JSValue {
+    let cps = newArray(st)
+    pushTemp(st, JSValue.Obj(cps))
+    for cp in strCodePoints(sv) {
+        arrPush(st, cps, JSValue.Str(cp.clone()))
+    }
+    let itv = makeArrayIterator(st, cps, 0)
+    popTemp(st)
+    return itv
+}
+
 fn makeArrayIterator(st: &mut Interp, arr: i64, kind: i64): JSValue {
     let it = newObject(st)
     pushTemp(st, JSValue.Obj(it))
@@ -2440,6 +2464,9 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
             }
             if name == "concat" {
                 return JSValue.Str(strConcatProg(prog, sv, args, st))
+            }
+            if name == "__stringIterator" || name == symIteratorKey() {
+                return makeStringIterator(st, sv)
             }
             if stringArgsNeedCoercion(name, args) {
                 let ca = coercedStringArgs(prog, name, args, st)
@@ -5293,12 +5320,22 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         return JSValue.Obj(o)
     }
     if id == NATIVE_OBJECT_GETPROTO {
-        if argVals.len() > 0 {
-            let h = propertyBagOf(st, argVals[0])
-            let p = protoOfHandle(st, h)
-            if p >= 0 {
-                return JSValue.Obj(p)
+        if argVals.len() == 0 || isNullish(argVals[0]) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Object.getPrototypeOf called on null or undefined" + currentModule(st))
+            return JSValue.Undefined
+        }
+        let h = propertyBagOf(st, argVals[0])
+        if h < 0 {
+            let pp = primitiveProtoHandle(st, argVals[0])
+            if pp >= 0 {
+                return JSValue.Obj(pp)
             }
+            return JSValue.Null
+        }
+        let p = protoOfHandle(st, h)
+        if p >= 0 {
+            return JSValue.Obj(p)
         }
         return JSValue.Null
     }
@@ -5338,6 +5375,11 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
     }
     if id == NATIVE_OBJECT_SETPROTO {
+        if argVals.len() == 0 || isNullish(argVals[0]) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Object.setPrototypeOf called on null or undefined" + currentModule(st))
+            return JSValue.Undefined
+        }
         if argVals.len() > 1 {
             // express's Router is a function whose prototype chain is set to the
             // router proto object, so the bag a function's properties live in is
@@ -7575,6 +7617,11 @@ pub fn setupGlobals(st: &mut Interp) {
     // (map/filter/take/...) onto this one object; every iterator the engine
     // builds points its proto here, so helpers work on array iterators too.
     let iterProto = newObject(st)
+    // %IteratorPrototype% inherits from Object.prototype. The link was missing,
+    // so the array-iterator chain was one shorter than node's and
+    // getPrototypeOf three deep answered null. Invisible until Reflect started
+    // rejecting a non-object argument, which is what a null third link is.
+    st.objects[iterProto].proto = st.objectProtoObj
     st.iterProtoObj = iterProto
     scopeDefine(st, 0, "__iteratorProto", JSValue.Obj(iterProto))
     // globalThis: a real object whose properties ARE the global bindings
@@ -8515,6 +8562,12 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     return getMemberDyn(prog, o, name, st)
                 }
                 JSValue.Number(_nv) => {
+                    if name == "__proto__" {
+                        let npp = primitiveProtoHandle(st, ov)
+                        if npp >= 0 {
+                            return JSValue.Obj(npp)
+                        }
+                    }
                     // number primitives answer these by dispatch; without this a
                     // read yields undefined, which breaks feature detection
                     if isPrimitiveMethodName(name) {
@@ -8523,12 +8576,24 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     return JSValue.Undefined
                 }
                 JSValue.Bool(_bv) => {
+                    if name == "__proto__" {
+                        let bpp = primitiveProtoHandle(st, ov)
+                        if bpp >= 0 {
+                            return JSValue.Obj(bpp)
+                        }
+                    }
                     if isPrimitiveMethodName(name) {
                         return makeBoundMethod(st, cloneValue(ov), name.clone())
                     }
                     return JSValue.Undefined
                 }
                 JSValue.Str(s) => {
+                    if name == "__proto__" {
+                        let sp = primitiveProtoHandle(st, JSValue.Str(s.clone()))
+                        if sp >= 0 {
+                            return JSValue.Obj(sp)
+                        }
+                    }
                     return stringPrimitiveMember(st, s, name)
                 }
                 JSValue.Func(fIdx, fe) => {
@@ -9205,6 +9270,12 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     return getMemberDyn(prog, o, name, st)
                 }
                 JSValue.Number(_nv) => {
+                    if name == "__proto__" {
+                        let npp = primitiveProtoHandle(st, ov)
+                        if npp >= 0 {
+                            return JSValue.Obj(npp)
+                        }
+                    }
                     // number primitives answer these by dispatch; without this a
                     // read yields undefined, which breaks feature detection
                     if isPrimitiveMethodName(name) {
@@ -9213,12 +9284,24 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     return JSValue.Undefined
                 }
                 JSValue.Bool(_bv) => {
+                    if name == "__proto__" {
+                        let bpp = primitiveProtoHandle(st, ov)
+                        if bpp >= 0 {
+                            return JSValue.Obj(bpp)
+                        }
+                    }
                     if isPrimitiveMethodName(name) {
                         return makeBoundMethod(st, cloneValue(ov), name.clone())
                     }
                     return JSValue.Undefined
                 }
                 JSValue.Str(s) => {
+                    if name == "__proto__" {
+                        let sp = primitiveProtoHandle(st, JSValue.Str(s.clone()))
+                        if sp >= 0 {
+                            return JSValue.Obj(sp)
+                        }
+                    }
                     return stringPrimitiveMember(st, s, name)
                 }
                 JSValue.Func(fIdx, fe) => {
@@ -11759,6 +11842,33 @@ fn makeArrayFromCtor(st: &mut Interp, argVals: &Vec<JSValue>): JSValue {
 // The object that holds a value's properties: itself for an object, the statics
 // bag for a function, the native bag for a builtin. Functions are property
 // carriers in JS, and express builds its app by copying descriptors onto one.
+// The prototype ToObject would give a primitive. Object.getPrototypeOf boxes its
+// argument, so `Object.getPrototypeOf(42)` is Number.prototype, not null;
+// Reflect.getPrototypeOf does NOT box and throws for the same input, and that
+// difference is the whole of what get-proto and reflect.getprototypeof test.
+fn primitiveProtoHandle(st: &mut Interp, v: &JSValue): i64 {
+    match v {
+        JSValue.Str(sv) => {
+            if isSymbolStr(sv) {
+                return nativeProtoHandle(st, NATIVE_SYMBOL)
+            }
+            return st.stringProtoObj
+        }
+        JSValue.Number(_n) => {
+            return nativeProtoHandle(st, NATIVE_NUMBER)
+        }
+        JSValue.Bool(_b) => {
+            return nativeProtoHandle(st, NATIVE_BOOLEAN)
+        }
+        JSValue.BigInt(_g) => {
+            return nativeProtoHandle(st, NATIVE_BIGINT)
+        }
+        _ => {
+            return -1
+        }
+    }
+}
+
 fn propertyBagOf(st: &mut Interp, v: &JSValue): i64 {
     let o = objHandle(v)
     if o >= 0 {
@@ -11891,6 +12001,12 @@ fn isStringMethodName(n: &string): bool {
 fn stringPrimitiveMember(st: &mut Interp, value: &string, key: &string): JSValue {
     if key == "length" {
         return JSValue.Number(utf16Length(value) as f64)
+    }
+    // "abc"[Symbol.iterator] as a VALUE. for-of and spread over a string never
+    // needed it (they walk the code points directly), so reading it answered
+    // undefined until get-intrinsic tried to call it.
+    if key == symIteratorKey() && !isSymbolStr(value) {
+        return makeBoundMethod(st, JSValue.Str(value.clone()), "__stringIterator")
     }
     if key == "description" && isSymbolStr(value) {
         return JSValue.Str(symbolDescription(value))
@@ -12981,6 +13097,16 @@ fn setLikeHas(prog: &Prog, st: &mut Interp, other: &JSValue, v: &JSValue): bool 
 }
 
 fn mapMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    // `m[Symbol.iterator]()` written as one expression dispatches by the symbol
+    // KEY rather than through the member read, so the key has to resolve here
+    // too. Extracting the method first and calling it took the other path and
+    // worked, which is why this only showed up on the direct form.
+    if name == symIteratorKey() {
+        if st.objects[o].isSet {
+            return mapMethod(prog, o, "values", args, st)
+        }
+        return mapMethod(prog, o, "entries", args, st)
+    }
     let isSet = st.objects[o].isSet
     if name == "get" {
         var key = JSValue.Undefined
@@ -14909,6 +15035,9 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             }
             if name == "concat" {
                 return JSValue.Str(strConcatProg(prog, s, argVals, st))
+            }
+            if name == "__stringIterator" || name == symIteratorKey() {
+                return makeStringIterator(st, s)
             }
             if stringArgsNeedCoercion(name, argVals) {
                 let ca = coercedStringArgs(prog, name, argVals, st)
