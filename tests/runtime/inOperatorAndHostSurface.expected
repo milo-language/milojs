@@ -1,0 +1,21 @@
+prototype in String: true
+prototype in Array: true
+indexOf in String.prototype: true
+map in Array.prototype: true
+keys in Object: true
+missing in String: false
+in a function: true true true false
+in an object: true false
+inherited: true
+array index: true false
+in 5 -> TypeError
+in s -> TypeError
+in true -> TypeError
+in null -> TypeError
+in undefined -> TypeError
+walked to: function
+fs: function,function,function,function,function,function,function,function,function
+fs.constants.F_OK: 0 R_OK: 4
+process.versions.node: string modules: string
+process.release.name: node
+process.config keys: target_defaults,variables

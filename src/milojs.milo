@@ -98,6 +98,32 @@ fn setupNodeGlobals(st: &mut Interp, entryPath: string) {
     // arch it resolves the target as bare "darwin" and cannot find the engine
     objSet(st, proc, "arch", JSValue.Str("arm64"))
     objSet(st, proc, "version", JSValue.Str("v20.0.0"))
+    // process.versions: a native addon reads `versions.modules` (the Node-API
+    // ABI number) to pick its prebuilt binary, and better-sqlite3 dereferences
+    // it unconditionally, so a missing `versions` was a TypeError before the
+    // module finished loading. The numbers describe the node this runtime aims
+    // to be compatible with, which is what a consumer of them is asking about.
+    let versions = newObject(st)
+    objSet(st, versions, "node", JSValue.Str("20.0.0"))
+    objSet(st, versions, "modules", JSValue.Str("115"))
+    objSet(st, versions, "v8", JSValue.Str("11.3.244.8-node.16"))
+    objSet(st, versions, "uv", JSValue.Str("1.44.2"))
+    objSet(st, versions, "milojs", JSValue.Str(@embedFile("../.version").trim()))
+    objSet(st, proc, "versions", JSValue.Obj(versions))
+    // process.release.name distinguishes node from a fork; packages branch on it
+    let release = newObject(st)
+    objSet(st, release, "name", JSValue.Str("node"))
+    objSet(st, proc, "release", JSValue.Obj(release))
+    // process.config: node-gyp consumers read config.variables
+    let cfgVars = newObject(st)
+    objSet(st, cfgVars, "node_shared", JSValue.Bool(false))
+    objSet(st, cfgVars, "target_arch", JSValue.Str("arm64"))
+    objSet(st, cfgVars, "host_arch", JSValue.Str("arm64"))
+    let cfg = newObject(st)
+    objSet(st, cfg, "variables", JSValue.Obj(cfgVars))
+    let tgtDefaults = newObject(st)
+    objSet(st, cfg, "target_defaults", JSValue.Obj(tgtDefaults))
+    objSet(st, proc, "config", JSValue.Obj(cfg))
     objSet(st, proc, "exitCode", JSValue.Number(0.0))
     objSet(st, proc, "exit", JSValue.Native(NATIVE_PROCESS_EXIT))
     objSet(st, proc, "cwd", JSValue.Native(NATIVE_PROCESS_CWD))

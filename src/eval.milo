@@ -7350,45 +7350,7 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Inter
     if op == "in" {
         let kv = evalExpr(prog, a, st, scope)
         let ov = evalExpr(prog, b, st, scope)
-        let key = toStr(kv)
-        match ov {
-            JSValue.Obj(o) => {
-                if st.objects[o].isProxy {
-                    let trap = proxyTrap(st, o, "has")
-                    if isCallableIn(st, trap) {
-                        var hargs: Vec<JSValue> = Vec.new()
-                        hargs.push(cloneValue(st.objExtras[st.objects[o].extra].proxyTarget))
-                        hargs.push(JSValue.Str(key.clone()))
-                        return JSValue.Bool(truthy(callValue(prog, trap, hargs, cloneValue(st.objExtras[st.objects[o].extra].proxyHandler), st)))
-                    }
-                    var pcur = objHandle(st.objExtras[st.objects[o].extra].proxyTarget)
-                    while pcur >= 0 {
-                        if objHas(st, pcur, key) {
-                            return JSValue.Bool(true)
-                        }
-                        pcur = st.objects[pcur].proto
-                    }
-                    return JSValue.Bool(false)
-                }
-                if st.objects[o].isArray {
-                    let ai = asArrayIndex(key)
-                    if ai >= 0 && ai < arrLen(st, o) {
-                        return JSValue.Bool(!arrIsHole(st, o, ai))
-                    }
-                }
-                var cur = o
-                while cur >= 0 {
-                    if objHas(st, cur, key) {
-                        return JSValue.Bool(true)
-                    }
-                    cur = st.objects[cur].proto
-                }
-                return JSValue.Bool(false)
-            }
-            _ => {
-                return JSValue.Bool(false)
-            }
-        }
+        return evalInOperator(prog, toStr(kv), ov, st)
     }
     if op == "instanceof" {
         let lv = evalExpr(prog, a, st, scope)
@@ -7560,48 +7522,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             if op == "in" {
                 let kv = evalExpr(prog, a, st, scope)
                 let ov = evalExpr(prog, b, st, scope)
-                let key = toStr(kv)
-                match ov {
-                    JSValue.Obj(o) => {
-                        if st.objects[o].isProxy {
-                            // `key in proxy`: the `has` trap, else `in` the target
-                            let trap = proxyTrap(st, o, "has")
-                            if isCallableIn(st, trap) {
-                                var hargs: Vec<JSValue> = Vec.new()
-                                hargs.push(cloneValue(st.objExtras[st.objects[o].extra].proxyTarget))
-                                hargs.push(JSValue.Str(key.clone()))
-                                return JSValue.Bool(truthy(callValue(prog, trap, hargs, cloneValue(st.objExtras[st.objects[o].extra].proxyHandler), st)))
-                            }
-                            var pcur = objHandle(st.objExtras[st.objects[o].extra].proxyTarget)
-                            while pcur >= 0 {
-                                if objHas(st, pcur, key) {
-                                    return JSValue.Bool(true)
-                                }
-                                pcur = st.objects[pcur].proto
-                            }
-                            return JSValue.Bool(false)
-                        }
-                        if st.objects[o].isArray {
-                            let ai = asArrayIndex(key)
-                            if ai >= 0 && ai < arrLen(st, o) {
-                                // a deleted / never-written slot is a hole:
-                                // in-range but NOT present
-                                return JSValue.Bool(!arrIsHole(st, o, ai))
-                            }
-                        }
-                        var cur = o
-                        while cur >= 0 {
-                            if objHas(st, cur, key) {
-                                return JSValue.Bool(true)
-                            }
-                            cur = st.objects[cur].proto
-                        }
-                        return JSValue.Bool(false)
-                    }
-                    _ => {
-                        return JSValue.Bool(false)
-                    }
-                }
+                return evalInOperator(prog, toStr(kv), ov, st)
             }
             if op == "instanceof" {
                 let lv = evalExpr(prog, a, st, scope)
@@ -14657,6 +14578,80 @@ pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
         i = i + 1
     }
     return result
+}
+
+// The `in` operator. Extracted because it existed twice, and both copies fell
+// through to `false` for a NATIVE or a FUNCTION right-hand side: `"prototype" in
+// String` answered false while `String.prototype` read fine. get-intrinsic walks
+// `%String.prototype.indexOf%` with exactly that test, so every package that
+// depends on it (a large slice of npm) died on "base intrinsic for
+// %String.prototype.indexOf% exists, but the property is not available".
+fn evalInOperator(prog: &Prog, key: string, ov: JSValue, st: &mut Interp): JSValue {
+    match cloneValue(ov) {
+        JSValue.Obj(o) => {
+            if st.objects[o].isProxy {
+                let trap = proxyTrap(st, o, "has")
+                if isCallableIn(st, trap) {
+                    var hargs: Vec<JSValue> = Vec.new()
+                    hargs.push(cloneValue(st.objExtras[st.objects[o].extra].proxyTarget))
+                    hargs.push(JSValue.Str(key.clone()))
+                    return JSValue.Bool(truthy(callValue(prog, trap, hargs, cloneValue(st.objExtras[st.objects[o].extra].proxyHandler), st)))
+                }
+                var pcur = objHandle(st.objExtras[st.objects[o].extra].proxyTarget)
+                while pcur >= 0 {
+                    if objHas(st, pcur, key) {
+                        return JSValue.Bool(true)
+                    }
+                    pcur = protoOfHandle(st, pcur)
+                }
+                return JSValue.Bool(false)
+            }
+            if st.objects[o].isArray {
+                let ai = asArrayIndex(key)
+                if ai >= 0 && ai < arrLen(st, o) {
+                    return JSValue.Bool(!arrIsHole(st, o, ai))
+                }
+            }
+            var cur = o
+            while cur >= 0 {
+                if objHas(st, cur, key) {
+                    return JSValue.Bool(true)
+                }
+                cur = protoOfHandle(st, cur)
+            }
+            return JSValue.Bool(false)
+        }
+        JSValue.Native(nid) => {
+            var ncur = getNativeProps(st, nid)
+            while ncur >= 0 {
+                if objHas(st, ncur, key) {
+                    return JSValue.Bool(true)
+                }
+                ncur = protoOfHandle(st, ncur)
+            }
+            return JSValue.Bool(false)
+        }
+        JSValue.Func(fIdx, fenv) => {
+            // every function carries these whether or not they were ever stored
+            if key == "prototype" || key == "name" || key == "length" || key == "call" || key == "apply" || key == "bind" || key == "constructor" {
+                return JSValue.Bool(true)
+            }
+            var fcur = getFuncStatics(st, fIdx, fenv)
+            while fcur >= 0 {
+                if objHas(st, fcur, key) {
+                    return JSValue.Bool(true)
+                }
+                fcur = protoOfHandle(st, fcur)
+            }
+            return JSValue.Bool(false)
+        }
+        _ => {
+            // `"a" in 5` is a TypeError, not false
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot use 'in' operator to search for '" + key.clone() + "' in " + toStr(ov))
+            return JSValue.Undefined
+        }
+    }
 }
 
 fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {

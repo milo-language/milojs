@@ -780,6 +780,48 @@ nothing, which gets the interleaving with static fields right for free (they run
 in one declaration-ordered pass). `language/statements/class` 2011/4361 →
 **2024/4361**. Locked by `tests/classStaticBlocks.js`.
 
+## Past get-intrinsic: the `in` operator, and the host surface — 2026-08-15
+
+The four apps blocked inside get-intrinsic are past it. Three separate gaps, each
+uncovered by fixing the one before it:
+
+- **`in` answered false for a NATIVE or a FUNCTION right-hand side — DONE.**
+  `"prototype" in String` was false while `String.prototype` read fine, because
+  both copies of the operator (it existed twice) matched only `JSValue.Obj` and
+  fell through to `false`. get-intrinsic walks `%String.prototype.indexOf%` with
+  exactly that test, so every package depending on it died on "base intrinsic for
+  %String.prototype.indexOf% exists, but the property is not available". Now one
+  `evalInOperator` handles objects, natives (through the property bag) and
+  functions (through their statics, plus the members every function carries), and
+  a primitive right-hand side is a TypeError rather than false, which is what the
+  spec says.
+- **`fs` was missing what a promisify target needs — DONE.** better-sqlite3 opens
+  with `promisify(fs.access)`, and `util.promisify` rejects a non-function, so a
+  missing member was not a missing feature, it was a module that would not load.
+  Added `access`, `open`, `close`, `realpath`, `chmod`, `chown`, `utimes`,
+  `appendFile`, `exists`, `rmdir`, `fstatSync` and `fs.constants`, each with its
+  sync and callback form, plus four more `fs.promises` members.
+- **`process.versions`, `process.release` and `process.config` did not exist —
+  DONE.** A native addon reads `versions.modules` (the Node-API ABI number) to
+  pick its prebuilt binary and dereferences it unconditionally, so the absence
+  was a TypeError before the module finished loading.
+
+Locked by `tests/runtime/inOperatorAndHostSurface.js`. tahoeroads still serves
+bytes identical to node with zero parse errors.
+
+**Where the four apps stand now, and it is a different kind of wall.** All four
+get much further and stop on something structural rather than a shim:
+
+- `chat` needs the `tls` builtin module, which is not implemented.
+- `todo`, `milo-list` and `smith` all load **better-sqlite3, a native addon**.
+  It fails before the addon is even reached: `bindings` discovers its caller's
+  filename through **`Error.prepareStackTrace` plus `Error.captureStackTrace`**,
+  V8's structured stack-trace API, where a callback receives CallSite objects and
+  reads `.getFileName()`. milojs never calls `prepareStackTrace`, so the filename
+  comes back undefined and `fileName.indexOf('file://')` throws. Supporting it
+  means synthesising CallSite objects from the interpreter's call stack: a real
+  feature, not a shim, and the gate in front of every `bindings`-based addon.
+
 ## Four more real applications, and the npm floor — 2026-08-15
 
 Four other node apps in the same tree (`chat`, `todo`, `milo-list`, `smith`) all
