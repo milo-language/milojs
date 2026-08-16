@@ -1,0 +1,32 @@
+"function decl(a, b) { return a + b; }"
+"function named(x) { return x; }"
+"function (x) { return x * 2; }"
+"(a, b) => a + b"
+"x => x * 3"
+"async function af() { return 1; }"
+"async (y) => y"
+"function* g() { yield 1; }"
+"meth(a) { return a; }"
+"*genm() {}"
+"async am() {}"
+"m(a) { return a; }"
+"s() {}"
+"function max() { [native code] }"
+"function keys() { [native code] }"
+"function slice() { [native code] }"
+"function indexOf() { [native code] }"
+"function () { [native code] }"
+"function anonymous(a\n) {\nreturn a\n}"
+"function decl(a, b) { return a + b; }"
+"x => x * 3"
+"function (x) { return x * 2; }"
+"function inner() { return 1; }"
+"function outer() { function inner() { return 1; } return inner; }"
+fn proto -> true
+arrow proto -> true
+native proto -> true
+Int8Array proto is not Function.prototype -> true
+regex proto -> true
+toString on {} ERR Function.prototype.toString requires that 'this' be a Function
+toString on 42 ERR Function.prototype.toString requires that 'this' be a Function
+toString on fn -> string

@@ -192,6 +192,12 @@ pub struct FuncDef {
     // `function*`: the body runs on its own green task and suspends at each
     // `yield`. Works in the runtime and, since 2026-08-15, in the engine too.
     isGenerator: bool,
+    // byte range of this function's VERBATIM source text within its file, for
+    // Function.prototype.toString. A pretty-printer cannot answer that: the
+    // result is compared against node byte for byte, and the author's spacing is
+    // part of it.
+    srcStart: i64,
+    srcEnd: i64,
     // the source file this function was PARSED from. A call stack needs the file
     // of the function being run, not of the module body currently executing:
     // `bindings` (under most native addons) locates an addon relative to its
@@ -264,12 +270,45 @@ pub struct Prog {
     declLists: Vec<Vec<DeclItem>>,
     classes: Vec<ClassDef>,
     switches: Vec<Vec<SwitchCase>>,
+    // verbatim source per file, so a FuncDef span can be sliced back out. Held
+    // once per file rather than once per function: a function's text contains
+    // every nested function's text, so storing slices would duplicate the whole
+    // program at each nesting level.
+    srcNames: Vec<string>,
+    srcTexts: Vec<string>,
 }
 
 // Create an empty program arena.
+// Register a file's verbatim text so a FuncDef span can be sliced from it. Called
+// once per module by the preloader, and by eval/new Function for the synthetic
+// source they build.
+pub fn registerSource(prog: &mut Prog, name: string, text: string) {
+    var i: i64 = 0
+    while i < prog.srcNames.len() {
+        if prog.srcNames[i] == name {
+            prog.srcTexts[i] = text
+            return
+        }
+        i = i + 1
+    }
+    prog.srcNames.push(name)
+    prog.srcTexts.push(text)
+}
+
+pub fn sourceOf(prog: &Prog, name: &string): string {
+    var i: i64 = 0
+    while i < prog.srcNames.len() {
+        if prog.srcNames[i] == name {
+            return prog.srcTexts[i].clone()
+        }
+        i = i + 1
+    }
+    return ""
+}
+
 pub fn newProg(): Prog {
     return Prog {
-        exprs: Vec.new(), stmts: Vec.new(), blocks: Vec.new(), argLists: Vec.new(), funcs: Vec.new(), objLits: Vec.new(), arrLits: Vec.new(), declLists: Vec.new(), classes: Vec.new(), switches: Vec.new()
+        exprs: Vec.new(), stmts: Vec.new(), blocks: Vec.new(), argLists: Vec.new(), funcs: Vec.new(), objLits: Vec.new(), arrLits: Vec.new(), declLists: Vec.new(), classes: Vec.new(), switches: Vec.new(), srcNames: Vec.new(), srcTexts: Vec.new()
     }
 }
 
@@ -279,7 +318,7 @@ pub fn newProg(): Prog {
 // initialization is not supported, so this is a zero literal that main()
 // overwrites once parsing is done.
 pub var gProg: Prog = Prog {
-    exprs: Vec.new(), stmts: Vec.new(), blocks: Vec.new(), argLists: Vec.new(), funcs: Vec.new(), objLits: Vec.new(), arrLits: Vec.new(), declLists: Vec.new(), classes: Vec.new(), switches: Vec.new()
+    exprs: Vec.new(), stmts: Vec.new(), blocks: Vec.new(), argLists: Vec.new(), funcs: Vec.new(), objLits: Vec.new(), arrLits: Vec.new(), declLists: Vec.new(), classes: Vec.new(), switches: Vec.new(), srcNames: Vec.new(), srcTexts: Vec.new()
 }
 
 fn cloneExpr(e: &Expr): Expr {

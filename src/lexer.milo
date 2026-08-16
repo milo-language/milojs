@@ -136,6 +136,15 @@ pub struct Token {
     // source, so `String.raw`a\nb`` has to keep the backslash and the n that
     // `text` has already collapsed into one newline. Empty everywhere else.
     raw: string,
+    // byte offset of this token's first character in the source. Function.
+    // prototype.toString has to return the VERBATIM source text, and a
+    // pretty-printer cannot reproduce the author's spacing, so the only way to
+    // answer it is to keep offsets and slice the original.
+    at: i64,
+    // byte offset one past this token's last character. Each lex iteration
+    // consumes exactly one token (or only whitespace), so at the top of the
+    // NEXT iteration `i` is precisely this token's end.
+    end: i64,
 }
 
 fn isSpace(c: u8): bool {
@@ -377,7 +386,7 @@ fn keywordKind(s: &string): i32 {
 fn pushTok(toks: &mut Vec<Token>, kind: i32) {
     toks.push(Token {
         kind: kind, num: 0.0, text: "", nlBefore: false, raw: ""
-    }
+    , at: 0, end: 0}
     )
 }
 
@@ -434,7 +443,7 @@ fn scanTmplChunk(src: &string, start: i64, toks: &mut Vec<Token>): ChunkResult {
     }
     toks.push(Token {
         kind: T_TEMPLATE_CHUNK, num: 0.0, text: buf, nlBefore: false, raw: rawBuf
-    }
+    , at: 0, end: 0}
     )
     return ChunkResult {
         pos: i, isHole: isHole
@@ -493,7 +502,7 @@ fn scanRegexLit(src: &string, start: i64, toks: &mut Vec<Token>): i64 {
     }
     toks.push(Token {
         kind: T_REGEX, num: 0.0, text: pat + "\n" + flags, nlBefore: false, raw: ""
-    }
+    , at: 0, end: 0}
     )
     return i
 }
@@ -512,7 +521,23 @@ pub fn lex(src: &string): Vec<Token> {
     // one, so the `continue` further down can't skip the bookkeeping.
     var nlPending = false
     var markFrom: i64 = 0
+    // Offsets are stamped centrally rather than at each of the ten Token
+    // literals: several are built inside helpers that never see `i`. Every token
+    // pushed during one iteration starts where that iteration started, so the
+    // top of the NEXT iteration is the first point at which the range is known.
+    var stampFrom: i64 = 0
+    var stampAt: i64 = 0
     while i < n {
+        if toks.len() > stampFrom {
+            var sk = stampFrom
+            while sk < toks.len() {
+                toks[sk].at = stampAt
+                toks[sk].end = i
+                sk = sk + 1
+            }
+            stampFrom = toks.len()
+        }
+        stampAt = i
         if nlPending && toks.len() > markFrom {
             toks[markFrom].nlBefore = true
             nlPending = false
@@ -577,14 +602,14 @@ pub fn lex(src: &string): Vec<Token> {
                     i = i + 1
                     toks.push(Token {
                         kind: T_BIGINT, num: 0.0, text: bnFromRadix(raw, radix), nlBefore: false, raw: ""
-                    }
+                    , at: 0, end: 0}
                     )
                     continue
                 }
                 v = acc
                 toks.push(Token {
                     kind: T_NUM, num: v, text: "", nlBefore: false, raw: ""
-                }
+                , at: 0, end: 0}
                 )
                 continue
             }
@@ -624,7 +649,7 @@ pub fn lex(src: &string): Vec<Token> {
                     i = i + 1
                     toks.push(Token {
                         kind: T_BIGINT, num: 0.0, text: bigNormalizeDec(txt), nlBefore: false, raw: ""
-                    }
+                    , at: 0, end: 0}
                     )
                     continue
                 }
@@ -658,7 +683,7 @@ pub fn lex(src: &string): Vec<Token> {
             }
             toks.push(Token {
                 kind: T_NUM, num: v, text: "", nlBefore: false, raw: ""
-            }
+            , at: 0, end: 0}
             )
         } else if c == 35 as u8 && i + 1 < n && isIdentStart(src[i + 1]) {
             // private name #foo — lex as ONE identifier token keeping the '#', so
@@ -673,7 +698,7 @@ pub fn lex(src: &string): Vec<Token> {
             }
             toks.push(Token {
                 kind: T_IDENT, num: 0.0, text: pname, nlBefore: false, raw: ""
-            }
+            , at: 0, end: 0}
             )
         } else if isIdentStart(c) {
             var name = String.withCapacity(16)
@@ -684,7 +709,7 @@ pub fn lex(src: &string): Vec<Token> {
             let k = keywordKind(name)
             toks.push(Token {
                 kind: k, num: 0.0, text: name, nlBefore: false, raw: ""
-            }
+            , at: 0, end: 0}
             )
         } else if c == 34 as u8 || c == 39 as u8 {
             // string literal, ' or "
@@ -702,7 +727,7 @@ pub fn lex(src: &string): Vec<Token> {
             i = i + 1
             toks.push(Token {
                 kind: T_STR, num: 0.0, text: s, nlBefore: false, raw: ""
-            }
+            , at: 0, end: 0}
             )
         } else if c == 96 as u8 {
             // ` template literal
@@ -907,6 +932,12 @@ pub fn lex(src: &string): Vec<Token> {
         toks[markFrom].nlBefore = true
     }
     pushTok(toks, T_EOF)
+    var tailK = stampFrom
+    while tailK < toks.len() {
+        toks[tailK].at = stampAt
+        toks[tailK].end = n
+        tailK = tailK + 1
+    }
     return toks
 }
 

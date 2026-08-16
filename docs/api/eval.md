@@ -59,6 +59,14 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow
 
 _Undocumented._
 
+### `funcSourceText`
+
+```milo
+pub fn funcSourceText(prog: &Prog, fIdx: i64): string
+```
+
+_Undocumented._
+
 ### `getMember`
 
 ```milo
@@ -113,6 +121,29 @@ length up front: the string is immutable, so there is nothing to keep in sync,
 and it makes `0 in s`, Object.keys and for-in work without a special case on
 every path that enumerates.
 
+### `nativeSourceText`
+
+```milo
+pub fn nativeSourceText(st: &mut Interp, nid: i64): string
+```
+
+Parse `src` into the shared program and run it in `scope`, answering the
+completion value (the last value-producing statement), which is what eval
+returns.
+
+Appending to gProg mid-evaluation is the part worth understanding: the arena
+Vecs can reallocate while an outer evalExpr walk is live. It holds because
+Milo's `&Prog` is a second-class reference that is re-read through rather than
+cached across a call, so the walk picks up the new buffer. The stress case is
+covered by tests/evalRuntime.js: 400 eval'd closures escaping into an array,
+each forcing more appends, then all called afterwards.
+A user function's VERBATIM source text, sliced out of the file it was parsed
+from. Every function used to answer "function <name>() { [native code] }",
+which is not merely imprecise: lodash and friends test for that exact string
+to tell a built-in from a user function, so every user function looked native.
+A built-in's source text. Its own `name` property is authoritative: it is set
+from node's own tables by nameNativesOf.
+
 ### `parkOnPromise`
 
 ```milo
@@ -136,16 +167,7 @@ set. Parks and wakes interleave, so position says nothing about ownership.
 pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue
 ```
 
-Parse `src` into the shared program and run it in `scope`, answering the
-completion value (the last value-producing statement), which is what eval
-returns.
-
-Appending to gProg mid-evaluation is the part worth understanding: the arena
-Vecs can reallocate while an outer evalExpr walk is live. It holds because
-Milo's `&Prog` is a second-class reference that is re-read through rather than
-cached across a call, so the walk picks up the new buffer. The stress case is
-covered by tests/evalRuntime.js: 400 eval'd closures escaping into an array,
-each forcing more appends, then all called afterwards.
+_Undocumented._
 
 ### `runEventLoop`
 

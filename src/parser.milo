@@ -252,7 +252,7 @@ fn parseArg(p: &mut PState, prog: &mut Prog): ExprId {
 // Build an arrow function from its parameter list; the caller has consumed `=>`.
 // Body is a block `{ }` or a single expression (implicit return). isArrow=true so
 // it doesn't bind its own `this`.
-fn makeArrow(p: &mut PState, prog: &mut Prog, params: Vec<string>, isAsync: bool, prelude: Vec<DeclItem>, mkRestFrom: i64): ExprId {
+fn makeArrow(p: &mut PState, prog: &mut Prog, params: Vec<string>, isAsync: bool, prelude: Vec<DeclItem>, mkRestFrom: i64, startAt: i64): ExprId {
     var body: Option<BlockId> = Option.None
     if peekKind(p) == T_LBRACE {
         body = Option.Some(parseBraceBlock(p, prog))
@@ -268,7 +268,7 @@ fn makeArrow(p: &mut PState, prog: &mut Prog, params: Vec<string>, isAsync: bool
         prependStmt(prog, body!, unpack)
     }
     prog.funcs.push(FuncDef {
-        name: "", params: params, body: body!, isArrow: true, isAsync: isAsync, restFrom: mkRestFrom, isGenerator: false, file: p.file.clone()
+        name: "", params: params, body: body!, isArrow: true, isAsync: isAsync, restFrom: mkRestFrom, isGenerator: false, srcStart: startAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
     }
     )
     let f = prog.funcs.len() - 1
@@ -593,6 +593,10 @@ fn prependStmt(prog: &mut Prog, blockId: BlockId, stmtIdx: StmtId) {
 
 fn parsePrimary(p: &mut PState, prog: &mut Prog): ExprId {
     let k = peekKind(p)
+    // where an arrow would begin if this turns out to be one: at the parameter
+    // list, or at `async` for an async arrow. Captured before any of the arrow
+    // shapes below consume anything.
+    let arrowStart = p.toks[p.pos].at
     // dynamic import("m") → Promise.resolve(require("m")). The module graph is
     // discovered and parsed before anything runs, so the load itself is already
     // done by this point and the only thing left is to hand it back as a
@@ -655,7 +659,7 @@ fn parsePrimary(p: &mut PState, prog: &mut Prog): ExprId {
             var ap: Vec<string> = Vec.new()
             ap.push(name)
             var noPrelude: Vec<DeclItem> = Vec.new()
-            return makeArrow(p, prog, ap, false, noPrelude, -1)
+            return makeArrow(p, prog, ap, false, noPrelude, -1, arrowStart)
         }
         advance(p)
         return addExpr(prog, Expr.Ident(name))
@@ -665,7 +669,7 @@ fn parsePrimary(p: &mut PState, prog: &mut Prog): ExprId {
             var arrowParams: Vec<string> = Vec.new()
             var arrowPrelude: Vec<DeclItem> = Vec.new()
             let arrowRest = parseArrowHead(p, prog, arrowParams, arrowPrelude)
-            return makeArrow(p, prog, arrowParams, false, arrowPrelude, arrowRest)
+            return makeArrow(p, prog, arrowParams, false, arrowPrelude, arrowRest, arrowStart)
         }
         advance(p)
         var e = parseExpr(p, prog)
@@ -706,7 +710,7 @@ fn parsePrimary(p: &mut PState, prog: &mut Prog): ExprId {
             var ap1: Vec<string> = Vec.new()
             ap1.push(pname)
             var noPrelude1: Vec<DeclItem> = Vec.new()
-            return makeArrow(p, prog, ap1, true, noPrelude1, -1)
+            return makeArrow(p, prog, ap1, true, noPrelude1, -1, arrowStart)
         }
         if nk == T_LPAREN {
             advance(p)
@@ -714,7 +718,7 @@ fn parsePrimary(p: &mut PState, prog: &mut Prog): ExprId {
                 var aparams: Vec<string> = Vec.new()
                 var aprelude: Vec<DeclItem> = Vec.new()
                 let arest = parseArrowHead(p, prog, aparams, aprelude)
-                return makeArrow(p, prog, aparams, true, aprelude, arest)
+                return makeArrow(p, prog, aparams, true, aprelude, arest, arrowStart)
             }
             // not an arrow after all — `async` was a plain identifier call
             p.pos = p.pos - 1
@@ -896,6 +900,7 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
             // BEFORE the key. Checking for it only after the key had the key
             // parser consume the star as an unrecognised token, leaving the
             // method nameless.
+            let methodStartAt = p.toks[p.pos].at
             if peekKind(p) == T_STAR {
                 advance(p)
                 isMethodGen = true
@@ -969,7 +974,7 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
                     prependStmt(prog, mbody, munpack)
                 }
                 prog.funcs.push(FuncDef {
-                    name: key.clone(), params: mparams, body: mbody, isArrow: false, isAsync: isMethodAsync, restFrom: mrest, isGenerator: isMethodGen, file: p.file.clone()
+                    name: key.clone(), params: mparams, body: mbody, isArrow: false, isAsync: isMethodAsync, restFrom: mrest, isGenerator: isMethodGen, srcStart: methodStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
                 }
                 )
                 valIdx = Option.Some(addExpr(prog, Expr.FuncExpr(prog.funcs.len() - 1)))
@@ -1487,6 +1492,12 @@ fn inferFuncName(prog: &mut Prog, initId: ExprId, name: &string) {
 }
 
 fn parseFunction(p: &mut PState, prog: &mut Prog, isAsync: bool): i64 {
+    // `async` was consumed by the caller, and node's toString includes it
+    var fnStartPos = p.pos
+    if isAsync && fnStartPos > 0 {
+        fnStartPos = fnStartPos - 1
+    }
+    let fnStartAt = p.toks[fnStartPos].at
     expect(p, T_FUNCTION)
     // generator star: parsed so the surrounding module loads. Generators need
     // suspension, which the engine cannot do, so calling one throws.
@@ -1519,7 +1530,7 @@ fn parseFunction(p: &mut PState, prog: &mut Prog, isAsync: bool): i64 {
         prependStmt(prog, body, unpack)
     }
     prog.funcs.push(FuncDef {
-        name: name, params: params, body: body, isArrow: false, isAsync: isAsync, restFrom: restFrom, isGenerator: isGenerator, file: p.file.clone()
+        name: name, params: params, body: body, isArrow: false, isAsync: isAsync, restFrom: restFrom, isGenerator: isGenerator, srcStart: fnStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
     }
     )
     return prog.funcs.len() - 1
@@ -1992,9 +2003,14 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
         } else {
             var isStatic = false
             var isAsyncM = false
+            // node's toString for a class METHOD starts at the method name, not
+            // at `static`; the static block form starts at `static`.
+            let sbStartAt = p.toks[p.pos].at
+            var cmStartAt = p.toks[p.pos].at
             if peekKind(p) == T_IDENT && p.toks[p.pos].text == "static" {
                 isStatic = true
                 advance(p)
+                cmStartAt = p.toks[p.pos].at
             }
             if isStatic && peekKind(p) == T_LBRACE {
                 // `static { ... }` (ES2022). It was not parsed at all, and a
@@ -2005,7 +2021,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                 var sbParams: Vec<string> = Vec.new()
                 let sbBody = parseBraceBlock(p, prog)
                 prog.funcs.push(FuncDef {
-                    name: "", params: sbParams, body: sbBody, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false, file: p.file.clone()
+                    name: "", params: sbParams, body: sbBody, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false, srcStart: sbStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
                 }
                 )
                 staticFieldNames.push("")
@@ -2067,7 +2083,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                     prependStmt(prog, mbody, munpack)
                 }
                 prog.funcs.push(FuncDef {
-                    name: mname.clone(), params: mparams, body: mbody, isArrow: false, isAsync: isAsyncM, restFrom: mrest, isGenerator: isStarM, file: p.file.clone()
+                    name: mname.clone(), params: mparams, body: mbody, isArrow: false, isAsync: isAsyncM, restFrom: mrest, isGenerator: isStarM, srcStart: cmStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
                 }
                 )
                 let fidx = prog.funcs.len() - 1
@@ -2145,7 +2161,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     let defaultBlock = addBlock(prog, defaultBody)
     var noParams: Vec<string> = Vec.new()
     prog.funcs.push(FuncDef {
-        name: name.clone(), params: noParams, body: defaultBlock, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false, file: p.file.clone()
+        name: name.clone(), params: noParams, body: defaultBlock, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false, srcStart: 0, srcEnd: 0, file: p.file.clone()
     }
     )
     let defaultCtor = prog.funcs.len() - 1

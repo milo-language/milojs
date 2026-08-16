@@ -15,7 +15,7 @@ from "./lexer" import {
     lex, Token, T_IDENT, T_LPAREN, T_STR, T_IMPORT, T_EXPORT, T_STAR, T_LBRACE, T_RBRACE, T_COMMA, T_DOT
 }
 from "./ast" import {
-    Prog
+    Prog, registerSource
 }
 from "./parser" import {
     PState, parseProgram
@@ -615,6 +615,7 @@ pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
             // already registered
         } else if isBuiltinPath(path) {
             let src = builtinSource(builtinNameOf(path))
+            registerSource(prog, path.clone(), src.clone())
             let toks = lex(src)
             // a builtin can require another builtin (http needs events), so its
             // own requires have to be queued like any other module's
@@ -656,6 +657,9 @@ pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
                     if hasJsonExt(path) {
                         text = "module.exports = " + text
                     }
+                    // keep the text: Function.prototype.toString slices a
+                    // function's verbatim source back out of it
+                    registerSource(prog, path.clone(), text.clone())
                     let toks = lex(text)
                     let specs = scanRequires(toks)
                     var p = PState {

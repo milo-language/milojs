@@ -86,4 +86,23 @@ _Undocumented._
 pub fn newProg(): Prog
 ```
 
+_Undocumented._
+
+### `registerSource`
+
+```milo
+pub fn registerSource(prog: &mut Prog, name: string, text: string)
+```
+
 Create an empty program arena.
+Register a file's verbatim text so a FuncDef span can be sliced from it. Called
+once per module by the preloader, and by eval/new Function for the synthetic
+source they build.
+
+### `sourceOf`
+
+```milo
+pub fn sourceOf(prog: &Prog, name: &string): string
+```
+
+_Undocumented._

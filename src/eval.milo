@@ -3,7 +3,7 @@
 // execution returns a Flow so `return` can unwind out of nested blocks.
 
 from "./ast" import {
-    ArgListId, ArrLitId, BlockId, ExprId, ObjLitId, Prog, StmtId, gProg
+    ArgListId, ArrLitId, BlockId, ExprId, ObjLitId, Prog, StmtId, gProg, registerSource, sourceOf
 }
 from "./value" import {
     JSValue, i64ToStr, daysFromCivil
@@ -345,6 +345,18 @@ fn toPrimitiveNumber(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
 }
 
 fn toPrimitiveDefault(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
+    // a function has no valueOf that yields a primitive, so ToPrimitive falls to
+    // its toString — which is its SOURCE. `"" + fn` prints the text.
+    match v {
+        JSValue.Func(df, _de) => {
+            return JSValue.Str(funcSourceText(prog, df))
+        }
+        JSValue.Native(dn) => {
+            return JSValue.Str(nativeSourceText(st, dn))
+        }
+        _ => {
+        }
+    }
     let bh = objHandle(v)
     if bh >= 0 && isWrapperObj(st, bh) {
         return boxedPrimitive(st, bh)
@@ -445,6 +457,19 @@ fn toPrimitiveString(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
 // honoured. `toStr` alone cannot call back into the interpreter and answers
 // "[object Object]" for any plain object.
 pub fn toStrProg(prog: &Prog, v: &JSValue, st: &mut Interp): string {
+    // ToString of a function is its SOURCE, not the word "function": `String(fn)`
+    // and `"" + fn` both print the text, and value.milo has neither the source
+    // registry nor the native name table to answer that.
+    match v {
+        JSValue.Func(vf, _ve) => {
+            return funcSourceText(prog, vf)
+        }
+        JSValue.Native(vn) => {
+            return nativeSourceText(st, vn)
+        }
+        _ => {
+        }
+    }
     if objHandle(v) < 0 {
         return toStr(v)
     }
@@ -747,6 +772,9 @@ let BRAND_DATE: i64 = 9
 // "b"], "b")` is 2, because the receiver becomes "a,b" — the array is not
 // searched as an array. Only null and undefined are rejected.
 let BRAND_STRING_GENERIC: i64 = 10
+// Function.prototype.toString requires a callable receiver. is-callable is built
+// on that throw: it calls it inside a try/catch and reports what comes back.
+let BRAND_CALLABLE: i64 = 11
 
 // A bound method that first checks its receiver really is of `brand`. See
 // JSObjExtra.boundBrand for why the buffer family needs this and Array does not.
@@ -765,6 +793,9 @@ fn brandMatches(st: &Interp, brand: i64, recv: &JSValue): bool {
     // called on "abc" is fine, on [] is a TypeError. That asymmetry is exactly
     // what the is-string / is-number-object / is-boolean-object family uses as
     // its detector, and without the throw they answered true for everything.
+    if brand == BRAND_CALLABLE {
+        return isCallableIn(st, recv)
+    }
     if brand == BRAND_STRING_GENERIC {
         match recv {
             JSValue.Null => {
@@ -828,6 +859,12 @@ fn brandOk(st: &mut Interp, boundObj: i64, mname: &string, recv: &JSValue): bool
         return true
     }
     st.throwing = true
+    if brand == BRAND_CALLABLE {
+        // node's exact wording: is-callable only checks that it throws, but
+        // other code matches on the message
+        st.thrownValue = makeError(st, "TypeError", "Function.prototype." + mname + " requires that 'this' be a Function")
+        return false
+    }
     st.thrownValue = makeError(st, "TypeError", "Method " + brandName(brand) + ".prototype." + mname + " called on incompatible receiver" + currentModule(st))
     return false
 }
@@ -872,6 +909,9 @@ fn brandName(brand: i64): string {
     }
     if brand == BRAND_STRING_GENERIC {
         return "String"
+    }
+    if brand == BRAND_CALLABLE {
+        return "Function"
     }
     if brand == BRAND_DATE {
         return "Date"
@@ -2774,8 +2814,7 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
         }
         JSValue.Func(bf, benv) => {
             if name == "toString" {
-                let fname = prog.funcs[bf].name.clone()
-                return JSValue.Str("function " + fname + "() { [native code] }")
+                return JSValue.Str(funcSourceText(prog, bf))
             }
             if name == "hasOwnProperty" {
                 var key = ""
@@ -3921,7 +3960,7 @@ pub fn callNativeProg(prog: &Prog, id: i64, argVals: &Vec<JSValue>, st: &mut Int
             // for everything that does not
             let tf = getMemberDyn(prog, h, "toString", st)
             if isCallableIn(st, tf) {
-                return JSValue.Str(toStrProg(prog, argVals[0], st))
+                return JSValue.Str(toStrProg(gProg, argVals[0], st))
             }
         }
     }
@@ -4091,7 +4130,9 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
             return JSValue.Str(en)
         }
-        return JSValue.Str(toStr(argVals[0]))
+        // through the Prog: String(fn) is the function's SOURCE, and a plain
+        // object's user toString has to run
+        return JSValue.Str(toStrProg(gProg, argVals[0], st))
     }
     if id == NATIVE_BOOLEAN {
         if argVals.len() == 0 {
@@ -5366,6 +5407,22 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             st.throwing = true
             st.thrownValue = makeError(st, "TypeError", "Object.getPrototypeOf called on null or undefined" + currentModule(st))
             return JSValue.Undefined
+        }
+        // A function's prototype is Function.prototype. Its property BAG is an
+        // ordinary object linked to Object.prototype, so asking the bag answered
+        // Object.prototype for every function value. A bag with a DELIBERATE
+        // proto still wins — `Object.getPrototypeOf(Int8Array)` is the
+        // %TypedArray% intrinsic, and test262's whole TypedArray tree opens with
+        // exactly that read.
+        if isCallableIn(st, argVals[0]) && st.functionProtoObj >= 0 {
+            var bagProto: i64 = -1
+            let bh0 = propertyBagOf(st, argVals[0])
+            if bh0 >= 0 {
+                bagProto = protoOfHandle(st, bh0)
+            }
+            if bagProto < 0 || bagProto == st.objectProtoObj {
+                return JSValue.Obj(st.functionProtoObj)
+            }
         }
         let h = propertyBagOf(st, argVals[0])
         if h < 0 {
@@ -7758,12 +7815,13 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, functionProto, "bind", makeBoundMethod(st, JSValue.Undefined, "bind"))
     // lodash and friends compare functions by source text via
     // Function.prototype.toString.call(fn)
-    objSet(st, functionProto, "toString", makeBoundMethod(st, JSValue.Undefined, "toString"))
+    objSet(st, functionProto, "toString", makeBrandedMethod(st, "toString", BRAND_CALLABLE))
     st.objects[functionProto].isFunctionLike = true
     // Function is a Native rather than a plain object so that CALLING it reaches
     // callNativeProg; as an object it was only ever a namespace holding
     // .prototype, and `Function("return 1")` reported "Function is not a
     // function".
+    st.functionProtoObj = functionProto
     let functionCtorBag = getNativeProps(st, NATIVE_FUNCTION_CTOR)
     objDefineProtoAttr(st, functionCtorBag, "prototype", JSValue.Obj(functionProto))
     objSet(st, functionProto, "constructor", JSValue.Native(NATIVE_FUNCTION_CTOR))
@@ -8175,7 +8233,7 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Inter
         return evalBin(op, ea, eb)
     }
     let coerces = op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "<" || op == ">" || op == "<=" || op == ">="
-    if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0) {
+    if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0 || funcHandle(va) >= 0 || funcHandle(vb) >= 0 || nativeHandle(va) >= 0 || nativeHandle(vb) >= 0) {
         pushTemp(st, cloneValue(va))
         pushTemp(st, cloneValue(vb))
         var pa = JSValue.Undefined
@@ -8356,7 +8414,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             // to keep the hot number/string path free of overhead. Equality
             // (==/!=/===/!==) is excluded — it has its own object rules.
             let coerces = op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "<" || op == ">" || op == "<=" || op == ">="
-            if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0) {
+            if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0 || funcHandle(va) >= 0 || funcHandle(vb) >= 0 || nativeHandle(va) >= 0 || nativeHandle(vb) >= 0) {
                 pushTemp(st, cloneValue(va))
                 pushTemp(st, cloneValue(vb))
                 // `+` uses the default hint (Date -> string); the arithmetic and
@@ -15140,6 +15198,12 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             JSValue.Str(_) => {
                 useDirectPrimitive = useDirectPrimitive && st.stringProtoPristine
             }
+            // a Native is not a primitive: `Math.max.toString()` is
+            // "function max() { [native code] }", and this fast path answered
+            // the bare word "function" for it
+            JSValue.Native(_) => {
+                useDirectPrimitive = false
+            }
             _ => {
             }
         }
@@ -15200,6 +15264,15 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                 return r
             }
             // .call/.apply on a bound-method value: [].slice.call(arguments, 1)
+            if st.objects[o].isBound && name == "toString" && objOwnIndex(st, o, "toString") < 0 {
+                // a builtin METHOD value keeps its name (Array.prototype.slice
+                // prints "function slice"); a genuine bind() result does not —
+                // node prints "function () { [native code] }" for it.
+                if st.objExtras[st.objects[o].extra].boundMethod.len() > 0 {
+                    return JSValue.Str("function " + toStr(getMember(st, o, "name")) + "() { [native code] }")
+                }
+                return JSValue.Str("function () { [native code] }")
+            }
             if st.objects[o].isBound && (name == "call" || name == "apply" || name == "bind") {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
                 var newThis = JSValue.Undefined
@@ -15448,6 +15521,12 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             }
         }
         JSValue.Native(nid) => {
+            // node prints a built-in as `function <name>() { [native code] }`,
+            // and lodash tells built-ins from user functions by looking for that
+            // exact "[native code]" marker.
+            if name == "toString" {
+                return JSValue.Str(nativeSourceText(st, nid))
+            }
             // Function.prototype.apply/call/bind on a native function
             // (Math.max.apply(null, arr) etc.) — dispatch through callBuiltinByName
             if name == "apply" || name == "call" || name == "bind" {
@@ -15545,6 +15624,13 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                 return callFunctionViaMethod(prog, bf, benv, rest, thisArg, st)
             }
             let statics = getFuncStatics(st, bf, benv)
+            // A function's statics bag inherits Object.prototype, not
+            // Function.prototype, so `fn.toString()` resolved to the type-tag
+            // method and answered "[object Function]" for every function. An own
+            // static of that name still wins.
+            if name == "toString" && objOwnIndex(st, statics, name) < 0 {
+                return JSValue.Str(funcSourceText(prog, bf))
+            }
             // getMemberDyn so `static get m()` is invoked and its RESULT is what
             // gets called — C.m() where m is a static accessor returning a
             // function reported "m is not a function"
@@ -15597,9 +15683,41 @@ fn throwNullMember(st: &mut Interp, name: &string, base: &string): JSValue {
 // cached across a call, so the walk picks up the new buffer. The stress case is
 // covered by tests/evalRuntime.js: 400 eval'd closures escaping into an array,
 // each forcing more appends, then all called afterwards.
+// A user function's VERBATIM source text, sliced out of the file it was parsed
+// from. Every function used to answer "function <name>() { [native code] }",
+// which is not merely imprecise: lodash and friends test for that exact string
+// to tell a built-in from a user function, so every user function looked native.
+// A built-in's source text. Its own `name` property is authoritative: it is set
+// from node's own tables by nameNativesOf.
+pub fn nativeSourceText(st: &mut Interp, nid: i64): string {
+    let bag = getNativeProps(st, nid)
+    var nm = toStr(getMember(st, bag, "name"))
+    if nm.len() == 0 {
+        nm = nativeCtorName(nid)
+    }
+    return "function " + nm + "() { [native code] }"
+}
+
+pub fn funcSourceText(prog: &Prog, fIdx: i64): string {
+    let a = prog.funcs[fIdx].srcStart
+    let b = prog.funcs[fIdx].srcEnd
+    if b > a {
+        let text = sourceOf(prog, prog.funcs[fIdx].file)
+        if b <= text.len() {
+            return strSlice(text, a, b)
+        }
+    }
+    // a synthesised function, or a source nobody registered: keep the old answer
+    return "function " + prog.funcs[fIdx].name.clone() + "() { [native code] }"
+}
+
 pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
+    // a fresh name per eval: two evals in one program must not overwrite each
+    // other's text, or the first one's functions stringify from the second's
+    let evalName = "<eval:" + numToStr(gProg.srcNames.len() as f64) + ">"
+    registerSource(gProg, evalName.clone(), src.clone())
     var ep = PState {
-        toks: lex(src.clone()), pos: 0, curClass: "", file: "<eval>", errored: false, eofError: false, quiet: true
+        toks: lex(src.clone()), pos: 0, curClass: "", file: evalName, errored: false, eofError: false, quiet: true
     }
     let top = parseProgram(ep, gProg)
     // The parser recovers by skipping tokens rather than stopping, so `errored`

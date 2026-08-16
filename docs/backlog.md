@@ -1940,7 +1940,7 @@ Corpus: 701 to 760 assertions.
 
 Locked by `tests/functionConstructor.js`.
 
-## OPEN: Function.prototype.toString returns "[object Function]", never source
+## RESOLVED 2026-08-16: Function.prototype.toString returns "[object Function]", never source
 
 Every function stringifies to `[object Function]` — declared, expression,
 arrow, or built by `new Function`. Node returns the verbatim source text, and
@@ -2023,7 +2023,7 @@ rather than applied to every regex-ish op.
 
 Locked by `tests/bindAndStringPatterns.js`.
 
-## OPEN: is-callable reports every object as callable
+## RESOLVED 2026-08-16: is-callable reports every object as callable
 
 `isCallable({})` is `true`. The package detects callables by calling
 `Function.prototype.toString` on the candidate inside a try/catch; milojs accepts
@@ -2045,3 +2045,49 @@ Function.prototype.toString entry above; they should land together.
 package", where node resolves the directory through its package.json `main`.
 Relative and bare specifiers both work; only the absolute-directory form is
 missing. Found while writing a probe against the package corpus.
+
+## Function.prototype.toString now returns real source — DONE 2026-08-16
+
+Every function stringified to `[object Function]`. Not merely imprecise: lodash
+and friends tell a built-in from a user function by looking for the exact string
+`[native code]`, so every user function looked native; and is-callable decides
+whether a value is callable by whether `Function.prototype.toString` throws on
+it, so every object looked callable.
+
+Answering it needs the VERBATIM text — the `.expected` files are byte-exact
+against node, and a pretty-printer cannot reproduce the author's spacing. So:
+
+- `Token` gains `at` and `end` byte offsets. Stamped centrally in the lex loop
+  rather than at each of the ten Token literals, several of which are built in
+  helpers that never see the cursor. Each iteration consumes exactly one token
+  or only whitespace, so at the top of the NEXT iteration the cursor is exactly
+  the previous token's end.
+- `FuncDef` gains `srcStart`/`srcEnd`, filled at all six construction sites.
+  `async` is included because the caller consumed it and node's output has it;
+  a class METHOD starts at its name while a static BLOCK starts at `static`.
+- `Prog` keeps each file's text once, so a span can be sliced back out. Once per
+  file, not per function: a function's text contains every nested function's
+  text, so per-function slices would duplicate the program at each nesting level.
+
+Built-ins keep node's `function <name>() { [native code] }`, and a genuine
+bind() result prints anonymously where a built-in METHOD value keeps its name.
+ToString of a function is its source everywhere, not only through `.toString()`:
+`String(fn)`, `"" + fn` and `${fn}` all had to be routed through the Prog.
+
+**Two latent bugs this exposed.** `Object.getPrototypeOf(fn)` answered
+Object.prototype for every function: a function's property BAG is an ordinary
+object, and the bag was what got asked. A bag with a DELIBERATE prototype still
+wins, which matters because `Object.getPrototypeOf(Int8Array)` is the
+%TypedArray% intrinsic and test262's whole TypedArray tree opens with that read.
+And `String(x)` used the prog-free `toStr`, so a user `toString` never ran there.
+
+With those fixed, branding `Function.prototype.toString` to require a callable
+receiver is net POSITIVE — the earlier attempt cost 9 assertions and was
+reverted, and the reason was this getPrototypeOf bug, not the brand. Corpus 797
+to 800 assertions and 26 to 28 complete suites.
+
+Still wrong: `isCallable(class {})` is true. That check regex-matches
+`/^\s*class\b/` against the source, and a class's source is not yet recorded —
+classes are built from `ClassDef`, which has no span. Same fix, different node.
+
+Locked by `tests/functionSourceText.js`.
