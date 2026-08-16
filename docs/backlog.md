@@ -2000,3 +2000,48 @@ strict-mode tracking and substitutes globalThis for every receiver-less call. Th
 two are indistinguishable at the call site without tracking strictness.
 
 Locked by `tests/prototypeOpsAndIterators.js`.
+
+## Four defects in Function.prototype.bind, and match/search rejected string patterns — DONE 2026-08-16
+
+**bind.** The result carried no own `length` or `name`, `.call` on it replaced
+the bound receiver instead of ignoring the call-site one, and `new` on it
+reported "value is not a constructor". A wrapper that preserves arity by reading
+`fn.length` off a bound function got `undefined`; function-bind asserts all four.
+`length` is now the target's less the pre-bound arguments (floored at 0) and
+`name` is `"bound " + target name`, set at every one of the six sites that build
+a bound object. `.call`/`.apply` route through `callValue` on the bound object
+itself, which already merged the bound receiver and arguments correctly — the
+bug was one site calling the TARGET directly and discarding both. `new` on a
+bound function constructs the target with the bound arguments in front and the
+bound `this` ignored, per [[Construct]].
+
+**match/matchAll/search with a string pattern returned undefined.** The spec has
+no non-regex form for these three: it builds a RegExp from whatever it is handed,
+so `"a1b".match("\\d")` is `["1"]`. `replace` and `split` DO have literal-string
+forms and keep them, which is why the conversion is keyed to the three names
+rather than applied to every regex-ish op.
+
+Locked by `tests/bindAndStringPatterns.js`.
+
+## OPEN: is-callable reports every object as callable
+
+`isCallable({})` is `true`. The package detects callables by calling
+`Function.prototype.toString` on the candidate inside a try/catch; milojs accepts
+any receiver there, so nothing throws and everything looks callable. Classes are
+also reported callable, because that check regex-matches `/^\s*class\b/` against
+the source text milojs does not have.
+
+Branding `Function.prototype.toString` to require a callable receiver was tried
+and REVERTED: it fixes `isCallable({})` but costs 9 assertions elsewhere in the
+corpus, through a path that ends in "String.prototype.match called on
+incompatible receiver" during tape's own reporting and was not diagnosed. It is
+also only half a fix while the source text is missing, since class detection
+stays broken either way. Both halves want the lexer-offset work in the
+Function.prototype.toString entry above; they should land together.
+
+## OPEN: require() of an absolute path to a package directory
+
+`require('/abs/path/to/node_modules/function-bind')` fails with "no such
+package", where node resolves the directory through its package.json `main`.
+Relative and bare specifiers both work; only the absolute-directory form is
+missing. Found while writing a probe against the package corpus.

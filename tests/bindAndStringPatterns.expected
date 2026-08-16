@@ -1,0 +1,26 @@
+plain bind -> T|1|2
+partial -> T|1|2
+double bind keeps first this -> A|1|2
+null this -> |1|2
+bound length -> 1
+bound length floors at 0 -> 0
+bound name -> bound f
+double bound name -> bound bound f
+call cannot rebind -> X|1|2
+apply cannot rebind -> X|1|2
+call keeps bound args -> X|1|2
+Function.prototype.bind.call -> Z|9|8
+bind an arrow -> 42
+new on bound -> 5:6
+new on bound instanceof -> true
+new on double bound -> 3
+match string pattern -> ["1"]
+match regex -> ["1"]
+search string pattern -> 1
+search no match -> -1
+matchAll string pattern -> ["1","2"]
+extracted match -> ["1"]
+extracted search -> 1
+replace literal -> a#b
+split literal -> ["a","b"]
+match special chars are a pattern -> ["a"]

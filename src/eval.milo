@@ -2129,6 +2129,38 @@ fn makeBoundMethod(st: &mut Interp, recv: JSValue, name: string): JSValue {
     return makeBoundMethodOn(st, recv, name, host)
 }
 
+// A bind() result carries its own `length` — the target's, less the pre-bound
+// arguments, floored at 0 — and `name`, which is "bound " prefixed to the
+// target's. Both were absent, so a wrapper that preserves arity by reading
+// fn.length off a bound function got undefined; function-bind asserts each.
+fn finishBind(prog: &Prog, st: &mut Interp, bo: i64, target: &JSValue, nBound: i64) {
+    var arity: i64 = 0
+    var nm = ""
+    match target {
+        JSValue.Func(tf, _te) => {
+            arity = funcArity(prog, tf)
+            nm = prog.funcs[tf].name.clone()
+        }
+        JSValue.Obj(to) => {
+            arity = toNum(getMember(st, to, "length")) as i64
+            nm = toStr(getMember(st, to, "name"))
+        }
+        JSValue.Native(tn) => {
+            let bag = getNativeProps(st, tn)
+            arity = toNum(getMember(st, bag, "length")) as i64
+            nm = toStr(getMember(st, bag, "name"))
+        }
+        _ => {
+        }
+    }
+    var len = arity - nBound
+    if len < 0 {
+        len = 0
+    }
+    objDefineBuiltinAttr(st, bo, "length", JSValue.Number(len as f64))
+    objDefineBuiltinAttr(st, bo, "name", JSValue.Str("bound " + nm))
+}
+
 fn makeBoundMethodOn(st: &mut Interp, recv: JSValue, name: string, host: string): JSValue {
     let bo = newObject(st)
     st.objects[bo].isBound = true
@@ -2459,6 +2491,10 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
             if isArrayMethod(name) && !isStringMethodName(name) {
                 return arrayMethodGeneric(prog, JSValue.Str(sv.clone()), name, args, st)
             }
+            if stringOpNeedsRegexArg(st, name, args) {
+                let ra = regexArgFor(st, name, args)
+                return stringRegexOp(prog, sv, name, ra, st)
+            }
             if isStringRegexOp(st, name, args) {
                 return stringRegexOp(prog, sv, name, args, st)
             }
@@ -2515,7 +2551,9 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                     let nex = ensureExtra(st, nb)
                     st.objExtras[nex].boundTarget = JSValue.Obj(o)
                     st.objExtras[nex].boundThis = uThis
+                    let nb1 = uRest.len()
                     st.objExtras[nex].boundArgs = uRest
+                    finishBind(prog, st, nb, JSValue.Obj(o), nb1)
                     return JSValue.Obj(nb)
                 }
                 return callValue(prog, JSValue.Obj(o), uRest, uThis, st)
@@ -2789,7 +2827,9 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 if args.len() > 0 {
                     st.objExtras[ex].boundThis = cloneValue(args[0])
                 }
+                let nb0 = extra.len()
                 st.objExtras[ex].boundArgs = extra
+                finishBind(prog, st, bo, JSValue.Func(bf, benv), nb0)
                 return JSValue.Obj(bo)
             }
             let statics = getFuncStatics(st, bf, benv)
@@ -2843,7 +2883,9 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 if args.len() > 0 {
                     st.objExtras[ex].boundThis = cloneValue(args[0])
                 }
+                let nb4 = extra.len()
                 st.objExtras[ex].boundArgs = extra
+                finishBind(prog, st, bo, recv, nb4)
                 return JSValue.Obj(bo)
             }
             if name == "toString" {
@@ -7162,6 +7204,47 @@ fn isStringRegexOp(st: &Interp, name: &string, args: &Vec<JSValue>): bool {
     return name == "replace" || name == "replaceAll" || name == "match" || name == "matchAll" || name == "split" || name == "search"
 }
 
+// match/matchAll/search have NO non-regex form: the spec builds a RegExp from
+// whatever it is handed. `"a1b".match("\\d")` is ["1"], not undefined, and
+// passing a plain string is the common way to write it. replace/split do have
+// literal-string forms, so they are deliberately absent here.
+fn stringOpNeedsRegexArg(st: &Interp, name: &string, args: &Vec<JSValue>): bool {
+    if !(name == "match" || name == "matchAll" || name == "search") {
+        return false
+    }
+    if args.len() == 0 {
+        return true
+    }
+    return regexIdOf(st, args[0]) < 0
+}
+
+// The argument re-made as a RegExp, with matchAll keeping the /g the spec
+// requires of it.
+fn regexArgFor(st: &mut Interp, name: &string, args: &Vec<JSValue>): Vec<JSValue> {
+    var pat = ""
+    if args.len() > 0 {
+        match args[0] {
+            JSValue.Undefined => {
+            }
+            _ => {
+                pat = toStr(args[0])
+            }
+        }
+    }
+    var flags = ""
+    if name == "matchAll" {
+        flags = "g"
+    }
+    var out: Vec<JSValue> = Vec.new()
+    out.push(makeRegex(st, pat, flags))
+    var i: i64 = 1
+    while i < args.len() {
+        out.push(cloneValue(args[i]))
+        i = i + 1
+    }
+    return out
+}
+
 fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     let rid = regexIdOf(st, args[0])
     if name == "replace" || name == "replaceAll" {
@@ -9076,6 +9159,54 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     // a class defined by a node-api addon (napi_define_class): build
                     // the instance here and link its prototype, then let the addon's
                     // constructor callback populate it — typically via napi_wrap.
+                    // `new` on a bind() result constructs the TARGET, with the
+                    // pre-bound arguments in front and the bound `this` ignored
+                    // — the spec's [[Construct]] on a bound function. It fell
+                    // through to "value is not a constructor".
+                    if st.objects[co].isBound {
+                        let bex = st.objects[co].extra
+                        let btarget = cloneValue(st.objExtras[bex].boundTarget)
+                        let callArgs = evalArgs(prog, argsIdx, st, scope)
+                        var nargs: Vec<JSValue> = Vec.new()
+                        var bj: i64 = 0
+                        while bj < st.objExtras[bex].boundArgs.len() {
+                            nargs.push(cloneValue(st.objExtras[bex].boundArgs[bj]))
+                            bj = bj + 1
+                        }
+                        var cj: i64 = 0
+                        while cj < callArgs.len() {
+                            nargs.push(cloneValue(callArgs[cj]))
+                            cj = cj + 1
+                        }
+                        match btarget {
+                            JSValue.Func(tf, te) => {
+                                let binst = newObject(st)
+                                st.objects[binst].ctor = tf
+                                let bproto = getFuncProto(st, tf)
+                                linkProtoConstructor(st, bproto, tf, te)
+                                st.objects[binst].proto = bproto
+                                pushTemp(st, JSValue.Obj(binst))
+                                st.newTarget = JSValue.Func(tf, te)
+                                let bres = callFunction(prog, tf, te, nargs, JSValue.Obj(binst), st)
+                                st.newTarget = JSValue.Undefined
+                                popTemp(st)
+                                match bres {
+                                    JSValue.Obj(br) => {
+                                        return JSValue.Obj(br)
+                                    }
+                                    JSValue.Func(brf, bre) => {
+                                        return JSValue.Func(brf, bre)
+                                    }
+                                    _ => {
+                                        return JSValue.Obj(binst)
+                                    }
+                                }
+                            }
+                            _ => {
+                                return callValue(prog, btarget, nargs, JSValue.Undefined, st)
+                            }
+                        }
+                    }
                     if st.objExtras[st.objects[co].extra].napiFn >= 0 {
                         let argVals = evalArgs(prog, argsIdx, st, scope)
                         let inst = newObject(st)
@@ -15030,6 +15161,10 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                 return JSValue.Undefined
             }
             // regex-based string ops when the first arg is a RegExp
+            if stringOpNeedsRegexArg(st, name, argVals) {
+                let ra = regexArgFor(st, name, argVals)
+                return stringRegexOp(prog, s, name, ra, st)
+            }
             if isStringRegexOp(st, name, argVals) {
                 return stringRegexOp(prog, s, name, argVals, st)
             }
@@ -15120,7 +15255,9 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                         st.objExtras[exf].boundBrand = st.objExtras[exo].boundBrand
 
                         st.objExtras[exf].boundThis = newThis
+                        let nb2 = fb.len()
                         st.objExtras[exf].boundArgs = fb
+                        finishBind(prog, st, nf, JSValue.Obj(o), nb2)
                         popTemp(st)
                         return JSValue.Obj(nf)
                     }
@@ -15152,7 +15289,9 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                     st.objExtras[exn].boundBrand = st.objExtras[exo].boundBrand
 
                     st.objExtras[exn].boundThis = bThis
+                    let nb3 = na.len()
                     st.objExtras[exn].boundArgs = na
+                    finishBind(prog, st, nb, JSValue.Obj(o), nb3)
                     popTemp(st)
                     return JSValue.Obj(nb)
                 }
@@ -15167,8 +15306,10 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                     }
                     return callBuiltinByName(prog, recvS, mname, rest, st)
                 }
-                let target = cloneValue(st.objExtras[exo].boundTarget)
-                return callValue(prog, target, rest, newThis, st)
+                // `.call` on a bind() RESULT cannot change the receiver — the
+                // binding already fixed it — and the pre-bound arguments still
+                // come first. Calling the TARGET directly discarded both.
+                return callValue(prog, JSValue.Obj(o), rest, newThis, st)
             }
             if st.objects[o].isBound && st.objExtras[st.objects[o].extra].boundMethod.len() == 0 {
                 // any other method on a bind() result goes to its target
@@ -15370,7 +15511,9 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                 if argVals.len() > 0 {
                     st.objExtras[ex].boundThis = cloneValue(argVals[0])
                 }
+                let nb0 = extra.len()
                 st.objExtras[ex].boundArgs = extra
+                finishBind(prog, st, bo, JSValue.Func(bf, benv), nb0)
                 return JSValue.Obj(bo)
             }
             if name == "call" || name == "apply" {
