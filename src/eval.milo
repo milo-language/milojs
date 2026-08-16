@@ -2746,6 +2746,9 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
             if name == "__arrayIterSelf" {
                 return JSValue.Obj(o)
             }
+            if name == "__abByteLength" {
+                return JSValue.Number(st.objExtras[st.objects[o].extra].bytes.len() as f64)
+            }
             if st.objects[o].isArrayBuffer {
                 if name == "resize" {
                     var to: i64 = 0
@@ -7371,6 +7374,15 @@ fn setupBufferProtos(st: &mut Interp) {
         objSetNonEnumerable(st, abProto, abNames[i])
         i = i + 1
     }
+    // byteLength is an ACCESSOR on ArrayBuffer.prototype, not a data property on
+    // the instance. is-array-buffer keys on exactly that descriptor: with it
+    // missing, the package's fallback answered true for EVERY object, and
+    // deep-equal then wrapped a plain array in `new Uint8Array(a)` and recursed
+    // on it for ever. That is what made deep-equal, and so tape's deepEqual,
+    // unusable — a missing getter, three packages away.
+    let abLenGetter = makeBrandedMethod(st, "__abByteLength", 2)
+    objDefineAccessor(st, abProto, "byteLength", abLenGetter, JSValue.Undefined)
+    objSetNonEnumerable(st, abProto, "byteLength")
     objSet(st, abProto, "constructor", JSValue.Native(NATIVE_ARRAYBUFFER))
     objSetNonEnumerable(st, abProto, "constructor")
     let abBag = getNativeProps(st, NATIVE_ARRAYBUFFER)

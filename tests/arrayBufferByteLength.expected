@@ -1,0 +1,11 @@
+descriptor: get=function set=undefined e=false c=true
+value -> 8
+empty -> 0
+not an own property of the instance -> false
+own on the prototype -> true
+getter on a plain object THREW TypeError
+getter on an array THREW TypeError
+getter on a typed array THREW TypeError
+getter on a real buffer -> 16
+byteLength of a sliced buffer -> 6
+survives a resize -> 12

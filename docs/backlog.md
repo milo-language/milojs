@@ -2107,52 +2107,6 @@ is-callable rather than about the tracer.
 
 Locked by `tests/applyAndGlobalThisWrites.js`.
 
-## OPEN: deep-equal cannot load — the stack is already exhausted when it is reached
-
-`require('deep-equal')` then calling it throws "iterator must be a function"
-from `for-each`, reached through `which-typed-array`. The title of the previous
-version of this entry blamed is-callable, and that was wrong. is-callable is
-answering correctly for what it sees:
-
-    reflectApply(value, null, badArrayLike)
-
-throws **RangeError: Maximum call stack size exceeded** where a private marker
-was expected, so `e !== isCallableMarker` and it returns false. The engine is
-reporting a real recursion limit, not misclassifying a function.
-
-Measured, using a probe that counts remaining frames by recursing until it
-catches:
-
-| point | frames remaining |
-|---|---:|
-| top level | 499 (of 500) |
-| after `require('deep-equal')` | 499 |
-| entry to the exported `deepEqual` | 498 |
-| entry to `which-typed-array`'s `tryTypedArrays` | **2** |
-
-So ~496 frames are consumed between deep-equal's entry and a call three frames
-deep inside it. Two things this rules out:
-
-- **Not a limit that is merely too low.** Raising `callDepthLimit` to 2000 (on a
-  32 MB task stack) leaves the remaining-frames figure at `2` — the consumption
-  scales with whatever the limit is, which is the signature of a runaway, not of
-  a budget.
-- **Not a leaked counter.** Plain calls, caught throws, throws from 400 frames
-  deep, and throwing property getters all restore the count exactly.
-
-Also measured, since it will come up: the green-task stack is committed EAGERLY,
-so RSS tracks it 1:1 — 8 MB stack is 23 MB RSS for `console.log("hi")`, 32 MB is
-47 MB, 64 MB is 78 MB. Raising the limit is therefore not free, and on this
-evidence it does not help anyway. (A lazily-committed task stack would be a milo
-runtime improvement worth having regardless.)
-
-Next step: find what recurses between deep-equal's entry and `tryTypedArrays`.
-Instrument deep-equal's own internals rather than the engine — the frames are
-being spent inside its dispatch, and the engine is only reporting the ceiling.
-
-It blocks a large share of the corpus: tape's `deepEqual` is what function-bind
-(37 assertions), array.prototype.flatmap (16) and object.assign (44) die on.
-
 ## Function.prototype.toString now returns real source — DONE 2026-08-16
 
 Every function stringified to `[object Function]`. Not merely imprecise: lodash
@@ -2483,3 +2437,36 @@ Both removed. The remaining OPEN entries were re-verified against the current
 build rather than trusted: absolute-path require was still broken and is fixed
 above; deep-equal still fails; private-name keyspace and the strict-mode frozen
 write are both still reproducible.
+
+## deep-equal could not load: ArrayBuffer.prototype.byteLength was not an accessor — DONE 2026-08-16
+
+The largest single blocker in the npm corpus, open across four rounds, and the
+cause was three packages away from where it showed.
+
+`ArrayBuffer.prototype.byteLength` is an ACCESSOR on the prototype in the spec.
+milojs carried the value on the instance instead, so reading
+`new ArrayBuffer(8).byteLength` always worked and nothing looked wrong — only the
+DESCRIPTOR was missing, and only code that inspects descriptors could tell.
+
+`is-array-buffer` inspects exactly that descriptor. With it absent the package's
+fallback answered TRUE for every object: a plain array, a typed array, `{}`.
+deep-equal then took its ArrayBuffer branch, wrapped the value in
+`new Uint8Array(a)`, and recursed on the result for ever — so
+`deepEqual([1,2],[1,2])` exhausted the stack. tape's `deepEqual` is built on it,
+which is why function-bind, object.assign and array.prototype.flatmap could not
+finish either.
+
+Corpus: 802 to 897 assertions, 28 to 35 complete suites.
+
+**Three earlier diagnoses of this were wrong, and the pattern is worth keeping.**
+Round one blamed is-callable ("answers false inside its dependency chain"). Round
+two corrected that to stack exhaustion and proved the recursion was real by
+showing remaining-frames stayed at 2 no matter what the limit was — right, but
+still a symptom. Round three raised the recursion limit, measured that it did not
+help, and reverted. What finally worked was instrumenting the recursion to print
+its ARGUMENTS rather than its depth: the value being compared arrived as a
+`Uint8Array` on every re-entry, and one grep for `Uint8Array` in deep-equal's
+source pointed at the branch. Depth measurements described the loop; the first
+look at the DATA identified it.
+
+Locked by `tests/arrayBufferByteLength.js`.
