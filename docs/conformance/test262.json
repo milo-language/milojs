@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "0473119239fb32b388d14fbc903901cada843d9c",
+    "revision": "37f386a7549f17e45937ae364fc952d36af9b6cf",
     "dirty": false
   },
   "engine": "~/git/milo-language/milojs/.dev/mj-engine",
@@ -26,14 +26,14 @@
   "areas": [
     {
       "area": "language/expressions",
-      "pass": 212,
-      "fail": 122,
+      "pass": 211,
+      "fail": 123,
       "total": 334
     },
     {
       "area": "language/statements",
-      "pass": 156,
-      "fail": 126,
+      "pass": 154,
+      "fail": 128,
       "total": 282
     },
     {
@@ -44,8 +44,8 @@
     },
     {
       "area": "built-ins/Object",
-      "pass": 61,
-      "fail": 66,
+      "pass": 62,
+      "fail": 65,
       "total": 127
     },
     {
@@ -62,8 +62,8 @@
     },
     {
       "area": "built-ins/String",
-      "pass": 13,
-      "fail": 26,
+      "pass": 14,
+      "fail": 25,
       "total": 39
     },
     {
@@ -176,8 +176,8 @@
     },
     {
       "area": "built-ins/Map",
-      "pass": 2,
-      "fail": 4,
+      "pass": 3,
+      "fail": 3,
       "total": 6
     },
     {
@@ -623,7 +623,7 @@
     },
     {
       "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all",
-      "count": 52,
+      "count": 51,
       "cases": [
         "built-ins/Symbol/prototype/toString/toString-default-attributes-strict.js",
         "built-ins/Object/defineProperties/property-description-must-be-an-object-not-null.js",
@@ -649,7 +649,6 @@
         "language/expressions/async-generator/dstr/obj-ptrn-prop-ary-value-null.js",
         "language/statements/class/definition/invalid-extends.js",
         "built-ins/Promise/all/S25.4.4.1_A4.1_T1.js",
-        "language/statements/generators/restricted-properties.js",
         "language/expressions/object/dstr/gen-meth-dflt-obj-ptrn-prop-obj-value-null.js",
         "language/expressions/class/dstr/async-gen-meth-ary-ptrn-elem-obj-val-null.js",
         "language/expressions/class/dstr/async-gen-meth-static-ary-ptrn-elem-ary-val-null.js",
@@ -808,20 +807,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected a SyntaxError to be thrown but no exception was thrown at all",
-      "count": 8,
-      "cases": [
-        "language/eval-code/direct/gen-meth-a-preceding-parameter-is-named-arguments-declare-arguments-and-assign.js",
-        "language/eval-code/direct/async-gen-func-decl-fn-body-cntns-arguments-lex-bind-declare-arguments.js",
-        "language/eval-code/indirect/parse-failure-3.js",
-        "language/eval-code/direct/async-gen-func-decl-no-pre-existing-arguments-bindings-are-present-declare-arguments.js",
-        "language/expressions/object/method-definition/async-gen-meth-eval-var-scope-syntax-err.js",
-        "language/statements/function/13.0-16-s.js",
-        "language/statements/class/elements/privatename-not-valid-eval-earlyerr-3.js",
-        "language/expressions/async-generator/named-eval-var-scope-syntax-err.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Expected TypeError, got Test262Error: Expected an exception.",
       "count": 8,
       "cases": [
@@ -885,6 +870,19 @@
         "harness/asyncHelpers-asyncTest-return-not-thenable.js",
         "built-ins/Promise/allSettledKeyed/get-value-throws-reject.js",
         "harness/asyncHelpers-throwsAsync-custom-typeerror.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a SyntaxError to be thrown but no exception was thrown at all",
+      "count": 7,
+      "cases": [
+        "language/eval-code/direct/async-gen-func-decl-fn-body-cntns-arguments-lex-bind-declare-arguments.js",
+        "language/eval-code/indirect/parse-failure-3.js",
+        "language/eval-code/direct/async-gen-func-decl-no-pre-existing-arguments-bindings-are-present-declare-arguments.js",
+        "language/expressions/object/method-definition/async-gen-meth-eval-var-scope-syntax-err.js",
+        "language/statements/function/13.0-16-s.js",
+        "language/statements/class/elements/privatename-not-valid-eval-earlyerr-3.js",
+        "language/expressions/async-generator/named-eval-var-scope-syntax-err.js"
       ]
     },
     {
@@ -1129,6 +1127,15 @@
       ]
     },
     {
+      "reason": "Uncaught TypeError: hasOwnProperty is not a function (in /var/folders/zc/m2tbb4v542b9c11gk",
+      "count": 3,
+      "cases": [
+        "language/statements/generators/restricted-properties.js",
+        "language/statements/class/elements/syntax/valid/grammar-static-ctor-accessor-meth-valid.js",
+        "language/expressions/class/method-static/forbidden-ext/b2/cls-expr-meth-static-forbidden-ext-indirect-access-prop-caller.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: #gen does not appear as an own property on C prototype",
       "count": 3,
       "cases": [
@@ -1221,6 +1228,14 @@
       ]
     },
     {
+      "reason": "Uncaught TypeError: Cannot use '…' operator to search for '…' in undefined",
+      "count": 2,
+      "cases": [
+        "language/eval-code/direct/gen-meth-a-preceding-parameter-is-named-arguments-declare-arguments-and-assign.js",
+        "language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--21.js"
+      ]
+    },
+    {
       "reason": "Uncaught TypeError: concat is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh0",
       "count": 2,
       "cases": [
@@ -1290,14 +1305,6 @@
       "cases": [
         "language/statements/class/elements/nested-derived-cls-indirect-eval-contains-superproperty-1.js",
         "language/statements/class/elements/private-derived-cls-indirect-eval-contains-superproperty-1.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Expected a Test262Error but got a TypeError",
-      "count": 2,
-      "cases": [
-        "language/statements/for-of/dstr/const-ary-ptrn-rest-id-elision-next-err.js",
-        "built-ins/Object/groupBy/iterator-next-throws.js"
       ]
     },
     {
@@ -1658,10 +1665,10 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: groupBy is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh",
+      "reason": "Uncaught TypeError: hasOwnProperty is not a function",
       "count": 1,
       "cases": [
-        "built-ins/Map/groupBy/emptyList.js"
+        "language/statements/class/gen-method-static/forbidden-ext/b1/cls-decl-gen-meth-static-forbidden-ext-direct-access-prop-caller.js"
       ]
     },
     {
@@ -1900,13 +1907,6 @@
       "count": 1,
       "cases": [
         "built-ins/String/prototype/substring/S15.5.4.15_A1_T10.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: #N: var __proto={phylum:\"avis\"}; \"valueOf\" in __proto",
-      "count": 1,
-      "cases": [
-        "language/expressions/in/S8.12.6_A2_T2.js"
       ]
     },
     {
@@ -2355,6 +2355,13 @@
       "count": 1,
       "cases": [
         "language/statements/for/dstr/var-ary-ptrn-rest-id-elision-next-err.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a Test262Error but got a TypeError",
+      "count": 1,
+      "cases": [
+        "language/statements/for-of/dstr/const-ary-ptrn-rest-id-elision-next-err.js"
       ]
     },
     {
@@ -2985,13 +2992,6 @@
       "count": 1,
       "cases": [
         "built-ins/Object/S9.9_A4.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: The value of `typeof String.prototype.isWellFormed` is \"function\" Expe",
-      "count": 1,
-      "cases": [
-        "built-ins/String/prototype/isWellFormed/prop-desc.js"
       ]
     },
     {

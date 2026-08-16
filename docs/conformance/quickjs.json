@@ -6,7 +6,7 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "0473119239fb32b388d14fbc903901cada843d9c",
+    "revision": "37f386a7549f17e45937ae364fc952d36af9b6cf",
     "dirty": false
   },
   "engine": "~/git/milo-language/milojs/.dev/mj-engine",
