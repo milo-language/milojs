@@ -10,7 +10,7 @@ A JavaScript engine and runtime written in the [Milo](https://github.com/milo-la
 
 MiloJS owns its parser, tree-walking evaluator, garbage collector, regular expression engine, BigInt implementation, module loader, and event loop. It has no V8, JavaScriptCore, or C JavaScript engine underneath it — about <!--fact:loc-milo-->34.5k<!--/fact--> lines of Milo from source text to running program, plus a <!--fact:loc-js-->4.6k<!--/fact-->-line JavaScript specification layer for the builtins that read better written in JavaScript. It starts in a few milliseconds and embeds into a C program as a static library.
 
-This is an experimental implementation, not yet a drop-in replacement for QuickJS or Node. It passes <!--fact:t262-pct-->47.6%<!--/fact--> of a deterministic <!--fact:t262-sample-->1500<!--/fact-->-case test262 sample and <!--fact:qjs-pct-->65.8%<!--/fact--> of the QuickJS test suite. See [the current status](docs/status.md) for shipped capabilities, measured evidence, known gaps, and product gates.
+This is an experimental implementation, not yet a drop-in replacement for QuickJS or Node. It passes <!--fact:t262-pct-->47.6%<!--/fact--> of a deterministic <!--fact:t262-sample-->1500<!--/fact-->-case test262 sample and <!--fact:qjs-pct-->66.4%<!--/fact--> of the QuickJS test suite. See [the current status](docs/status.md) for shipped capabilities, measured evidence, known gaps, and product gates.
 
 There are two command-line binaries:
 

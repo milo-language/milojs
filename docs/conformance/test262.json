@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "bb9d347566c1e26413b84d3acf9fabe9ced5cb8d",
+    "revision": "0473119239fb32b388d14fbc903901cada843d9c",
     "dirty": false
   },
   "engine": "~/git/milo-language/milojs/.dev/mj-engine",
@@ -808,35 +808,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: asyncTest called without async flag",
-      "count": 9,
-      "cases": [
-        "built-ins/AsyncDisposableStack/prototype/use/Symbol.asyncDispose-getter.js",
-        "language/statements/await-using/function-local-use-before-initialization-in-declaration-statement.js",
-        "built-ins/Promise/allSettledKeyed/getownproperty-not-enumerable.js",
-        "language/statements/await-using/throws-if-initializer-Symbol.dispose-property-is-null.js",
-        "built-ins/Promise/allKeyed/symbol-keys.js",
-        "built-ins/Array/fromAsync/mapfn-not-callable.js",
-        "harness/asyncHelpers-asyncTest-return-not-thenable.js",
-        "built-ins/Promise/allSettledKeyed/get-value-throws-reject.js",
-        "harness/asyncHelpers-throwsAsync-custom-typeerror.js"
-      ]
-    },
-    {
-      "reason": "Uncaught ReferenceError: static is not defined",
-      "count": 8,
-      "cases": [
-        "language/expressions/class/elements/same-line-gen-rs-static-privatename-identifier-alt.js",
-        "language/statements/class/elements/after-same-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
-        "language/expressions/class/elements/after-same-line-gen-rs-static-privatename-identifier-by-classname.js",
-        "language/expressions/class/elements/new-no-sc-line-method-rs-static-generator-method-privatename-identifier-alt.js",
-        "language/expressions/class/elements/same-line-gen-rs-static-privatename-identifier.js",
-        "language/statements/class/elements/new-no-sc-line-method-rs-static-method-privatename-identifier-alt.js",
-        "language/expressions/class/elements/new-no-sc-line-method-rs-static-privatename-identifier-by-classname.js",
-        "language/expressions/class/elements/new-sc-line-gen-rs-static-generator-method-privatename-identifier-alt.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Expected a SyntaxError to be thrown but no exception was thrown at all",
       "count": 8,
       "cases": [
@@ -865,6 +836,19 @@
       ]
     },
     {
+      "reason": "milojs: /case.js: unexpected '…' after declaration",
+      "count": 7,
+      "cases": [
+        "language/statements/await-using/function-local-use-before-initialization-in-declaration-statement.js",
+        "language/statements/class/elements/same-line-async-method-rs-private-method.js",
+        "language/expressions/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt.js",
+        "language/statements/class/elements/after-same-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
+        "language/statements/await-using/throws-if-initializer-Symbol.dispose-property-is-null.js",
+        "language/statements/class/elements/after-same-line-static-async-method-rs-static-generator-method-privatename-identifier-alt.js",
+        "language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt-by-classname.js"
+      ]
+    },
+    {
       "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«N», «N») to be tr",
       "count": 7,
       "cases": [
@@ -875,6 +859,32 @@
         "language/expressions/async-generator/yield-star-getiter-async-null-sync-get-abrupt.js",
         "built-ins/Promise/any/invoke-resolve-get-once-multiple-calls.js",
         "language/expressions/object/dstr/async-gen-meth-dflt-ary-ptrn-elision.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: static is not defined",
+      "count": 7,
+      "cases": [
+        "language/expressions/class/elements/same-line-gen-rs-static-privatename-identifier-alt.js",
+        "language/expressions/class/elements/after-same-line-gen-rs-static-privatename-identifier-by-classname.js",
+        "language/expressions/class/elements/new-no-sc-line-method-rs-static-generator-method-privatename-identifier-alt.js",
+        "language/expressions/class/elements/same-line-gen-rs-static-privatename-identifier.js",
+        "language/statements/class/elements/new-no-sc-line-method-rs-static-method-privatename-identifier-alt.js",
+        "language/expressions/class/elements/new-no-sc-line-method-rs-static-privatename-identifier-by-classname.js",
+        "language/expressions/class/elements/new-sc-line-gen-rs-static-generator-method-privatename-identifier-alt.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: asyncTest called without async flag",
+      "count": 7,
+      "cases": [
+        "built-ins/AsyncDisposableStack/prototype/use/Symbol.asyncDispose-getter.js",
+        "built-ins/Promise/allSettledKeyed/getownproperty-not-enumerable.js",
+        "built-ins/Promise/allKeyed/symbol-keys.js",
+        "built-ins/Array/fromAsync/mapfn-not-callable.js",
+        "harness/asyncHelpers-asyncTest-return-not-thenable.js",
+        "built-ins/Promise/allSettledKeyed/get-value-throws-reject.js",
+        "harness/asyncHelpers-throwsAsync-custom-typeerror.js"
       ]
     },
     {
@@ -1000,16 +1010,6 @@
         "language/expressions/assignment/member-expr-ident-name-catch-escaped.js",
         "language/expressions/assignment/dstr/ident-name-prop-name-literal-try-escaped.js",
         "language/expressions/assignment/member-expr-ident-name-interface-escaped.js"
-      ]
-    },
-    {
-      "reason": "milojs: /case.js: expected '…', found '…'",
-      "count": 4,
-      "cases": [
-        "language/statements/class/elements/same-line-async-method-rs-private-method.js",
-        "language/expressions/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt.js",
-        "language/statements/class/elements/after-same-line-static-async-method-rs-static-generator-method-privatename-identifier-alt.js",
-        "language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt-by-classname.js"
       ]
     },
     {

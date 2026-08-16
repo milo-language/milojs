@@ -6,7 +6,7 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "bb9d347566c1e26413b84d3acf9fabe9ced5cb8d",
+    "revision": "0473119239fb32b388d14fbc903901cada843d9c",
     "dirty": false
   },
   "engine": "~/git/milo-language/milojs/.dev/mj-engine",
@@ -25,8 +25,8 @@
     ]
   },
   "totals": {
-    "pass": 98,
-    "fail": 51,
+    "pass": 99,
+    "fail": 50,
     "total": 149,
     "files": 58
   },
@@ -48,13 +48,13 @@
         "parse-error-column.js:<whole>",
         "test_bigint.js:test_bigint_asintn",
         "test_builtin.js:test_array",
+        "test_builtin.js:test_rope",
         "test_builtin.js:test_eval",
         "test_builtin.js:test_date",
         "test_builtin.js:test_exception_source_pos",
         "test_builtin.js:test_function_source_pos",
         "test_builtin.js:test_exception_prepare_stack",
         "test_builtin.js:test_exception_stack_size_limit",
-        "test_closure.js:test_eval_const",
         "test_domexception.js:test_properties"
       ]
     },
@@ -69,15 +69,6 @@
       ]
     },
     {
-      "reason": "timeout/crash (SIGTERM)",
-      "count": 3,
-      "cases": [
-        "bug1355.js:<whole>",
-        "test_builtin.js:test_rope",
-        "test_builtin.js:test_proxy_is_array"
-      ]
-    },
-    {
       "reason": "Uncaught TypeError: concat is not a function (in /case.js)",
       "count": 3,
       "cases": [
@@ -87,11 +78,28 @@
       ]
     },
     {
+      "reason": "milojs: /case.js: unexpected '…' after declaration",
+      "count": 3,
+      "cases": [
+        "test_closure.js:test_arrow_function",
+        "test_closure.js:test_with",
+        "test_closure.js:test_eval_const"
+      ]
+    },
+    {
       "reason": "Uncaught TypeError: cannot read property '…' of undefined",
       "count": 2,
       "cases": [
         "array-fromasync-enumerable.js:<whole>",
         "callsite-isconstructor.js:<whole>"
+      ]
+    },
+    {
+      "reason": "timeout/crash (SIGTERM)",
+      "count": 2,
+      "cases": [
+        "bug1355.js:<whole>",
+        "test_builtin.js:test_proxy_is_array"
       ]
     },
     {
@@ -127,13 +135,6 @@
       "count": 1,
       "cases": [
         "bug567.js:<whole>"
-      ]
-    },
-    {
-      "reason": "milojs: /case.js: expected '…', found end of input",
-      "count": 1,
-      "cases": [
-        "bug741.js:<whole>"
       ]
     },
     {
@@ -197,20 +198,6 @@
       "count": 1,
       "cases": [
         "test_builtin.js:test_regexp"
-      ]
-    },
-    {
-      "reason": "Uncaught ReferenceError: __super$ is not defined",
-      "count": 1,
-      "cases": [
-        "test_closure.js:test_arrow_function"
-      ]
-    },
-    {
-      "reason": "Uncaught ReferenceError: with is not defined",
-      "count": 1,
-      "cases": [
-        "test_closure.js:test_with"
       ]
     },
     {
