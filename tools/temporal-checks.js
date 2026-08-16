@@ -81,4 +81,34 @@ throws(function () { new T.PlainDate(2026, 1, 1).valueOf(); }, TypeError, "Plain
 throws(function () { Object.getOwnPropertyDescriptor(T.PlainDate.prototype, "year").get.call({}); }, TypeError, "brand check");
 throws(function () { T.PlainDate(2026, 1, 1); }, TypeError, "PlainDate needs new");
 
+// PlainYearMonth
+eq(new T.PlainYearMonth(2026, 8).toString(), "2026-08", "PlainYearMonth.toString");
+eq(T.PlainYearMonth.from("2024-02").daysInMonth, 29, "leap February length");
+eq(T.PlainYearMonth.from("2023-02").daysInMonth, 28, "non-leap February length");
+eq(new T.PlainYearMonth(2026, 12).add({ months: 1 }).toString(), "2027-01", "year-month rolls over");
+eq(new T.PlainYearMonth(2026, 1).subtract({ months: 1 }).toString(), "2025-12", "year-month rolls back");
+eq(new T.PlainYearMonth(2026, 1).until("2027-03").months, 14, "year-month until");
+eq(T.PlainYearMonth.compare("2026-02", "2026-01"), 1, "year-month compare");
+eq(new T.PlainYearMonth(2026, 8).toPlainDate({ day: 16 }).toString(), "2026-08-16", "year-month toPlainDate");
+
+// PlainMonthDay: the reference year is 1972 so that 02-29 exists
+eq(new T.PlainMonthDay(8, 16).toString(), "08-16", "PlainMonthDay.toString");
+eq(T.PlainMonthDay.from("--02-29").day, 29, "Feb 29 month-day");
+eq(new T.PlainMonthDay(2, 29).toString(), "02-29", "Feb 29 needs no reference year");
+eq(new T.PlainMonthDay(8, 16).toPlainDate({ year: 2026 }).toString(), "2026-08-16", "month-day toPlainDate");
+throws(function () { new T.PlainMonthDay(2, 30); }, RangeError, "Feb 30");
+
+// ZonedDateTime: UTC and fixed offsets
+eq(T.ZonedDateTime.from("2026-08-16T12:00:00Z[UTC]").toString(), "2026-08-16T12:00:00+00:00[UTC]", "zoned round trip");
+eq(T.ZonedDateTime.from("2026-08-16T12:00:00Z[UTC]").epochNanoseconds, 1786881600000000000n, "zoned epoch");
+eq(T.ZonedDateTime.from("2026-08-16T12:00:00+02:00[+02:00]").toString(), "2026-08-16T12:00:00+02:00[+02:00]", "fixed offset round trip");
+eq(T.ZonedDateTime.from("2026-08-16T12:00:00+02:00[+02:00]").toInstant().toString(), "2026-08-16T10:00:00Z", "offset to instant");
+eq(T.ZonedDateTime.from("2026-08-16T12:00:00Z[UTC]").withTimeZone("+05:30").hour, 17, "withTimeZone shifts the wall clock");
+eq(T.ZonedDateTime.from("2026-08-16T12:00:00Z[UTC]").withTimeZone("+05:30").epochNanoseconds, 1786881600000000000n, "withTimeZone keeps the instant");
+eq(T.ZonedDateTime.from("2026-08-16T23:30:00Z[UTC]").add({ hours: 1 }).toString(), "2026-08-17T00:30:00+00:00[UTC]", "zoned add crosses the day");
+eq(T.ZonedDateTime.from("2026-08-16T12:00:00Z[UTC]").toPlainDate().toString(), "2026-08-16", "zoned toPlainDate");
+// a named zone is REFUSED rather than silently treated as UTC
+throws(function () { T.ZonedDateTime.from("2026-08-16T12:00:00Z[America/New_York]"); }, RangeError, "named zone refused");
+throws(function () { T.ZonedDateTime.from("2026-08-16T12:00:00Z"); }, RangeError, "zoned needs an annotation");
+
 console.log(failures === 0 ? ("temporal-checks: " + checks + " checks, all ok") : ("temporal-checks: " + failures + " of " + checks + " FAILED"));

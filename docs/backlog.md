@@ -2525,3 +2525,47 @@ Stops at the same point before and after this round's fixes, in its
 assertions behind it. Not yet diagnosed; the lesson from the deep-equal hunt
 applies — instrument the recursion's ARGUMENTS rather than its depth, since three
 rounds of depth measurement there described the loop without identifying it.
+
+## Temporal, stages 1 and 2 — 2026-08-16
+
+The largest single block in the test262 sample: 128 failures, 18% of everything
+still failing, one unimplemented API. Now 93.
+
+Implemented in `lib/temporal.js` (923 lines, its own builtin loaded at both entry
+points): `Duration`, `PlainDate`, `PlainTime`, `PlainDateTime`,
+`PlainYearMonth`, `PlainMonthDay`, `Instant`, `ZonedDateTime`, `Now`. Real ISO
+calendar arithmetic via civil-from-days, month-clamping on add (`Jan 31 + 1
+month` is `Feb 28`, and `Feb 29` in a leap year), midnight wrapping, extended
+year formats, and epoch nanoseconds carried as BigInt — a Number loses the low
+digits within months of the epoch.
+
+Written in JS rather than as Milo natives: every operation is arithmetic over
+small integers and string formatting, so a native would be a large amount of Milo
+for no speed anyone would notice.
+
+**Not a stub, and that constrains it.** A `Temporal` global that exists but
+throws is worse than none, because libraries feature-detect with `typeof
+Temporal !== "undefined"`. So what is defined works and what is not is ABSENT.
+The visible consequence is time zones: only UTC and fixed offsets are
+implemented, and `ZonedDateTime.from("...[America/New_York]")` REFUSES rather
+than quietly treating a named zone as UTC. A wrong offset is worse than a
+refusal — it produces plausible timestamps that are silently hours off.
+
+**No node oracle reaches this API.** Every fixture in `tests/` is diffed
+byte-for-byte against node, and this node has no Temporal, so a fixture there
+would compare real output against a ReferenceError for ever. `tools/check-
+temporal.sh` carries 73 spec-derived assertions instead, and AGENTS.md records
+why they cannot live in `tests/`.
+
+That gate paid for itself on its first run: it reported one failure and the
+ENGINE was right — the expected epoch for `2026-08-16T12:00:00Z` was a day out,
+confirmed against `Date.UTC`. The expectation was corrected, not the code.
+
+Also caught during stage 1: the file runs in GLOBAL scope, so its top-level
+helpers (`pad`, `def`, `tag`) became globals and broke an unrelated fixture whose
+sloppy-mode `this` picked up `globalThis.tag`. Wrapped in an IIFE; only
+`Temporal` escapes.
+
+test262: 769 to 804 of 1470. Remaining Temporal work is options handling
+(`round`, `total`, `relativeTo`, overflow modes) and the `until`/`since` unit
+machinery, which is where most of the 93 now sit.
