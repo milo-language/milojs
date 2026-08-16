@@ -71,6 +71,14 @@ jobs:
       - name: verify contracts
         run: ./tools/verify-contracts.sh
 
+      # Line counts, fixture counts and the Node-API entry-point count are
+      # compiled into README/AGENTS/docs from the tree. README, AGENTS.md and
+      # status.md each carried a DIFFERENT line count for the same tree before
+      # this existed. The hook recompiles and stages; this catches a commit made
+      # without the hook installed.
+      - name: prose facts match the tree
+        run: node tools/gen-facts.mjs --check
+
       # The other half of the differential contract. tests/run.sh proves milojs
       # matches the .expected files; this proves the .expected files are what
       # node actually prints. Without it "node is the oracle" is honor-system,

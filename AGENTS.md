@@ -34,7 +34,7 @@ Two binaries, both written in [Milo](https://github.com/milo-language/milo):
 - `milojs` — a Node-compatible **runtime** on top of it: module loader, event
   loop, fs/http, Node-API addons. Like node/deno/bun.
 
-~26.5k lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
+~<!--fact:loc-milo-->34.2k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
 own bigint. No V8, no JSC, no C engine underneath.
 
 ## Before you write any Milo
@@ -178,6 +178,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/verify-expected.sh` | proves every `.expected` is what node prints. `--update` captures a new one, `--structure` is the instant registry-only half the hook runs. |
 | `tools/verify-contracts.sh` | static contract gate: fails on a refuted contract, or one that quietly stopped being proven. `--update` re-baselines. |
 | `tools/gen-unicase.mjs` | regenerates `src/unicase.milo` (case-mapping tables) from node's ICU |
+| `tools/gen-facts.mjs` | compiles the numbers prose quotes (line counts, fixture counts, entry points) into `<!--fact:...-->` spans. `--check` gates, `--list` prints them all. |
 | `tools/precommit.sh` | lint + fixture registry + docs freshness; wire with `git config core.hooksPath .githooks` |
 
 Build more of these. If you find yourself running the same multi-step incantation

@@ -29,4 +29,18 @@ if [ "$before" != "$after" ]; then
     echo "precommit: docs/api was stale; regenerated and staged"
 fi
 
+# Numbers quoted in prose are compiled from the tree. Rewritten and staged rather
+# than failed: the counts move on ordinary commits, and a hook that blocks on
+# "your line count changed" just trains people to use --no-verify. CI runs the
+# --check half, which catches a commit made without this hook installed.
+if command -v node >/dev/null 2>&1; then
+    before=$(shasum README.md AGENTS.md docs/*.md | shasum)
+    node tools/gen-facts.mjs >/dev/null 2>&1 || true
+    after=$(shasum README.md AGENTS.md docs/*.md | shasum)
+    if [ "$before" != "$after" ]; then
+        git add README.md AGENTS.md docs/*.md
+        echo "precommit: prose facts were stale; recompiled and staged"
+    fi
+fi
+
 exit "$status"
