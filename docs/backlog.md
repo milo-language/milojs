@@ -645,12 +645,13 @@ against node with a two-line script.
    Not a subarray bug: `a.subarray(1)` passed `undefined` as the end index and
    every built-in with a defaulted argument treated an explicit `undefined` as
    "0", not as "absent". See "Explicit `undefined` meant absent" below.
-3. `[1, , 3].flat()` keeps the hole (length 3, node gives 2).
-4. `"ß".toUpperCase()` answers `"ß"`; the special casing to `"SS"` is missing.
+3. **`[1, , 3].flat()` keeps the hole** (length 3, node gives 2) — one symptom
+   of a representation gap, see "Array holes are not modelled" below.
+4. **`"ß".toUpperCase()` answers `"ß"` — DONE 2026-08-15**, and the entry
+   understated it: the gap was not one special case but every script. See
+   "Case mapping was ASCII and Latin-1 only" below.
 
 ## Smaller known gaps
-
-- `Object.groupBy` / `Map.groupBy` (ES2024) are missing.
 
 - A template literal desugars to `"" + x`, so its holes convert with the DEFAULT
   ToPrimitive hint rather than the string hint the spec requires. Observable only
@@ -690,6 +691,72 @@ baseline binary could not be produced): `built-ins/String/prototype/substring`
 19/39, `built-ins/TypedArray/prototype/subarray` 11/67. Locked by
 `tests/undefinedOptionalArgs.js`.
 
+## Case mapping was ASCII and Latin-1 only — DONE 2026-08-15
+
+`upperCp`/`lowerCp` were two `if` chains covering `a-z` and the Latin-1
+Supplement, with a comment calling wider scripts "a documented limit". The limit
+was that **every non-Latin script passed through unchanged**:
+
+```
+"привет".toUpperCase()  // "привет"
+"αβγ".toUpperCase()     // "αβγ"
+"čšž".toUpperCase()     // "čšž"
+```
+
+Now generated rather than hand-written: `tools/gen-unicase.mjs` asks node's own
+ICU for the mapping of all 0x110000 code points and emits `src/unicase.milo` —
+199 uppercase and 186 lowercase ranges as a balanced if-tree (milo has no static
+array initialiser, and a comparison tree is O(log n) with nothing to allocate or
+lazily initialise), plus the 102 mappings that GROW the string (ß → SS, ﬁ → FI,
+the Greek iota-subscript family), which no code-point delta can express.
+
+Verified exhaustively, not by sampling: a script printing every code point whose
+case differs, run through both engines, is byte-identical to node across all
+2981 lines. Re-run the generator after a node upgrade.
+
+`toLocaleUpperCase`/`toLocaleLowerCase` were fixed alongside — both had an arity
+entry in `builtinArity` and no dispatch anywhere, so both answered `undefined`.
+They are the locale-independent mappings here; there is no locale data in this
+engine and node only diverges for tr/az/lt.
+
+| area | before | after |
+|---|---:|---:|
+| `built-ins/String/prototype/toUpperCase` | 13/26 = 50.0% | **15/26 = 57.7%** |
+| `built-ins/String/prototype/toLowerCase` | 13/30 = 43.3% | **15/30 = 50.0%** |
+| `built-ins/String/prototype/toLocaleUpperCase` | 1/26 = 3.8% | **15/26 = 57.7%** |
+| `built-ins/String/prototype/toLocaleLowerCase` | 1/28 = 3.6% | **15/28 = 53.6%** |
+
+Locked by `tests/unicodeCaseMapping.js`.
+
+## Array holes are not modelled
+
+`[1, , 3]` stores a real `undefined` element rather than a hole, so every method
+that is specified to skip holes visits them instead. All six diverge from node:
+
+| expression | milojs | node |
+|---|---|---|
+| `[1,,3].flat()` | `[1,undefined,3]` | `[1,3]` |
+| `[1,,3].flatMap(x => [x])` | `[1,undefined,3]` | `[1,3]` |
+| `[1,,3].filter(() => true)` | `[1,undefined,3]` | `[1,3]` |
+| `[1,,3].forEach` callback count | 3 | 2 |
+| `1 in [1,,3].map(x => x)` | `true` | `false` |
+| `Object.keys([1,,3])` | `["0","1","2"]` | `["0","2"]` |
+
+This is one representation decision, not six bugs: `JSObj.elems` has no "absent"
+value distinct from `undefined`. Everything else follows from it, including
+`delete arr[1]`. The backlog previously carried only the `flat` symptom.
+
+## Smaller gaps found by probe on 2026-08-15
+
+- `Object.groupBy` / `Map.groupBy` (ES2024) are missing — `groupBy is not a
+  function`.
+- `String.prototype.normalize` returns its input unchanged, so
+  `"e\u0301".normalize("NFC").length` is 2 where node gives 1. Needs
+  composition/decomposition tables; the same generator approach as
+  `tools/gen-unicase.mjs` would work.
+- `structuredClone` is not defined.
+- `String.prototype.isWellFormed` / `toWellFormed` (ES2024) are missing.
+
 ## The runtime shadows the engine's native typed arrays
 
 `lib/prelude.js`'s `_taFactory` defines `Uint8Array` and friends as ordinary JS
@@ -708,15 +775,15 @@ grew real `%TypedArray%` prototypes on 2026-08-15; the prelude copy was never
 removed. Deleting `_taFactory` (and the `DataView` next to it) should be mostly
 subtraction — check `lib/buffer.js`, which builds on `this.bytes`.
 
-## The milo compiler at `d6adecc5` cannot build this repo
+## The milo compiler at `d6adecc5` could not build this repo — RESOLVED
 
-`milo build src/milojs-engine.milo` on a clean HEAD fails in LLVM with
-`error: use of undefined value '@.str.5025'` on a `getenv` call, deterministically.
-It is size- or layout-sensitive rather than source-specific: adding unrelated
-code to `src/eval.milo` moves the index and the build succeeds, which is why the
-suite was green mid-session and red an hour later against the same milojs source.
-`milo` is a symlink to `~/git/milo/milo`, so the compiler moves under this repo.
-Not a milojs bug — track it there.
+`milo build src/milojs-engine.milo` on a clean HEAD failed in LLVM with
+`error: use of undefined value '@.str.5025'` on a `getenv` call, deterministically
+but layout-sensitively: adding unrelated code to `src/eval.milo` moved the index
+and the build succeeded, which is why the suite was green mid-session and red an
+hour later against unchanged milojs source. Gone as of milo `b5a40d2b`. Recorded
+because the failure mode is worth recognising: `milo` is a symlink to
+`~/git/milo/milo`, so a red build here can be a compiler that moved underneath.
 
 ## Node-API: 10 of 64 entry points are stubs
 
