@@ -112,6 +112,26 @@ struct ReParse {
     groupNums: Vec<i64>,
 }
 
+// Same as reCharLen, over the pattern's byte vector.
+fn reCharLenBytes(b: &Vec<u8>, at: i64): i64 {
+    if at >= b.len() {
+        return 1
+    }
+    let x = b[at] as i64
+    var n: i64 = 1
+    if x >= 240 {
+        n = 4
+    } else if x >= 224 {
+        n = 3
+    } else if x >= 192 {
+        n = 2
+    }
+    if at + n > b.len() {
+        return 1
+    }
+    return n
+}
+
 fn reAddNode(p: &mut ReParse, n: ReNode): i64 {
     p.nodes.push(n)
     return p.nodes.len() - 1
@@ -391,6 +411,24 @@ fn reParseAtom(p: &mut ReParse): i64 {
         }
         p.pos = p.pos + 2
         return reAddNode(p, ReNode.Char(reEscapedChar(e)))
+    }
+    // A literal character is one CODE POINT, not one byte. Emitting a Char per
+    // byte let a following quantifier bind to the last byte only, so /^é+$/
+    // meant "0xC3 then one-or-more 0xA9" and failed on "ééé". A multibyte
+    // literal becomes a non-capturing group of its bytes, which is a single
+    // atom for reParseRepeat to attach to.
+    let clen = reCharLenBytes(p.pat, p.pos)
+    if clen > 1 {
+        var bytes: Vec<i64> = Vec.new()
+        var bi: i64 = 0
+        while bi < clen {
+            bytes.push(reAddNode(p, ReNode.Char(p.pat[p.pos + bi])))
+            bi = bi + 1
+        }
+        p.pos = p.pos + clen
+        p.lists.push(bytes)
+        let seq = reAddNode(p, ReNode.Concat(p.lists.len() - 1))
+        return reAddNode(p, ReNode.Group(seq, -1))
     }
     p.pos = p.pos + 1
     return reAddNode(p, ReNode.Char(c))
@@ -801,6 +839,28 @@ fn reCharEq(a: u8, b: u8, fold: bool): bool {
     return false
 }
 
+// Byte length of the UTF-8 sequence starting at `sp`. A continuation byte or an
+// invalid lead answers 1, so a malformed input still makes progress rather than
+// looping.
+fn reCharLen(s: &string, sp: i64): i64 {
+    if sp >= s.len() {
+        return 1
+    }
+    let b = s[sp] as i64
+    var n: i64 = 1
+    if b >= 240 {
+        n = 4
+    } else if b >= 224 {
+        n = 3
+    } else if b >= 192 {
+        n = 2
+    }
+    if sp + n > s.len() {
+        return 1
+    }
+    return n
+}
+
 fn reClassMatch(cls: &ReClass, c: u8, fold: bool): bool {
     var matched = false
     var i: i64 = 0
@@ -848,7 +908,11 @@ fn reRun(re: &Regex, pc: i64, s: &string, sp: i64, saves: &mut Vec<i64>): bool {
     }
     if op == RE_ANY {
         if sp < s.len() && (re.flagS || s[sp] != 10 as u8) {
-            return reRun(re, pc + 1, s, sp + 1, saves)
+            // `.` is one CHARACTER, not one byte. Advancing by 1 made
+            // /^a.b$/ fail on "aéb" and "aéb".match(/./gu).length answer 4,
+            // because a 2-byte é counted as two dots and left a stray
+            // continuation byte for the next instruction.
+            return reRun(re, pc + 1, s, sp + reCharLen(s, sp), saves)
         }
         return false
     }

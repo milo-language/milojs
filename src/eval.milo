@@ -6047,31 +6047,93 @@ fn regexReplaceFn(prog: &Prog, st: &mut Interp, s: &string, rid: i64, fn_: &JSVa
 
 // s.split(re) — the separator is whatever the pattern matches. A zero-width
 // match advances by one so the split cannot loop forever.
+// s.split(re). Two things were missing, both common idioms:
+//
+//   "fooBarBaz".split(/(?=[A-Z])/)  ->  ["fooBarBaz"], node gives ["foo","Bar","Baz"]
+//   "a1b".split(/(\d)/)             ->  ["a","b"],     node gives ["a","1","b"]
+//
+// A ZERO-WIDTH match never split at all (the old loop just advanced past it),
+// and capture groups in the separator were dropped instead of becoming elements.
+// This follows the spec's shape: `p` is the start of the pending piece and `q`
+// the search cursor, and an empty match only advances `q` when it lands exactly
+// at `p`.
 fn regexSplit(st: &mut Interp, s: &string, rid: i64): JSValue {
     let arr = newArray(st)
     pushTemp(st, JSValue.Obj(arr))
-    var last: i64 = 0
-    var searchPos: i64 = 0
-    var going = true
-    while going {
-        let saves = regexExec(st.regexes[rid], s, searchPos)
-        if saves.len() == 0 || searchPos > s.len() {
-            going = false
+    let size = s.len()
+    if size == 0 {
+        // "".split(re) is [""] unless the separator matches the empty string
+        let saves0 = regexExec(st.regexes[rid], s, 0)
+        if saves0.len() == 0 {
+            arrPush(st, arr, JSValue.Str(""))
+        }
+        popTemp(st)
+        return JSValue.Obj(arr)
+    }
+    var p: i64 = 0
+    var q: i64 = 0
+    while q < size {
+        let saves = regexExec(st.regexes[rid], s, q)
+        // The spec matches AT q; regexExec SEARCHES from q, so it can report a
+        // match starting at the end of the string, which the `q < size` loop is
+        // supposed to exclude. Without this, a trailing zero-width match adds a
+        // spurious "" element: "a1b2".split(/(?<=\d)/) came out with three.
+        if saves.len() == 0 || saves[0] >= size {
+            q = size
         } else {
             let mstart = saves[0]
             let mend = saves[1]
-            if mend == mstart {
-                searchPos = mend + 1
+            if mend == p {
+                // an empty match sitting at the piece start would split forever;
+                // step one CHARACTER, not one byte, or the next attempt starts on
+                // a UTF-8 continuation byte
+                q = mstart + utf8LenAt(s, mstart)
             } else {
-                arrPush(st, arr, JSValue.Str(strSlice(s, last, mstart)))
-                last = mend
-                searchPos = mend
+                arrPush(st, arr, JSValue.Str(strSlice(s, p, mstart)))
+                // every capture in the separator becomes an element, undefined
+                // for one that did not participate
+                var gi: i64 = 2
+                while gi + 1 < saves.len() {
+                    if saves[gi] >= 0 && saves[gi + 1] >= 0 {
+                        arrPush(st, arr, JSValue.Str(strSlice(s, saves[gi], saves[gi + 1])))
+                    } else {
+                        arrPush(st, arr, JSValue.Undefined)
+                    }
+                    gi = gi + 2
+                }
+                p = mend
+                if mend == mstart {
+                    q = mend + utf8LenAt(s, mend)
+                } else {
+                    q = mend
+                }
             }
         }
     }
-    arrPush(st, arr, JSValue.Str(strSlice(s, last, s.len())))
+    arrPush(st, arr, JSValue.Str(strSlice(s, p, size)))
     popTemp(st)
     return JSValue.Obj(arr)
+}
+
+// Byte length of the UTF-8 sequence at `at`; 1 for ASCII, a continuation byte or
+// a truncated tail, so a caller stepping through always makes progress.
+fn utf8LenAt(s: &string, at: i64): i64 {
+    if at >= s.len() {
+        return 1
+    }
+    let b = s[at] as i64
+    var n: i64 = 1
+    if b >= 240 {
+        n = 4
+    } else if b >= 224 {
+        n = 3
+    } else if b >= 192 {
+        n = 2
+    }
+    if at + n > s.len() {
+        return 1
+    }
+    return n
 }
 
 // s.match(re): with the g flag, an array of all matched substrings (or null);

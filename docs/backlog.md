@@ -1163,6 +1163,56 @@ hour later against unchanged milojs source. Gone as of milo `b5a40d2b`. Recorded
 because the failure mode is worth recognising: `milo` is a symlink to
 `~/git/milo/milo`, so a red build here can be a compiler that moved underneath.
 
+## The regex engine matched bytes, not code points — DONE 2026-08-15
+
+Found while checking whether `\p{L}` was worth implementing. It is not the first
+thing to fix, because the engine was not code-point aware at all:
+
+| expression | was | node |
+|---|---|---|
+| `"aéb".match(/./gu).length` | 4 | 3 |
+| `/^a.b$/.test("aéb")` | false | true |
+| `/^é+$/u.test("ééé")` | false | true |
+| `/^.$/u.test("😀")` | false | true |
+
+Two causes, both in how an atom is built rather than in the matcher's search:
+
+- **`.` advanced by one BYTE.** `RE_ANY` now steps a whole UTF-8 sequence, so a
+  2-byte é is one dot instead of two plus a stray continuation byte.
+- **A multibyte literal was one `Char` node per byte**, so a following quantifier
+  bound to the LAST BYTE: `/é+/` meant "0xC3 then one-or-more 0xA9". A multibyte
+  literal is now wrapped as a non-capturing group, which is a single atom for the
+  quantifier to attach to.
+
+`built-ins/RegExp` 727/1879 → **734/1879**.
+
+## String.prototype.split ignored zero-width matches and captures — DONE 2026-08-15
+
+Two separate defects in `regexSplit`, both common idioms:
+
+```js
+"fooBarBaz".split(/(?=[A-Z])/)  // was ["fooBarBaz"], node ["foo","Bar","Baz"]
+"a1b".split(/(\d)/)             // was ["a","b"],     node ["a","1","b"]
+```
+
+A zero-width match just advanced the cursor and never split, and capture groups
+in the separator were dropped instead of becoming elements. Rewritten to the
+spec's shape (`p` the pending piece, `q` the cursor, an empty match advancing `q`
+only when it lands at `p`), with one adjustment the spec does not need: it
+matches AT `q` while `regexExec` SEARCHES from `q`, so a match starting at the
+end of the string has to be rejected explicitly or a trailing zero-width
+separator adds a spurious `""`.
+
+`built-ins/String/prototype/split` 64/120 → **68/120**. Locked together by
+`tests/regexCodePointsAndSplit.js`.
+
+**Still open, and now unblocked:** `\p{...}` unicode property escapes are
+entirely unsupported and match nothing silently (`/\p{L}/u.test("é")` is false).
+The code-point work above is the prerequisite; the tables can be generated from
+node the way `tools/gen-unicase.mjs` does. Note the class matcher still works in
+BYTES (`ReClass` holds u8 ranges), so a property class needs code-point ranges
+first.
+
 ## The runtime hid globalThis behind a whitelist, and four missing members — DONE 2026-08-15
 
 - **`globalThis` was a hand-written object in the RUNTIME.** The engine installs

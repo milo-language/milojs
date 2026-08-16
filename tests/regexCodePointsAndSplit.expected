@@ -1,0 +1,28 @@
+dot pieces "a|é|b"
+dot anchored true
+astral dot true
+cjk count 2
+dotall newline true
+dot excludes newline false
+ascii unaffected "a|b|c"
+literal + true
+literal * "-x"
+literal ? true
+literal {2} true
+astral + true
+greedy over cp "éé"
+alt of cps true
+index after cp 2
+camelCase ["foo","Bar","Baz"]
+lookbehind ["a1","b2"]
+empty regex ["a","b","c"]
+empty alt ["a","b","c"]
+capture kept ["a","1","b"]
+two captures ["a","1","b","2","c"]
+optional capture ["a",null,"b"]
+plain separator ["a","b","c"]
+no match ["abc"]
+empty input [""]
+empty input empty re []
+separator at ends ["","a",""]
+multibyte separator ["a","b","c"]
