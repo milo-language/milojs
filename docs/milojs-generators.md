@@ -3,7 +3,7 @@ system: milojs-generators
 purpose: design of record for generator functions in milojs, reusing the async-activation green-task machinery
 key-files: src/eval.milo, src/parser.milo, src/ast.milo
 update-when: generators are implemented or the design changes
-last-verified: 2026-08-15
+last-verified: 2026-08-16
 -->
 
 # milojs: generators (design of record)

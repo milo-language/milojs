@@ -3,7 +3,7 @@ system: backlog
 purpose: what to work on next, with measured conformance attribution per change
 key-files: src/eval.milo, src/builtins.milo, src/parser.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts
 update-when: an item lands, a gap is discovered, or a sweep re-attributes a score
-last-verified: 2026-08-15
+last-verified: 2026-08-16
 -->
 
 # milojs backlog
@@ -1234,10 +1234,34 @@ conversion at the boundary and bytes kept internally.
 
 `built-ins/RegExp` 734/1879 → **736/1879**.
 
-**Lead for next time:** `built-ins/String/prototype/matchAll` is **0/25**. A flat
-zero across a whole directory has twice meant one missing object rather than 25
-defects (see the constructor-prototype sweep above), so it is worth probing
-before assuming it is expensive.
+### matchAll answered an array, and six methods were missing from String.prototype — DONE 2026-08-16
+
+Chasing the 0/25 above. The flat zero was one wire, as the pattern predicted:
+
+- **`matchAll` returned an ARRAY where the spec says an iterator.** So the common
+  `[...s.matchAll(re)]` worked and nothing else did: `.next` was absent, and
+  spreading the same value twice yielded the matches twice where an iterator is
+  exhausted after one pass. It reuses the existing array iterator now, which
+  supplies `next`, `@@iterator` and the one-shot behaviour together.
+- **A non-global regex no longer silently succeeds.** The spec makes it a
+  TypeError, because the result would repeat the same match forever.
+- **Six methods dispatched by name but were absent from `String.prototype`:**
+  `matchAll`, `at`, `codePointAt`, `replaceAll`, `localeCompare`, `normalize`.
+  `typeof "".matchAll` was `"undefined"`, so anything starting from the prototype
+  (which is how test262 is written, and how `Function.prototype.call.bind` and
+  every uncurry idiom work) failed before calling anything.
+
+| area | before | after |
+|---|---:|---:|
+| `String/prototype/matchAll` | 0/25 | **5/25** |
+| `String/prototype/at` | 0/11 | **9/11** |
+| `String/prototype/localeCompare` | 3/13 | **9/13** |
+| `String/prototype/replaceAll` | 5/45 | **9/45** |
+
+`at` was a second flat zero from the same cause, which is the pattern holding a
+third time: **a whole subsystem reading as broken is more often one wire than N
+faults.** The 1500-sample did not move (699 either way); these directories are
+not in it. Locked by `tests/matchAllAndStringProto.js`.
 
 ### Character classes were byte ranges too — DONE 2026-08-15
 

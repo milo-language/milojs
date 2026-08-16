@@ -6252,7 +6252,12 @@ fn regexStrMatchAll(st: &mut Interp, s: &string, rid: i64): JSValue {
         }
     }
     popTemp(st)
-    return JSValue.Obj(arr)
+    // matchAll answers an ITERATOR, not an array. Returning the array made the
+    // common `[...s.matchAll(re)]` work and everything else fail: `.next` did
+    // not exist, and spreading the same value twice yielded the matches twice
+    // where an iterator is exhausted after one pass. Reusing the array iterator
+    // gives the protocol (next, @@iterator, one-shot) for free.
+    return makeArrayIterator(st, arr, 0)
 }
 
 // Execute a pre-loaded module in a fresh CommonJS scope and cache its exports.
@@ -6742,6 +6747,13 @@ fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>, st
         return regexStrMatch(st, s, rid)
     }
     if name == "matchAll" {
+        // the spec rejects a non-global regex here, because the result would be
+        // an infinite sequence of the same match
+        if !st.regexes[rid].flagG {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "String.prototype.matchAll called with a non-global RegExp argument")
+            return JSValue.Undefined
+        }
         return regexStrMatchAll(st, s, rid)
     }
     if name == "split" {
@@ -12042,6 +12054,16 @@ fn strProtoMethodNames(): Vec<string> {
     out.push("toLocaleLowerCase")
     out.push("isWellFormed")
     out.push("toWellFormed")
+    // These dispatched by name but were absent from the prototype, so
+    // `typeof "".matchAll` was "undefined" and every test262 case that starts
+    // from String.prototype failed before calling anything: matchAll was 0/25
+    // for that reason alone, not for 25 defects.
+    out.push("codePointAt")
+    out.push("at")
+    out.push("replaceAll")
+    out.push("localeCompare")
+    out.push("normalize")
+    out.push("matchAll")
     out.push("trim")
     out.push("trimStart")
     out.push("trimEnd")

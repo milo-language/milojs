@@ -1,0 +1,18 @@
+spread 1,2
+next() [false,"a"]
+is iterable function
+one shot [2,0]
+exhausted next [true,null]
+for-of 12
+groups 1
+index and input [1,"xa",1]
+captures a1,b2
+no matches 0
+utf8 indices 3
+non-global throws TypeError
+missing from String.prototype: (none)
+uncurried codePointAt: 233
+borrowed at: c
+borrowed replaceAll: bbb
+borrowed localeCompare: -1
+borrowed matchAll: 2
