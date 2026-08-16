@@ -30,7 +30,7 @@ The project deliberately has two deliverables:
 Engine maturity comes first. Runtime compatibility cannot be credible while the
 language engine and embedding contract are unstable.
 
-About <!--fact:loc-total-->39.0k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
+About <!--fact:loc-total-->39.1k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
 program, with no V8, JavaScriptCore, or C JavaScript engine underneath.
 
 ## Evidence
@@ -44,7 +44,7 @@ reproducible release artifact.
 |---|---:|---|
 | deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->699<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->47.6%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
 | QuickJS `tests/` | **<!--fact:qjs-pass-->98<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = <!--fact:qjs-pct-->65.8%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
-| locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->177<!--/fact--> | byte-exact differential output vs node |
+| locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->178<!--/fact--> | byte-exact differential output vs node |
 | locked runtime fixtures (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->29<!--/fact--> | module, async, fetch, HTTP, sqlite, host behavior |
 | Milo invariant fixtures (`tests/milo/`, `tests/milo-errors/`) | <!--fact:fixtures-milo-->3<!--/fact--> + <!--fact:fixtures-milo-errors-->8<!--/fact--> | scheduler/context and GC-root invariants |
 | ESM / Node-API / embedding fixtures | 2 / 2 / 1 | lowering, addon callbacks, C ABI |

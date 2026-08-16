@@ -1,0 +1,31 @@
+"var =" SyntaxError
+"1 +" SyntaxError
+"function(" SyntaxError
+"}" SyntaxError
+"let 1 = 2" SyntaxError
+"if (" SyntaxError
+"a b c" SyntaxError
+"class" SyntaxError
+"return 1" SyntaxError
+"()=>" SyntaxError
+"[1," SyntaxError
+"({" SyntaxError
+"x ===" SyntaxError
+"foo(" SyntaxError
+"var a = ;" SyntaxError
+"1 + 1" ok
+"var ok = 1" ok
+"function f(){ return 2 }" ok
+"({a:1}).a" ok
+"[1,2].length" ok
+"(() => 3)()" ok
+"class C { m(){ return 4 } }" ok
+"`t${1}`" ok
+"/re/.test('re')" ok
+"if (true) { 5 }" ok
+"l: for(;;){ break l }" ok
+return ASI: undefined
+continue ASI: 2
+break ASI: 1
+labelled continue on one line still works
+typeof: undefined undefined

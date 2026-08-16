@@ -14616,6 +14616,22 @@ pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
         st.thrownValue = makeError(st, "SyntaxError", "Unexpected token in eval")
         return JSValue.Undefined
     }
+    // A top-level `return` is legal in a CommonJS module (node wraps the file in
+    // a function) but not in eval, so this check belongs here rather than in the
+    // parser, which has no way to tell the two apart.
+    var ri: i64 = 0
+    while ri < gProg.blocks[top.index].len() {
+        match getStmt(gProg, gProg.blocks[top.index][ri]) {
+            Stmt.Ret(_rv) => {
+                st.throwing = true
+                st.thrownValue = makeError(st, "SyntaxError", "Illegal return statement")
+                return JSValue.Undefined
+            }
+            _ => {
+            }
+        }
+        ri = ri + 1
+    }
     // `var` and function declarations belong to the CALLER's scope (that is what
     // makes `eval("var q = 6")` visible afterwards), but `let`, `const` and
     // `class` are scoped to the eval itself and must not leak. Hoisting into the

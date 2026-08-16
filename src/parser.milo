@@ -769,8 +769,34 @@ fn parsePrimary(p: &mut PState, prog: &mut Prog): ExprId {
     if k == T_NEW {
         return parseNew(p, prog)
     }
-    // unexpected token: consume it so parsing always makes progress
-    advance(p)
+    // `async`, `let`, `await` and `yield` are contextual keywords with their own
+    // token kinds. Where their operator form does not apply, they are ordinary
+    // identifier references: `typeof async`, `let + 1`. This used to fall into
+    // the silent-undefined case below, which happened to answer correctly for
+    // `typeof async` and wrongly for everything else.
+    if k == T_ASYNC || k == T_LET || k == T_AWAIT || k == T_YIELD {
+        let nm = p.toks[p.pos].text.clone()
+        advance(p)
+        return addExpr(prog, Expr.Ident(nm))
+    }
+    // A token that cannot start an expression. This used to be swallowed
+    // silently and answered `undefined`, which is why the parser ACCEPTED input
+    // that is not a program: `var =`, `1 +`, `}` and `()=>` all ran off the end
+    // here, and `atStatementEnd` then treats EOF as a legal statement end. The
+    // token is still consumed so parsing makes progress and recovery reports as
+    // much as it can, but the parse is now marked failed.
+    if !p.errored {
+        p.errored = true
+        if k == T_EOF {
+            p.eofError = true
+        }
+        if !p.quiet {
+            eprint("milojs: " + p.file + ": expected an expression, found " + tokenDesc(p, p.pos) + "\n  " + tokenContext(p))
+        }
+    }
+    if k != T_EOF {
+        advance(p)
+    }
     return addExpr(prog, Expr.UndefLit)
 }
 
@@ -1795,10 +1821,14 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
     }
     if k == T_BREAK {
         advance(p)
-        // `break label` — the label must follow on the same statement. No ASI
-        // tracking here, so a bare identifier after break is taken as the label.
+        // `break label` — the label is only a label if it is on the SAME line.
+        // Without that check, proxy-addr's
+        //     if (!trust(addrs[i], i)) continue
+        //     addrs.length = i + 1
+        // took `addrs` as the label and then choked on the `.`, silently
+        // mangling the function body.
         var blabel = ""
-        if peekKind(p) == T_IDENT {
+        if peekKind(p) == T_IDENT && !p.toks[p.pos].nlBefore {
             blabel = p.toks[p.pos].text.clone()
             advance(p)
         }
@@ -1810,7 +1840,7 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
     if k == T_CONTINUE {
         advance(p)
         var clabel = ""
-        if peekKind(p) == T_IDENT {
+        if peekKind(p) == T_IDENT && !p.toks[p.pos].nlBefore {
             clabel = p.toks[p.pos].text.clone()
             advance(p)
         }
@@ -1859,7 +1889,14 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
         advance(p)
         var e: Option<ExprId> = Option.None
         let nk = peekKind(p)
-        if nk != T_SEMI && nk != T_RBRACE && nk != T_EOF {
+        // ASI: a line break after `return` ends the statement, so
+        // `return\n  value` returns undefined. Without this the next line is
+        // swallowed as the returned expression.
+        var retNl = false
+        if p.pos < p.toks.len() && p.toks[p.pos].nlBefore {
+            retNl = true
+        }
+        if nk != T_SEMI && nk != T_RBRACE && nk != T_EOF && !retNl {
             // `return a(), b` returns b — the comma operator is part of the
             // returned Expression, not a statement separator.
             e = Option.Some(parseCommaSeq(p, prog))
@@ -1881,6 +1918,12 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
     let e = parseCommaSeq(p, prog)
     if peekKind(p) == T_SEMI {
         advance(p)
+    } else {
+        // Nothing checked that the expression actually ENDED here, so `a b c`
+        // parsed as `a` and then started over, silently dropping `b c`. ASI
+        // still applies: atStatementEnd accepts `}`, EOF and a newline before
+        // the next token.
+        expectStatementEnd(p)
     }
     return addStmt(prog, Stmt.ExprStmt(e))
 }

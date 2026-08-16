@@ -875,27 +875,49 @@ than eval (`new.target` in a function context, `var_obj` semantics).
 
 Locked by `tests/evalRuntime.js`.
 
-## The parser accepts truncated input instead of failing
+## The parser accepted truncated input instead of failing — DONE 2026-08-15
 
-Found while giving eval a SyntaxError path. `expect()` sets `p.errored`, but a
-truncated EXPRESSION never reaches an `expect`: the primary parser runs off the
-end and returns, and `atStatementEnd` treats EOF as a legal statement end. So the
-parser silently accepts input that is not a program. Measured on ten malformed
-sources, six are accepted:
+`parsePrimary` ended in "unexpected token: consume it so parsing always makes
+progress", which swallowed ANY token that cannot start an expression and answered
+`undefined`. `atStatementEnd` then treats EOF as a legal statement end, so a
+truncated expression ran off the end without complaint. Six of ten malformed
+sources parsed clean, and nothing downstream could tell.
 
-| source | node | milojs |
-|---|---|---|
-| `var =` | SyntaxError | accepted |
-| `1 +` | SyntaxError | accepted |
-| `}` | SyntaxError | accepted |
-| `a b c` | SyntaxError | runs `a`, ReferenceError |
-| `return 1` | SyntaxError | accepted |
-| `()=>` | SyntaxError | accepted |
+Three separate holes, all closed:
 
-`eval` now reports a SyntaxError when the parser flags an error OR leaves tokens
-unconsumed, which catches the rest, but the underlying gap is the parser's. It
-also costs test262 the `Expected a SyntaxError to be thrown` bucket, and it is
-why a typo in a source file can execute the wreckage rather than being rejected.
+- **`parsePrimary`'s fallback now marks the parse failed** (still consuming the
+  token so recovery reports as much as it can, and not consuming EOF). That
+  covers `var =`, `1 +`, `}` and `()=>`.
+- **An expression statement had no end check.** `a b c` parsed as `a` and then
+  started over, silently dropping `b c`. It now calls `expectStatementEnd`, which
+  still honours ASI.
+- **A top-level `return` is rejected in eval only.** It is legal in a CommonJS
+  module, since node wraps the file in a function, so the parser cannot tell the
+  two apart; `runEvalSource` checks the parsed block instead.
+
+Making the parser strict immediately exposed a bug it had been hiding, in
+express's own dependency tree: **`break` and `continue` took the next line as
+their label.** `proxy-addr` writes
+
+```js
+if (!trust(addrs[i], i)) continue
+addrs.length = i + 1
+```
+
+and the label parser consumed `addrs`, then choked on the `.`, silently mangling
+the function body. The comment above it admitted "No ASI tracking here". `return`
+had the same gap in the other direction, swallowing the next line as its
+expression. All three now stop at a line break.
+
+Verified against five real applications: tahoeroads still serves bytes identical
+to node on every route and now logs **zero** parse errors (it was mangling
+proxy-addr before), and the other four apps report zero parse errors and fail at
+exactly the same get-intrinsic point as before. No valid code was rejected.
+
+QuickJS `tests/` 98/149 → **99/149**. The test262 sample did not move: its
+`Expected a SyntaxError` bucket is mostly early errors the parser still does not
+diagnose (duplicate declarations, bad assignment targets, strict-mode rules),
+which is a separate body of work. Locked by `tests/parserRejectsBadInput.js`.
 
 ## What a real application found that the suites did not — 2026-08-15
 
