@@ -20,3 +20,13 @@ p("empty form", () => "abc".normalize(""));
 p("numeric form", () => "abc".normalize(1));
 p("ascii is unchanged", () => "abc".normalize("NFC"));
 p("already composed stays", () => "é".normalize("NFC") === "é");
+
+// isWellFormed/toWellFormed scan for unpaired surrogates rather than asserting
+// that UTF-8 makes them impossible. Only strings milojs can actually build are
+// asserted here: node keeps a lone surrogate that this engine substitutes at
+// construction, which is a representation gap tracked in the backlog, not a
+// property of these two functions.
+console.log("ascii:", "ab".isWellFormed(), "emoji:", "\u{1F600}".isWellFormed());
+console.log("toWellFormed is identity for well-formed input:",
+  "ab".toWellFormed() === "ab", "\u{1F600}".toWellFormed() === "\u{1F600}");
+console.log("mixed:", "a\u{1F600}b".isWellFormed(), "a\u{1F600}b".toWellFormed().length);

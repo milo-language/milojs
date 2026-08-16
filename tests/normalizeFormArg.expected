@@ -10,3 +10,6 @@ empty form RangeError
 numeric form RangeError
 ascii is unchanged abc
 already composed stays true
+ascii: true emoji: true
+toWellFormed is identity for well-formed input: true true
+mixed: true 4

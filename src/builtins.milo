@@ -565,15 +565,58 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         // diverges for tr/az/lt
         return JSValue.Str(strUpper(s))
     }
-    // ES2024. milojs strings are UTF-8, which cannot represent a lone surrogate,
-    // so every string here is well-formed by construction: callers use these to
-    // decide whether to sanitise before encoding, and there is nothing to
-    // sanitise.
-    if name == "isWellFormed" {
-        return JSValue.Bool(true)
-    }
-    if name == "toWellFormed" {
-        return JSValue.Str(s.clone())
+    // ES2024. These MEASURE the string rather than asserting an invariant about
+    // it. The first version returned true unconditionally, arguing that milojs
+    // strings are UTF-8 and so well-formed by construction. That argument is
+    // currently true — `String.fromCharCode(0xD800)` substitutes U+FFFD and
+    // `"\u{1F600}".slice(0,1)` answers the WHOLE character rather than half of
+    // one, so no operation here yields a lone surrogate — but it is an argument
+    // about the rest of the engine, made at a site that cannot enforce it. If
+    // the string representation ever grows a way to hold one (WTF-8, a rope of
+    // UTF-16 units), a scan keeps working where a `return true` becomes a lie
+    // nobody edits.
+    //
+    // The answers are identical today for every string milojs can build. Where
+    // milojs and node differ is UPSTREAM and recorded in the backlog: node keeps
+    // a lone surrogate that this engine cannot represent.
+    if name == "isWellFormed" || name == "toWellFormed" {
+        let n = utf16Length(s)
+        var out = String.withCapacity(s.len())
+        var wellFormed = true
+        var i: i64 = 0
+        while i < n {
+            let u = utf16UnitAt(s, i)
+            if u >= 55296 && u <= 56319 {
+                // a high surrogate is well-formed only when a low one follows
+                var paired = false
+                if i + 1 < n {
+                    let lo = utf16UnitAt(s, i + 1)
+                    if lo >= 56320 && lo <= 57343 {
+                        paired = true
+                    }
+                }
+                if paired {
+                    out = out + utf16Slice(s, i, i + 2)
+                    i = i + 2
+                } else {
+                    wellFormed = false
+                    encodeCodepoint(out, 65533 as i32)
+                    i = i + 1
+                }
+            } else if u >= 56320 && u <= 57343 {
+                // a low surrogate with no high one before it
+                wellFormed = false
+                encodeCodepoint(out, 65533 as i32)
+                i = i + 1
+            } else {
+                out = out + utf16Slice(s, i, i + 1)
+                i = i + 1
+            }
+        }
+        if name == "isWellFormed" {
+            return JSValue.Bool(wellFormed)
+        }
+        return JSValue.Str(out)
     }
     if name == "toLowerCase" || name == "toLocaleLowerCase" {
         return JSValue.Str(strLower(s))

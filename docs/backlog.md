@@ -1245,6 +1245,39 @@ conversion at the boundary and bytes kept internally.
 
 `built-ins/RegExp` 734/1879 → **736/1879**.
 
+### The UTF-16 model is lossy for lone surrogates — OPEN
+
+Found by turning the milo maintainer's "grep for JUSTIFICATIONS, not limitation
+notes" at code I had written hours earlier. milojs strings are UTF-8, which has
+no encoding for an unpaired surrogate, and two operations lose data rather than
+erroring:
+
+| expression | milojs | node |
+|---|---|---|
+| `String.fromCharCode(0xD800).charCodeAt(0)` | 65533 (U+FFFD) | 55296 |
+| `JSON.parse('"\ud800"').charCodeAt(0)` | 65533 | 55296 |
+| `"\u{1F600}".slice(0,1).length` | 2 (whole char) | 1 (the high half) |
+
+The substitution is silent. A program doing surrogate arithmetic, or round-
+tripping JSON that contains `\ud800`, gets a different string back and no
+indication. Fixing it means a representation that can hold unpaired surrogates
+(WTF-8, or UTF-16 units with a UTF-8 fast path), which is a string-layer decision
+rather than a patch.
+
+`isWellFormed`/`toWellFormed` were rewritten to SCAN for unpaired surrogates
+instead of returning `true` unconditionally. The answers are identical today,
+because no operation can produce one; the point is that the old version argued an
+invariant about the rest of the engine from a site that cannot enforce it, so it
+would have become a lie silently. A scan keeps working if the representation ever
+changes.
+
+**A correction worth keeping.** On first reading `"\u{1F600}".slice(0,1).charCodeAt(0)`
+answering 55357 in both engines, I concluded milojs COULD hold half a character
+and that my earlier reasoning had been wrong twice over. It had not: 55357 is
+simply the first unit of the whole character milojs returns, and its `.length` is
+2 where node's is 1. Condemning your own earlier work is not automatically the
+rigorous move; it needs the same evidence as defending it.
+
 ### An audit for silent limitations, mostly negative — 2026-08-16
 
 Run at the milo maintainer's suggestion after they found `std/json` decoding
