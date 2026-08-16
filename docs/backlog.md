@@ -1773,3 +1773,55 @@ primitive rather than a String wrapper object, so `0 in Object('a')` throws.
 That is the primitive-wrapper item already open below.
 
 Locked by `tests/coercionAndNewCallee.js`.
+
+## Primitive wrapper objects did not exist — DONE 2026-08-16
+
+`new String("a")`, `new Number(1)`, `new Boolean(false)` and `Object(prim)` all
+handed back the PRIMITIVE. Three observable things were wrong at once: `typeof`
+said "string", `new Boolean(false)` was falsy, and the result was `===` its own
+primitive. The fourth consequence is the one that surfaced it: `0 in Object("a")`
+threw, because the `in` really was being applied to a string.
+
+Found by the npm-package corpus. `array.prototype.every`'s first two lines are
+
+    var boxedString = Object('a');
+    var splitString = boxedString[0] !== 'a' || !(0 in boxedString);
+
+a feature probe for an engine bug from 2010, and it is a dependency of tape.
+
+A wrapper is now an ordinary object carrying `JSObjExtra.boxed`, which doubles as
+its own discriminator since no wrapper ever holds undefined or null. A String
+wrapper materialises its index properties and `length` eagerly, frozen and (for
+the indices) enumerable, matching node's descriptors: the string behind them can
+never change, so there is nothing to keep in sync and every path that enumerates,
+tests `in`, or reads a key works without a special case.
+
+The paths that had to learn about it:
+
+- **ToPrimitive** unwraps, which covers `+`, template holes, `String()`,
+  `Number()`, and relational comparison in one place.
+- **`==` between an object and a primitive** now converts the object side. That
+  is the general spec rule, not a wrapper special case; it was simply missing.
+- **Method dispatch** delegates to the primitive for anything the wrapper does
+  not own, because the prototype's entries are bound methods carrying no
+  receiver. A user-defined override still wins.
+- **instanceof**, **spread/iteration**, **`Object.prototype.toString`** tags, and
+  **JSON.stringify**.
+
+Two things learned the hard way. JSON.stringify is implemented in
+`lib/engine-prelude.js`, not in the native: the native cannot call back into user
+code, so `toJSON`, the replacer and the reviver live in JS. Unwrapping in
+`mjPushStringified` therefore had no effect at all, and the debug print that
+proved the branch was never reached was worth more than the reasoning that said
+it should have been. And `Object.prototype`'s own methods were enumerable, which
+nothing had ever exposed because a plain object is not linked to it here; String
+wrappers listed `hasOwnProperty`/`toString`/`valueOf`/`isPrototypeOf` among a
+string's indices in for-in until they were marked non-enumerable.
+
+Measured on the 53-package corpus: 52 of 53 suites now execute (they previously
+died before their first assertion), 666 of 1699 assertions pass where 0 did, and
+20 packages match node's assertion count exactly. The remaining gap is spread
+across many small causes rather than one barrier, which is a different kind of
+work from the three single-cause fixes that got here.
+
+Locked by `tests/primitiveWrappers.js`.

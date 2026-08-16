@@ -503,6 +503,10 @@ struct JSObjExtra {
     nativeBufPtr: i64,
     nativeBufLen: i64,
     nativeBufOwned: bool,
+    // The primitive a wrapper object wraps: `new String("a")`, `Object(1)`,
+    // `new Boolean(false)`. Undefined means this is not a wrapper, which is its
+    // own discriminator since no wrapper ever holds undefined or null.
+    boxed: JSValue,
     // Set only on the scratch array that adapts an array-like receiver for a
     // generic Array.prototype method (see arrayLikeToArray): the handle of the
     // ORIGINAL receiver, which the spec says callbacks get as their 3rd
@@ -537,6 +541,7 @@ pub fn defaultExtra(): JSObjExtra {
         nativeBufLen: -1,
         nativeBufOwned: false,
         arrayLikeOrig: -1,
+        boxed: JSValue.Undefined,
     }
 }
 
@@ -1020,6 +1025,33 @@ fn releaseExtra(st: &mut Interp, o: i64) {
         st.objExtras[ex] = defaultExtra()
         st.objExtraFree.push(ex)
         st.objects[o].extra = 0
+    }
+}
+
+// A String wrapper's own index and length properties: readable and enumerable
+// (the indices) but frozen, matching the descriptors node reports. They are
+// materialised eagerly because the string behind them can never change.
+pub fn objSetFrozenOwn(st: &mut Interp, obj: i64, key: string, value: JSValue, enumerable: bool) {
+    st.objects[obj].props.push(Prop {
+        key: key, value: value, acc: Option.None, writable: false, enumerable: enumerable, configurable: false
+    })
+}
+
+// A wrapper object's primitive, or Undefined when the object is not a wrapper.
+// Lives here rather than in eval.milo because builtins.milo needs it too (JSON
+// serialises a wrapper as its primitive) and cannot import from eval.
+pub fn boxedPrimitive(st: &Interp, h: i64): JSValue {
+    return cloneValue(st.objExtras[st.objects[h].extra].boxed)
+}
+
+pub fn isWrapperObj(st: &Interp, h: i64): bool {
+    match boxedPrimitive(st, h) {
+        JSValue.Undefined => {
+            return false
+        }
+        _ => {
+            return true
+        }
     }
 }
 

@@ -95,6 +95,16 @@ pub fn bitsToF64(bits: i64): f64
 
 _Undocumented._
 
+### `boxedPrimitive`
+
+```milo
+pub fn boxedPrimitive(st: &Interp, h: i64): JSValue
+```
+
+A wrapper object's primitive, or Undefined when the object is not a wrapper.
+Lives here rather than in eval.milo because builtins.milo needs it too (JSON
+serialises a wrapper as its primitive) and cannot import from eval.
+
 ### `bufferBytesHandle`
 
 ```milo
@@ -213,6 +223,14 @@ _Undocumented._
 
 ```milo
 pub fn isPromiseCtor(st: &Interp, o: i64): bool
+```
+
+_Undocumented._
+
+### `isWrapperObj`
+
+```milo
+pub fn isWrapperObj(st: &Interp, h: i64): bool
 ```
 
 _Undocumented._
@@ -401,6 +419,16 @@ pub fn objSet(st: &mut Interp, obj: i64, key: string, value: JSValue)
 ```
 
 _Undocumented._
+
+### `objSetFrozenOwn`
+
+```milo
+pub fn objSetFrozenOwn(st: &mut Interp, obj: i64, key: string, value: JSValue, enumerable: bool)
+```
+
+A String wrapper's own index and length properties: readable and enumerable
+(the indices) but frozen, matching the descriptors node reports. They are
+materialised eagerly because the string behind them can never change.
 
 ### `objSetNonConfigurable`
 

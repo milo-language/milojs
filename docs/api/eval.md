@@ -102,6 +102,17 @@ pub fn makeError(st: &mut Interp, kind: string, msg: string): JSValue
 
 _Undocumented._
 
+### `makeWrapper`
+
+```milo
+pub fn makeWrapper(st: &mut Interp, v: &JSValue): JSValue
+```
+
+Box a primitive. A String wrapper materialises its index properties and
+length up front: the string is immutable, so there is nothing to keep in sync,
+and it makes `0 in s`, Object.keys and for-in work without a special case on
+every path that enumerates.
+
 ### `parkOnPromise`
 
 ```milo

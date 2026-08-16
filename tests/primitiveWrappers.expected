@@ -1,0 +1,21 @@
+typeof ["object","object","object","object"]
+truthy [true,true,true]
+identity [false,false,false]
+loose eq [true,true,true]
+in [true,true,false]
+tags ["[object String]","[object Number]","[object Boolean]"]
+valueOf ["ab",7,false]
+methods ["AB","1.23","bc"]
+coercion ["xy","3",6,"z",7]
+indices [3,"e",["0","1"]]
+descriptor {"value":"a","writable":false,"enumerable":true,"configurable":false}
+length descriptor {"value":2,"writable":false,"enumerable":false,"configurable":false}
+iteration [["a","b"],["a","b"]]
+for-in ["0","1"]
+instanceof [true,true,true,false]
+constructor ["String","Number"]
+JSON ["\"ab\"","5","false","{\"a\":\"x\",\"b\":2}"]
+Object() boxes once true
+distinct identities 2
+called without new ["string","number","boolean"]
+proto not enumerated ["0"]

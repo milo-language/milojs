@@ -9,7 +9,7 @@ from "./value" import {
     JSValue, i64ToStr, daysFromCivil
 }
 from "./runtime" import {
-    Interp, Timer, Microtask, Reaction, PendingFetch, NATIVE_RESOLVER_BASE, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr
+    Interp, Timer, Microtask, Reaction, PendingFetch, NATIVE_RESOLVER_BASE, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn
 }
 from "./builtins" import {
     stringMethod, jsCharAt, mjStringifyVal, mjJsonParse, mjJsonOmitted
@@ -262,7 +262,72 @@ fn trySymToPrimitive(prog: &Prog, h: i64, hint: &string, st: &mut Interp): Optio
     return Option.None
 }
 
+// `new String("a")` is an OBJECT: typeof says "object", it is truthy even for
+// `new Boolean(false)`, and it is never === its primitive. Returning the
+// primitive from these constructors, as this engine used to, gets all three
+// wrong, and it also made `0 in Object("a")` throw, because the `in` really was
+// being applied to a string. boxedPrimitive/isWrapperObj live in runtime.milo.
+// The prototype object a built-in constructor hands to its instances. Held in
+// the constructor's own property bag, which is where buildNativeProto put it.
+fn nativeProtoHandle(st: &mut Interp, nativeId: i64): i64 {
+    let bag = getNativeProps(st, nativeId)
+    return objHandle(objGet(st, bag, "prototype"))
+}
+
+// Box a primitive. A String wrapper materialises its index properties and
+// length up front: the string is immutable, so there is nothing to keep in sync,
+// and it makes `0 in s`, Object.keys and for-in work without a special case on
+// every path that enumerates.
+pub fn makeWrapper(st: &mut Interp, v: &JSValue): JSValue {
+    let o = newObject(st)
+    pushTemp(st, JSValue.Obj(o))
+    var protoNative: i64 = -1
+    match v {
+        JSValue.Str(sv) => {
+            if isSymbolStr(sv) {
+                protoNative = NATIVE_SYMBOL
+            } else {
+                st.objects[o].proto = st.stringProtoObj
+                var idx: i64 = 0
+                let cps = strCodePoints(sv)
+                while idx < cps.len() {
+                    // enumerable, unlike length: Object.keys(Object("ab")) is
+                    // ["0","1"] and for-in visits the indices
+                    objSetFrozenOwn(st, o, numToStr(idx as f64), JSValue.Str(cps[idx].clone()), true)
+                    idx = idx + 1
+                }
+                objSetFrozenOwn(st, o, "length", JSValue.Number(utf16Length(sv) as f64), false)
+            }
+        }
+        JSValue.Number(_n) => {
+            protoNative = NATIVE_NUMBER
+        }
+        JSValue.Bool(_b) => {
+            protoNative = NATIVE_BOOLEAN
+        }
+        JSValue.BigInt(_g) => {
+            protoNative = NATIVE_BIGINT
+        }
+        _ => {
+        }
+    }
+    if protoNative >= 0 {
+        let pr = nativeProtoHandle(st, protoNative)
+        if pr >= 0 {
+            st.objects[o].proto = pr
+        }
+    }
+    let _ = ensureExtra(st, o)
+    st.objExtras[st.objects[o].extra].boxed = cloneValue(v)
+    popTemp(st)
+    return JSValue.Obj(o)
+}
+
 fn toPrimitiveNumber(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
+    let bh = objHandle(v)
+    if bh >= 0 && isWrapperObj(st, bh) {
+        return boxedPrimitive(st, bh)
+    }
     let h = objHandle(v)
     if h >= 0 {
         match trySymToPrimitive(prog, h, "number", st) {
@@ -280,6 +345,10 @@ fn toPrimitiveNumber(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
 }
 
 fn toPrimitiveDefault(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
+    let bh = objHandle(v)
+    if bh >= 0 && isWrapperObj(st, bh) {
+        return boxedPrimitive(st, bh)
+    }
     let h = objHandle(v)
     if h < 0 {
         return cloneValue(v)
@@ -331,6 +400,10 @@ fn toPrimitiveDefault(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
 // the order is observable — an object with both methods gives its toString here
 // and its valueOf under `+`.
 fn toPrimitiveString(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
+    let bh = objHandle(v)
+    if bh >= 0 && isWrapperObj(st, bh) {
+        return boxedPrimitive(st, bh)
+    }
     let h = objHandle(v)
     if h < 0 {
         return cloneValue(v)
@@ -2641,6 +2714,27 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
 
 // The tag Object.prototype.toString uses for a heap-object receiver.
 fn objectTag(st: &Interp, o: i64): string {
+    if isWrapperObj(st, o) {
+        match st.objExtras[st.objects[o].extra].boxed {
+            JSValue.Str(bs) => {
+                if isSymbolStr(bs) {
+                    return "Symbol"
+                }
+                return "String"
+            }
+            JSValue.Number(_bn) => {
+                return "Number"
+            }
+            JSValue.Bool(_bb) => {
+                return "Boolean"
+            }
+            JSValue.BigInt(_bg) => {
+                return "BigInt"
+            }
+            _ => {
+            }
+        }
+    }
     if st.objects[o].isArray {
         return "Array"
     }
@@ -4886,7 +4980,10 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 JSValue.Null => {
                 }
                 _ => {
-                    return cloneValue(argVals[0])
+                    // ToObject, so this BOXES. It used to hand the primitive
+                    // straight back, which is why `0 in Object("a")` threw: the
+                    // `in` was being applied to a string after all.
+                    return makeWrapper(st, argVals[0])
                 }
             }
         }
@@ -6612,6 +6709,23 @@ fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
                     if id == NATIVE_DATE {
                         return st.objects[o].isDate
                     }
+                    // a wrapper is an instance of the constructor that boxed it
+                    if id == NATIVE_STRING || id == NATIVE_NUMBER || id == NATIVE_BOOLEAN {
+                        match st.objExtras[st.objects[o].extra].boxed {
+                            JSValue.Str(_ws) => {
+                                return id == NATIVE_STRING
+                            }
+                            JSValue.Number(_wn) => {
+                                return id == NATIVE_NUMBER
+                            }
+                            JSValue.Bool(_wb) => {
+                                return id == NATIVE_BOOLEAN
+                            }
+                            _ => {
+                                return false
+                            }
+                        }
+                    }
                     if id == NATIVE_MAP {
                         return st.objects[o].isMap
                     }
@@ -7233,6 +7347,13 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, objectProto, "valueOf", makeBoundMethod(st, JSValue.Undefined, "valueOf"))
     objSet(st, objectProto, "isPrototypeOf", makeBoundMethod(st, JSValue.Undefined, "isPrototypeOf"))
     objSet(st, objectProto, "propertyIsEnumerable", makeBoundMethod(st, JSValue.Undefined, "propertyIsEnumerable"))
+    // Object.prototype's own methods are non-enumerable. Nothing had it in a
+    // for-in reachable chain before (a plain object is not linked to it here),
+    // so the omission stayed invisible until String wrappers arrived and listed
+    // hasOwnProperty/toString/valueOf/isPrototypeOf among a string's indices.
+    for opm in ["hasOwnProperty", "toString", "valueOf", "isPrototypeOf", "propertyIsEnumerable"] {
+        objSetNonEnumerable(st, objectProto, opm)
+    }
     objSet(st, objectCtor, "prototype", JSValue.Obj(objectProto))
     st.objectProtoObj = objectProto
     // after objectProtoObj exists: Error.prototype chains to it
@@ -7712,6 +7833,26 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Inter
     popTemp(st)
     if isBigIntVal(va) || isBigIntVal(vb) {
         return evalBigIntBin(op, va, vb, st)
+    }
+    // `==` between an object and a primitive converts the OBJECT side, which is
+    // how `new String("a") == "a"` is true while `===` stays false. Two objects
+    // still compare by reference, so this fires only on a mixed pair.
+    if (op == "==" || op == "!=") && (objHandle(va) >= 0) != (objHandle(vb) >= 0) {
+        pushTemp(st, cloneValue(va))
+        pushTemp(st, cloneValue(vb))
+        var ea = cloneValue(va)
+        var eb = cloneValue(vb)
+        if objHandle(va) >= 0 {
+            ea = toPrimitiveDefault(prog, va, st)
+        } else {
+            eb = toPrimitiveDefault(prog, vb, st)
+        }
+        popTemp(st)
+        popTemp(st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        return evalBin(op, ea, eb)
     }
     let coerces = op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "<" || op == ">" || op == "<=" || op == ">="
     if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0) {
@@ -8613,6 +8754,16 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                 }
                 JSValue.Native(nativeId) => {
                     let argVals = evalArgs(prog, argsIdx, st, scope)
+                    // Called as a function these three coerce; called with `new`
+                    // they BOX. Ignoring `new` made `new Boolean(false)` falsy
+                    // and `typeof new String("")` report "string".
+                    if nativeId == NATIVE_STRING || nativeId == NATIVE_NUMBER || nativeId == NATIVE_BOOLEAN {
+                        let prim = callNativeProg(prog, nativeId, argVals, st)
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
+                        return makeWrapper(st, prim)
+                    }
                     return callNativeProg(prog, nativeId, argVals, st)
                 }
                 JSValue.Obj(co) => {
@@ -8916,6 +9067,24 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
 // immutable helper it once was.
 fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp) {
     let h = objHandle(v)
+    // a String wrapper iterates as its string does, by code point. Its index
+    // properties would make an array-like fallback plausible, but the spec
+    // reaches String.prototype[@@iterator] through the chain, and that yields
+    // whole characters rather than UTF-16 units.
+    if h >= 0 && isWrapperObj(st, h) {
+        match boxedPrimitive(st, h) {
+            JSValue.Str(bs) => {
+                if !isSymbolStr(bs) {
+                    for cp in strCodePoints(bs) {
+                        out.push(JSValue.Str(cp.clone()))
+                    }
+                    return
+                }
+            }
+            _ => {
+            }
+        }
+    }
     // typed arrays are iterable by element
     if h >= 0 && st.objExtras[st.objects[h].extra].taBuf >= 0 && !st.objects[h].isDataView {
         var i: i64 = 0
@@ -14707,6 +14876,33 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             // native there, so a user who replaces Array.prototype.map actually
             // gets their version called. Dispatching by name unconditionally made
             // an override visible to a read but not to a call.
+            // A wrapper delegates to its primitive for anything it does not own.
+            // Its prototype's entries are bound methods carrying no receiver, so
+            // the generic chain walk below cannot supply one; a user-defined
+            // override (a Func) still wins and falls through.
+            if isWrapperObj(st, o) && objOwnIndex(st, o, name) < 0 {
+                var wrapperOverridden = false
+                match getMemberDyn(prog, o, name, st) {
+                    JSValue.Func(_wf, _we) => {
+                        wrapperOverridden = true
+                    }
+                    _ => {
+                    }
+                }
+                if !wrapperOverridden {
+                    // valueOf unwraps, and there is no primitive method to
+                    // delegate it to: a primitive IS its own valueOf, so the
+                    // string path answers undefined for it.
+                    if name == "valueOf" {
+                        popTemp(st)
+                        return boxedPrimitive(st, o)
+                    }
+                    let argVals = evalArgs(prog, argsIdx, st, scope)
+                    let r = callBuiltinByName(prog, boxedPrimitive(st, o), name, argVals, st)
+                    popTemp(st)
+                    return r
+                }
+            }
             // getMemberDyn so a property whose value comes from a getter is
             // callable, e.g. Object.defineProperty(o, "fn", { get: () => f })
             let m = getMemberDyn(prog, o, name, st)
