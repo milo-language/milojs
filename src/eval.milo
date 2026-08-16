@@ -2121,6 +2121,13 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
             }
             return JSValue.Str("[object " + objectTag(st, o) + "]")
         }
+        match recv {
+            JSValue.Func(fi, _fe) => {
+                return JSValue.Str("[object " + funcTag(prog, fi) + "]")
+            }
+            _ => {
+            }
+        }
         return JSValue.Str("[object " + objectTypeTag(recv) + "]")
     }
     // A primitive receiver reaching a built-in method value: this is
@@ -2582,10 +2589,38 @@ fn objectTag(st: &Interp, o: i64): string {
     if st.objExtras[st.objects[o].extra].taBuf >= 0 {
         return taName(st.objExtras[st.objects[o].extra].taKind)
     }
+    // A generator OBJECT is not a plain object: node reports [object Generator],
+    // and util.types.isGeneratorObject is built on exactly this tag.
+    if st.objects[o].isAsyncGenerator {
+        return "AsyncGenerator"
+    }
+    if st.objects[o].isGenerator {
+        return "Generator"
+    }
     if st.objects[o].isBound || st.objects[o].isFunctionLike {
         return "Function"
     }
     return "Object"
+}
+
+// The tag for a FUNCTION value, which needs the Prog to see whether the
+// definition was async or a generator. Object.prototype.toString reports
+// [object AsyncFunction] / [object GeneratorFunction] for those, and
+// util.types.isAsyncFunction and isGeneratorFunction read them.
+fn funcTag(prog: &Prog, fIdx: i64): string {
+    if fIdx < 0 || fIdx >= prog.funcs.len() {
+        return "Function"
+    }
+    if prog.funcs[fIdx].isAsync && prog.funcs[fIdx].isGenerator {
+        return "AsyncGeneratorFunction"
+    }
+    if prog.funcs[fIdx].isAsync {
+        return "AsyncFunction"
+    }
+    if prog.funcs[fIdx].isGenerator {
+        return "GeneratorFunction"
+    }
+    return "Function"
 }
 
 // The tag Object.prototype.toString uses for a primitive receiver.

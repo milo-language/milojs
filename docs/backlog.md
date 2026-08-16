@@ -1245,6 +1245,38 @@ conversion at the boundary and bytes kept internally.
 
 `built-ins/RegExp` 734/1879 → **736/1879**.
 
+### util.types lied about features this engine has — DONE 2026-08-16
+
+Found with the milo maintainer's mechanical grep (functions whose whole body is a
+constant return, where the NAME promises a check). Four `util.types` predicates
+returned a constant `false`:
+
+    isAsyncFunction(async function(){})   false, node true
+    isGeneratorFunction(function*(){})    false, node true
+    isGeneratorObject(gen())              TypeError: not a function
+    isBoxedPrimitive(new Number(1))       false, node true
+
+The first three are features milojs genuinely has, so a caller dispatching on
+`util.types` took the wrong branch silently. Fixing them needed the type tags
+first, which were also wrong: an async function, a generator function and a
+generator object all reported `[object Function]` or `[object Object]`. They now
+report `AsyncFunction`, `GeneratorFunction`, `AsyncGeneratorFunction`,
+`Generator` and `AsyncGenerator`, matching node, which is what
+`Object.prototype.toString` is supposed to say and what the predicates read.
+
+Two remain `false`, both for reasons that are properties of the engine rather
+than guesses, and both written as real checks so they become correct on their own
+if that changes:
+
+- **`isProxy`**: a Proxy here is indistinguishable from its target through any
+  JS-visible channel (its type tag reflects the target, as in node). node answers
+  true using an internal slot this engine does not expose.
+- **`isBoxedPrimitive`**: there are no wrapper objects to find. `new Number(1)`
+  returns the PRIMITIVE 1 (`typeof` is `"number"`, `instanceof Number` is
+  false), so `new String`/`new Boolean`/`new Number` are all identity. That is
+  the real gap and it is bigger than these predicates: it is also why
+  `Number.prototype` is a plain object rather than a Number wrapping 0.
+
 ### The UTF-16 model is lossy for lone surrogates — OPEN
 
 Found by turning the milo maintainer's "grep for JUSTIFICATIONS, not limitation

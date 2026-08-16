@@ -1,0 +1,12 @@
+async fn tag: [object AsyncFunction]
+gen fn tag: [object GeneratorFunction]
+async gen fn tag: [object AsyncGeneratorFunction]
+gen obj tag: [object Generator]
+plain fn tag: [object Function]
+arrow tag: [object Function]
+isAsyncFunction: true false
+isGeneratorFunction: true false
+isGeneratorObject: true false
+async generator counts as both: true true
+unchanged: true,true,true,true,true,true
+negatives: false,false,false,false
