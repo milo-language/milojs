@@ -1891,6 +1891,22 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                 isStatic = true
                 advance(p)
             }
+            if isStatic && peekKind(p) == T_LBRACE {
+                // `static { ... }` (ES2022). It was not parsed at all, and a
+                // parse error is fatal — one static block anywhere killed the
+                // whole file, not just the class. Modelled as a static field
+                // with an EMPTY name whose initializer is a function; the class
+                // builder calls it with `this` = the class and stores nothing.
+                var sbParams: Vec<string> = Vec.new()
+                let sbBody = parseBraceBlock(p, prog)
+                prog.funcs.push(FuncDef {
+                    name: "", params: sbParams, body: sbBody, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false
+                }
+                )
+                staticFieldNames.push("")
+                staticFieldInits.push(addExpr(prog, Expr.FuncExpr(prog.funcs.len() - 1)))
+                continue
+            }
             if peekKind(p) == T_ASYNC && p.pos + 1 < p.toks.len() && p.toks[p.pos + 1].kind != T_LPAREN {
                 isAsyncM = true
                 advance(p)

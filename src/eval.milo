@@ -11847,7 +11847,14 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
         let sfInit = prog.classes[classIdx].staticFieldInits[sf]
         let statics = getFuncStatics(st, ctorFn, classScope)
         let sfVal = evalExpr(prog, sfInit, st, classScope)
-        objSet(st, statics, sfName, sfVal)
+        if sfName.len() == 0 {
+            // a `static { }` block, not a field: run it with `this` bound to the
+            // class and keep nothing
+            var sbArgs: Vec<JSValue> = Vec.new()
+            let _r = callValue(prog, sfVal, sbArgs, cloneValue(classVal), st)
+        } else {
+            objSet(st, statics, sfName, sfVal)
+        }
         sf = sf + 1
     }
     popActive(st)

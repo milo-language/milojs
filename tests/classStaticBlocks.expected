@@ -1,0 +1,11 @@
+basic 5
+thisIsClass 7
+order abcd
+seesStatics 6
+multiple 2
+privateAccess 5
+empty ok
+nestedClass 9
+methodStillWorks 1
+staticNamedStatic 3
+inheritance ["A","A"]
