@@ -6106,7 +6106,13 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         var s: i64 = 1
         while s < argVals.len() {
-            let srcVal = cloneValue(argVals[s])
+            var srcVal = cloneValue(argVals[s])
+            // a STRING source contributes its index properties: the spec runs
+            // ToObject on each non-nullish source, and only a boxed string has
+            // enumerable own keys to copy
+            if propertyBagOf(st, srcVal) < 0 && !isNullish(srcVal) {
+                srcVal = makeWrapper(st, argVals[s])
+            }
             let src = propertyBagOf(st, srcVal)
             if src >= 0 {
                 let order = enumOrder(st, src)
@@ -9821,7 +9827,10 @@ fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp)
     // properties would make an array-like fallback plausible, but the spec
     // reaches String.prototype[@@iterator] through the chain, and that yields
     // whole characters rather than UTF-16 units.
-    if h >= 0 && isWrapperObj(st, h) {
+    // ...but an OWN Symbol.iterator on the wrapper overrides that. `Object("s")`
+    // with its own iterator must yield what the override yields, not the
+    // string's characters.
+    if h >= 0 && isWrapperObj(st, h) && objOwnIndex(st, h, symIteratorKey()) < 0 {
         match boxedPrimitive(st, h) {
             JSValue.Str(bs) => {
                 if !isSymbolStr(bs) {
@@ -9938,6 +9947,22 @@ fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp)
     // a silent no-op. `[...5]`, `[...{}]` and `[...null]` all throw in JS, and
     // array DESTRUCTURING is desugared to `[...expr]`, so `const [a] = 5`
     // answering undefined was the same defect seen from the other end.
+    // a FUNCTION carrying a Symbol.iterator is iterable: functions are not Objs
+    // in this value model, so the iterator walk above never saw them
+    if funcHandle(v) >= 0 {
+        let fbag = propertyBagOf(st, v)
+        if fbag >= 0 {
+            let fit = getMember(st, fbag, symIteratorKey())
+            if isCallableIn(st, fit) {
+                var fNoArgs: Vec<JSValue> = Vec.new()
+                let fIter = callValue(prog, fit, fNoArgs, cloneValue(v), st)
+                if !st.throwing {
+                    spreadInto(prog, out, fIter, st)
+                }
+                return
+            }
+        }
+    }
     if !isSpreadable(st, v) {
         st.throwing = true
         st.thrownValue = makeError(st, "TypeError", spreadErrText(v) + currentModule(st))

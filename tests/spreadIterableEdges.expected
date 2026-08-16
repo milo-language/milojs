@@ -1,0 +1,14 @@
+boxed string, no override -> ["h","i"]
+boxed string, own iterator wins -> ["a","b"]
+boxed number with iterator -> ["a"]
+boxed boolean with iterator -> ["a"]
+function with iterator -> ["z"]
+arrow with iterator -> ["q"]
+function without iterator THREW TypeError
+regex with iterator -> ["y"]
+plain object with iterator -> ["x"]
+assign string source -> {"0":"a","1":"b"}
+assign boxed string source -> {"0":"a","1":"b"}
+assign number source has no keys -> {}
+assign boolean source has no keys -> {}
+assign mixed sources -> {"0":"a","z":0,"b":1}

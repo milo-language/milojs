@@ -2493,3 +2493,35 @@ of these are reached through package code rather than through the language
 surface the sample covers.
 
 Locked by `tests/toObjectAndCtorLength.js`.
+
+## Three iterability gaps, found by package suites and worth zero on both scores — DONE 2026-08-16
+
+All three verified wrong against node, all three fixed, and neither the corpus
+total nor test262 moved. Recording that plainly, because a round that improves
+correctness without moving a number is easy to quietly not report.
+
+- **A String wrapper with its own `Symbol.iterator` ignored the override.** The
+  wrapper fast path in `spreadInto` ran before the own property was consulted, so
+  `Object("s")` with an installed iterator yielded `["s"]` instead of what the
+  override returns. My own fast path, added with the wrapper work.
+- **A FUNCTION carrying a `Symbol.iterator` was rejected as non-iterable.**
+  Functions are not `Obj` in this value model, so the iterator walk never saw
+  them and the non-iterable throw I added last round caught them instead. That
+  throw was right; its reachability test was too narrow.
+- **`Object.assign` did not box a primitive SOURCE**, so a string source
+  contributed no index properties: `Object.assign({}, "ab")` was `{}` rather than
+  `{0:"a",1:"b"}`.
+
+The first two are regressions I introduced in earlier rounds — the wrapper spread
+path and the `isSpreadable` predicate — and neither fixture nor sweep caught
+them. es-get-iterator's and object.assign's own suites did.
+
+Locked by `tests/spreadIterableEdges.js`.
+
+## OPEN: es-get-iterator still overflows the stack after 73 assertions
+
+Stops at the same point before and after this round's fixes, in its
+`non-iterables` section, with RangeError: Maximum call stack size exceeded. 67
+assertions behind it. Not yet diagnosed; the lesson from the deep-equal hunt
+applies — instrument the recursion's ARGUMENTS rather than its depth, since three
+rounds of depth measurement there described the loop without identifying it.
