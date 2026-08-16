@@ -1206,12 +1206,36 @@ separator adds a spurious `""`.
 `built-ins/String/prototype/split` 64/120 → **68/120**. Locked together by
 `tests/regexCodePointsAndSplit.js`.
 
-**Still open, and now unblocked:** `\p{...}` unicode property escapes are
-entirely unsupported and match nothing silently (`/\p{L}/u.test("é")` is false).
-The code-point work above is the prerequisite; the tables can be generated from
-node the way `tools/gen-unicase.mjs` does. Note the class matcher still works in
-BYTES (`ReClass` holds u8 ranges), so a property class needs code-point ranges
-first.
+### Character classes were byte ranges too — DONE 2026-08-15
+
+`ReClass` held `u8` ranges, so a class compared one byte at a time:
+
+| expression | was | node |
+|---|---|---|
+| `/^[à-ÿ]$/u.test("é")` | false | true |
+| `/^[^a]$/u.test("é")` | false | true |
+| `/^[а-я]+$/u.test("привет")` | false | true |
+| `"aéb".match(/[^x]/gu).length` | 4 | 3 |
+
+Ranges are code points now, class members parse as code points (so `[à-ÿ]` is one
+range rather than four bytes of which two look like one), the shorthand
+complements span to 0x10FFFF instead of 0xFF, and case folding inside a class
+goes through the real Unicode mappings so `/[à-þ]/i` matches É.
+
+One more had to move with it: **the search loop advanced one BYTE per failed
+attempt**, restarting the match inside a multibyte character where a decode reads
+a continuation byte as its own code point. `/[^é]/u.test("é")` was true because
+the retry at offset 1 "matched" the second half of the é it had just rejected.
+It steps a whole character now.
+
+`built-ins/RegExp` did not move (734/1879 either way): test262's coverage here is
+almost entirely ASCII, which is the same observation that made the real-app check
+worth building. The evidence is the 31-case differential fixture.
+
+**Still open, now genuinely unblocked:** `\p{...}` property escapes are
+unsupported and match nothing silently (`/\p{L}/u.test("é")` is false). Classes
+can hold the ranges now, so it is table generation in the shape of
+`tools/gen-unicase.mjs` plus a `\p{...}` branch in the class parser.
 
 ## The runtime hid globalThis behind a whitelist, and four missing members — DONE 2026-08-15
 

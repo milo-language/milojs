@@ -26,3 +26,16 @@ empty input [""]
 empty input empty re []
 separator at ends ["","a",""]
 multibyte separator ["a","b","c"]
+range accented true
+range excludes ascii false
+negated over cp true
+negated rejects its own false
+class quantifier true
+class match count 3
+cyrillic range true
+cjk range true
+astral in class true
+mixed class "a1é"
+shorthand still works [true,true,true,true]
+case fold over cp true
+ascii class unaffected "ab"

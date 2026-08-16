@@ -47,10 +47,14 @@ enum ReNode {
 
 // A character class: parallel range bounds [lo[i], hi[i]] plus a negation flag.
 // Shorthands (\d etc) are expanded into ranges at parse time.
+// Ranges are CODE POINTS, not bytes. They were u8, so a class compared one byte
+// at a time: `[à-ÿ]` never matched é (its two bytes are outside the range) and
+// `[^a]` failed on any multibyte character. The whole class machinery, including
+// the shorthand complements, works over code points now.
 struct ReClass {
     negated: bool,
-    lo: Vec<u8>,
-    hi: Vec<u8>,
+    lo: Vec<i32>,
+    hi: Vec<i32>,
 }
 
 struct ReInst {
@@ -132,6 +136,22 @@ fn reCharLenBytes(b: &Vec<u8>, at: i64): i64 {
     return n
 }
 
+// Decode the UTF-8 sequence at `at` in the PATTERN's byte vector.
+fn reCodePointAtBytes(b: &Vec<u8>, at: i64): i32 {
+    let n = reCharLenBytes(b, at)
+    let b0 = b[at] as i32
+    if n == 1 {
+        return b0
+    }
+    if n == 2 {
+        return ((b0 & 31) << 6) | (b[at + 1] as i32 & 63)
+    }
+    if n == 3 {
+        return ((b0 & 15) << 12) | ((b[at + 1] as i32 & 63) << 6) | (b[at + 2] as i32 & 63)
+    }
+    return ((b0 & 7) << 18) | ((b[at + 1] as i32 & 63) << 12) | ((b[at + 2] as i32 & 63) << 6) | (b[at + 3] as i32 & 63)
+}
+
 fn reAddNode(p: &mut ReParse, n: ReNode): i64 {
     p.nodes.push(n)
     return p.nodes.len() - 1
@@ -152,22 +172,22 @@ fn reIsSpace(c: u8): bool {
 // Add a shorthand's ranges into a class's lo/hi arrays. `kind`: 'd','w','s'.
 fn reAddShorthand(cls: &mut ReClass, kind: u8) {
     if kind == 'd' {
-        cls.lo.push('0')
-        cls.hi.push('9')
+        cls.lo.push('0' as i32)
+        cls.hi.push('9' as i32)
     } else if kind == 'w' {
-        cls.lo.push('a')
-        cls.hi.push('z')
-        cls.lo.push('A')
-        cls.hi.push('Z')
-        cls.lo.push('0')
-        cls.hi.push('9')
-        cls.lo.push('_')
-        cls.hi.push('_')
+        cls.lo.push('a' as i32)
+        cls.hi.push('z' as i32)
+        cls.lo.push('A' as i32)
+        cls.hi.push('Z' as i32)
+        cls.lo.push('0' as i32)
+        cls.hi.push('9' as i32)
+        cls.lo.push('_' as i32)
+        cls.hi.push('_' as i32)
     } else if kind == 's' {
-        cls.lo.push(' ')
-        cls.hi.push(' ')
-        cls.lo.push(9 as u8)
-        cls.hi.push(13 as u8)
+        cls.lo.push(' ' as i32)
+        cls.hi.push(' ' as i32)
+        cls.lo.push(9 as i32)
+        cls.hi.push(13 as i32)
     }
 }
 
@@ -185,28 +205,28 @@ fn reAddShorthand(cls: &mut ReClass, kind: u8) {
 // over in this engine.
 fn reAddShorthandNeg(cls: &mut ReClass, kind: u8) {
     if kind == 'd' {
-        cls.lo.push(0 as u8)
-        cls.hi.push(47 as u8)
-        cls.lo.push(58 as u8)
-        cls.hi.push(255 as u8)
+        cls.lo.push(0 as i32)
+        cls.hi.push(47 as i32)
+        cls.lo.push(58 as i32)
+        cls.hi.push(0x10FFFF as i32)
     } else if kind == 'w' {
-        cls.lo.push(0 as u8)
-        cls.hi.push(47 as u8)
-        cls.lo.push(58 as u8)
-        cls.hi.push(64 as u8)
-        cls.lo.push(91 as u8)
-        cls.hi.push(94 as u8)
-        cls.lo.push(96 as u8)
-        cls.hi.push(96 as u8)
-        cls.lo.push(123 as u8)
-        cls.hi.push(255 as u8)
+        cls.lo.push(0 as i32)
+        cls.hi.push(47 as i32)
+        cls.lo.push(58 as i32)
+        cls.hi.push(64 as i32)
+        cls.lo.push(91 as i32)
+        cls.hi.push(94 as i32)
+        cls.lo.push(96 as i32)
+        cls.hi.push(96 as i32)
+        cls.lo.push(123 as i32)
+        cls.hi.push(0x10FFFF as i32)
     } else if kind == 's' {
-        cls.lo.push(0 as u8)
-        cls.hi.push(8 as u8)
-        cls.lo.push(14 as u8)
-        cls.hi.push(31 as u8)
-        cls.lo.push(33 as u8)
-        cls.hi.push(255 as u8)
+        cls.lo.push(0 as i32)
+        cls.hi.push(8 as i32)
+        cls.lo.push(14 as i32)
+        cls.hi.push(31 as i32)
+        cls.lo.push(33 as i32)
+        cls.hi.push(0x10FFFF as i32)
     }
 }
 
@@ -268,22 +288,28 @@ fn reParseClass(p: &mut ReParse): i64 {
                     reAddShorthandNeg(cls, e + 32 as u8)
                     p.pos = p.pos + 2
                 } else {
-                    let ch = reEscapedChar(e)
+                    let ch = reEscapedChar(e) as i32
                     cls.lo.push(ch)
                     cls.hi.push(ch)
                     p.pos = p.pos + 2
                 }
             } else {
-                // possible range a-z
-                if p.pos + 2 < p.pat.len() && p.pat[p.pos + 1] == '-' && p.pat[p.pos + 2] != ']' {
-                    let hi = p.pat[p.pos + 2]
-                    cls.lo.push(c)
-                    cls.hi.push(hi)
-                    p.pos = p.pos + 3
+                // Members are CODE POINTS: `[à-ÿ]` is one range, not four bytes
+                // of which two happen to look like a range.
+                let clen = reCharLenBytes(p.pat, p.pos)
+                let cp = reCodePointAtBytes(p.pat, p.pos)
+                let afterC = p.pos + clen
+                // possible range a-z (the '-' and the upper bound follow the
+                // whole first character, however wide it is)
+                if afterC + 1 < p.pat.len() && p.pat[afterC] == '-' && p.pat[afterC + 1] != ']' {
+                    let hiLen = reCharLenBytes(p.pat, afterC + 1)
+                    cls.lo.push(cp)
+                    cls.hi.push(reCodePointAtBytes(p.pat, afterC + 1))
+                    p.pos = afterC + 1 + hiLen
                 } else {
-                    cls.lo.push(c)
-                    cls.hi.push(c)
-                    p.pos = p.pos + 1
+                    cls.lo.push(cp)
+                    cls.hi.push(cp)
+                    p.pos = afterC
                 }
             }
         }
@@ -861,7 +887,25 @@ fn reCharLen(s: &string, sp: i64): i64 {
     return n
 }
 
-fn reClassMatch(cls: &ReClass, c: u8, fold: bool): bool {
+// Decode the UTF-8 sequence at `sp` to a code point. A truncated or invalid
+// sequence answers the lead byte, so a malformed input still compares against
+// something rather than trapping.
+fn reCodePointAt(s: &string, sp: i64): i32 {
+    let n = reCharLen(s, sp)
+    let b0 = s[sp] as i32
+    if n == 1 {
+        return b0
+    }
+    if n == 2 {
+        return ((b0 & 31) << 6) | (s[sp + 1] as i32 & 63)
+    }
+    if n == 3 {
+        return ((b0 & 15) << 12) | ((s[sp + 1] as i32 & 63) << 6) | (s[sp + 2] as i32 & 63)
+    }
+    return ((b0 & 7) << 18) | ((s[sp + 1] as i32 & 63) << 12) | ((s[sp + 2] as i32 & 63) << 6) | (s[sp + 3] as i32 & 63)
+}
+
+fn reClassMatch(cls: &ReClass, c: i32, fold: bool): bool {
     var matched = false
     var i: i64 = 0
     while i < cls.lo.len() {
@@ -871,8 +915,11 @@ fn reClassMatch(cls: &ReClass, c: u8, fold: bool): bool {
             matched = true
         }
         if fold {
-            let cl = reLowerByte(c)
-            if cl >= reLowerByte(lo) && cl <= reLowerByte(hi) {
+            // fold through the real Unicode mappings, not an ASCII byte shift,
+            // so /[à-þ]/i matches É as well as é
+            let cl = lowerCp1(c)
+            let cu = upperCp1(c)
+            if (cl >= lo && cl <= hi) || (cu >= lo && cu <= hi) {
                 matched = true
             }
         }
@@ -917,8 +964,8 @@ fn reRun(re: &Regex, pc: i64, s: &string, sp: i64, saves: &mut Vec<i64>): bool {
         return false
     }
     if op == RE_CLASS {
-        if sp < s.len() && reClassMatch(re.classes[inst.a], s[sp], re.flagI) {
-            return reRun(re, pc + 1, s, sp + 1, saves)
+        if sp < s.len() && reClassMatch(re.classes[inst.a], reCodePointAt(s, sp), re.flagI) {
+            return reRun(re, pc + 1, s, sp + reCharLen(s, sp), saves)
         }
         return false
     }
@@ -1084,7 +1131,11 @@ pub fn regexExec(re: &Regex, s: &string, startPos: i64): Vec<i64> {
         if reRun(re, 0, s, start, saves) {
             return saves
         }
-        start = start + 1
+        // Advance to the next CHARACTER boundary. Stepping one byte restarted
+        // the match in the middle of a multibyte character, where a decode sees
+        // a continuation byte as its own code point: /[^é]/ then "matched" the
+        // second half of the é it was supposed to reject.
+        start = start + reCharLen(s, start)
     }
     var empty: Vec<i64> = Vec.new()
     return empty

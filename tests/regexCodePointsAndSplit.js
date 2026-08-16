@@ -35,3 +35,19 @@ p("empty input", () => "".split(/x/));
 p("empty input empty re", () => "".split(/(?:)/));
 p("separator at ends", () => ",a,".split(/,/));
 p("multibyte separator", () => "aébéc".split(/é/u));
+
+// character CLASSES are code-point ranges too: they were u8, so `[à-ÿ]` was
+// four bytes of which two happened to look like a range
+p("range accented", () => /^[à-ÿ]$/u.test("é"));
+p("range excludes ascii", () => /[à-ÿ]/u.test("a"));
+p("negated over cp", () => /^[^a]$/u.test("é"));
+p("negated rejects its own", () => /[^é]/u.test("é"));
+p("class quantifier", () => /^[éx]+$/u.test("éxé"));
+p("class match count", () => "aéb".match(/[^x]/gu).length);
+p("cyrillic range", () => /^[а-я]+$/u.test("привет"));
+p("cjk range", () => /^[一-龥]+$/u.test("漢字"));
+p("astral in class", () => /^[😀]$/u.test("😀"));
+p("mixed class", () => "a1é".match(/[a-z0-9é]/gu).join(""));
+p("shorthand still works", () => [/\d/.test("5"), /\w/.test("_"), /\s/.test("\t"), /[\s\S]/.test("x")]);
+p("case fold over cp", () => /[à-þ]/i.test("É"));
+p("ascii class unaffected", () => "a1b".match(/[a-z]/g).join(""));
