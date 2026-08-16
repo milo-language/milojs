@@ -2301,3 +2301,37 @@ the flag so far — the flag is the part that was missing, and the rest can hang
 off it.
 
 Locked by `tests/strictModeThis.js`.
+
+## BigInt64Array and BigUint64Array did not exist — DONE 2026-08-16
+
+The largest single named failure bucket in the test262 sample: 21 cases died on
+`ReferenceError: BigInt64Array is not defined` before running a line of their own.
+
+Their elements are BigInt VALUES, so they cannot travel the f64 element path the
+other nine kinds share — the range runs to 2^64 and f64 loses integers past 2^53,
+so a round trip through a double silently corrupts the top bits. Added
+`taLoadBig`/`taStoreBig`, which carry elements as the decimal strings
+`JSValue.BigInt` already uses, and `taElemValue`/`taSetElemValue` at the index
+read and write paths so a BigInt-kind view yields BigInt and everything else
+still takes the numeric fast path.
+
+Two things bit on the way, both worth recording:
+
+- **The native id block collided.** `NATIVE_TA_BASE` was 79 with nine kinds, so
+  ids 79..87. Two more kinds ran into `NATIVE_HTTP_FETCH` (88) and
+  `NATIVE_MATH_EXP` (89), and `new BigInt64Array(3)` therefore constructed a
+  FETCH, which returned an error string. `typeof` said "string", length was 25,
+  and indexing gave characters. Moved the block to 160, above every id in use.
+- **Decimal accumulation traps.** Converting a BigInt string to raw bits with
+  `acc = acc * 10 + digit` overflows i64 for any value near 2^64, and Milo traps
+  on integer overflow rather than wrapping. Converting through `bnToRadix(m, 16)`
+  and placing nibbles with shifts writes the bits directly and cannot overflow.
+
+Full 64-bit range verified against node, including `2n**63n` wrapping to the
+minimum, `-1n` in a BigUint64Array reading as 18446744073709551615n, and
+9007199254740993n (2^53+1) surviving a round trip exactly — the value that proves
+the f64 path was never an option.
+
+test262: 713 to 719 of 1470.
+
+Locked by `tests/bigIntTypedArrays.js`.

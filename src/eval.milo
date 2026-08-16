@@ -9,7 +9,7 @@ from "./value" import {
     JSValue, i64ToStr, daysFromCivil
 }
 from "./runtime" import {
-    Interp, Timer, Microtask, Reaction, PendingFetch, NATIVE_RESOLVER_BASE, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn
+    Interp, Timer, Microtask, Reaction, PendingFetch, NATIVE_RESOLVER_BASE, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn, TA_MAX, TA_I64, TA_U64, taIsBigKind, taLoadBig, taStoreBig
 }
 from "./builtins" import {
     stringMethod, jsCharAt, mjStringifyVal, mjJsonParse, mjJsonOmitted
@@ -2467,6 +2467,51 @@ fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValue>):
     return JSValue.Obj(view)
 }
 
+// The element as a JSValue. A BigInt-kind view yields JSValue.BigInt, and its
+// elements cannot go through the f64 path at all: the range runs to 2^64 and f64
+// loses integers past 2^53, so a round trip through a double would silently
+// corrupt the top bits.
+fn taElemValue(st: &Interp, view: i64, i: i64): JSValue {
+    let kind = st.objExtras[st.objects[view].extra].taKind
+    if !taIsBigKind(kind) {
+        return JSValue.Number(taElem(st, view, i))
+    }
+    let buf = st.objExtras[st.objects[view].extra].taBuf
+    if buf < 0 || i < 0 || i >= st.objExtras[st.objects[view].extra].taLen {
+        return JSValue.Undefined
+    }
+    let at = st.objExtras[st.objects[view].extra].taOffset + i * 8
+    if at < 0 || at + 8 > st.objExtras[st.objects[buf].extra].bytes.len() {
+        return JSValue.Undefined
+    }
+    return JSValue.BigInt(taLoadBig(st.objExtras[st.objects[buf].extra].bytes, kind, at))
+}
+
+fn taSetElemValue(st: &mut Interp, view: i64, i: i64, v: &JSValue) {
+    let kind = st.objExtras[st.objects[view].extra].taKind
+    if !taIsBigKind(kind) {
+        taSetElem(st, view, i, toNum(v))
+        return
+    }
+    let buf = st.objExtras[st.objects[view].extra].taBuf
+    if buf < 0 || i < 0 || i >= st.objExtras[st.objects[view].extra].taLen {
+        return
+    }
+    let at = st.objExtras[st.objects[view].extra].taOffset + i * 8
+    if at < 0 || at + 8 > st.objExtras[st.objects[buf].extra].bytes.len() {
+        return
+    }
+    var digits = "0"
+    match v {
+        JSValue.BigInt(bs) => {
+            digits = bs.clone()
+        }
+        _ => {
+        }
+    }
+    taStoreBig(st.objExtras[st.objects[buf].extra].bytes, at, digits)
+}
+
 fn taElem(st: &Interp, view: i64, i: i64): f64 {
     let buf = st.objExtras[st.objects[view].extra].taBuf
     if buf < 0 || i < 0 || i >= st.objExtras[st.objects[view].extra].taLen {
@@ -3220,7 +3265,7 @@ pub fn getMember(st: &Interp, o: i64, key: &string): JSValue {
             if ti >= st.objExtras[st.objects[o].extra].taLen {
                 return JSValue.Undefined
             }
-            return JSValue.Number(taElem(st, o, ti))
+            return taElemValue(st, o, ti)
         }
     }
     if st.objects[o].isArrayBuffer {
@@ -3295,7 +3340,7 @@ fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
         if ti >= 0 {
             // a write through a detached view is dropped, not an error
             if !taIsDetached(st, o) {
-                taSetElem(st, o, ti, toNum(value))
+                taSetElemValue(st, o, ti, value)
             }
             return
         }
@@ -3699,7 +3744,13 @@ let NATIVE_HTTP_FETCH_ASYNC: i64 = 109
 let NATIVE_ARRAYBUFFER: i64 = 78
 // the typed-array constructors occupy a contiguous block so the element kind is
 // just (id - NATIVE_TA_BASE); keep in step with the TA_* order in runtime.milo
-let NATIVE_TA_BASE: i64 = 79
+// Moved off 79 when the two BigInt kinds were added: the block is
+// NATIVE_TA_BASE..NATIVE_TA_BASE+TA_MAX, and at 79 that ran into
+// NATIVE_HTTP_FETCH (88) and NATIVE_MATH_EXP (89). A new BigInt64Array
+// therefore constructed a fetch, which returned an error STRING rather than a
+// view — silent, and exactly as confusing as it sounds. 160 is above every id
+// in use (highest is 153).
+let NATIVE_TA_BASE: i64 = 160
 // __httpFetch(method, url, headersJson, body): synchronous outbound HTTP/HTTPS.
 // Above the TA block (79..87). node-fetch is built on this.
 let NATIVE_HTTP_FETCH: i64 = 88
@@ -5622,7 +5673,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         st.objExtras[st.objects[bo].extra].bytes = b
         return JSValue.Obj(bo)
     }
-    if id >= NATIVE_TA_BASE && id <= NATIVE_TA_BASE + TA_U8C {
+    if id >= NATIVE_TA_BASE && id <= NATIVE_TA_BASE + TA_MAX {
         let kind = id - NATIVE_TA_BASE
         // Float32/Float64 now store real IEEE-754 bytes via taStore's f32/f64
         // reinterpret (runtime.milo), so every kind is constructible.
@@ -7061,7 +7112,7 @@ fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
                     // a typed-array view instanceof its exact kind (Uint8Array,
                     // Float64Array, …): a view has taBuf >= 0 and its taKind is
                     // the ctor's offset from the base id
-                    if id >= NATIVE_TA_BASE && id <= NATIVE_TA_BASE + TA_U8C {
+                    if id >= NATIVE_TA_BASE && id <= NATIVE_TA_BASE + TA_MAX {
                         return st.objExtras[st.objects[o].extra].taBuf >= 0 && !st.objects[o].isDataView && st.objExtras[st.objects[o].extra].taKind == (id - NATIVE_TA_BASE)
                     }
                     if !st.objects[o].isError {
@@ -7189,7 +7240,7 @@ fn setupTypedArrayProtos(st: &mut Interp) {
     objSetNonEnumerable(st, taProto, "constructor")
 
     var tk: i64 = 0
-    while tk <= TA_U8C {
+    while tk <= TA_MAX {
         let sub = newObject(st)
         st.objects[sub].proto = taProto
         objSet(st, sub, "constructor", JSValue.Native(NATIVE_TA_BASE + tk))
@@ -7897,7 +7948,7 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "DataView", JSValue.Native(NATIVE_DATAVIEW))
     nameGlobalCtor(st, "DataView", NATIVE_DATAVIEW)
     var tk: i64 = 0
-    while tk <= TA_U8C {
+    while tk <= TA_MAX {
         scopeDefine(st, 0, taName(tk), JSValue.Native(NATIVE_TA_BASE + tk))
         tk = tk + 1
     }
@@ -9608,7 +9659,7 @@ fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp)
     if h >= 0 && st.objExtras[st.objects[h].extra].taBuf >= 0 && !st.objects[h].isDataView {
         var i: i64 = 0
         while i < st.objExtras[st.objects[h].extra].taLen {
-            out.push(JSValue.Number(taElem(st, h, i)))
+            out.push(taElemValue(st, h, i))
             i = i + 1
         }
         return
@@ -12289,7 +12340,7 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
         if idx < 0 || idx >= n {
             return JSValue.Undefined
         }
-        return JSValue.Number(taElem(st, o, idx))
+        return taElemValue(st, o, idx)
     }
     if name == "fill" {
         var v: f64 = 0.0

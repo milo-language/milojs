@@ -1,0 +1,21 @@
+typeof ctor -> function
+name -> BigInt64Array
+BYTES_PER_ELEMENT -> 8
+construct len -> 3
+byteLength -> 24
+default elem -> 0
+typeof elem -> bigint
+set/get small -> 42
+set/get negative -> -5
+max int64 -> 9223372036854775807
+min int64 -> -9223372036854775808
+wraps past max -> -9223372036854775808
+beyond 2^53 exact -> 9007199254740993
+uint name -> BigUint64Array
+uint max -> 18446744073709551615
+uint wraps negative -> 18446744073709551615
+tag -> [object BigInt64Array]
+instanceof -> true
+from array -> 15
+spread -> ["0","0"]
+proto chain -> true

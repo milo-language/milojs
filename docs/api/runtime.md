@@ -79,6 +79,16 @@ A key names an array element only if it is a canonical non-negative integer
 ("0", "1", ...); returns that index, or -1 for any other key (which addresses a
 string property instead, per JS).
 
+### `bigToRawBits`
+
+```milo
+pub fn bigToRawBits(s: &string): i64
+```
+
+A BigInt decimal string reduced into the kind's range and returned as the raw
+64-bit pattern. i64 arithmetic wraps, so accumulating digits of a value below
+2^64 produces exactly the bit pattern wanted for both signed and unsigned.
+
 ### `bitsToF32`
 
 ```milo
@@ -488,6 +498,14 @@ pub fn pushTemp(st: &mut Interp, v: JSValue)
 
 _Undocumented._
 
+### `rawBitsToBig`
+
+```milo
+pub fn rawBitsToBig(bits: i64, signed: bool): string
+```
+
+The inverse: a raw 64-bit pattern as a decimal string, read signed or not.
+
 ### `restoreExecCtx`
 
 ```milo
@@ -590,6 +608,14 @@ pub fn setArrayLength(st: &mut Interp, obj: i64, n: i64)
 
 _Undocumented._
 
+### `taIsBigKind`
+
+```milo
+pub fn taIsBigKind(kind: i64): bool
+```
+
+_Undocumented._
+
 ### `taLoad`
 
 ```milo
@@ -597,6 +623,14 @@ pub fn taLoad(bytes: &Vec<u8>, kind: i64, at: i64): f64
 ```
 
 Read one element out of a buffer's bytes, little-endian.
+
+### `taLoadBig`
+
+```milo
+pub fn taLoadBig(bytes: &Vec<u8>, kind: i64, at: i64): string
+```
+
+_Undocumented._
 
 ### `taName`
 
@@ -613,6 +647,14 @@ pub fn taStore(bytes: &mut Vec<u8>, kind: i64, at: i64, v: f64)
 ```
 
 Store one element, applying the kind's wrapping (or clamping) rules.
+
+### `taStoreBig`
+
+```milo
+pub fn taStoreBig(bytes: &mut Vec<u8>, at: i64, s: &string)
+```
+
+_Undocumented._
 
 ### `taWidth`
 

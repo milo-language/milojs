@@ -20,6 +20,9 @@ from "std/sync" import {
 from "./value" import {
     JSValue, i64ToStr, roundHalfAwayFromZero
 }
+from "./bigint" import {
+    bnMod, bnAdd, bnToRadix
+}
 from "./regex" import {
     Regex
 }
@@ -49,10 +52,25 @@ let TA_I32: i64 = 5
 let TA_F32: i64 = 6
 let TA_F64: i64 = 7
 pub let TA_U8C: i64 = 8
+// The BigInt-element kinds. Their elements are BigInt VALUES, not numbers, so
+// they cannot travel through the f64 element path the other nine share — the
+// range runs to 2^64 and f64 loses integers past 2^53. taLoadBig/taStoreBig
+// carry them as decimal strings, which is how JSValue.BigInt represents them.
+pub let TA_I64: i64 = 9
+pub let TA_U64: i64 = 10
+// highest kind, for the loops that build one constructor per kind
+pub let TA_MAX: i64 = 10
+
+pub fn taIsBigKind(kind: i64): bool {
+    return kind == TA_I64 || kind == TA_U64
+}
 
 pub fn taWidth(kind: i64): i64 {
     if kind == TA_U8 || kind == TA_I8 || kind == TA_U8C {
         return 1
+    }
+    if taIsBigKind(kind) {
+        return 8
     }
     if kind == TA_U16 || kind == TA_I16 {
         return 2
@@ -88,7 +106,82 @@ pub fn taName(kind: i64): string {
     if kind == TA_F32 {
         return "Float32Array"
     }
+    if kind == TA_I64 {
+        return "BigInt64Array"
+    }
+    if kind == TA_U64 {
+        return "BigUint64Array"
+    }
     return "Float64Array"
+}
+
+// a fn, not a global: a module-level string initializer is not a compile-time
+// constant, and the embedding target has no main() to run one before use
+fn twoPow64(): string {
+    return "18446744073709551616"
+}
+
+// A BigInt decimal string reduced into the kind's range and returned as the raw
+// 64-bit pattern. i64 arithmetic wraps, so accumulating digits of a value below
+// 2^64 produces exactly the bit pattern wanted for both signed and unsigned.
+pub fn bigToRawBits(s: &string): i64 {
+    var m = bnMod(s, twoPow64())
+    if m.len() > 0 && m[0] == '-' {
+        m = bnAdd(m, twoPow64())
+    }
+    // via HEX, not decimal digits: a decimal accumulator does `acc * 10 + d`,
+    // and for a value near 2^64 that multiply overflows i64 and traps. Placing
+    // hex nibbles with shifts writes the bits directly and cannot overflow.
+    let hex = bnToRadix(m, 16)
+    var acc: i64 = 0
+    var i: i64 = 0
+    while i < hex.len() {
+        let c = hex[i]
+        var d: i64 = -1
+        if c >= '0' && c <= '9' {
+            d = (c - '0') as i64
+        } else if c >= 'a' && c <= 'f' {
+            d = ((c - 'a') as i64) + 10
+        } else if c >= 'A' && c <= 'F' {
+            d = ((c - 'A') as i64) + 10
+        }
+        if d >= 0 {
+            acc = (acc << 4) | d
+        }
+        i = i + 1
+    }
+    return acc
+}
+
+// The inverse: a raw 64-bit pattern as a decimal string, read signed or not.
+pub fn rawBitsToBig(bits: i64, signed: bool): string {
+    if signed {
+        return i64ToStr(bits)
+    }
+    if bits >= 0 {
+        return i64ToStr(bits)
+    }
+    // a negative i64 IS the unsigned value minus 2^64
+    return bnAdd(i64ToStr(bits), twoPow64())
+}
+
+pub fn taLoadBig(bytes: &Vec<u8>, kind: i64, at: i64): string {
+    var bits: i64 = 0
+    var k: i64 = 0
+    while k < 8 {
+        bits = bits | ((bytes[at + k] as i64) << (8 * k))
+        k = k + 1
+    }
+    return rawBitsToBig(bits, kind == TA_I64)
+}
+
+pub fn taStoreBig(bytes: &mut Vec<u8>, at: i64, s: &string) {
+    let bits = bigToRawBits(s)
+    var k: i64 = 0
+    while k < 8 {
+        bytes[at + k] = ((bits >> (8 * k)) & 255) as u8
+        k = k + 1
+    }
 }
 
 // f64 <-> raw IEEE-754 bits, via a byte view of the value's own storage. The
