@@ -780,6 +780,61 @@ nothing, which gets the interleaving with static fields right for free (they run
 in one declaration-ordered pass). `language/statements/class` 2011/4361 →
 **2024/4361**. Locked by `tests/classStaticBlocks.js`.
 
+## Native addons: how far a real one gets, and the wall — 2026-08-15
+
+Chasing `chat`, `todo`, `milo-list` and `smith` to a running state. **`chat` now
+runs and serves bytes identical to node.** The other three reach the addon and
+stop at a boundary that is not milojs's to move.
+
+Shipped on the way:
+
+- **`tls` did not exist — DONE.** `ws` opens with `const tls = require('tls')`,
+  so a WebSocket server could not load at all. `lib/tls.js` provides the surface
+  read at require time (`TLSSocket`, `Server`, `createSecureContext`,
+  `rootCertificates`, the DEFAULT_* constants) and throws a message naming the
+  gap for anything that needs to negotiate a session. `checkServerIdentity` is
+  implemented rather than stubbed, since it is pure string work over a
+  certificate the caller supplies.
+- **`Error.prepareStackTrace` and CallSite objects — DONE.** V8's structured
+  stack-trace API. `bindings` sets `prepareStackTrace`, calls
+  `captureStackTrace`, and walks frames for the first file that is not its own,
+  to locate an addon relative to its CALLER. With no frames it read `undefined`
+  and threw. `FuncDef` now records the file it was parsed from, `Interp` carries
+  an `fnFileStack` pushed and popped around every call (by wrapping
+  `callFunction` rather than editing its many early returns), and the prelude
+  turns those into CallSite objects. The shim's own frames are dropped off the
+  front, as node drops the capture frame.
+- **`require` as a VALUE — DONE.** It was handled only at the call site by name,
+  so `typeof require` was `"undefined"`. Every addon loader is built on
+  `const requireFunc = ... : require`. Each module scope now binds its own
+  `require` carrying its own directory, which is node's model.
+- **`__filename` and `__dirname` were RELATIVE — DONE.** node guarantees
+  absolute, and packages join candidate paths onto them: a relative one sent
+  every candidate to the wrong directory. Resolution still keys on the
+  registry's relative form (`relativizeToCwd`), so the two stay in step.
+- **A missing addon now reports as not-found — DONE.** `bindings` probes a list
+  of paths and rethrows anything that does not read as not-found, so
+  "dlopen failed" stopped the search at the first candidate.
+- **`dlopen` failures now carry `dlerror()`.** Without it the reason for a failed
+  link is invisible, and that reason is the whole story.
+
+**The wall, and it is not ours.** With all of the above, `bindings` locates the
+right file and milojs dlopens it. It fails with:
+
+```
+symbol not found in flat namespace '__ZN2v811HandleScope16DeleteExtensionsEPNS_7IsolateE'
+```
+
+That is `v8::HandleScope::DeleteExtensions`. better-sqlite3 11.10.0's prebuilt
+links the **V8 C++ API**, not Node-API: `nm -u` on it shows **49 `v8::` symbols
+and zero `napi_` symbols**. milojs has no V8, so this binary cannot load here no
+matter how complete the Node-API surface becomes. The three apps need either a
+better-sqlite3 rebuilt against Node-API or a sqlite package that is napi-native.
+Worth knowing before any further Node-API work is justified by "it will make
+better-sqlite3 run", because it will not.
+
+Locked by `tests/runtime/stackTracesAndPaths.js`.
+
 ## Past get-intrinsic: the `in` operator, and the host surface — 2026-08-15
 
 The four apps blocked inside get-intrinsic are past it. Three separate gaps, each

@@ -268,7 +268,7 @@ fn makeArrow(p: &mut PState, prog: &mut Prog, params: Vec<string>, isAsync: bool
         prependStmt(prog, body!, unpack)
     }
     prog.funcs.push(FuncDef {
-        name: "", params: params, body: body!, isArrow: true, isAsync: isAsync, restFrom: mkRestFrom, isGenerator: false
+        name: "", params: params, body: body!, isArrow: true, isAsync: isAsync, restFrom: mkRestFrom, isGenerator: false, file: p.file.clone()
     }
     )
     let f = prog.funcs.len() - 1
@@ -956,7 +956,7 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
                     prependStmt(prog, mbody, munpack)
                 }
                 prog.funcs.push(FuncDef {
-                    name: key.clone(), params: mparams, body: mbody, isArrow: false, isAsync: isMethodAsync, restFrom: mrest, isGenerator: isMethodGen
+                    name: key.clone(), params: mparams, body: mbody, isArrow: false, isAsync: isMethodAsync, restFrom: mrest, isGenerator: isMethodGen, file: p.file.clone()
                 }
                 )
                 valIdx = Option.Some(addExpr(prog, Expr.FuncExpr(prog.funcs.len() - 1)))
@@ -1506,7 +1506,7 @@ fn parseFunction(p: &mut PState, prog: &mut Prog, isAsync: bool): i64 {
         prependStmt(prog, body, unpack)
     }
     prog.funcs.push(FuncDef {
-        name: name, params: params, body: body, isArrow: false, isAsync: isAsync, restFrom: restFrom, isGenerator: isGenerator
+        name: name, params: params, body: body, isArrow: false, isAsync: isAsync, restFrom: restFrom, isGenerator: isGenerator, file: p.file.clone()
     }
     )
     return prog.funcs.len() - 1
@@ -1986,7 +1986,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                 var sbParams: Vec<string> = Vec.new()
                 let sbBody = parseBraceBlock(p, prog)
                 prog.funcs.push(FuncDef {
-                    name: "", params: sbParams, body: sbBody, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false
+                    name: "", params: sbParams, body: sbBody, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false, file: p.file.clone()
                 }
                 )
                 staticFieldNames.push("")
@@ -2048,7 +2048,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                     prependStmt(prog, mbody, munpack)
                 }
                 prog.funcs.push(FuncDef {
-                    name: mname.clone(), params: mparams, body: mbody, isArrow: false, isAsync: isAsyncM, restFrom: mrest, isGenerator: isStarM
+                    name: mname.clone(), params: mparams, body: mbody, isArrow: false, isAsync: isAsyncM, restFrom: mrest, isGenerator: isStarM, file: p.file.clone()
                 }
                 )
                 let fidx = prog.funcs.len() - 1
@@ -2126,7 +2126,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     let defaultBlock = addBlock(prog, defaultBody)
     var noParams: Vec<string> = Vec.new()
     prog.funcs.push(FuncDef {
-        name: name.clone(), params: noParams, body: defaultBlock, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false
+        name: name.clone(), params: noParams, body: defaultBlock, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false, file: p.file.clone()
     }
     )
     let defaultCtor = prog.funcs.len() - 1

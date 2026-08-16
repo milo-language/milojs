@@ -493,6 +493,10 @@ pub fn napiInvoke(fnIdx: i64, args: Vec<JSValue>, thisVal: JSValue): JSValue {
 extern fn dlopen(_path: *u8, _flags: i32): *u8
 
 extern fn dlsym(_handle: *u8, _symbol: *u8): *u8
+// dlerror explains WHY a load failed (a missing symbol, a wrong architecture).
+// Without it "dlopen failed" is unactionable, and an addon that fails to link is
+// exactly the case where the reason is the whole story.
+extern fn dlerror(): *u8
 
 // Load a .node addon and run its registration, returning the exports it produced.
 //
@@ -503,6 +507,17 @@ pub fn napiLoadAddon(path: &string): Result<JSValue, string> {
     unsafe {
         let h = dlopen(path as *u8, 2)
         if (h as i64) == 0 {
+            // `bindings` probes a list of candidate paths and expects a MISSING
+            // file to be recoverable: it rethrows anything whose message does
+            // not read as not-found, so "dlopen failed" stopped the search at
+            // the first candidate instead of walking on to build/Release.
+            if !fileExists(path.clone()) {
+                return Result.Err("Could not find module at path: " + path.clone())
+            }
+            let err = dlerror()
+            if (err as i64) != 0 {
+                return Result.Err("dlopen failed for " + path.clone() + ": " + _cstrToString(err))
+            }
             return Result.Err("dlopen failed for " + path.clone())
         }
         let sym = dlsym(h, "napi_register_module_v1")

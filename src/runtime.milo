@@ -659,6 +659,12 @@ pub struct Interp {
     modDirStack: Vec<string>,
     // module paths currently executing, so a runtime error can name its file
     modPathStack: Vec<string>,
+    // the source file of each function currently on the call stack, innermost
+    // last. Distinct from modPathStack, which only names module BODIES: a
+    // constructor defined in one module and called from another belongs to the
+    // module it was defined in, which is what a V8 CallSite reports and what
+    // `bindings` uses to locate a native addon relative to its caller.
+    fnFileStack: Vec<string>,
     // values held on the native stack across an operation that may collect (e.g. a
     // method receiver while its arguments — which can themselves be calls — are
     // evaluated). Rooted by collect so an in-flight object/closure isn't swept.
@@ -868,7 +874,7 @@ pub struct Interp {
 pub var gInterp: Interp = Interp {
     scopes: Vec.new(), freeList: Vec.new(), active: Vec.new(),
     objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: Arena { id: 0, data: Vec.new(), gens: Vec.new(), freeList: Vec.new(), live: 0 }, funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), hostRoots: Vec.new(), hostRootLive: Vec.new(),
-    modPaths: Vec.new(), modBlocks: Vec.new(), modExports: Vec.new(), modState: Vec.new(), modDirStack: Vec.new(), modPathStack: Vec.new(),
+    modPaths: Vec.new(), modBlocks: Vec.new(), modExports: Vec.new(), modState: Vec.new(), modDirStack: Vec.new(), modPathStack: Vec.new(), fnFileStack: Vec.new(),
     throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 104,
     rngState: 88172645463325252,

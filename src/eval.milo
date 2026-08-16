@@ -2087,6 +2087,15 @@ fn taSetElem(st: &mut Interp, view: i64, i: i64, v: f64) {
 
 // Invoke a builtin method by name against an already-evaluated receiver+args.
 fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSValue>, st: &mut Interp): JSValue {
+    // a per-module `require` value: the receiver carries the directory it was
+    // bound to, so resolution matches the module the reference came from
+    if name == "__require" {
+        var rspec = ""
+        if args.len() > 0 {
+            rspec = toStr(args[0])
+        }
+        return requireModuleFrom(prog, rspec, st, toStr(recv))
+    }
     // Object.prototype.toString applied to ANY receiver, ignoring overrides
     if name == "@@objProtoToString" {
         let o = objHandle(recv)
@@ -3235,6 +3244,12 @@ let NATIVE_URI_ERROR: i64 = 149
 // to being required by a large slice of npm. The direct-call form
 // `eval("bareIdent")` is handled at the call site and still works.
 let NATIVE_EVAL: i64 = 150
+// __callFrames() → the module paths currently executing, innermost first. This
+// is what Error.captureStackTrace turns into V8 CallSite objects: `bindings`
+// (under better-sqlite3 and most native addons) discovers the filename of its
+// CALLER through Error.prepareStackTrace and CallSite#getFileName, and with no
+// frames at all it read undefined and threw on `fileName.indexOf`.
+let NATIVE_CALL_FRAMES: i64 = 151
 
 // sqlite3_column_name is not wrapped by std/sqlite, but node:sqlite's get()/all()
 // return row objects keyed by column name, so it is declared here directly. The
@@ -4474,6 +4489,29 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 return JSValue.Bool(false)
             }
         }
+    }
+    if id == NATIVE_CALL_FRAMES {
+        let arr = newArray(st)
+        pushTemp(st, JSValue.Obj(arr))
+        var fi = st.fnFileStack.len() - 1
+        while fi >= 0 {
+            if st.fnFileStack[fi].len() > 0 {
+                // absolute, to agree with __filename: `bindings` finds its
+                // caller by comparing the two, and a mismatch in form makes
+                // every frame look foreign
+                arrPush(st, arr, JSValue.Str(absolutePathOf(st.fnFileStack[fi].clone())))
+            }
+            fi = fi - 1
+        }
+        // the module bodies below the innermost function, so a trace taken at
+        // module scope still names something
+        var mi = st.modPathStack.len() - 1
+        while mi >= 0 {
+            arrPush(st, arr, JSValue.Str(absolutePathOf(st.modPathStack[mi].clone())))
+            mi = mi - 1
+        }
+        popTemp(st)
+        return JSValue.Obj(arr)
     }
     if id == NATIVE_READDIR {
         // __readdirSync(path) → array of entry name strings, or null on error
@@ -6147,8 +6185,14 @@ pub fn runModule(prog: &Prog, idx: i64, st: &mut Interp): JSValue {
     objSet(st, moduleObj, "exports", JSValue.Obj(exportsObj))
     scopeDefine(st, modScope, "module", JSValue.Obj(moduleObj))
     scopeDefine(st, modScope, "exports", JSValue.Obj(exportsObj))
-    scopeDefine(st, modScope, "__filename", JSValue.Str(path.clone()))
-    scopeDefine(st, modScope, "__dirname", JSValue.Str(dir.clone()))
+    // node guarantees these are ABSOLUTE, and packages build paths from them:
+    // `bindings` joins its candidate addon paths onto the module root it derives
+    // from __filename, so a relative one made every candidate resolve against
+    // the wrong directory and no addon could ever be found.
+    scopeDefine(st, modScope, "__filename", JSValue.Str(absolutePathOf(path.clone())))
+    scopeDefine(st, modScope, "__dirname", JSValue.Str(absolutePathOf(dir.clone())))
+    // `require` as a value, bound to THIS module's directory
+    scopeDefine(st, modScope, "require", makeBoundMethod(st, JSValue.Str(dir.clone()), "__require"))
     // publish partial exports up front so a cycle sees something
     st.modExports[idx] = JSValue.Obj(exportsObj)
 
@@ -6180,6 +6224,31 @@ pub fn runModule(prog: &Prog, idx: i64, st: &mut Interp): JSValue {
 // as `node_modules/express/lib/lib/types/json` — express 4 could not load at all.
 // The lexical `__dirname` binding is per module scope, so looking it up through
 // the closure's own env chain names the right module.
+// Make a path absolute against the process working directory. Module paths are
+// stored relative internally; what escapes to JS must not be.
+fn absolutePathOf(p: string): string {
+    if p.len() > 0 && p[0] == '/' {
+        return p
+    }
+    // a builtin module is not a filesystem path and must not acquire one
+    if p.len() >= 8 && strSlice(p, 0, 8) == "builtin:" {
+        return p
+    }
+    let base = match currentDir() {
+        Result.Ok(d) => d
+        Result.Err(_e) => {
+            return p
+        }
+    }
+    if p.len() == 0 {
+        return base
+    }
+    if p == "." {
+        return base
+    }
+    return base + "/" + p
+}
+
 fn requireModule(prog: &Prog, spec: &string, st: &mut Interp, scope: i64): JSValue {
     var dir = ""
     if scope >= 0 && scopeHas(st, scope, "__dirname") {
@@ -6188,6 +6257,41 @@ fn requireModule(prog: &Prog, spec: &string, st: &mut Interp, scope: i64): JSVal
     if dir.len() == 0 && st.modDirStack.len() > 0 {
         dir = st.modDirStack[st.modDirStack.len() - 1].clone()
     }
+    return requireModuleFrom(prog, spec, st, dir)
+}
+
+// `require` reached as a VALUE rather than a call. It was only ever handled at
+// the call site by name, so `typeof require` was "undefined" and passing it
+// around threw: `bindings` does
+//     const requireFunc = typeof __non_webpack_require__ === 'function' ? __non_webpack_require__ : require;
+// and every addon loader is built on that. Each module scope now binds its own
+// `require` carrying its own directory, which is node's model exactly.
+// The module registry keys on the paths the preloader produced, which are
+// relative to the working directory. `__dirname` is absolute (node guarantees
+// it), so a resolution starting from it has to come back to the registry's form
+// or every lookup misses.
+fn relativizeToCwd(p: string): string {
+    let base = match currentDir() {
+        Result.Ok(d) => d
+        Result.Err(_e) => {
+            return p
+        }
+    }
+    if p == base {
+        // the working directory itself is "" in the registry's form, not an
+        // absolute path, so a module at the top level resolves the same way the
+        // preloader recorded it
+        return ""
+    }
+    let prefix = base + "/"
+    if p.len() > prefix.len() && strSlice(p, 0, prefix.len()) == prefix {
+        return strSlice(p, prefix.len(), p.len())
+    }
+    return p
+}
+
+fn requireModuleFrom(prog: &Prog, spec: &string, st: &mut Interp, dirIn: string): JSValue {
+    let dir = relativizeToCwd(dirIn)
     // A .node file is a shared library, not JS: it never goes through the module
     // pre-loader, so it is dlopened here. prisma reaches its query engine this
     // way (require(<abs>/libquery_engine.node)).
@@ -7099,6 +7203,7 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "__readFileSync", JSValue.Native(NATIVE_READ_FILE_SYNC))
     scopeDefine(st, 0, "__mkdirSync", JSValue.Native(NATIVE_MKDIR))
     scopeDefine(st, 0, "__readdirSync", JSValue.Native(NATIVE_READDIR))
+    scopeDefine(st, 0, "__callFrames", JSValue.Native(NATIVE_CALL_FRAMES))
     scopeDefine(st, 0, "__unlinkSync", JSValue.Native(NATIVE_UNLINK))
     scopeDefine(st, 0, "__rmdirSync", JSValue.Native(NATIVE_RMDIR))
     scopeDefine(st, 0, "__renameSync", JSValue.Native(NATIVE_RENAME))
@@ -9290,7 +9395,22 @@ pub fn inspectTop(st: &Interp, v: &JSValue): string {
 // Invoke a Milo-level JS function: a fresh scope off the closure's captured env,
 // with `this` and the parameters bound, then run the body. argVals is consumed.
 
+// Records the called function's source file for the duration of the call, so a
+// V8-style stack trace can name the file each frame belongs to. Wrapping rather
+// than editing callFunctionBody's many early returns keeps the push and pop
+// paired without touching its control flow.
 fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
+    if fIdx >= 0 && fIdx < prog.funcs.len() {
+        st.fnFileStack.push(prog.funcs[fIdx].file.clone())
+    } else {
+        st.fnFileStack.push("")
+    }
+    let r = callFunctionBody(prog, fIdx, envIdx, argVals, thisVal, st)
+    let _popped = st.fnFileStack.pop()
+    return r
+}
+
+fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
     // R1: an async call runs its body on its own activation and returns at that
     // body's first await. Cleared immediately so a nested async call spawns.
     let alreadyOnActivation = st.suppressAsyncSpawn

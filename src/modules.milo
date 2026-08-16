@@ -157,6 +157,11 @@ fn builtinSource(name: &string): string {
     if name == "net" {
         return @embedFile("../lib/net.js")
     }
+    // `ws` opens with `require('tls')` and fails the whole module without it,
+    // which is what kept a WebSocket server from loading at all
+    if name == "tls" {
+        return @embedFile("../lib/tls.js")
+    }
     if name == "https" {
         return @embedFile("../lib/https.js")
     }

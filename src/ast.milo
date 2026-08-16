@@ -192,6 +192,12 @@ pub struct FuncDef {
     // `function*`: the body runs on its own green task and suspends at each
     // `yield`. Works in the runtime and, since 2026-08-15, in the engine too.
     isGenerator: bool,
+    // the source file this function was PARSED from. A call stack needs the file
+    // of the function being run, not of the module body currently executing:
+    // `bindings` (under most native addons) locates an addon relative to its
+    // CALLER's file, and a constructor called later from another module reported
+    // that other module.
+    file: string,
 }
 
 // one declarator in a `let a = 1, b, c = 3` statement

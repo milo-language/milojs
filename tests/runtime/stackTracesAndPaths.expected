@@ -1,0 +1,15 @@
+frames is an array: true
+innermost frame is this file: true
+no shim frames leaked: true
+CallSite methods: function,function,function,function,function,function,function,function
+default stack is a string: string Error
+default stack has frames: true
+__filename absolute: true
+__dirname absolute: true
+__filename under __dirname: true
+typeof require: function
+require.length is a number: true
+tls: function function function
+checkServerIdentity match: true
+checkServerIdentity wildcard: true
+checkServerIdentity mismatch: ERR_TLS_CERT_ALTNAME_INVALID
