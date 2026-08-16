@@ -18,6 +18,12 @@
 import { readdirSync, readFileSync, writeFileSync, statSync, mkdtempSync, mkdirSync } from "fs";
 import { execFileSync } from "child_process";
 import { join } from "path";
+import { homedir } from "node:os";
+
+// The report is committed evidence, so it must not carry the machine it was
+// measured on. An absolute path under $HOME is also what the pre-commit
+// home-path check rejects, which made the report uncommittable.
+const tilde = (x: string) => (x.startsWith(homedir()) ? "~" + x.slice(homedir().length) : x);
 import { tmpdir } from "os";
 
 const T262 = process.env.TEST262 ?? "/tmp/test262";
@@ -42,9 +48,16 @@ function selfRevision(): { revision: string | null; dirty: boolean } {
     const revision = execFileSync("git", ["rev-parse", "HEAD"], {
       encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"],
     }).trim();
+    // docs/conformance is where the reports themselves land, so a run that has
+    // already written one would otherwise report the NEXT sweep as dirty and
+    // make it impossible to produce both reports from one clean checkout.
     const dirty = execFileSync("git", ["status", "--porcelain"], {
       encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"],
-    }).trim().length > 0;
+    })
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.includes("docs/conformance"))
+      .length > 0;
     return { revision, dirty };
   } catch { return { revision: null, dirty: false }; }
 }
@@ -203,9 +216,9 @@ if (jsonPath) {
   const report = {
     schemaVersion: 1,
     suite: "test262",
-    corpus: { path: T262, revision: revision(T262) },
+    corpus: { path: tilde(T262), revision: revision(T262) },
     milojs: selfRevision(),
-    engine: ENGINE,
+    engine: tilde(ENGINE),
     selection: {
       directory: subDir || null,
       sample: sampleN,

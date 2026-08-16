@@ -616,10 +616,13 @@ fn brandName(brand: i64): string {
 
 // GENERATED from node (see docs/backlog.md): the `length` every built-in
 // function carries. test262 has a length.js per method asserting it exactly.
-// Only three names disagree across prototypes — constructor (excluded),
-// toString (Number.prototype.toString is 1, everything else 0) and set
-// (Map.prototype.set is 2, %TypedArray%.prototype.set is 1); the commoner
-// value is used for those two.
+//
+// Three names disagree across prototypes: constructor (excluded), toString
+// (Number.prototype.toString is 1, everything else 0) and set
+// (Map.prototype.set is 2, %TypedArray%.prototype.set is 1). `set` is no longer
+// resolved from this table alone: builtinArityOn(host, name) takes the receiver
+// brand and this table holds only its fallback. `toString` still uses the
+// commoner value.
 // GENERATED from node: the `length` of a built-in STATIC. Kept separate from
 // builtinArity because the same name can differ — Object.keys is 1 while
 // Array.prototype.keys is 0.
@@ -1803,7 +1806,39 @@ fn builtinArity(n: &string): i64 {
     return 0
 }
 
+// A few method NAMES are shared by builtins whose arities differ, so a table
+// keyed by the name alone is necessarily wrong for one of them. `set` is the
+// live case: Map.prototype.set and WeakMap.prototype.set take (key, value) and
+// report 2, while %TypedArray%.prototype.set takes (array, offset) and reports
+// 1. builtinArity holds the TypedArray value, so the host is passed in at the
+// sites that know it rather than the constant being flipped (which would only
+// move the failure onto TypedArray).
+fn builtinArityOn(host: &string, n: &string): i64 {
+    if n == "set" && (host == "Map" || host == "WeakMap") {
+        return 2
+    }
+    return builtinArity(n)
+}
+
+// The host brand a receiver belongs to, for builtinArityOn. Only the brands
+// that take part in an arity conflict need naming; everything else is "".
+fn hostBrandOf(st: &Interp, recv: &JSValue): string {
+    let h = objHandle(recv)
+    if h < 0 {
+        return ""
+    }
+    if st.objects[h].isMap {
+        return "Map"
+    }
+    return ""
+}
+
 fn makeBoundMethod(st: &mut Interp, recv: JSValue, name: string): JSValue {
+    let host = hostBrandOf(st, recv)
+    return makeBoundMethodOn(st, recv, name, host)
+}
+
+fn makeBoundMethodOn(st: &mut Interp, recv: JSValue, name: string, host: string): JSValue {
     let bo = newObject(st)
     st.objects[bo].isBound = true
     let ex = ensureExtra(st, bo)
@@ -1812,7 +1847,7 @@ fn makeBoundMethod(st: &mut Interp, recv: JSValue, name: string): JSValue {
     // every built-in function has own `name` and `length` — test262 checks one
     // of each per method, with verifyProperty, so they must be real own
     // properties with the spec's attributes and not synthesised on read
-    objDefineBuiltinAttr(st, bo, "length", JSValue.Number(builtinArity(name) as f64))
+    objDefineBuiltinAttr(st, bo, "length", JSValue.Number(builtinArityOn(host, name) as f64))
     objDefineBuiltinAttr(st, bo, "name", JSValue.Str(name))
     return JSValue.Obj(bo)
 }
@@ -6528,9 +6563,15 @@ fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>, st
 fn buildNativeProto(st: &mut Interp, nativeId: i64, names: &Vec<string>): i64 {
     let proto = newObject(st)
     st.objects[proto].proto = st.objectProtoObj
+    // the receiver is Undefined for a prototype method, so the brand cannot be
+    // read off it; the constructor id names it instead
+    var host = ""
+    if nativeId == NATIVE_MAP {
+        host = "Map"
+    }
     var i: i64 = 0
     while i < names.len() {
-        objSet(st, proto, names[i].clone(), makeBoundMethod(st, JSValue.Undefined, names[i].clone()))
+        objSet(st, proto, names[i].clone(), makeBoundMethodOn(st, JSValue.Undefined, names[i].clone(), host.clone()))
         objSetNonEnumerable(st, proto, names[i])
         i = i + 1
     }

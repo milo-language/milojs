@@ -82,24 +82,23 @@ function majority(entries) {
 }
 
 // Names where a single table CANNOT be right, because the tables are keyed by
-// bare method name and two builtins genuinely disagree. Whichever value is
-// stored, the other receiver reports the wrong length and its test262 length.js
-// fails. Registered here so the gate lands green while the conflict stays
-// visible — the real fix is a receiver-aware lookup for these names, not a
-// different constant.
-const CONFLICTS = {
+// bare method name and two builtins genuinely disagree. Whichever value the
+// TABLE stores, the other receiver would report the wrong length, so these names
+// are not resolved from the table at all: eval.milo dispatches them through
+// builtinArityOn(host, name), which takes the receiver brand. The table keeps
+// the fallback value and this list records which names have moved, so a name
+// added here without the matching dispatch still shows up.
+const RECEIVER_AWARE = {
   set: {
     table: 1,
     note:
-      "Map.prototype.set and WeakMap.prototype.set are 2; %TypedArray%.prototype.set is 1. " +
-      "The table holds 1, so Map/WeakMap report the wrong length — note this contradicts " +
-      "the comment above the table in eval.milo, which says the COMMONER value is used, and " +
-      "2 is the commoner value. Fixing it properly means dispatching on the receiver's brand " +
-      "for the conflicting names rather than flipping the constant and breaking TypedArray.",
+      "Map.prototype.set and WeakMap.prototype.set are 2, %TypedArray%.prototype.set is 1. " +
+      "builtinArityOn(host, name) in eval.milo returns 2 for the Map brand and falls back to " +
+      "the table (1) for everything else, so both receivers now report node's value.",
   },
 };
 
-let bad = 0, checked = 0, unknown = 0, ambiguous = 0, conflicts = 0;
+let bad = 0, checked = 0, unknown = 0, ambiguous = 0, dispatched = 0;
 
 function compare(label, tbl, seen) {
   for (const [name, want] of tbl) {
@@ -112,10 +111,10 @@ function compare(label, tbl, seen) {
     checked++;
     const { value, tie, spread } = majority(entries);
     if (value === want) continue;
-    const known = CONFLICTS[name];
+    const known = RECEIVER_AWARE[name];
     if (known && known.table === want) {
-      conflicts++;
-      console.log(`!     ${label}: "${name}" is ${want}, node says ${value} — known conflict: ${known.note}`);
+      dispatched++;
+      if (verbose) console.log(`~     ${label}: "${name}" table holds ${want}, node says ${value}; resolved receiver-aware: ${known.note}`);
       continue;
     }
     if (tie) {
@@ -159,6 +158,6 @@ for (const [name, want] of table("builtinCtorArity")) {
   }
 }
 
-console.log(`\ncheck-arity: ${checked} checked, ${bad} wrong, ${conflicts} known conflict(s), ${ambiguous} ambiguous, ${unknown} not in node`);
+console.log(`\ncheck-arity: ${checked} checked, ${bad} wrong, ${dispatched} receiver-aware, ${ambiguous} ambiguous, ${unknown} not in node`);
 if (bad) console.error("FAIL: a built-in length disagrees with node — test262 asserts every one of these");
 process.exit(bad ? 1 : 0);
