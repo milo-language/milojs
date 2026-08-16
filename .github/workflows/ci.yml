@@ -71,6 +71,14 @@ jobs:
       - name: verify contracts
         run: ./tools/verify-contracts.sh
 
+      # The three built-in `length` tables in src/eval.milo were marked
+      # "GENERATED from node" with no generator committed, so nothing could tell
+      # whether 389 hand-transcribed integers still matched. test262 has a
+      # length.js per method, which makes each wrong one a silent conformance
+      # failure that reads as an unrelated gap.
+      - name: built-in lengths match node
+        run: node tools/check-arity.mjs
+
       # src/unicase.milo is generated from node's ICU. Its header says "do not
       # edit by hand"; this is what makes that true, and it also catches a node
       # upgrade silently changing what the engine believes about case mapping.

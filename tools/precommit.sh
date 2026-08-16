@@ -29,6 +29,12 @@ if [ "$before" != "$after" ]; then
     echo "precommit: docs/api was stale; regenerated and staged"
 fi
 
+# 389 built-in `length` values in src/eval.milo sit under a "GENERATED from node"
+# comment with no generator behind it. test262 asserts every one.
+if command -v node >/dev/null 2>&1 && ! node tools/check-arity.mjs; then
+    status=1
+fi
+
 # src/unicase.milo is generated from node's ICU and says "do not edit by hand",
 # which was a request until this ran. 0.1s.
 if command -v node >/dev/null 2>&1 && ! node tools/gen-unicase.mjs --check; then
