@@ -6,7 +6,7 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "52ebdd2f4f1a13508aace34216e501815fca86fd",
+    "revision": "bb9d347566c1e26413b84d3acf9fabe9ced5cb8d",
     "dirty": false
   },
   "engine": "~/git/milo-language/milojs/.dev/mj-engine",
@@ -25,15 +25,15 @@
     ]
   },
   "totals": {
-    "pass": 97,
-    "fail": 52,
+    "pass": 98,
+    "fail": 51,
     "total": 149,
     "files": 58
   },
   "failureBuckets": [
     {
       "reason": "Uncaught Error: assertion failed: got |…|, expected |…|",
-      "count": 20,
+      "count": 21,
       "cases": [
         "bug1301.js:<whole>",
         "bug1302.js:<whole>",
@@ -48,9 +48,10 @@
         "parse-error-column.js:<whole>",
         "test_bigint.js:test_bigint_asintn",
         "test_builtin.js:test_array",
-        "test_builtin.js:test_rope",
+        "test_builtin.js:test_eval",
         "test_builtin.js:test_date",
         "test_builtin.js:test_exception_source_pos",
+        "test_builtin.js:test_function_source_pos",
         "test_builtin.js:test_exception_prepare_stack",
         "test_builtin.js:test_exception_stack_size_limit",
         "test_closure.js:test_eval_const",
@@ -68,6 +69,15 @@
       ]
     },
     {
+      "reason": "timeout/crash (SIGTERM)",
+      "count": 3,
+      "cases": [
+        "bug1355.js:<whole>",
+        "test_builtin.js:test_rope",
+        "test_builtin.js:test_proxy_is_array"
+      ]
+    },
+    {
       "reason": "Uncaught TypeError: concat is not a function (in /case.js)",
       "count": 3,
       "cases": [
@@ -82,14 +92,6 @@
       "cases": [
         "array-fromasync-enumerable.js:<whole>",
         "callsite-isconstructor.js:<whole>"
-      ]
-    },
-    {
-      "reason": "timeout/crash (SIGTERM)",
-      "count": 2,
-      "cases": [
-        "bug1355.js:<whole>",
-        "test_builtin.js:test_proxy_is_array"
       ]
     },
     {
@@ -184,13 +186,6 @@
       ]
     },
     {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: N+N;",
-      "count": 1,
-      "cases": [
-        "test_builtin.js:test_eval"
-      ]
-    },
-    {
       "reason": "Uncaught ReferenceError: Float16Array is not defined",
       "count": 1,
       "cases": [
@@ -205,31 +200,17 @@
       ]
     },
     {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: function f() {} f",
-      "count": 1,
-      "cases": [
-        "test_builtin.js:test_function_source_pos"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: new.target",
+      "reason": "Uncaught ReferenceError: __super$ is not defined",
       "count": 1,
       "cases": [
         "test_closure.js:test_arrow_function"
       ]
     },
     {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: var z=\"var_obj\";",
+      "reason": "Uncaught ReferenceError: with is not defined",
       "count": 1,
       "cases": [
         "test_closure.js:test_with"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: tab.push(function g1() { return i; })",
-      "count": 1,
-      "cases": [
-        "test_closure.js:test_eval_closure"
       ]
     },
     {

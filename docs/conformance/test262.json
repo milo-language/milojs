@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "52ebdd2f4f1a13508aace34216e501815fca86fd",
+    "revision": "bb9d347566c1e26413b84d3acf9fabe9ced5cb8d",
     "dirty": false
   },
   "engine": "~/git/milo-language/milojs/.dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 680,
-    "fail": 790,
+    "pass": 699,
+    "fail": 771,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -26,14 +26,14 @@
   "areas": [
     {
       "area": "language/expressions",
-      "pass": 207,
-      "fail": 127,
+      "pass": 212,
+      "fail": 122,
       "total": 334
     },
     {
       "area": "language/statements",
-      "pass": 152,
-      "fail": 130,
+      "pass": 156,
+      "fail": 126,
       "total": 282
     },
     {
@@ -98,8 +98,8 @@
     },
     {
       "area": "annexB/language",
-      "pass": 4,
-      "fail": 17,
+      "pass": 6,
+      "fail": 15,
       "total": 21
     },
     {
@@ -140,8 +140,8 @@
     },
     {
       "area": "language/eval-code",
-      "pass": 0,
-      "fail": 11,
+      "pass": 6,
+      "fail": 5,
       "total": 11
     },
     {
@@ -224,8 +224,8 @@
     },
     {
       "area": "language/statementList",
-      "pass": 2,
-      "fail": 2,
+      "pass": 4,
+      "fail": 0,
       "total": 4
     },
     {
@@ -460,7 +460,7 @@
   "failureBuckets": [
     {
       "reason": "Uncaught TypeError: cannot read property '…' of undefined",
-      "count": 155,
+      "count": 157,
       "cases": [
         "built-ins/Temporal/ZonedDateTime/prototype/epochNanoseconds/prop-desc.js",
         "built-ins/ThrowTypeError/extensible.js",
@@ -525,6 +525,7 @@
         "built-ins/Temporal/PlainYearMonth/prototype/subtract/infinity-throws-rangeerror.js",
         "built-ins/Temporal/PlainYearMonth/prototype/since/largestunit-auto.js",
         "built-ins/ArrayBuffer/Symbol.species/return-value.js",
+        "language/eval-code/direct/switch-case-decl-eval-source-is-strict-nostrict.js",
         "built-ins/Temporal/ZonedDateTime/prototype/until/smallestunit-undefined.js",
         "built-ins/Temporal/PlainDateTime/prototype/toString/fractionalseconddigits-out-of-range.js",
         "built-ins/Temporal/PlainDate/prototype/with/options-object.js",
@@ -537,6 +538,7 @@
         "built-ins/Temporal/PlainMonthDay/from/argument-string-calendar-annotation.js",
         "built-ins/Temporal/PlainTime/prototype/since/branding.js",
         "built-ins/Temporal/PlainDate/prototype/until/prop-desc.js",
+        "language/expressions/class/elements/arrow-body-private-derived-cls-direct-eval-contains-superproperty-2.js",
         "built-ins/Temporal/Duration/prototype/round/roundingmode-undefined.js",
         "built-ins/Temporal/PlainDate/prototype/subtract/balance-smaller-units.js",
         "built-ins/Temporal/ZonedDateTime/prototype/since/largestunit-invalid-string.js",
@@ -821,20 +823,6 @@
       ]
     },
     {
-      "reason": "Uncaught EvalError: indirect eval is not supported: milojs has no runtime compiler",
-      "count": 8,
-      "cases": [
-        "annexB/language/eval-code/indirect/global-switch-case-eval-global-no-skip-try.js",
-        "annexB/language/eval-code/indirect/global-if-decl-else-decl-a-eval-global-no-skip-try.js",
-        "annexB/language/eval-code/indirect/global-if-decl-no-else-eval-global-skip-early-err-try.js",
-        "annexB/language/eval-code/indirect/global-if-decl-no-else-eval-global-existing-block-fn-no-init.js",
-        "annexB/language/eval-code/indirect/global-if-stmt-else-decl-eval-global-skip-early-err-block.js",
-        "language/eval-code/indirect/cptn-nrml-expr-prim.js",
-        "language/statements/variable/12.2.1-20-s.js",
-        "annexB/language/eval-code/indirect/global-if-decl-else-decl-b-eval-global-skip-early-err.js"
-      ]
-    },
-    {
       "reason": "Uncaught ReferenceError: static is not defined",
       "count": 8,
       "cases": [
@@ -846,6 +834,20 @@
         "language/statements/class/elements/new-no-sc-line-method-rs-static-method-privatename-identifier-alt.js",
         "language/expressions/class/elements/new-no-sc-line-method-rs-static-privatename-identifier-by-classname.js",
         "language/expressions/class/elements/new-sc-line-gen-rs-static-generator-method-privatename-identifier-alt.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a SyntaxError to be thrown but no exception was thrown at all",
+      "count": 8,
+      "cases": [
+        "language/eval-code/direct/gen-meth-a-preceding-parameter-is-named-arguments-declare-arguments-and-assign.js",
+        "language/eval-code/direct/async-gen-func-decl-fn-body-cntns-arguments-lex-bind-declare-arguments.js",
+        "language/eval-code/indirect/parse-failure-3.js",
+        "language/eval-code/direct/async-gen-func-decl-no-pre-existing-arguments-bindings-are-present-declare-arguments.js",
+        "language/expressions/object/method-definition/async-gen-meth-eval-var-scope-syntax-err.js",
+        "language/statements/function/13.0-16-s.js",
+        "language/statements/class/elements/privatename-not-valid-eval-earlyerr-3.js",
+        "language/expressions/async-generator/named-eval-var-scope-syntax-err.js"
       ]
     },
     {
@@ -946,25 +948,14 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected a SyntaxError but got a EvalError",
+      "reason": "Uncaught undefined: An initialized binding is not created prior to evaluation Expected a R",
       "count": 5,
       "cases": [
-        "language/eval-code/indirect/parse-failure-3.js",
-        "language/statements/class/elements/nested-derived-cls-indirect-eval-contains-superproperty-1.js",
-        "language/statements/class/elements/private-derived-cls-indirect-eval-contains-superproperty-1.js",
-        "language/statements/function/13.0-16-s.js",
-        "language/statements/class/elements/privatename-not-valid-eval-earlyerr-3.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Expected a SyntaxError to be thrown but no exception was thrown at all",
-      "count": 5,
-      "cases": [
-        "language/eval-code/direct/gen-meth-a-preceding-parameter-is-named-arguments-declare-arguments-and-assign.js",
-        "language/eval-code/direct/async-gen-func-decl-fn-body-cntns-arguments-lex-bind-declare-arguments.js",
-        "language/eval-code/direct/async-gen-func-decl-no-pre-existing-arguments-bindings-are-present-declare-arguments.js",
-        "language/expressions/object/method-definition/async-gen-meth-eval-var-scope-syntax-err.js",
-        "language/expressions/async-generator/named-eval-var-scope-syntax-err.js"
+        "annexB/language/eval-code/direct/func-if-decl-else-decl-b-eval-func-skip-early-err-for.js",
+        "annexB/language/eval-code/direct/func-if-decl-else-decl-a-eval-func-skip-early-err-for-of.js",
+        "annexB/language/global-code/if-decl-else-stmt-global-skip-early-err-try.js",
+        "annexB/language/function-code/if-decl-else-decl-a-func-skip-early-err-try.js",
+        "annexB/language/function-code/if-decl-else-stmt-func-skip-early-err-try.js"
       ]
     },
     {
@@ -990,6 +981,17 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Expected SameValue(«undefined», «N») to be true",
+      "count": 5,
+      "cases": [
+        "language/statements/class/cpn-class-decl-accessors-computed-property-name-from-arrow-function-expression.js",
+        "built-ins/GeneratorFunction/instance-length.js",
+        "built-ins/Map/prototype/getOrInsertComputed/returns-value-if-key-is-not-present-different-key-types.js",
+        "language/statements/labeled/cptn-break.js",
+        "language/statements/using/syntax/using-for-using-of-of.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: property exists Expected SameValue(«undefined», «N») to be true",
       "count": 5,
       "cases": [
@@ -1008,16 +1010,6 @@
         "language/expressions/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt.js",
         "language/statements/class/elements/after-same-line-static-async-method-rs-static-generator-method-privatename-identifier-alt.js",
         "language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt-by-classname.js"
-      ]
-    },
-    {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected true but got false",
-      "count": 4,
-      "cases": [
-        "language/eval-code/direct/async-func-decl-a-following-parameter-is-named-arguments-declare-arguments-and-assign.js",
-        "language/eval-code/direct/async-func-expr-named-no-pre-existing-arguments-bindings-are-present-declare-arguments.js",
-        "language/eval-code/direct/async-func-decl-no-pre-existing-arguments-bindings-are-present-declare-arguments.js",
-        "language/eval-code/direct/async-func-decl-no-pre-existing-arguments-bindings-are-present-declare-arguments-and-assign.js"
       ]
     },
     {
@@ -1058,16 +1050,6 @@
         "language/statements/class/dstr/meth-ary-ptrn-elem-id-init-fn-name-class.js",
         "language/statements/class/dstr/private-gen-meth-dflt-obj-ptrn-id-init-fn-name-class.js",
         "language/expressions/class/dstr/private-gen-meth-static-dflt-obj-ptrn-id-init-fn-name-class.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Expected SameValue(«undefined», «N») to be true",
-      "count": 4,
-      "cases": [
-        "language/statements/class/cpn-class-decl-accessors-computed-property-name-from-arrow-function-expression.js",
-        "built-ins/GeneratorFunction/instance-length.js",
-        "built-ins/Map/prototype/getOrInsertComputed/returns-value-if-key-is-not-present-different-key-types.js",
-        "language/statements/using/syntax/using-for-using-of-of.js"
       ]
     },
     {
@@ -1165,12 +1147,12 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: An initialized binding is not created prior to evaluation Expected a R",
+      "reason": "Uncaught undefined: An initialized binding is not created following evaluation Expected a ",
       "count": 3,
       "cases": [
-        "annexB/language/global-code/if-decl-else-stmt-global-skip-early-err-try.js",
-        "annexB/language/function-code/if-decl-else-decl-a-func-skip-early-err-try.js",
-        "annexB/language/function-code/if-decl-else-stmt-func-skip-early-err-try.js"
+        "annexB/language/eval-code/direct/global-if-decl-else-decl-b-eval-global-skip-early-err-switch.js",
+        "annexB/language/eval-code/direct/global-switch-dflt-eval-global-skip-early-err-for.js",
+        "annexB/language/eval-code/indirect/global-if-stmt-else-decl-eval-global-skip-early-err-block.js"
       ]
     },
     {
@@ -1212,22 +1194,6 @@
       "cases": [
         "language/expressions/dynamic-import/syntax/valid/nested-do-while-import-source-script-code-valid.js",
         "language/expressions/dynamic-import/syntax/valid/nested-while-empty-str-is-valid-assign-expr.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: assert.throws(Refe",
-      "count": 2,
-      "cases": [
-        "annexB/language/eval-code/direct/func-if-decl-else-decl-b-eval-func-skip-early-err-for.js",
-        "annexB/language/eval-code/direct/func-if-decl-else-decl-a-eval-func-skip-early-err-for-of.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: let f = N;",
-      "count": 2,
-      "cases": [
-        "annexB/language/eval-code/direct/func-if-decl-else-decl-b-eval-func-skip-early-err.js",
-        "annexB/language/eval-code/direct/func-switch-case-eval-func-skip-early-err.js"
       ]
     },
     {
@@ -1319,6 +1285,14 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Expected a SyntaxError but got a TypeError",
+      "count": 2,
+      "cases": [
+        "language/statements/class/elements/nested-derived-cls-indirect-eval-contains-superproperty-1.js",
+        "language/statements/class/elements/private-derived-cls-indirect-eval-contains-superproperty-1.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Expected a Test262Error but got a TypeError",
       "count": 2,
       "cases": [
@@ -1343,11 +1317,27 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Expected SameValue(«function», «undefined») to be true",
+      "count": 2,
+      "cases": [
+        "annexB/language/eval-code/direct/global-switch-case-eval-global-existing-block-fn-no-init.js",
+        "annexB/language/eval-code/indirect/global-if-decl-no-else-eval-global-existing-block-fn-no-init.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Expected SameValue(«N», «null») to be true",
       "count": 2,
       "cases": [
         "language/expressions/object/method-definition/gen-meth-dflt-params-arg-val-not-undefined.js",
         "language/statements/for-of/dstr/array-elem-init-assignment.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«N», «undefined») to be true",
+      "count": 2,
+      "cases": [
+        "language/statements/switch/cptn-dflt-b-abrupt-empty.js",
+        "language/statements/if/cptn-no-else-false.js"
       ]
     },
     {
@@ -1364,6 +1354,14 @@
       "cases": [
         "built-ins/Promise/resolve-function-extensible.js",
         "built-ins/String/prototype/search/invoke-builtin-search-searcher-undef.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Initialized binding created prior to evaluation Expected SameValue(«fu",
+      "count": 2,
+      "cases": [
+        "annexB/language/eval-code/indirect/global-switch-case-eval-global-no-skip-try.js",
+        "annexB/language/eval-code/indirect/global-if-decl-else-decl-a-eval-global-no-skip-try.js"
       ]
     },
     {
@@ -1404,6 +1402,14 @@
       "cases": [
         "built-ins/ArrayBuffer/prototype/transferToFixedLength/from-fixed-to-larger-no-resizable.js",
         "built-ins/ArrayBuffer/prototype/transferToFixedLength/from-resizable-to-same.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: value is not updated following evaluation Expected SameValue(«function",
+      "count": 2,
+      "cases": [
+        "annexB/language/eval-code/direct/func-if-decl-else-decl-b-eval-func-skip-early-err.js",
+        "annexB/language/eval-code/indirect/global-if-decl-else-decl-b-eval-global-skip-early-err.js"
       ]
     },
     {
@@ -1460,167 +1466,6 @@
       "count": 1,
       "cases": [
         "language/statements/class/dstr/async-gen-meth-static-ary-ptrn-rest-ary-empty.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: ",
-      "count": 1,
-      "cases": [
-        "language/eval-code/direct/switch-case-decl-eval-source-is-strict-nostrict.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: \"use strict\"; var ",
-      "count": 1,
-      "cases": [
-        "language/eval-code/direct/var-env-lower-lex-strict-source.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: assert.sameValue(f",
-      "count": 1,
-      "cases": [
-        "annexB/language/eval-code/direct/global-switch-case-eval-global-existing-block-fn-no-init.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: BindingIdentifier ",
-      "count": 1,
-      "cases": [
-        "language/expressions/function/named-no-strict-reassign-fn-name-in-body-in-eval.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: class C {}() => N;",
-      "count": 1,
-      "cases": [
-        "language/statementList/eval-class-arrow-function-assignment-expr.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: executed = true; (",
-      "count": 1,
-      "cases": [
-        "language/expressions/class/elements/arrow-body-private-derived-cls-direct-eval-contains-superproperty-2.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: for (let f; ; ) {s",
-      "count": 1,
-      "cases": [
-        "annexB/language/eval-code/direct/global-switch-dflt-eval-global-skip-early-err-for.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: for (var i = N; i ",
-      "count": 1,
-      "cases": [
-        "language/statements/try/cptn-catch-empty-break.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: for(var ind in (ar",
-      "count": 1,
-      "cases": [
-        "language/statements/for-in/S12.6.4_A3.1.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: function fn() {}()",
-      "count": 1,
-      "cases": [
-        "language/statementList/eval-fn-arrow-function-assignment-expr.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: if (false) functio",
-      "count": 1,
-      "cases": [
-        "annexB/language/eval-code/direct/func-if-decl-else-decl-b-eval-func-existing-var-update.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: N\t%\tN",
-      "count": 1,
-      "cases": [
-        "language/expressions/modulus/S11.5.3_A1.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: N\t>\tN",
-      "count": 1,
-      "cases": [
-        "language/expressions/greater-than/S11.8.2_A1.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: N; if (false) { }",
-      "count": 1,
-      "cases": [
-        "language/statements/if/cptn-no-else-false.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: N; switch (\"a\") { ",
-      "count": 1,
-      "cases": [
-        "language/statements/switch/cptn-dflt-b-abrupt-empty.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: new\tNumber()",
-      "count": 1,
-      "cases": [
-        "language/expressions/new/S11.2.2_A1.2.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: switch (N) {",
-      "count": 1,
-      "cases": [
-        "annexB/language/eval-code/direct/global-if-decl-else-decl-b-eval-global-skip-early-err-switch.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: test262id: { N; br",
-      "count": 1,
-      "cases": [
-        "language/statements/labeled/cptn-break.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: this.#m",
-      "count": 1,
-      "cases": [
-        "language/statements/class/elements/private-getter-visible-to-direct-eval.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: this.#m = \"Test262",
-      "count": 1,
-      "cases": [
-        "language/statements/class/elements/private-static-setter-visible-to-direct-eval.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: var x = \"inside\";",
-      "count": 1,
-      "cases": [
-        "language/expressions/object/scope-gen-meth-param-rest-elem-var-close.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: var x = N;",
-      "count": 1,
-      "cases": [
-        "language/statements/for-of/scope-head-var-none.js"
-      ]
-    },
-    {
-      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: var x = N; typeof\t",
-      "count": 1,
-      "cases": [
-        "language/expressions/typeof/syntax.js"
       ]
     },
     {
@@ -1712,6 +1557,13 @@
       "count": 1,
       "cases": [
         "language/statements/class/elements/syntax/valid/grammar-field-identifier-alt.js"
+      ]
+    },
+    {
+      "reason": "Uncaught SyntaxError: Unexpected token in eval",
+      "count": 1,
+      "cases": [
+        "annexB/language/eval-code/indirect/global-if-decl-no-else-eval-global-skip-early-err-try.js"
       ]
     },
     {
@@ -1943,6 +1795,13 @@
       "count": 1,
       "cases": [
         "language/expressions/class/elements/async-gen-private-method-static/yield-star-getiter-sync-not-callable-symbol-throw.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: __evaluated === __str. Actual:  __evaluated ===undefined",
+      "count": 1,
+      "cases": [
+        "language/statements/for-in/S12.6.4_A3.1.js"
       ]
     },
     {
@@ -2590,6 +2449,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Expected SameValue(«N», «function») to be true",
+      "count": 1,
+      "cases": [
+        "language/expressions/function/named-no-strict-reassign-fn-name-in-body-in-eval.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Expected SameValue(«N», «N») to be true (Testing with Float64Array and",
       "count": 1,
       "cases": [
@@ -2692,6 +2558,13 @@
       "count": 1,
       "cases": [
         "language/expressions/function/scope-name-var-open-strict.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: invalid access to a private getter Expected a TypeError but got a Test",
+      "count": 1,
+      "cases": [
+        "language/statements/class/elements/private-getter-visible-to-direct-eval.js"
       ]
     },
     {
