@@ -1197,33 +1197,44 @@ Two things worth keeping from how this went wrong:
 
 Locked by `tests/runtime/modernSurfaceAndGlobal.js`.
 
-## A milo compiler regression has main red — NOT a milojs bug
+## An in-progress compiler change broke async, and how it was found — RESOLVED
 
-Between milo `b5a40d2b` and `03635d2b`, `await` on a BOUND async function
-silently stopped working: no error, exit code 0, the body's output simply never
-appears.
+For a few hours this repo's suite was red with eight fixtures failing, all
+async/generator/green-task shaped: `doubleBind`, `generatorProtocol`,
+`microtaskHandlerGcRoot`, `objectGeneratorMethods`, `promises`, `r2r3Barrier`,
+`r6LocalsLiveAcrossSuspend`, `staticAccessors`. The symptom was silent: `await`
+on a BOUND async function produced no output, no error, exit code 0.
 
 ```js
 function C(x){ this.x = x; }
 C.prototype.m = async function(a){ return this.x + a; };
 var mm = new C(7).m.bind(c);
-async function main(){ console.log(await mm(3)); }   // expected 10, prints nothing
+async function main(){ console.log(await mm(3)); }   // expected 10, printed nothing
 main();
 ```
 
-Evidence it is the compiler: identical milojs source. Rebuilt at four different
-milojs commits (bb9d347, 2a44b84, 408fad0, 7d3f485) with the current compiler,
-all fail; binaries built earlier from the same tree at `b5a40d2b` all print 10.
+**Nothing pushed to milo was ever broken.** The first diagnosis written here said
+"a regression between `b5a40d2b` and `03635d2b`", and that was wrong: the milo
+maintainer bisected every pushed commit in that range and all of them print 10.
+The breakage was in their UNCOMMITTED working tree, which this repo builds from,
+because `milo` on PATH is a symlink into that checkout. Cause: new drop glue for
+closure environments, specifically `reapTask` releasing a spawned task's
+environment. That one release has been dropped from what they are landing; a
+spawned task's environment keeps leaking exactly as it does today.
 
-Failing at clean milojs HEAD because of it: `doubleBind`, `generatorProtocol`,
-`microtaskHandlerGcRoot`, `objectGeneratorMethods`, `promises`, `r2r3Barrier`,
-`r6LocalsLiveAcrossSuspend`, `staticAccessors`. All async/generator/green-task
-shaped.
+Two things to keep from this:
 
-**Do not republish conformance numbers until this is fixed.** The 1500-sample
-reads 682 against the 699 recorded, and that 17-case drop is the compiler, not a
-regression in this repo. Publishing it would record a decline that did not
-happen here.
+- **A red suite here can mean a dirty compiler tree, not a landed regression.**
+  Check `milo --version` against `~/git/milo`'s status before writing anything
+  down, and say "the compiler this was built with", not "a pushed commit".
+- **Conformance numbers must not be republished while the toolchain is
+  suspect.** The 1500-sample read 682 during the outage against the 699 on
+  record; publishing that would have recorded a 17-case decline that never
+  happened in this repo.
+
+Open on the milo side, and this repo is the one that can answer it: something
+reaches a spawned task's environment AFTER the task is reaped, which is why
+releasing it breaks async. See milo's backlog #18.
 
 ## Node-API: 20 entry points added, and three real addons load — 2026-08-15
 
