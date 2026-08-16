@@ -115,6 +115,40 @@ for (const doc of docs) {
   }
 }
 
+// --- the install snippet must name assets the release job actually builds ---
+// The README tells people to construct a download URL from `uname`. If the release
+// matrix gains or loses a platform, that snippet silently starts 404ing for whoever
+// is on it, and nothing in the repo connects the two.
+{
+  const release = readFileSync(p(".github/workflows/release.yml"), "utf8");
+  const built = new Set([...release.matchAll(/^\s*target:\s*(\S+)\s*$/gm)].map((m) => m[1]));
+  const readme = readFileSync(p("README.md"), "utf8");
+  // What the README's `uname` expression yields on each platform it claims support
+  // for. Kept as data rather than parsed out of the snippet: the check is whether
+  // the two sets agree, and a table makes the disagreement readable.
+  const derived = new Map([
+    ["darwin-arm64", "macOS arm64"],
+    ["linux-x64", "Linux x64"],
+    ["linux-arm64", "Linux arm64"],
+  ]);
+  for (const t of built) {
+    if (!derived.has(t)) {
+      console.error(`NO-DOC   release.yml builds milojs-${t}, which the README install snippet cannot produce`);
+      fail = 1;
+    }
+  }
+  for (const [t, label] of derived) {
+    if (!built.has(t)) {
+      console.error(`NO-BUILD README's install snippet yields milojs-${t} (${label}), which release.yml does not build`);
+      fail = 1;
+    }
+  }
+  if (!readme.includes("milojs-$P.tar.gz")) {
+    console.error("NO-SNIP  README install snippet no longer builds a milojs-$P.tar.gz URL; update tools/check-docs.mjs");
+    fail = 1;
+  }
+}
+
 // --- staleness ratchet ---
 if (REBASELINE) {
   const body =
