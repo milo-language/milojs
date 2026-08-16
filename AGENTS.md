@@ -111,6 +111,32 @@ the repl/embed/napi suites — for iterating on one fixture without paying for
 the rest. `tools/dev.sh --rebuild` forces a rebuild even if the binaries look
 current; see `tools/dev.sh -h` for the rest.
 
+## Real applications are a separate gate
+
+```sh
+tools/check-apps.sh          # every app present
+tools/check-apps.sh chat     # one by name
+```
+
+Boots real Node applications under `milojs` and diffs their HTTP responses
+against node's, byte for byte. Run it after a compiler bump or any change to
+module resolution, the event loop, Node-API or the host shims.
+
+It is a separate gate because it finds a different class of defect. Every one of
+these was invisible to `tests/` AND to test262, and turned up within minutes of
+pointing milojs at a real dependency tree:
+
+- express 4 would not load at all (a lazy `require` inside a closure resolved
+  against whichever module was running)
+- an app served its untouched HTML template with a 200 (`[\s\S]` matched the
+  empty string, so the page rewrite silently did nothing)
+- four apps died on their first require (`var undefined;`, the opening line of
+  get-intrinsic, was a parse error)
+
+The apps live outside this repo, so each is SKIPPED rather than failed when its
+checkout is missing; `MILOJS_APPS_ROOT` moves the whole set. Adding one is a line
+in the `APPS` array: name, subdir, entry, port, env, routes.
+
 Equivalent by hand, if you need one suite in isolation:
 
 ```sh
