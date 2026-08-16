@@ -83,7 +83,7 @@ pub fn evalSourceValue(src: &string, prog: &mut Prog, st: &mut Interp): JSValue 
     st.thrownValue = JSValue.Undefined
     let toks = lex(src)
     var p = PState {
-        toks: toks, pos: 0, curClass: "", file: "<embed>", errored: false, eofError: false, quiet: true
+        toks: toks, pos: 0, curClass: "", file: "<embed>", errored: false, eofError: false, quiet: true, strict: false
     }
     let top = parseProgram(p, prog)
     if p.errored {
@@ -128,7 +128,7 @@ fn runSource(src: &string, st: &mut Interp): i32 {
     let toks = lex(src)
     var prog = newProg()
     var p = PState {
-        toks: toks, pos: 0, curClass: "", file: "<entry>", errored: false, eofError: false, quiet: false
+        toks: toks, pos: 0, curClass: "", file: "<entry>", errored: false, eofError: false, quiet: false, strict: false
     }
     let top = parseProgram(p, prog)
     hoistBlock(prog, top, st, 0)

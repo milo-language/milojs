@@ -192,6 +192,8 @@ pub struct FuncDef {
     // `function*`: the body runs on its own green task and suspends at each
     // `yield`. Works in the runtime and, since 2026-08-15, in the engine too.
     isGenerator: bool,
+    // parsed in strict code, so a receiver-less call keeps `this` undefined
+    isStrict: bool,
     // byte range of this function's VERBATIM source text within its file, for
     // Function.prototype.toString. A pretty-printer cannot answer that: the
     // result is compared against node byte for byte, and the author's spacing is

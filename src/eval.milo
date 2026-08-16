@@ -10392,13 +10392,11 @@ fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
         // tracking, so it applies the sloppy rule throughout, which is also the
         // mode the test262 sweep runs in.
         var boundThisVal = thisVal
-        match boundThisVal {
-            JSValue.Undefined => {
-                if scopeHas(st, 0, "globalThis") {
-                    boundThisVal = scopeLookup(st, 0, "globalThis")
-                }
-            }
-            _ => {
+        if !prog.funcs[fIdx].isStrict && isNullish(boundThisVal) {
+            // sloppy mode substitutes globalThis for BOTH undefined and null:
+            // `f.call(null)` and `f()` bind the same receiver
+            if scopeHas(st, 0, "globalThis") {
+                boundThisVal = scopeLookup(st, 0, "globalThis")
             }
         }
         scopeDefine(st, callScope, "this", boundThisVal)
@@ -15760,7 +15758,7 @@ pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
     let evalName = "<eval:" + numToStr(gProg.srcNames.len() as f64) + ">"
     registerSource(gProg, evalName.clone(), src.clone())
     var ep = PState {
-        toks: lex(src.clone()), pos: 0, curClass: "", file: evalName, errored: false, eofError: false, quiet: true
+        toks: lex(src.clone()), pos: 0, curClass: "", file: evalName, errored: false, eofError: false, quiet: true, strict: false
     }
     let top = parseProgram(ep, gProg)
     // The parser recovers by skipping tokens rather than stopping, so `errored`

@@ -1,0 +1,15 @@
+sloppy call -> true
+sloppy .call(undefined) -> true
+sloppy .call(null) -> true
+sloppy .call(obj) -> true
+fn directive -> true
+fn directive .call(undefined) -> true
+fn directive .call(7) -> 7
+nested in strict fn -> true
+through an arrow -> true
+class method -> true
+class static -> true
+nested in sloppy fn -> true
+Iterator ctor setter on undefined -> TypeError
+Iterator tag setter on undefined -> TypeError
+Iterator tag setter on a plain object -> x

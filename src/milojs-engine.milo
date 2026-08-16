@@ -146,7 +146,7 @@ fn main(): i32 {
                 gInterp.modDirStack.push(dirOf(path))
                 gInterp.modPathStack.push(path.clone())
                 var p = PState {
-                    toks: toks, pos: 0, curClass: "", file: path.clone(), errored: false, eofError: false, quiet: false
+                    toks: toks, pos: 0, curClass: "", file: path.clone(), errored: false, eofError: false, quiet: false, strict: false
                 }
                 topBlock = parseProgram(p, gProg)
             } else {

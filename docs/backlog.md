@@ -2271,3 +2271,33 @@ throw to surface at an unrelated later point. Each site now returns immediately.
 Found while measuring the deep-equal chain, which is built on exactly this shape:
 is-callable probes a candidate with `Reflect.apply(value, null, badArrayLike)`
 where `badArrayLike`'s length getter throws a private marker.
+
+## "use strict" was ignored, so strict code got globalThis as its receiver — DONE 2026-08-16
+
+The directive was never parsed. Every function, strict or not, took globalThis
+when called with no receiver. That was my own regression from binding
+receiver-less `this` to globalThis: correct for sloppy code, wrong for strict,
+and it cost two QuickJS cases (`bug1552.js`,
+`iterator-tostringtag-setter.js`) which test SetterThatIgnoresPrototypeProperties
+on `Iterator.prototype`. Those setters reject a nullish receiver, and with
+globalThis substituted they silently accepted one. I had filed the same defect
+two rounds earlier against the `__proto__` getter and called it a narrow
+divergence; it was not.
+
+`PState` now carries a `strict` flag and `FuncDef` an `isStrict`. The directive
+is detected by PEEKING at the token after `{` rather than by inspecting the
+parsed block, because the flag has to be set before the body is parsed: every
+FuncDef built inside inherits it. Module level, function bodies and arrows all
+set it; a class body is strict unconditionally, directive or not. Sloppy mode
+substitutes globalThis for BOTH undefined and null, so `f.call(null)` and `f()`
+bind the same receiver.
+
+`lib/engine-prelude.js` now declares the directive, which is what makes the spec
+setters it defines behave correctly.
+
+Not covered: strict mode's other rules (assignment to an undeclared name, `with`,
+duplicate parameter names, octal literals). Only the `this` binding is wired to
+the flag so far — the flag is the part that was missing, and the rest can hang
+off it.
+
+Locked by `tests/strictModeThis.js`.
