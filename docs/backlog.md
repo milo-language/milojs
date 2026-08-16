@@ -641,27 +641,82 @@ against node with a two-line script.
    Still open next door: async generators (`async *m() {}`) produce an object with
    no `next` in both object literals and classes, and `for await (... of ...)` does
    not parse.
-2. **`TypedArray.prototype.subarray` returns an empty view.** `a.subarray(1)` has
-   length 0, so `join`/spread over it are empty. `slice` is correct.
+2. **`TypedArray.prototype.subarray` returns an empty view — DONE 2026-08-15.**
+   Not a subarray bug: `a.subarray(1)` passed `undefined` as the end index and
+   every built-in with a defaulted argument treated an explicit `undefined` as
+   "0", not as "absent". See "Explicit `undefined` meant absent" below.
 3. `[1, , 3].flat()` keeps the hole (length 3, node gives 2).
 4. `"ß".toUpperCase()` answers `"ß"`; the special casing to `"SS"` is missing.
 
 ## Smaller known gaps
 
-- `console.log` quotes strings inside an inspected array/object with `"`, where
-  node uses `'`. Cosmetic, but it means any fixture printing a nested string is
-  locked to milojs's spelling rather than node's.
 - `Object.groupBy` / `Map.groupBy` (ES2024) are missing.
 
-- Generators are runtime-only: `function*` throws
-  `generators require the milojs runtime (not the engine)` under
-  `milojs-engine`, costing 42 test262 and 3 QuickJS cases. The runtime handles
-  them, so this is engine/runtime factoring, not a missing feature.
 - A template literal desugars to `"" + x`, so its holes convert with the DEFAULT
   ToPrimitive hint rather than the string hint the spec requires. Observable only
   for an object with both `valueOf` and `toString`: `` `${x}` `` answers valueOf
   where node answers toString. `String(x)` and `join` take the string hint
   correctly. Fixing it needs a template-concat node rather than a chain of `+`.
+
+## Explicit `undefined` meant absent — DONE 2026-08-15
+
+Every built-in with a defaulted argument checked presence as `args.len() > i`
+alone, so `arr.slice(1, undefined)` took `undefined` through `toNum` to `0` and
+returned `[]` where node returns `[2,3,4]`. That is the shape a forwarded
+optional parameter produces, so it is common in ordinary code, not a corner.
+Nine methods diverged: `Array.prototype.slice`/`fill`/`copyWithin`/`join`/
+`flat`, `String.prototype.substr`/`padStart`/`padEnd`, and
+`%TypedArray%.prototype.subarray`/`slice`/`fill`/`join`.
+
+Fixed centrally: `argPresent(args, i)` in `src/builtins.milo` is the presence
+test, and `argNum` uses it — which covers every `String.prototype` site at once.
+The array and typed-array branches in `src/eval.milo` call it directly.
+
+Two neighbouring bugs came out of the same probe:
+
+- **`String.prototype.substring` was implemented as `slice`.** It has its own
+  clamping — a negative index goes to 0 rather than counting from the end, and
+  out-of-order ends are swapped — so `"abcdef".substring(2, 1)` answered `""`
+  where node answers `"b"`, and `.substring(-2)` answered `"ef"` where node
+  answers the whole string. Four of eight probed argument shapes were wrong.
+- **`Array.prototype.lastIndexOf` ignored `fromIndex` entirely.**
+  `[1,2,3,2].lastIndexOf(2, 0)` answered 3; it must answer -1.
+
+test262 1500-sample 660 → 662. Directory scores after the fix (no before-number:
+the milo compiler at `d6adecc5` cannot build this repo at HEAD, see below, so a
+baseline binary could not be produced): `built-ins/String/prototype/substring`
+31/46, `built-ins/Array/prototype/lastIndexOf` 144/198,
+`built-ins/Array/prototype/fill` 9/22, `built-ins/Array/prototype/copyWithin`
+19/39, `built-ins/TypedArray/prototype/subarray` 11/67. Locked by
+`tests/undefinedOptionalArgs.js`.
+
+## The runtime shadows the engine's native typed arrays
+
+`lib/prelude.js`'s `_taFactory` defines `Uint8Array` and friends as ordinary JS
+arrays with `_isTypedArray = true` and per-instance `set`/`subarray` closures.
+It runs in the runtime, where it overwrites the engine's real typed arrays, so
+`milojs` is strictly worse than `milojs-engine` here:
+
+```
+$ .dev/mj-engine  sub.js   # len 3  buf? true   proto true   own subarray? false
+$ .dev/mj-runtime sub.js   # len 3  buf? false  proto false  own subarray? true
+```
+
+`a.buffer` is null, `Object.getPrototypeOf(a) !== Int8Array.prototype`, and every
+instance carries own method properties node puts on the prototype. The engine
+grew real `%TypedArray%` prototypes on 2026-08-15; the prelude copy was never
+removed. Deleting `_taFactory` (and the `DataView` next to it) should be mostly
+subtraction — check `lib/buffer.js`, which builds on `this.bytes`.
+
+## The milo compiler at `d6adecc5` cannot build this repo
+
+`milo build src/milojs-engine.milo` on a clean HEAD fails in LLVM with
+`error: use of undefined value '@.str.5025'` on a `getenv` call, deterministically.
+It is size- or layout-sensitive rather than source-specific: adding unrelated
+code to `src/eval.milo` moves the index and the build succeeds, which is why the
+suite was green mid-session and red an hour later against the same milojs source.
+`milo` is a symlink to `~/git/milo/milo`, so the compiler moves under this repo.
+Not a milojs bug — track it there.
 
 ## Node-API: 10 of 64 entry points are stubs
 

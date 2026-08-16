@@ -7521,8 +7521,8 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                             // the inner did not handle it (or has no record left);
                             // the completion keeps unwinding through us
                             guard = 100000000
-                        } else if truthy(getMember(st, sh, "done")) {
-                            last = getMember(st, sh, "value")
+                        } else if truthy(getMemberDyn(prog, sh, "done", st)) {
+                            last = getMemberDyn(prog, sh, "value", st)
                             if mode == 2 {
                                 // the inner finished closing — pick our own
                                 // return-unwind back up where it was interrupted
@@ -7532,7 +7532,13 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                             }
                             guard = 100000000
                         } else {
-                            let v = getMember(st, sh, "value")
+                            let v = getMemberDyn(prog, sh, "value", st)
+                            if st.throwing {
+                                // the value getter threw: do NOT hand the
+                                // undefined it left behind to our consumer
+                                guard = 100000000
+                                continue
+                            }
                             let sent = genYield(v, st)
                             mode = 0
                             sendVal = cloneValue(sent)
@@ -7607,8 +7613,8 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                             let sh = objHandle(step)
                             if st.throwing || sh < 0 {
                                 guard2 = 100000000
-                            } else if truthy(getMember(st, sh, "done")) {
-                                last = getMember(st, sh, "value")
+                            } else if truthy(getMemberDyn(prog, sh, "done", st)) {
+                                last = getMemberDyn(prog, sh, "value", st)
                                 if mode2 == 2 {
                                     st.throwing = true
                                     st.genReturning = true
@@ -7616,7 +7622,11 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                                 }
                                 guard2 = 100000000
                             } else {
-                                let v = getMember(st, sh, "value")
+                                let v = getMemberDyn(prog, sh, "value", st)
+                                if st.throwing {
+                                    guard2 = 100000000
+                                    continue
+                                }
                                 let sent = genYield(v, st)
                                 mode2 = 0
                                 sendVal2 = cloneValue(sent)
@@ -8428,10 +8438,13 @@ fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp)
             var nA: Vec<JSValue> = Vec.new()
             let step = genNext(h, nA, st)
             let sh = objHandle(step)
-            if sh < 0 || truthy(getMember(st, sh, "done")) {
+            if sh < 0 || truthy(getMemberDyn(prog, sh, "done", st)) || st.throwing {
                 guard = 100000000
             } else {
-                out.push(getMember(st, sh, "value"))
+                out.push(getMemberDyn(prog, sh, "value", st))
+                if st.throwing {
+                    guard = 100000000
+                }
             }
         }
         return
@@ -8468,6 +8481,9 @@ fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp)
             }
             var guard: i64 = 0
             while ih >= 0 && !st.throwing && guard < 100000000 {
+                // guard was never incremented here, so this loop had no runaway
+                // protection at all
+                guard = guard + 1
                 let nextFn = getMember(st, ih, "next")
                 if !isCallableIn(st, nextFn) {
                     guard = 100000000
@@ -8475,10 +8491,18 @@ fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp)
                     var nArgs: Vec<JSValue> = Vec.new()
                     let step = callValue(prog, nextFn, nArgs, cloneValue(iter), st)
                     let sh = objHandle(step)
-                    if sh < 0 || truthy(getMember(st, sh, "done")) {
+                    // getMemberDyn, not getMember: an iterator result may expose
+                    // `done`/`value` as GETTERS, and the plain read never invoked
+                    // them — a getter that throws (test262's
+                    // set-iterator-value-failure) left done reading false for
+                    // ever and the loop spun until the process was killed
+                    if sh < 0 || truthy(getMemberDyn(prog, sh, "done", st)) || st.throwing {
                         guard = 100000000
                     } else {
-                        out.push(getMember(st, sh, "value"))
+                        out.push(getMemberDyn(prog, sh, "value", st))
+                        if st.throwing {
+                            guard = 100000000
+                        }
                     }
                 }
             }
@@ -11028,14 +11052,14 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
             v = toNum(args[0])
         }
         var start: i64 = 0
-        if args.len() > 1 {
+        if argPresent(args, 1) {
             start = toNum(args[1]) as i64
             if start < 0 {
                 start = n + start
             }
         }
         var end = n
-        if args.len() > 2 {
+        if argPresent(args, 2) {
             end = toNum(args[2]) as i64
             if end < 0 {
                 end = n + end
@@ -11076,7 +11100,7 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
     }
     if name == "join" || name == "toString" {
         var sep = ","
-        if name == "join" && args.len() > 0 {
+        if name == "join" && argPresent(args, 0) {
             sep = toStr(args[0])
         }
         var out = ""
@@ -11120,14 +11144,14 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
     }
     if name == "subarray" || name == "slice" {
         var start: i64 = 0
-        if args.len() > 0 {
+        if argPresent(args, 0) {
             start = toNum(args[0]) as i64
             if start < 0 {
                 start = n + start
             }
         }
         var end = n
-        if args.len() > 1 {
+        if argPresent(args, 1) {
             end = toNum(args[1]) as i64
             if end < 0 {
                 end = n + end
@@ -11986,11 +12010,20 @@ fn iterStep(prog: &Prog, st: &mut Interp, iter: &JSValue, done: &mut bool): JSVa
         done = true
         return JSValue.Undefined
     }
-    done = truthy(getMember(st, sh, "done"))
-    if done {
+    // getMemberDyn: `done`/`value` may be accessors, and a plain read never
+    // invokes them — a throwing `value` getter then looked like an endless
+    // stream of undefined values
+    done = truthy(getMemberDyn(prog, sh, "done", st))
+    if done || st.throwing {
+        done = true
         return JSValue.Undefined
     }
-    return getMember(st, sh, "value")
+    let dv = getMemberDyn(prog, sh, "value", st)
+    if st.throwing {
+        done = true
+        return JSValue.Undefined
+    }
+    return dv
 }
 
 // Closing an iterator early is observable (the suite counts return() calls), so
@@ -13036,7 +13069,20 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         if args.len() > 0 {
             target = cloneValue(args[0])
         }
+        // fromIndex is the LAST index searched, and it was being ignored
+        // entirely: `[1,2,3,2].lastIndexOf(2, 0)` must be -1, not 3. An absent
+        // one (or an explicit undefined, which ToIntegerOrInfinity turns into
+        // 0) is not the same as no second argument at all.
         var i = n - 1
+        if args.len() > 1 {
+            var from = toNum(args[1]) as i64
+            if from < 0 {
+                from = n + from
+            }
+            if from < i {
+                i = from
+            }
+        }
         while i >= 0 {
             if jsStrictEquals(arrGet(st, o, i), target) {
                 return JSValue.Number(i as f64)
@@ -13209,21 +13255,21 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
     if name == "copyWithin" {
         // copyWithin(target, start, end) — an in-place memmove within the array
         var target: i64 = 0
-        if args.len() > 0 {
+        if argPresent(args, 0) {
             target = toNum(args[0]) as i64
         }
         if target < 0 {
             target = n + target
         }
         var start: i64 = 0
-        if args.len() > 1 {
+        if argPresent(args, 1) {
             start = toNum(args[1]) as i64
         }
         if start < 0 {
             start = n + start
         }
         var end = n
-        if args.len() > 2 {
+        if argPresent(args, 2) {
             end = toNum(args[2]) as i64
             if end < 0 {
                 end = n + end
@@ -13259,14 +13305,14 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         }
         // fill(value, start, end) — the range args are optional but not ignorable
         var start: i64 = 0
-        if args.len() > 1 {
+        if argPresent(args, 1) {
             start = toNum(args[1]) as i64
             if start < 0 {
                 start = n + start
             }
         }
         var end = n
-        if args.len() > 2 {
+        if argPresent(args, 2) {
             end = toNum(args[2]) as i64
             if end < 0 {
                 end = n + end
@@ -13383,7 +13429,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         // Array.prototype.toString is join(",") — NOT the [object Array] type tag
         // (that is Object.prototype.toString.call(arr), a separate dispatch)
         var sep = ","
-        if name == "join" && args.len() > 0 {
+        if name == "join" && argPresent(args, 0) {
             sep = toStr(args[0])
         }
         return JSValue.Str(joinArrayProg(prog, st, o, sep))
@@ -13425,10 +13471,10 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
     if name == "slice" {
         var a: i64 = 0
         var b = n
-        if args.len() > 0 {
+        if argPresent(args, 0) {
             a = toNum(args[0]) as i64
         }
-        if args.len() > 1 {
+        if argPresent(args, 1) {
             b = toNum(args[1]) as i64
         }
         if a < 0 {
@@ -13632,7 +13678,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
     }
     if name == "flat" {
         var depth: i64 = 1
-        if args.len() > 0 {
+        if argPresent(args, 0) {
             let dn = toNum(args[0])
             if dn > 1000000.0 {
                 // Infinity / very deep → cap (real arrays never nest this far)
@@ -14718,7 +14764,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                         if stepH < 0 || st.throwing {
                             running = false
                             closed = true
-                        } else if truthy(getMember(st, stepH, "done")) {
+                        } else if truthy(getMemberDyn(prog, stepH, "done", st)) {
                             running = false
                             closed = true
                         } else {
@@ -14727,7 +14773,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                             // all capture the final value (for-of over let/const)
                             let iterScope = newScope(st, loopScope2)
                             pushActive(st, iterScope)
-                            var bound = getMember(st, stepH, "value")
+                            var bound = getMemberDyn(prog, stepH, "value", st)
                             if isForAwait && !asyncIter {
                                 // sync iterator under `for await`: the VALUE is
                                 // what gets awaited, so `for await (x of [p1,p2])`

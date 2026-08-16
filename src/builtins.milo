@@ -262,10 +262,29 @@ fn jsCharAt(s: &string, idx: i64): string {
 }
 
 fn argNum(args: &Vec<JSValue>, i: i64, dflt: i64): i64 {
-    if i < args.len() {
+    if argPresent(args, i) {
         return toNum(args[i]) as i64
     }
     return dflt
+}
+
+// An argument passed explicitly as `undefined` is the same as an absent one to
+// every built-in that has a default for it: `"abcd".slice(1, undefined)` is
+// `"abcd".slice(1)`, not the empty string. Presence checks written as
+// `args.len() > i` alone get the explicit-undefined form wrong, and it is the
+// common shape in real code (a forwarded optional parameter).
+pub fn argPresent(args: &Vec<JSValue>, i: i64): bool {
+    if i >= args.len() {
+        return false
+    }
+    match args[i] {
+        JSValue.Undefined => {
+            return false
+        }
+        _ => {
+            return true
+        }
+    }
 }
 
 fn argStr(args: &Vec<JSValue>, i: i64): string {
@@ -611,10 +630,36 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         let sub = utf16Slice(s, 0, ep)
         return JSValue.Bool(jsEndsWith(sub, argStr(args, 0)))
     }
-    if name == "slice" || name == "substring" {
+    if name == "slice" {
         let n = utf16Length(s)
         let a = argNum(args, 0, 0)
         let b = argNum(args, 1, n)
+        return JSValue.Str(utf16Slice(s, a, b))
+    }
+    if name == "substring" {
+        // NOT slice: a negative index clamps to 0 rather than counting from the
+        // end, and the two ends are swapped when they arrive out of order, so
+        // "abcdef".substring(2, 1) is "b" where .slice(2, 1) is ""
+        let n = utf16Length(s)
+        var a = argNum(args, 0, 0)
+        var b = argNum(args, 1, n)
+        if a < 0 {
+            a = 0
+        }
+        if b < 0 {
+            b = 0
+        }
+        if a > n {
+            a = n
+        }
+        if b > n {
+            b = n
+        }
+        if a > b {
+            let t = a
+            a = b
+            b = t
+        }
         return JSValue.Str(utf16Slice(s, a, b))
     }
     if name == "substr" {
@@ -628,7 +673,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
             }
         }
         var count = n - start
-        if args.len() > 1 {
+        if argPresent(args, 1) {
             count = argNum(args, 1, count)
         }
         if count < 0 {
@@ -661,7 +706,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
             return throwRange(st, "Invalid string length")
         }
         var pad = " "
-        if args.len() > 1 {
+        if argPresent(args, 1) {
             pad = toStr(args[1])
         }
         let curLen = utf16Length(s)
