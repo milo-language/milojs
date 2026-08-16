@@ -1,0 +1,21 @@
+exec threw TS:exec
+test threw TS:test
+@@match threw TS:m
+indexOf threw TS:io
+includes threw TS:inc
+startsWith threw TS:sw
+split threw TS:sp
+replace threw TS:rp
+padStart threw TS:ps
+repeat threw VO:rc
+at threw VO:at
+charAt threw VO:ca
+slice threw VO:sl
+indexOf obj: 2
+slice obj: ello
+padStart obj: --x
+regex arg: a#b# a|b
+computed new: 0,0 0 number
+global computed: 0
+array elem: 0
+chained: true

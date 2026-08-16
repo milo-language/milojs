@@ -805,14 +805,27 @@ fn parsePrimary(p: &mut PState, prog: &mut Prog): ExprId {
 fn parseNew(p: &mut PState, prog: &mut Prog): ExprId {
     expect(p, T_NEW)
     var callee = parsePrimary(p, prog)
-    while peekKind(p) == T_DOT {
-        advance(p)
-        var name = ""
-        if peekKind(p) == T_IDENT {
-            name = p.toks[p.pos].text.clone()
+    // `new` takes a whole MemberExpression as its callee, which means BOTH
+    // access forms. Only `.name` was accepted, so `new g[name]()` parsed as
+    // `new g` and reported "value is not a constructor" against the container
+    // rather than constructing what the key names. Indexing a table of
+    // constructors is how which-typed-array, and anything else that iterates a
+    // list of global names, builds its instances.
+    while peekKind(p) == T_DOT || peekKind(p) == T_LBRACKET {
+        if peekKind(p) == T_DOT {
             advance(p)
+            var name = ""
+            if peekKind(p) == T_IDENT {
+                name = p.toks[p.pos].text.clone()
+                advance(p)
+            }
+            callee = addExpr(prog, Expr.Member(callee, name))
+        } else {
+            advance(p)
+            let key = parseExpr(p, prog)
+            expect(p, T_RBRACKET)
+            callee = addExpr(prog, Expr.Index(callee, key))
         }
-        callee = addExpr(prog, Expr.Member(callee, name))
     }
     var argIdxs: Vec<ExprId> = Vec.new()
     if peekKind(p) == T_LPAREN {

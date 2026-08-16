@@ -170,6 +170,15 @@ pub fn setupGlobals(st: &mut Interp)
 
 _Undocumented._
 
+### `toNumProg`
+
+```milo
+pub fn toNumProg(prog: &Prog, v: &JSValue, st: &mut Interp): f64
+```
+
+ToNumber for the paths that DO have a Prog, so a user-defined valueOf is
+honoured. The mirror of toStrProg.
+
 ### `toStrProg`
 
 ```milo

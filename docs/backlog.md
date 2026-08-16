@@ -1730,3 +1730,46 @@ is exactly what the first verification pass caught.
 Locked by `tests/runtime/consoleSurface.js`, which diffs stdout and stderr
 against node separately — the combined-stream capture that `tests/run.sh` uses
 cannot see a stream mix-up at all.
+
+## Built-in arguments skipped ToString, and `new` could not take a computed callee — DONE 2026-08-16
+
+Found by a new method: install real npm packages and run each one's OWN test
+suite under milojs and under node, then diff. 53 of the packages installed as
+transitive dependencies ship a runnable `test/index.js`. All 53 failed, and all
+53 failed for the same reason, which is what made the method worth keeping: a
+corpus that fails as a block is pointing at one defect, not fifty-three.
+
+**Arguments to built-ins were never coerced through the interpreter.**
+`builtins.milo` has no `Prog` and so cannot re-enter the evaluator; its `argStr`
+and `argNum` answer `"[object Object]"` and `NaN` for every object, skipping the
+user `toString`/`valueOf` the spec requires calling. 13 of 17 probed operations
+were wrong: `exec`, `test`, `@@match`, `indexOf`, `includes`, `startsWith`,
+`split`, `replace`, `padStart`, `repeat`, `at`, `charAt`, `slice`.
+
+That is a spec deviation on its own, but the reason the whole corpus died is
+narrower. `is-regex` identifies a regex by handing `RegExp.prototype.exec` an
+object whose `toString` throws a private marker, and answering whether the
+marker comes back. An engine that stringifies without asking makes the function
+return `undefined` — neither true nor false — and `safe-regex-test` then rejects
+an actual RegExp with "`regex` must be a RegExp". `tape` is built on that path,
+so no package that tests with tape could load.
+
+Fixed by coercing at the dispatch boundary, in `eval.milo`, where a `Prog`
+exists and a throwing conversion has somewhere to throw from; `builtins.milo`
+stays prog-free. The position table (`strArgWantsString`/`strArgWantsNumber`) is
+per method because the spec is: `padStart` ToNumbers argument 0 and ToStrings
+argument 1. It runs after the regex-op branch, since stringifying a RegExp
+argument would turn `s.replace(/a/g, "x")` into a search for the literal `/a/g`.
+
+**`new` accepted only `.name` in its callee.** `parseNew` looped on `T_DOT` and
+nothing else, so `new g[name]()` parsed as `new g` and reported "value is not a
+constructor" against the container instead of constructing what the key names.
+`new g.Uint8Array()` worked, which is why this survived: the two forms are
+interchangeable everywhere else. Indexing a table of constructors is how
+`which-typed-array` builds one instance per global name.
+
+Next barrier in the same corpus, not fixed here: `Object('a')` returns the
+primitive rather than a String wrapper object, so `0 in Object('a')` throws.
+That is the primitive-wrapper item already open below.
+
+Locked by `tests/coercionAndNewCallee.js`.

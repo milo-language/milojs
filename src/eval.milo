@@ -379,6 +379,83 @@ pub fn toStrProg(prog: &Prog, v: &JSValue, st: &mut Interp): string {
     return toStr(p)
 }
 
+// ToNumber for the paths that DO have a Prog, so a user-defined valueOf is
+// honoured. The mirror of toStrProg.
+pub fn toNumProg(prog: &Prog, v: &JSValue, st: &mut Interp): f64 {
+    if objHandle(v) < 0 {
+        return toNum(v)
+    }
+    let p = toPrimitiveNumber(prog, v, st)
+    return toNum(p)
+}
+
+// Which argument positions of a String.prototype method the spec ToStrings, and
+// which it ToNumbers.
+//
+// builtins.milo has no Prog and so cannot re-enter the interpreter: its argStr
+// and argNum answer "[object Object]" and NaN for every object, silently
+// skipping the user toString/valueOf the spec requires calling. Converting here,
+// at the dispatch boundary where a Prog exists, keeps builtins.milo prog-free
+// and is also the only place a coercion that THROWS has somewhere to throw from.
+//
+// Not a nicety: is-regex identifies a regex by handing exec an argument whose
+// toString throws, and tape depends on is-regex. An engine that quietly declines
+// to call the argument's toString fails every package tape tests.
+fn strArgWantsString(name: &string, i: i64): bool {
+    if i == 0 {
+        return name == "indexOf" || name == "lastIndexOf" || name == "includes" || name == "startsWith" || name == "endsWith" || name == "split" || name == "localeCompare" || name == "normalize" || name == "replace" || name == "replaceAll"
+    }
+    if i == 1 {
+        return name == "padStart" || name == "padEnd" || name == "replace" || name == "replaceAll"
+    }
+    return false
+}
+
+fn strArgWantsNumber(name: &string, i: i64): bool {
+    if i == 0 {
+        return name == "at" || name == "charAt" || name == "charCodeAt" || name == "codePointAt" || name == "repeat" || name == "slice" || name == "substring" || name == "substr" || name == "padStart" || name == "padEnd"
+    }
+    if i == 1 {
+        return name == "indexOf" || name == "lastIndexOf" || name == "includes" || name == "startsWith" || name == "endsWith" || name == "split" || name == "slice" || name == "substring" || name == "substr"
+    }
+    return false
+}
+
+// Objects only, and only in positions that are coerced: the common all-primitive
+// call must not pay for a copy of its argument vector.
+fn stringArgsNeedCoercion(name: &string, args: &Vec<JSValue>): bool {
+    var i: i64 = 0
+    while i < args.len() {
+        if objHandle(args[i]) >= 0 && (strArgWantsString(name, i) || strArgWantsNumber(name, i)) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// Callers must run this AFTER the regex-op and concat branches: a RegExp
+// argument to replace/split belongs to those, and stringifying it here would
+// turn `s.replace(/a/g, "x")` into a search for the literal text "/a/g".
+fn coercedStringArgs(prog: &Prog, name: &string, args: &Vec<JSValue>, st: &mut Interp): Vec<JSValue> {
+    var out: Vec<JSValue> = Vec.new()
+    var i: i64 = 0
+    while i < args.len() {
+        if objHandle(args[i]) >= 0 && strArgWantsString(name, i) && !isCallableIn(st, args[i]) {
+            out.push(JSValue.Str(toStrProg(prog, args[i], st)))
+        } else if objHandle(args[i]) >= 0 && strArgWantsNumber(name, i) {
+            out.push(JSValue.Number(toNumProg(prog, args[i], st)))
+        } else {
+            out.push(cloneValue(args[i]))
+        }
+        if st.throwing {
+            return out
+        }
+        i = i + 1
+    }
+    return out
+}
+
 // String.prototype.concat, converting each argument through `prog`. It cannot
 // live in stringMethod with the rest of the string methods: that function has no
 // Prog, so its `toStr` answered "[object Object]" for every object argument —
@@ -2165,6 +2242,13 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
             }
             if name == "concat" {
                 return JSValue.Str(strConcatProg(prog, sv, args, st))
+            }
+            if stringArgsNeedCoercion(name, args) {
+                let ca = coercedStringArgs(prog, name, args, st)
+                if st.throwing {
+                    return JSValue.Undefined
+                }
+                return stringMethod(name, sv, ca, st)
             }
             return stringMethod(name, sv, args, st)
         }
@@ -5868,14 +5952,25 @@ fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSV
         }
         var recvStr = JSValue.Str("")
         if args.len() > 0 {
-            recvStr = JSValue.Str(toStr(args[0]))
+            recvStr = JSValue.Str(toStrProg(gProg, args[0], st))
+            if st.throwing {
+                return JSValue.Undefined
+            }
         }
         return callBuiltinByName(gProg, recvStr, strOp, sArgs, st)
     }
     let rid = st.objExtras[st.objects[o].extra].regexId
+    // exec/test ToString their argument, and that conversion can run user code
+    // and throw. is-regex is built entirely on that: it passes exec an object
+    // whose toString throws a private marker and catches it. An engine that
+    // stringifies without asking returns null here and is-regex answers
+    // undefined, which is neither true nor false and breaks every caller.
     var subject = ""
     if args.len() > 0 {
-        subject = toStr(args[0])
+        subject = toStrProg(gProg, args[0], st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
     }
     if name == "toString" {
         // listed as a regex method but never implemented — /ab/gi.toString()
@@ -14421,6 +14516,13 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             }
             if name == "concat" {
                 return JSValue.Str(strConcatProg(prog, s, argVals, st))
+            }
+            if stringArgsNeedCoercion(name, argVals) {
+                let ca = coercedStringArgs(prog, name, argVals, st)
+                if st.throwing {
+                    return JSValue.Undefined
+                }
+                return stringMethod(name, s, ca, st)
             }
             return stringMethod(name, s, argVals, st)
         }
