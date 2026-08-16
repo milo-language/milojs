@@ -1,0 +1,26 @@
+obj destr null THREW TypeError
+obj destr undefined THREW TypeError
+arr destr null THREW TypeError
+arr destr non-iterable THREW TypeError
+arr destr number THREW TypeError
+param obj destr undefined THREW TypeError
+param arr destr null THREW TypeError
+nested null THREW TypeError
+assign pattern null THREW TypeError
+iterator returns non-object THREW TypeError
+next not a function THREW TypeError
+Symbol.iterator not callable THREW TypeError
+rest of null THREW TypeError
+default evaluated -> 7
+array destr works -> 3
+string destr works -> h
+spread number THREW TypeError
+spread null THREW TypeError
+spread plain object THREW TypeError
+spread array works -> [1,2]
+spread string works -> ["a","b"]
+spread set works -> [1]
+spread map works -> [[1,2]]
+spread generator works -> [1]
+spread custom iterable -> [0,1]
+spread in a call -> 5

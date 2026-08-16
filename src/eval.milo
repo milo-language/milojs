@@ -9587,6 +9587,13 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
         }
         Expr.DestructAssign(patIdx, rhsIdx) => {
             let rhs = evalExpr(prog, rhsIdx, st, scope)
+            // `({a} = null)` and `[a] = null` are TypeErrors: both patterns
+            // convert their source before reading anything out of it
+            if isNullish(rhs) {
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", "Cannot destructure '" + toStr(rhs) + "' as it is " + toStr(rhs) + "." + currentModule(st))
+                return JSValue.Undefined
+            }
             pushTemp(st, cloneValue(rhs))
             assignPattern(prog, patIdx, cloneValue(rhs), st, scope)
             popTemp(st)
@@ -9858,6 +9865,10 @@ fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp)
                 guard = guard + 1
                 let nextFn = getMember(st, ih, "next")
                 if !isCallableIn(st, nextFn) {
+                    // a Symbol.iterator that hands back something without a
+                    // callable `next` is a TypeError, not an empty result
+                    st.throwing = true
+                    st.thrownValue = makeError(st, "TypeError", "iterator.next is not a function" + currentModule(st))
                     guard = 100000000
                 } else {
                     var nArgs: Vec<JSValue> = Vec.new()
@@ -9868,7 +9879,13 @@ fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp)
                     // them — a getter that throws (test262's
                     // set-iterator-value-failure) left done reading false for
                     // ever and the loop spun until the process was killed
-                    if sh < 0 || truthy(getMemberDyn(prog, sh, "done", st)) || st.throwing {
+                    if sh < 0 && !st.throwing {
+                        // next() must return an OBJECT; anything else is a
+                        // TypeError rather than a quiet end of iteration
+                        st.throwing = true
+                        st.thrownValue = makeError(st, "TypeError", "Iterator result " + toStr(step) + " is not an object" + currentModule(st))
+                        guard = 100000000
+                    } else if sh < 0 || truthy(getMemberDyn(prog, sh, "done", st)) || st.throwing {
                         guard = 100000000
                     } else {
                         out.push(getMemberDyn(prog, sh, "value", st))
@@ -9882,7 +9899,46 @@ fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp)
             return
         }
     }
+    // Anything left is NOT iterable, and spreading it is a TypeError rather than
+    // a silent no-op. `[...5]`, `[...{}]` and `[...null]` all throw in JS, and
+    // array DESTRUCTURING is desugared to `[...expr]`, so `const [a] = 5`
+    // answering undefined was the same defect seen from the other end.
+    if !isSpreadable(st, v) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", spreadErrText(v) + currentModule(st))
+        return
+    }
     spreadBuiltin(out, v, st)
+}
+
+// What spreadBuiltin can actually walk, plus the objects the iterator path above
+// already returned for.
+fn isSpreadable(st: &Interp, v: &JSValue): bool {
+    match v {
+        JSValue.Str(_s) => {
+            return true
+        }
+        JSValue.Obj(o) => {
+            return st.objects[o].isArray || st.objects[o].isSet || st.objects[o].isMap
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+fn spreadErrText(v: &JSValue): string {
+    match v {
+        JSValue.Undefined => {
+            return "undefined is not iterable"
+        }
+        JSValue.Null => {
+            return "null is not iterable"
+        }
+        _ => {
+            return toStr(v) + " is not iterable"
+        }
+    }
 }
 
 // A rooted array holding everything `v` iterates, or `v` unchanged when it is not

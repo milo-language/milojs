@@ -2452,3 +2452,37 @@ assignment path has no access to the enclosing function's strictness at runtime 
 it would need to be carried on the frame, as `this` binding is. Same shape as the
 other strict-mode rules still unimplemented (assignment to an undeclared name,
 `with`, duplicate parameter names, octal literals).
+
+## Spreading a non-iterable was a silent no-op, so array destructuring never threw — DONE 2026-08-16
+
+`[...5]`, `[...null]` and `[...{}]` all produced an empty array instead of a
+TypeError. Array destructuring is desugared to `[...expr]` — the comment at that
+desugaring says so explicitly, because iteration is the semantics the pattern
+needs — so the same defect showed up from the other end as `const [a] = 5`
+binding undefined. About 30 test262 cases in the sample are destructuring
+failures of this shape, spread across class, object and generator contexts, and
+they were the largest identifiable group inside the two "expected a throw"
+buckets.
+
+Fixed at `spreadInto`'s fallthrough, which is the one place that decides a value
+cannot be walked. Three neighbouring silences went with it:
+
+- **A malformed iterator ended iteration quietly.** An object whose `next` is not
+  callable, and a `next()` that returns a non-object, both set the loop guard and
+  returned what had been collected so far. Both are TypeErrors.
+- **`({a} = null)` and `[a] = null`** — the destructuring ASSIGNMENT form, which
+  does not go through the declaration path — read from the nullish value and
+  produced undefined.
+- **`const { ...r } = null`** returned `{}` from `__objRest` rather than throwing.
+
+Worth recording how the first attempt went wrong: I added the check in
+`patternDecls`, where the pattern is parsed, and it changed nothing. Array
+patterns bind their temp to `[...expr]` FIRST, so by the time the emitted check
+ran, its argument was the already-spread array — always iterable. The check has
+to live where the spread happens, not where the pattern is written.
+
+test262: 766 to 769 of 1470. Only 3, against ~30 cases identified — the rest of
+that group needs the iterator protocol to drive destructuring rather than
+indexing a spread temp, which is a larger change than this one.
+
+Locked by `tests/destructuringErrors.js`.
