@@ -119,6 +119,13 @@ fn main(): i32 {
                 hoistBlock(gProg, gInterp.modBlocks[preludeIdx], gInterp, 0)
                 execBlock(gProg, gInterp.modBlocks[preludeIdx], gInterp, 0)
             }
+            // Temporal, in its own file because it is large and self-contained;
+            // same global scope, loaded after the prelude it depends on
+            let temporalIdx = preloadGraph("builtin:temporal", gProg, gInterp)
+            if temporalIdx >= 0 {
+                hoistBlock(gProg, gInterp.modBlocks[temporalIdx], gInterp, 0)
+                execBlock(gProg, gInterp.modBlocks[temporalIdx], gInterp, 0)
+            }
             if gInterp.throwing {
                 eprint("milojs-engine: prelude failed: " + describeThrown(gInterp, gInterp.thrownValue))
                 return 1

@@ -354,6 +354,7 @@ fn main(): i32 {
     // the spec-builtin layer the engine also installs — the runtime is the engine
     // plus node shims, so it needs both, this one first
     let enginePreludeIdx = preloadGraph("builtin:engine-prelude", gProg, gInterp)
+    let temporalIdx = preloadGraph("builtin:temporal", gProg, gInterp)
     let preludeIdx = preloadGraph("builtin:prelude", gProg, gInterp)
     let entryIdx = preloadGraph(path.clone(), gProg, gInterp)
     if entryIdx < 0 {
@@ -363,6 +364,10 @@ fn main(): i32 {
     if enginePreludeIdx >= 0 {
         hoistBlock(gProg, gInterp.modBlocks[enginePreludeIdx], gInterp, 0)
         execBlock(gProg, gInterp.modBlocks[enginePreludeIdx], gInterp, 0)
+    }
+    if temporalIdx >= 0 {
+        hoistBlock(gProg, gInterp.modBlocks[temporalIdx], gInterp, 0)
+        execBlock(gProg, gInterp.modBlocks[temporalIdx], gInterp, 0)
     }
     if preludeIdx >= 0 {
         // run in global scope, so its declarations become globals

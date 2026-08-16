@@ -163,6 +163,24 @@ The apps live outside this repo, so each is SKIPPED rather than failed when its
 checkout is missing; `MILOJS_APPS_ROOT` moves the whole set. Adding one is a line
 in the `APPS` array: name, subdir, entry, port, env, routes.
 
+## Temporal has no node oracle
+
+```sh
+tools/check-temporal.sh
+```
+
+Every fixture in `tests/` is diffed byte-for-byte against node. Node has no
+Temporal, so that oracle does not reach this API at all — a `tests/` fixture for
+it would compare real output against a ReferenceError and fail forever.
+`tools/temporal-checks.js` carries spec-derived expectations instead, each one
+traceable to the specification rather than to another implementation, and
+test262's Temporal tree is the real gate.
+
+Write the expectation from the spec, then check it. The first run of these
+checks reported one failure and the ENGINE was right: the expectation was a day
+out, confirmed against `Date.UTC`. An assertion written from memory is evidence
+about the author, not the code.
+
 ## Real packages' own test suites are a third gate
 
 ```sh
