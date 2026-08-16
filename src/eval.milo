@@ -5760,8 +5760,11 @@ fn buildMatchArray(st: &mut Interp, s: &string, saves: &Vec<i64>, rid: i64): JSV
         }
         g = g + 1
     }
-    // .index (match start) and .input, which callers like content-type read
-    objSet(st, arr, "index", JSValue.Number(saves[0] as f64))
+    // .index (match start) and .input, which callers like content-type read.
+    // The index is in UTF-16 code units, as every JS string index is: it was the
+    // BYTE offset, so any match after a non-ASCII character reported a position
+    // the caller could not use to slice the same string.
+    objSet(st, arr, "index", JSValue.Number(byteToUtf16(s, saves[0]) as f64))
     objSet(st, arr, "input", JSValue.Str(s.clone()))
     // .groups: an object of named-capture substrings, or undefined when the
     // pattern has no (?<name>...) groups (matching JS, where .groups is
@@ -5874,11 +5877,17 @@ fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSV
         let isG = st.regexes[rid].flagG
         var start: i64 = 0
         if isG {
-            start = toNum(objGet(st, o, "lastIndex")) as i64
-            if start < 0 || start > subject.len() {
+            // lastIndex is a STRING index the caller can read and write, so it
+            // is in UTF-16 units; internally the matcher works in bytes. It was
+            // stored raw, so after a non-ASCII match the value handed back was a
+            // byte offset the caller could not use, and feeding it back in
+            // resumed mid-character.
+            let lastU16 = toNum(objGet(st, o, "lastIndex")) as i64
+            if lastU16 < 0 || lastU16 > utf16Length(subject) {
                 objSet(st, o, "lastIndex", JSValue.Number(0.0))
                 return JSValue.Null
             }
+            start = utf16ToByte(subject, lastU16)
         }
         let saves = regexExec(st.regexes[rid], subject, start)
         if saves.len() == 0 {
@@ -5889,11 +5898,12 @@ fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSV
         }
         if isG {
             var next = saves[1]
-            // a zero-width match must still advance, or the loop stalls
+            // a zero-width match must still advance, or the loop stalls; by a
+            // whole character, or it resumes inside one
             if next <= start {
-                next = start + 1
+                next = start + utf8LenAt(subject, start)
             }
-            objSet(st, o, "lastIndex", JSValue.Number(next as f64))
+            objSet(st, o, "lastIndex", JSValue.Number(byteToUtf16(subject, next) as f64))
         }
         return buildMatchArray(st, subject, saves, rid)
     }
@@ -5981,8 +5991,12 @@ fn regexReplace(st: &mut Interp, s: &string, rid: i64, repl: &string): JSValue {
             out = out + strSlice(s, last, mstart)
             out = out + expandRepl(repl, s, saves, st.regexes[rid])
             last = mend
+            // advance a whole CHARACTER past a zero-width match: stepping one
+            // byte lands inside a multibyte character, which both invents extra
+            // matches and (for replace) splices output around half of one,
+            // producing invalid UTF-8
             if mend == mstart {
-                searchPos = mend + 1
+                searchPos = mend + utf8LenAt(s, mend)
             } else {
                 searchPos = mend
             }
@@ -6026,13 +6040,19 @@ fn regexReplaceFn(prog: &Prog, st: &mut Interp, s: &string, rid: i64, fn_: &JSVa
                 }
                 g = g + 1
             }
-            args.push(JSValue.Number(mstart as f64))
+            // the offset a replace callback receives is a string index, so
+            // UTF-16 units rather than bytes
+            args.push(JSValue.Number(byteToUtf16(s, mstart) as f64))
             args.push(JSValue.Str(s.clone()))
             let r = callValue(prog, fn_, args, JSValue.Undefined, st)
             out = out + toStr(r)
             last = mend
+            // advance a whole CHARACTER past a zero-width match: stepping one
+            // byte lands inside a multibyte character, which both invents extra
+            // matches and (for replace) splices output around half of one,
+            // producing invalid UTF-8
             if mend == mstart {
-                searchPos = mend + 1
+                searchPos = mend + utf8LenAt(s, mend)
             } else {
                 searchPos = mend
             }
@@ -6187,7 +6207,8 @@ fn regexStrMatch(st: &mut Interp, s: &string, rid: i64): JSValue {
             any = true
             arrPush(st, arr, JSValue.Str(strSlice(s, gsaves[0], gsaves[1])))
             if gsaves[1] == gsaves[0] {
-                pos = gsaves[1] + 1
+                // same character-advance rule as replace, split and matchAll
+                pos = gsaves[1] + utf8LenAt(s, gsaves[1])
             } else {
                 pos = gsaves[1]
             }
@@ -6220,7 +6241,8 @@ fn regexStrMatchAll(st: &mut Interp, s: &string, rid: i64): JSValue {
             let m = buildMatchArray(st, s, saves, rid)
             arrPush(st, arr, m)
             if saves[1] == saves[0] {
-                pos = saves[1] + 1
+                // same character-advance rule as replace and split
+                pos = saves[1] + utf8LenAt(s, saves[1])
             } else {
                 pos = saves[1]
             }

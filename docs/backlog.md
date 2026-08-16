@@ -1206,6 +1206,39 @@ separator adds a spurious `""`.
 `built-ins/String/prototype/split` 64/120 → **68/120**. Locked together by
 `tests/regexCodePointsAndSplit.js`.
 
+### Every zero-width advance, and string indices — DONE 2026-08-15
+
+Prompted by the milo maintainer finding the same shape in `std/regex`'s
+`findAll`. Their symptom was the mirror of mine: a byte-advance after a
+zero-width match made their loop retry mid-character, where a now-correct matcher
+REJECTED the position and the list came back truncated. Mine invented extra
+matches instead, and `replace` spliced its output around half a character:
+
+    "aéb".replace(/x*/gu, "-")   ->  "-a-\xef\xbf\xbd-\xef\xbf\xbd-b-"   (invalid UTF-8)
+    "aéb".match(/x*/gu)          ->  5 empty strings, node gives 4
+
+Four loops had it (global replace, replace-with-callback, matchAll, global
+match); `split` had already been fixed and was the template. All advance a whole
+character now.
+
+Their note is the one worth keeping: **a half-corrected stack can be worse than
+an uncorrected one.** Their locale fix turned a wrong-but-complete answer into a
+silently truncated one, which is why they went looking at the loop rather than
+declaring the locale change done.
+
+**String indices were BYTE offsets**, found while checking the above:
+`"aéb".match(/b/).index` was 3 where node says 2, so `s.slice(m.index)` cut in
+the wrong place. `.index`, the offset a replace callback receives, and
+`lastIndex` (which a caller both reads AND writes) are UTF-16 units now, with the
+conversion at the boundary and bytes kept internally.
+
+`built-ins/RegExp` 734/1879 → **736/1879**.
+
+**Lead for next time:** `built-ins/String/prototype/matchAll` is **0/25**. A flat
+zero across a whole directory has twice meant one missing object rather than 25
+defects (see the constructor-prototype sweep above), so it is worth probing
+before assuming it is expensive.
+
 ### Character classes were byte ranges too — DONE 2026-08-15
 
 `ReClass` held `u8` ranges, so a class compared one byte at a time:

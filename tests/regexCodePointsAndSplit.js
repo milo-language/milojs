@@ -51,3 +51,23 @@ p("mixed class", () => "a1é".match(/[a-z0-9é]/gu).join(""));
 p("shorthand still works", () => [/\d/.test("5"), /\w/.test("_"), /\s/.test("\t"), /[\s\S]/.test("x")]);
 p("case fold over cp", () => /[à-þ]/i.test("É"));
 p("ascii class unaffected", () => "a1b".match(/[a-z]/g).join(""));
+
+// Every loop that steps past a ZERO-WIDTH match had the same byte assumption as
+// the search loop. For replace that spliced output around half a character and
+// emitted invalid UTF-8.
+p("global zero-width", () => "aéb".match(/x*/gu));
+p("global zero-width cjk", () => "日本".match(/x*/gu));
+p("replace zero-width", () => "aéb".replace(/x*/gu, "-"));
+p("matchAll zero-width", () => [...("aéb".matchAll(/x*/gu))].length);
+p("global empty alt", () => "éx".match(/(?:)/gu).length);
+p("replace fn offsets", () => "aé".replace(/x*/gu, (m, i) => String(i)));
+
+// string indices are UTF-16 units, as every JS string index is, not byte offsets
+p("index after accent", () => "aéb".match(/b/).index);
+p("index cjk", () => "日本語x".match(/x/).index);
+p("index astral", () => "😀x".match(/x/).index);
+p("slice by index", () => { const m = "aéb".match(/b/); return "aéb".slice(m.index); });
+p("matchAll indices", () => [...("aéb1é2".matchAll(/\d/g))].map(m => m.index).join(","));
+p("replace cb offset", () => "aéb".replace(/b/, (m, i) => "[" + i + "]"));
+p("lastIndex is utf16", () => { const re = /é/g; re.exec("aéb"); return re.lastIndex; });
+p("lastIndex round trip", () => { const re = /./gu; const seen = []; let m; while ((m = re.exec("aéb"))) seen.push(m.index); return seen.join(","); });

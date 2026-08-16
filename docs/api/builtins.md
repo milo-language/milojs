@@ -185,3 +185,12 @@ pub fn utf16Slice(s: &string, start: i64, end: i64): string
 ```
 
 Slice by UTF-16 indices, JS-style (negative counts from the end, bounds clamp).
+
+### `utf16ToByte`
+
+```milo
+pub fn utf16ToByte(s: &string, idx: i64): i64
+```
+
+UTF-16 index -> byte offset. Past the end returns s.len(), so callers can use
+it directly as a slice bound.

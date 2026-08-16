@@ -39,3 +39,17 @@ mixed class "a1é"
 shorthand still works [true,true,true,true]
 case fold over cp true
 ascii class unaffected "ab"
+global zero-width ["","","",""]
+global zero-width cjk ["","",""]
+replace zero-width "-a-é-b-"
+matchAll zero-width 4
+global empty alt 3
+replace fn offsets "0a1é2"
+index after accent 2
+index cjk 3
+index astral 2
+slice by index "b"
+matchAll indices "3,5"
+replace cb offset "aé[2]"
+lastIndex is utf16 2
+lastIndex round trip "0,1,2"
