@@ -728,23 +728,54 @@ engine and node only diverges for tr/az/lt.
 
 Locked by `tests/unicodeCaseMapping.js`.
 
-## Array holes are not modelled
+## Array holes were modelled but never consulted — DONE 2026-08-15
 
-`[1, , 3]` stores a real `undefined` element rather than a hole, so every method
-that is specified to skip holes visits them instead. All six diverge from node:
+The earlier entry here called this a representation gap and listed `Object.keys`
+as one of the divergences. **Both were wrong.** `JSObj` has had a `holes` index
+list all along, and `in`, `Object.keys`, `hasOwnProperty` and `delete` all
+consult it correctly — `Object.keys([1,,3])` was already `["0","2"]`. The real
+gap was that every ITERATION method ignored it. Twelve divergences, one cause:
 
-| expression | milojs | node |
+| expression | was | node |
 |---|---|---|
-| `[1,,3].flat()` | `[1,undefined,3]` | `[1,3]` |
-| `[1,,3].flatMap(x => [x])` | `[1,undefined,3]` | `[1,3]` |
+| `[1,,3].flat()` / `.flatMap(x=>[x])` | `[1,undefined,3]` | `[1,3]` |
 | `[1,,3].filter(() => true)` | `[1,undefined,3]` | `[1,3]` |
 | `[1,,3].forEach` callback count | 3 | 2 |
 | `1 in [1,,3].map(x => x)` | `true` | `false` |
-| `Object.keys([1,,3])` | `["0","1","2"]` | `["0","2"]` |
+| `[1,,3].some(x => x === undefined)` | `true` | `false` |
+| `[1,,3].every(x => x !== undefined)` | `false` | `true` |
+| `[1,,3].reduce` callback count | 3 | 2 |
+| `[1,,3].indexOf(undefined)` | 1 | -1 |
+| `1 in [1,,3].slice()` / `.concat([4])` | `true` | `false` |
+| `[3,,1].sort()` hole position | index 1 | index 2 |
 
-This is one representation decision, not six bugs: `JSObj.elems` has no "absent"
-value distinct from `undefined`. Everything else follows from it, including
-`delete arr[1]`. The backlog previously carried only the `flat` symptom.
+Fixed at each site rather than centrally, because the correct treatment differs
+per method and the spec is not uniform about it: some/every/forEach/filter/
+reduce/reduceRight/indexOf/flat/flatMap SKIP a hole (they are specified over
+present indices), map/slice/concat PRESERVE one (a new `arrPushMaybeHole`), and
+find/findIndex/includes deliberately do NOT skip — they read through a hole as
+undefined, so they were already right and were left alone.
+
+`sort` needed a rewrite rather than a guard. It sorted `elems` in place under a
+holes list that names INDICES, so the recorded holes ended up pointing at
+whichever elements had moved into those slots; and the spec sinks `undefined`
+below every defined value and a hole below that, which does not fall out of
+comparing `"undefined"` as a string (`["z", undefined, "a"].sort()` is
+`["a", "z", undefined]`, not `["a", "undefined", "z"]`). It now lifts the
+present defined values out, sorts those, and lays undefined and then the holes
+back down as a tail.
+
+`built-ins/Array` 1814/3082 → **1819/3082**. Locked by `tests/arrayHoles.js`.
+
+## Class static blocks did not parse — DONE 2026-08-15
+
+`static { ... }` (ES2022) was not handled by the class-body parser at all, and a
+parse error is fatal: one static block anywhere killed the WHOLE file, not just
+the class. Modelled as a static field with an empty name whose initializer is a
+function; the class builder calls it with `this` bound to the class and stores
+nothing, which gets the interleaving with static fields right for free (they run
+in one declaration-ordered pass). `language/statements/class` 2011/4361 →
+**2024/4361**. Locked by `tests/classStaticBlocks.js`.
 
 ## Smaller gaps found by probe on 2026-08-15
 
@@ -756,6 +787,10 @@ value distinct from `undefined`. Everything else follows from it, including
   `tools/gen-unicase.mjs` would work.
 - `structuredClone` is not defined.
 - `String.prototype.isWellFormed` / `toWellFormed` (ES2024) are missing.
+- Unicode property escapes do not match: `/\p{L}/u.test("é")` is `false`.
+- `` `${x}` `` takes the DEFAULT ToPrimitive hint, so an object with a
+  `Symbol.toPrimitive` sees `"default"` where node passes `"string"`. Same root
+  as the template-literal entry under "Smaller known gaps".
 
 ## The runtime shadowed the engine's native typed arrays — DONE 2026-08-15
 

@@ -1,6 +1,34 @@
-2 false undefined
-3 false true 2
-246 246 0 2 false
-5 false true false true
-true true 9
-0,2 0,2
+flat [1,3]
+flatMap [1,3]
+filter [1,3]
+forEachCount 2
+mapSparse false
+keys ["0","2"]
+in false
+hasOwn false
+json "[1,null,3]"
+join "1--3"
+delete [3,false,["0","2"]]
+someEvery [false,true]
+reduceCount 2
+indexOfHole -1
+includesHole true
+sortHoles [3,true,false,"[1,3,null]"]
+spread [1,null,3]
+forOf [1,null,3]
+entries 3
+concatHole [4,false]
+sliceHole [3,false]
+reverseHole [3,false]
+lenGrow [4,false,["3"]]
+undefLast ["a","z",null]
+undefWithCmp [1,3,null]
+holesAndUndef [4,true,true,true,false,"[\"a\",\"z\",null,null]"]
+stable "cab"
+numbersDefault [1,10,2,9]
+cmpDesc [5,3,1]
+empty []
+single [1]
+allHoles [3,false]
+bigMixed [7,"[1,2,3,5,null,null,null]",true,false,false]
+toSorted ["[1,3,null]",true]

@@ -13078,6 +13078,12 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         var allTrue = true
         var anyTrue = false
         while i < arrLen(st, o) && found < 0 {
+            // some/every are specified over PRESENT indices; find/findIndex are
+            // not, and visit a hole as undefined
+            if (name == "some" || name == "every") && arrIsHole(st, o, i) {
+                i = i + 1
+                continue
+            }
             let cbArgs = makeCbArgs(st, o, i)
             let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             let t = truthy(r)
@@ -13444,13 +13450,34 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
             cmp = cloneValue(args[0])
         }
         pushTemp(st, cloneValue(cmp))
+        // Sorting in place over the raw elements got holes wrong twice: the
+        // holes list names INDICES, so moving elements under it leaves it
+        // pointing at the wrong slots, and the spec sinks undefined below every
+        // defined value and a hole below that — neither of which falls out of
+        // comparing "undefined" as a string. So: lift the present, defined
+        // values out, sort those, and lay the tail back down afterwards.
+        var vals: Vec<JSValue> = Vec.new()
+        var undefs: i64 = 0
+        let vn = arrLen(st, o)
+        var vi: i64 = 0
+        while vi < vn {
+            if !arrIsHole(st, o, vi) {
+                let e = arrGet(st, o, vi)
+                if isUndefinedValue(e) {
+                    undefs = undefs + 1
+                } else {
+                    vals.push(e)
+                }
+            }
+            vi = vi + 1
+        }
         var i: i64 = 1
-        while i < arrLen(st, o) {
-            let key = arrGet(st, o, i)
+        while i < vals.len() {
+            let key = cloneValue(vals[i])
             var j = i - 1
             var placed = false
             while j >= 0 && !placed {
-                let cur = arrGet(st, o, j)
+                let cur = cloneValue(vals[j])
                 var greater = false
                 if hasCmp {
                     var cargs: Vec<JSValue> = Vec.new()
@@ -13462,15 +13489,30 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
                     greater = strLess(toStr(key), toStr(cur))
                 }
                 if greater {
-                    st.objects[o].elems[j + 1] = cur
+                    vals[j + 1] = cur
                     j = j - 1
                 } else {
                     placed = true
                 }
             }
-            st.objects[o].elems[j + 1] = key
+            vals[j + 1] = key
             i = i + 1
         }
+        var newHoles: Vec<i64> = Vec.new()
+        let defined = vals.len()
+        var w: i64 = 0
+        while w < vn && w < st.objects[o].elems.len() {
+            if w < defined {
+                st.objects[o].elems[w] = cloneValue(vals[w])
+            } else {
+                st.objects[o].elems[w] = JSValue.Undefined
+                if w >= defined + undefs {
+                    newHoles.push(w)
+                }
+            }
+            w = w + 1
+        }
+        st.objects[o].holes = newHoles
         popTemp(st)
         return JSValue.Obj(o)
     }
@@ -13497,6 +13539,13 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
             i = fi
         }
         while i < n {
+            if arrIsHole(st, o, i) {
+                // indexOf is specified over PRESENT indices, so a hole never
+                // matches — not even a search for undefined. includes() does
+                // look at holes, and stays as it is.
+                i = i + 1
+                continue
+            }
             let e = arrGet(st, o, i)
             if args.len() > 0 && jsEquals(e, args[0]) {
                 return JSValue.Number(i as f64)
@@ -13541,7 +13590,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         let sliced = newArray(st)
         var i = a
         while i < b {
-            arrPush(st, sliced, arrGet(st, o, i))
+            arrPushMaybeHole(st, sliced, o, i)
             i = i + 1
         }
         return JSValue.Obj(sliced)
@@ -13564,7 +13613,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         pushTemp(st, JSValue.Obj(joined))
         var i: i64 = 0
         while i < n {
-            arrPush(st, joined, arrGet(st, o, i))
+            arrPushMaybeHole(st, joined, o, i)
             i = i + 1
         }
         var a: i64 = 0
@@ -13576,7 +13625,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
                         var k: i64 = 0
                         let m = arrLen(st, other)
                         while k < m {
-                            arrPush(st, joined, arrGet(st, other, k))
+                            arrPushMaybeHole(st, joined, other, k)
                             k = k + 1
                         }
                     } else {
@@ -13605,6 +13654,13 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
         while i < n {
+            if arrIsHole(st, o, i) {
+                // the callback is not called for a hole, and the result stays
+                // sparse at that index
+                arrPushMaybeHole(st, mapped, o, i)
+                i = i + 1
+                continue
+            }
             let cbArgs = makeCbArgs(st, o, i)
             let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             arrPush(st, mapped, r)
@@ -13622,6 +13678,10 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
         while i < n {
+            if arrIsHole(st, o, i) {
+                i = i + 1
+                continue
+            }
             let elem = arrGet(st, o, i)
             let cbArgs = makeCbArgs(st, o, i)
             let keep = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
@@ -13640,6 +13700,10 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
         while i < n {
+            if arrIsHole(st, o, i) {
+                i = i + 1
+                continue
+            }
             let cbArgs = makeCbArgs(st, o, i)
             let _ = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             i = i + 1
@@ -13654,14 +13718,26 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         if args.len() > 1 {
             acc = cloneValue(args[1])
         } else {
-            if n > 0 {
-                acc = arrGet(st, o, 0)
-                start = 1
+            // no seed: the accumulator is the first PRESENT element, not
+            // element 0 — a leading hole must not become the seed
+            var f: i64 = 0
+            while f < n && arrIsHole(st, o, f) {
+                f = f + 1
+            }
+            if f < n {
+                acc = arrGet(st, o, f)
+                start = f + 1
+            } else {
+                start = n
             }
         }
         pushTemp(st, cloneValue(acc))
         var i = start
         while i < n {
+            if arrIsHole(st, o, i) {
+                i = i + 1
+                continue
+            }
             var cbArgs: Vec<JSValue> = Vec.new()
             cbArgs.push(cloneValue(acc))
             cbArgs.push(arrGet(st, o, i))
@@ -13679,14 +13755,24 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         if args.len() > 1 {
             acc = cloneValue(args[1])
         } else {
-            if n > 0 {
-                acc = arrGet(st, o, n - 1)
-                start = n - 2
+            var f = n - 1
+            while f >= 0 && arrIsHole(st, o, f) {
+                f = f - 1
+            }
+            if f >= 0 {
+                acc = arrGet(st, o, f)
+                start = f - 1
+            } else {
+                start = 0 - 1
             }
         }
         pushTemp(st, cloneValue(acc))
         var i = start
         while i >= 0 {
+            if arrIsHole(st, o, i) {
+                i = i - 1
+                continue
+            }
             var cbArgs: Vec<JSValue> = Vec.new()
             cbArgs.push(cloneValue(acc))
             cbArgs.push(arrGet(st, o, i))
@@ -13705,6 +13791,10 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
         while i < arrLen(st, o) && !st.throwing {
+            if arrIsHole(st, o, i) {
+                i = i + 1
+                continue
+            }
             let cbArgs = makeCbArgs(st, o, i)
             let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             // one level of flattening, and only for array results
@@ -13749,10 +13839,26 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
     return JSValue.Undefined
 }
 
+// Copy element `i` of `src` onto the end of `dst`, keeping a HOLE a hole.
+// slice/concat/map all preserve sparseness in their result; pushing arrGet's
+// undefined would silently fill the gap in.
+fn arrPushMaybeHole(st: &mut Interp, dst: i64, src: i64, i: i64) {
+    let at = arrLen(st, dst)
+    arrPush(st, dst, arrGet(st, src, i))
+    if arrIsHole(st, src, i) {
+        arrMarkHole(st, dst, at)
+    }
+}
+
 // Flatten `arr` into `out` up to `depth` levels of nested arrays.
 fn flattenInto(st: &mut Interp, out: i64, arr: i64, depth: i64) {
     var i: i64 = 0
     while i < arrLen(st, arr) {
+        if arrIsHole(st, arr, i) {
+            // flat/flatMap DROP holes rather than flattening them to undefined
+            i = i + 1
+            continue
+        }
         let v = arrGet(st, arr, i)
         let vh = objHandle(v)
         if depth > 0 && vh >= 0 && st.objects[vh].isArray {
