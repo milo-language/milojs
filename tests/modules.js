@@ -21,3 +21,9 @@ const outer = require('./modfix/lazyOuter');
 console.log(outer.eager, outer.readLazy(), outer.readViaCallback());
 const lazypkg = require('./modfix/lazypkg');
 console.log(lazypkg.lazy.tag, lazypkg.lazy === lazypkg.lazy);
+
+// Relative specifiers that climb above their base, and the directory forms.
+const climb = require('./modfix/updir/nested/climb');
+console.log(climb.up, climb.sideways);
+console.log(climb.dirDotDot, climb.dirDotDotSlash);
+console.log(climb.dirDot, climb.dirDotSlash);

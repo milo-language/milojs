@@ -63,8 +63,16 @@ fn normalizePath(path: &string): string {
         if i == n || path[i] == '/' {
             if cur.len() > 0 {
                 if cur == ".." {
-                    if parts.len() > 0 {
+                    // A `..` with nothing to pop was DROPPED, so a relative path
+                    // that climbs above its base lost the climb: from pkg/sub,
+                    // `../../lib.js` normalised to `lib.js` and resolved against
+                    // the wrong directory. Only an ABSOLUTE path may discard it
+                    // (there is nothing above the root); a relative one has to
+                    // keep it, and must not pop a `..` it just kept.
+                    if parts.len() > 0 && parts[parts.len() - 1] != ".." {
                         let _ = parts.pop()
+                    } else if !leadingSlash {
+                        parts.push("..")
                     }
                 } else if cur != "." {
                     parts.push(cur.clone())
@@ -87,6 +95,12 @@ fn normalizePath(path: &string): string {
         }
         out = out + parts[k]
         k = k + 1
+    }
+    if out.len() == 0 && !leadingSlash {
+        // "." and "./" normalise to nothing, and an empty base resolves against
+        // nothing: `require(".")` and `require("./")` are the directory itself,
+        // which node answers with its package.json main or index.js
+        return "."
     }
     return out
 }

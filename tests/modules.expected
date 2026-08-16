@@ -6,3 +6,6 @@ A B
 B A undefined
 deep-ok deep-ok deep-ok
 deep-ok true
+up-one nested-index
+up-one up-one
+nested-index nested-index

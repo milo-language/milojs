@@ -1245,6 +1245,45 @@ conversion at the boundary and bytes kept internally.
 
 `built-ins/RegExp` 734/1879 → **736/1879**.
 
+### Relative specifiers that climb above their base — DONE 2026-08-16
+
+`normalizePath` popped a segment for `..` and, when there was nothing to pop,
+**dropped it silently**. So a path that climbs above its base lost the climb:
+
+    from pkg/sub/deep:  require('../../lib.js')  ->  resolved as 'lib.js'
+
+Not a missing feature, a wrong answer: it resolved against the wrong directory
+and reported "cannot read module". Only an ABSOLUTE path may discard a `..`
+(nothing is above the root); a relative one has to keep it, and must not later
+pop a `..` it just kept.
+
+Also fixed alongside: `require('.')` and `require('./')` normalised to the empty
+string, and an empty base resolves against nothing. Both are the directory
+itself, which node answers with its package.json `main` or `index.js`.
+`require('..')` and `require('../')` already worked once the `..` survived.
+
+How it was found is the point: I went looking for real package test suites to run
+after concluding that `\p{...}` was not worth its table size, and
+`define-properties`' suite failed on `require('../')` before it could even load
+its test harness. The bug was never going to show up in a fixture written by
+someone who already knew how this resolver behaves.
+
+Locked by `tests/modfix/updir/`, exercised from `tests/modules.js`.
+
+### `\p{...}` property escapes: measured, and NOT worth it as code — 2026-08-16
+
+Sized before building, which is why it was not built. Generating range tables for
+the 46 useful properties (general categories, Alphabetic, White_Space, ID_Start,
+ID_Continue, Emoji and friends) from node's own regex engine yields **10,869
+ranges**. As a balanced if-tree in the shape of `src/unicase.milo` that is tens of
+thousands of lines of generated Milo for a feature no application tested here has
+ever used.
+
+If it is built, it should be compact DATA decoded once at startup, not emitted
+code, and probably a subset (L, N, Alphabetic, White_Space, ID_Start/Continue)
+rather than all 46. The code-point work it was waiting on is done, so this is a
+size/benefit decision now rather than a blocked one.
+
 ### A NULL out-param killed the process and exited 0 — DONE 2026-08-16
 
 Prompted by the milo maintainer finding that std/crypto passed constant lengths
