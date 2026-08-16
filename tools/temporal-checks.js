@@ -111,4 +111,31 @@ eq(T.ZonedDateTime.from("2026-08-16T12:00:00Z[UTC]").toPlainDate().toString(), "
 throws(function () { T.ZonedDateTime.from("2026-08-16T12:00:00Z[America/New_York]"); }, RangeError, "named zone refused");
 throws(function () { T.ZonedDateTime.from("2026-08-16T12:00:00Z"); }, RangeError, "zoned needs an annotation");
 
+// until / since / round
+eq(T.PlainTime.from("12:00").until("13:30").toString(), "PT1H30M", "time until");
+eq(T.PlainTime.from("13:30").since("12:00").toString(), "PT1H30M", "time since");
+eq(T.PlainTime.from("12:00").until("13:30", { largestUnit: "minute" }).minutes, 90, "until largestUnit");
+eq(T.PlainTime.from("12:00:00.5").round("second").toString(), "12:00:01", "round half up");
+eq(T.PlainTime.from("12:00:00.4").round("second").toString(), "12:00:00", "round half down");
+eq(T.PlainTime.from("12:00:00.5").round({ smallestUnit: "second", roundingMode: "floor" }).toString(), "12:00:00", "round floor");
+eq(T.PlainTime.from("12:00:00.1").round({ smallestUnit: "second", roundingMode: "ceil" }).toString(), "12:00:01", "round ceil");
+eq(T.PlainTime.from("12:07").round({ smallestUnit: "minute", roundingIncrement: 15 }).toString(), "12:00:00", "round to 15 minutes");
+eq(T.PlainTime.from("12:08").round({ smallestUnit: "minute", roundingIncrement: 15 }).toString(), "12:15:00", "round up to 15 minutes");
+throws(function () { T.PlainTime.from("12:00").round(); }, TypeError, "round needs a unit");
+throws(function () { T.PlainTime.from("12:00").round({ smallestUnit: "bogus" }); }, RangeError, "unknown unit");
+throws(function () { T.PlainTime.from("12:00").round({ smallestUnit: "second", roundingIncrement: 0 }); }, RangeError, "increment 0");
+throws(function () { T.PlainTime.from("12:00").round({ smallestUnit: "second", roundingMode: "bogus" }); }, RangeError, "unknown mode");
+eq(T.Instant.from("2026-08-16T12:00:00Z").until("2026-08-16T13:00:00Z").toString(), "PT1H", "instant until");
+eq(T.Instant.from("2026-08-16T12:00:00.5Z").round("second").toString(), "2026-08-16T12:00:01Z", "instant round");
+eq(T.PlainDateTime.from("2026-08-16T12:00").until("2026-08-16T15:30").toString(), "PT3H30M", "datetime until");
+eq(T.PlainDateTime.from("2026-08-16T23:59:59.6").round("second").toString(), "2026-08-17T00:00:00", "datetime round crosses midnight");
+eq(T.ZonedDateTime.from("2026-08-16T12:00:00Z[UTC]").until("2026-08-16T14:00:00Z[UTC]").toString(), "PT2H", "zoned until");
+// the ISO calendar is the only one, and it must report itself
+eq(new T.PlainDate(2026, 1, 1).calendarId, "iso8601", "calendarId");
+eq(T.ZonedDateTime.from("2026-08-16T12:00:00Z[UTC]").calendarId, "iso8601", "zoned calendarId");
+// a built-in method's name is its PROPERTY key, not the function expression's
+eq(T.PlainDate.prototype.with.name, "with", "method name is the key");
+eq(T.PlainTime.prototype.round.name, "round", "round name");
+eq(T.PlainDate.prototype.toString.name, "toString", "toString name");
+
 console.log(failures === 0 ? ("temporal-checks: " + checks + " checks, all ok") : ("temporal-checks: " + failures + " of " + checks + " FAILED"));

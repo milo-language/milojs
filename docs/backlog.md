@@ -2566,6 +2566,14 @@ helpers (`pad`, `def`, `tag`) became globals and broke an unrelated fixture whos
 sloppy-mode `this` picked up `globalThis.tag`. Wrapped in an IIFE; only
 `Temporal` escapes.
 
-test262: 769 to 804 of 1470. Remaining Temporal work is options handling
-(`round`, `total`, `relativeTo`, overflow modes) and the `until`/`since` unit
-machinery, which is where most of the 93 now sit.
+test262: 769 to 804 of 1470 for stages 1-2.
+
+**Stage 3** added `until`, `since` and `round` to PlainTime, PlainDateTime,
+Instant and ZonedDateTime, with the options they take — `largestUnit`,
+`smallestUnit`, `roundingIncrement` and all nine `roundingMode` values — plus a
+`calendarId` getter on every type. A built-in method's own `name` is its PROPERTY
+key rather than the function expression's, which matters for `with`: the keyword
+forces the implementation to be called `withFields`, and test262 has a name.js
+per member.
+
+test262: 804 to 814. Temporal failures 128 to 83.
