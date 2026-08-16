@@ -78,6 +78,16 @@ is_exempt() {
   grep -qxF "$1" <(grep -vE '^\s*(#|$)' "$EXEMPT_FILE" | awk '{print $1}')
 }
 
+# Which section of the registry an entry sits under. The two kinds are held to
+# different rules, so the headings are read rather than decorative.
+exempt_kind() {
+  awk -v want="$1" '
+    /^# --- NOT-RUNNABLE ---/ { kind = "NOT-RUNNABLE"; next }
+    /^# --- DIVERGENCE/       { kind = "DIVERGENCE";  next }
+    /^[^#[:space:]]/ { if ($1 == want) { print kind; exit } }
+  ' "$EXEMPT_FILE"
+}
+
 fail=0
 checked=0
 skipped=0
@@ -86,12 +96,43 @@ updated=0
 # The registry rots the same way anything hand-maintained does: a fixture gets
 # renamed or deleted and its exemption silently keeps a hole open under a name
 # nothing matches. Check the entries point at real files.
+#
+# And a STALE exemption is the quieter rot: the divergence gets fixed, the
+# fixture starts matching node, and the hole stays open covering nothing. That is
+# how a gate stops gating without anyone deciding it should. Every exemption is
+# re-tested here, and one that no longer diverges is a failure telling you to
+# delete it. (tests/eventLoop.js was exactly this: setImmediate ordering was
+# fixed and the exemption outlived it.)
+#
+# The file's own rule is "do not add a DIVERGENCE without a backlog entry", which
+# nothing enforced. It is checked now, because an exemption nobody has to justify
+# in writing is just a way to make a failing fixture pass.
 if [ -f "$EXEMPT_FILE" ]; then
   while read -r entry; do
     [ -z "$entry" ] && continue
     if [ ! -f "$entry" ]; then
       echo "ORPHAN   $EXEMPT_FILE exempts $entry, which does not exist"
       fail=1
+      continue
+    fi
+    # only a DIVERGENCE needs a backlog entry. A NOT-RUNNABLE exemption (node
+    # cannot execute it, or the output is not a function of the program) is a
+    # property of the fixture, not an open bug, and has nothing to track.
+    if [ "$(exempt_kind "$entry")" = "DIVERGENCE" ]; then
+      base="$(basename "$entry" .js)"
+      if ! grep -qF "$base" docs/backlog.md 2>/dev/null; then
+        echo "UNARGUED $entry is exempt as a DIVERGENCE but not mentioned in docs/backlog.md"
+        fail=1
+      fi
+    fi
+    # a divergence that has stopped diverging is a hole covering nothing
+    exp="${entry%.js}.expected"
+    if [ "$(exempt_kind "$entry")" = "DIVERGENCE" ] && [ -f "$exp" ] && [ -n "$NODE" ]; then
+      if nodeout="$($TIMEOUT_CMD 20 "$NODE" --no-warnings "$entry" 2>&1)"; then :; fi
+      if [ "$nodeout" = "$(cat "$exp")" ]; then
+        echo "STALE    $entry is exempt, but its .expected already matches node; delete the exemption"
+        fail=1
+      fi
     fi
   done < <(grep -vE '^\s*(#|$)' "$EXEMPT_FILE" | awk '{print $1}')
 fi

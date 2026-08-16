@@ -32,7 +32,3 @@ tests/radixToString.js   Number.prototype.toString(radix) emits QuickJS/JSC shor
 tests/errorInspect.js    console.log(new Error("boom")) prints "Error: boom"; node prints the
 #                        message followed by the full stack, because milojs Errors carry no
 #                        stack property yet.
-tests/eventLoop.js       setImmediate runs BEFORE the 0ms/1ms timers; node runs the timer phase
-#                        first and prints "immediate" two lines later. `await` cannot suspend a
-#                        native frame here (no coroutines), so a nested drain runs the loop in
-#                        place. Every value matches node; only the phase order does not.

@@ -3,7 +3,7 @@ system: conformance-reports
 purpose: reproducible procedure and format for checked-in test262 and QuickJS sweep evidence
 key-files: scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, docs/status.md
 update-when: report flags, schema, corpus policy, or score publication policy changes
-last-verified: 2026-08-15 (reports became committed evidence under docs/conformance/; scores are compiled into prose by tools/gen-facts.mjs rather than copied by hand)
+last-verified: 2026-08-16 (paths recorded home-relative; the dirty check ignores the report directory so both sweeps can run from one clean checkout)
 -->
 
 # conformance reports
@@ -13,7 +13,9 @@ them. Each sweep writes a stable JSON report to `docs/conformance/<suite>.json`
 by default — a committed file, not a scratch artifact — containing:
 
 - `schemaVersion` and suite name;
-- corpus path and Git revision;
+- corpus path and Git revision, with `$HOME` written as `~`: the report is
+  committed evidence and must not record the machine it was measured on, which
+  is also what the pre-commit home-path check rejects;
 - **the milojs revision it was measured at, and whether that tree was dirty**;
 - engine path;
 - sample/filter configuration;
@@ -75,7 +77,10 @@ Two rules are enforced rather than asked for:
 
 - **A dirty tree is not evidence.** The sweep records `milojs.dirty`, and
   `gen-facts` refuses to publish from a report measured on uncommitted work,
-  because nobody — including whoever measured it — can reproduce that number.
+  because nobody, including whoever measured it, can reproduce that number.
+  The check ignores `docs/conformance/` itself: the reports land there, so
+  writing the first one would otherwise mark the tree dirty for the second and
+  make it impossible to produce both from one clean checkout.
 - **The score carries its own age.** The report records the milojs revision, and
   `gen-facts` prints how many commits the published score is behind HEAD. That is
   reported, not gated: an unrelated commit should not turn a score red.

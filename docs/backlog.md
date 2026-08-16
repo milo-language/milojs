@@ -1234,6 +1234,36 @@ conversion at the boundary and bytes kept internally.
 
 `built-ins/RegExp` 734/1879 → **736/1879**.
 
+### An exemption that stopped diverging — DONE 2026-08-16
+
+`tools/verify-expected.sh` checks every `.expected` against node, and
+`tests/.node-oracle-exempt` is the list of fixtures it skips. Each entry is
+argued in the file, which is good, but nothing re-tested them.
+
+**`tests/eventLoop.js` had stopped diverging.** Its exemption said setImmediate
+runs before the 0ms/1ms timers where node runs the timer phase first. That was
+fixed at some point and the exemption outlived it: the fixture had been matching
+node exactly while sitting behind a hole in the gate. It is a node-verified
+fixture again and the entry is gone (5 exemptions left, from 6).
+
+Two checks added so the registry cannot rot the same way again, both proven to
+fire before being committed:
+
+- **STALE**: every DIVERGENCE exemption is re-run against node, and one whose
+  output already matches fails, telling you to delete it. A gate stops gating
+  when its exceptions outlive their reasons, and nothing was watching for that.
+- **UNARGUED**: the file's own rule was "do not add a DIVERGENCE without a
+  backlog entry", enforced by nobody. It is checked now. NOT-RUNNABLE entries
+  are exempt from that rule, because node genuinely cannot run them and there is
+  no bug to track, so the headings in the file are read rather than decorative.
+
+The rule this came from, borrowed from the milo maintainer, who hit it the same
+day from the other side (a fixture that passed only because a worse parse error
+let the checker recover far enough to reach the assertion): **a fixture that can
+be satisfied by weakening the thing under test was not testing it.** The local
+form is that an exemption list nobody re-tests is a way to make a failing fixture
+pass, one commit at a time.
+
 ### matchAll answered an array, and six methods were missing from String.prototype — DONE 2026-08-16
 
 Chasing the 0/25 above. The flat zero was one wire, as the pattern predicted:
