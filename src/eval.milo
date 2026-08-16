@@ -24,7 +24,7 @@ from "std/fs" import {
     readFile
 }
 from "./modules" import {
-    dirOf, resolveSpec, findModule, reportUnresolved
+    dirOf, resolveSpec, findModule, reportUnresolved, relativizeToCwd
 }
 from "std/os" import {
     exit
@@ -6597,30 +6597,6 @@ fn requireModule(prog: &Prog, spec: &string, st: &mut Interp, scope: i64): JSVal
 // around threw: `bindings` does
 //     const requireFunc = typeof __non_webpack_require__ === 'function' ? __non_webpack_require__ : require;
 // and every addon loader is built on that. Each module scope now binds its own
-// `require` carrying its own directory, which is node's model exactly.
-// The module registry keys on the paths the preloader produced, which are
-// relative to the working directory. `__dirname` is absolute (node guarantees
-// it), so a resolution starting from it has to come back to the registry's form
-// or every lookup misses.
-fn relativizeToCwd(p: string): string {
-    let base = match currentDir() {
-        Result.Ok(d) => d
-        Result.Err(_e) => {
-            return p
-        }
-    }
-    if p == base {
-        // the working directory itself is "" in the registry's form, not an
-        // absolute path, so a module at the top level resolves the same way the
-        // preloader recorded it
-        return ""
-    }
-    let prefix = base + "/"
-    if p.len() > prefix.len() && strSlice(p, 0, prefix.len()) == prefix {
-        return strSlice(p, prefix.len(), p.len())
-    }
-    return p
-}
 
 fn requireModuleFrom(prog: &Prog, spec: &string, st: &mut Interp, dirIn: string): JSValue {
     let dir = relativizeToCwd(dirIn)

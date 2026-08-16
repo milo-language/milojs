@@ -1825,3 +1825,45 @@ across many small causes rather than one barrier, which is a different kind of
 work from the three single-cause fixes that got here.
 
 Locked by `tests/primitiveWrappers.js`.
+
+## An absolute entry path under the working directory broke every node_modules require — DONE 2026-08-16
+
+`milojs /path/to/app/main.js` run from inside `/path/to/app` failed with
+"module was not pre-loaded" on every `require`, while the same program run as
+`milojs main.js`, or with the same absolute path from a different working
+directory, worked. Absolute entry plus cwd-at-or-above-the-entry is the common
+shape — it is what a shell script, a supervisor, and an editor's run button all
+produce.
+
+The module registry keys on the paths the PRELOADER produced, and require
+resolves through `relativizeToCwd`. An absolute entry keyed the whole graph
+absolutely while every lookup arrived in relative form, so nothing matched. The
+entry path is now relativized before the graph walk, and `preloadGraph` returns
+the entry's index by the same key it registered it under — the second half
+mattered: relativizing only the queue made the entry itself unfindable and
+turned the failure into "cannot read".
+
+Found because `tools/check-packages.sh` passed absolute paths.
+
+## tools/check-packages.sh: real packages' own test suites as a gate — 2026-08-16
+
+The fixtures in `tests/` are written by whoever is fixing something, so they
+encode what was already suspected. A package's own suite does not. Three defects
+in one sitting — built-in arguments skipping ToString, `new` rejecting a computed
+callee, primitive wrappers not existing — were each invisible to all 217
+fixtures and each fatal to roughly fifty npm packages.
+
+The corpus is the ljharb/es-shim dependency tree, on purpose: those packages
+feature-detect the engine aggressively and test with tape, so one engine defect
+shows up as a whole suite that cannot start. That amplification is what makes
+the signal readable — a corpus that fails as a BLOCK is pointing at one cause,
+and each of the three fixes above took the block from 0 assertions to thousands.
+
+Counted per TAP assertion rather than per suite: a suite that dies on its first
+line and a suite that fails one edge case are very different results, and
+pass/fail per file cannot tell them apart. `tools/packages-baseline.txt` holds
+the last measured pair and the script fails only on a DECREASE, because the
+number moves with the corpus as well as with the engine.
+
+Today: 53 suites run, 666/1699 assertions, 20 suites complete. Before this
+session's three fixes: 0/1699 and 0 complete.

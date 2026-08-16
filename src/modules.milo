@@ -9,7 +9,7 @@
 // import(someVar)) are not discovered — a known limit.
 
 from "std/fs" import {
-    readFile
+    readFile, currentDir
 }
 from "./lexer" import {
     lex, Token, T_IDENT, T_LPAREN, T_STR, T_IMPORT, T_EXPORT, T_STAR, T_LBRACE, T_RBRACE, T_COMMA, T_DOT
@@ -551,6 +551,31 @@ pub fn hasEsmSyntax(toks: &Vec<Token>): bool {
     return false
 }
 
+// `require` carrying its own directory, which is node's model exactly.
+// The module registry keys on the paths the preloader produced, which are
+// relative to the working directory. `__dirname` is absolute (node guarantees
+// it), so a resolution starting from it has to come back to the registry's form
+// or every lookup misses.
+pub fn relativizeToCwd(p: string): string {
+    let base = match currentDir() {
+        Result.Ok(d) => d
+        Result.Err(_e) => {
+            return p
+        }
+    }
+    if p == base {
+        // the working directory itself is "" in the registry's form, not an
+        // absolute path, so a module at the top level resolves the same way the
+        // preloader recorded it
+        return ""
+    }
+    let prefix = base + "/"
+    if p.len() > prefix.len() && strSlice(p, 0, prefix.len()) == prefix {
+        return strSlice(p, prefix.len(), p.len())
+    }
+    return p
+}
+
 pub fn findModule(st: &Interp, path: &string): i64 {
     var i: i64 = 0
     while i < st.modPaths.len() {
@@ -575,7 +600,13 @@ fn hasAddonExt(p: &string): bool {
 
 pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
     var queue: Vec<string> = Vec.new()
-    queue.push(entryPath.clone())
+    // The registry keys on the paths the preloader produces, and require
+    // resolves through relativizeToCwd, so an ABSOLUTE entry under the working
+    // directory keyed the whole graph absolutely while every require looked it
+    // up relatively. `milojs /path/to/app/main.js` run from inside that app
+    // therefore failed on every node_modules require — the common invocation.
+    let entryKey = relativizeToCwd(entryPath.clone())
+    queue.push(entryKey.clone())
     var head: i64 = 0
     while head < queue.len() {
         let path = queue[head].clone()
@@ -652,5 +683,5 @@ pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
             }
         }
     }
-    return findModule(st, entryPath)
+    return findModule(st, entryKey)
 }

@@ -163,6 +163,30 @@ The apps live outside this repo, so each is SKIPPED rather than failed when its
 checkout is missing; `MILOJS_APPS_ROOT` moves the whole set. Adding one is a line
 in the `APPS` array: name, subdir, entry, port, env, routes.
 
+## Real packages' own test suites are a third gate
+
+```sh
+tools/check-packages.sh                 # the whole corpus
+MILOJS_PKG_DETAIL=1 tools/check-packages.sh   # name each incomplete suite
+```
+
+Installs a pinned npm dependency tree on first run, then runs each package's OWN
+test suite under node and under milojs and counts TAP assertions. The fixtures in
+`tests/` are written by whoever is fixing something, so they encode what was
+already suspected; a package's suite does not.
+
+The corpus is the ljharb/es-shim tree on purpose: those packages feature-detect
+the engine aggressively and test with tape, so ONE engine defect shows up as
+fifty suites that cannot start. A corpus that fails as a block is pointing at a
+single cause. Three such causes turned up in one sitting, each invisible to all
+217 fixtures: built-in arguments skipping ToString, `new` rejecting a computed
+callee, and primitive wrapper objects not existing.
+
+`tools/packages-baseline.txt` holds the last measured pair and the gate fails
+only on a DECREASE — the number moves with the corpus as well as with the engine,
+so "did it go down" is answerable and "is it high enough" is not. Network is
+needed once, for the install; without it the script skips rather than fails.
+
 Equivalent by hand, if you need one suite in isolation:
 
 ```sh

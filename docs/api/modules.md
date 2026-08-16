@@ -42,6 +42,18 @@ pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64
 
 _Undocumented._
 
+### `relativizeToCwd`
+
+```milo
+pub fn relativizeToCwd(p: string): string
+```
+
+`require` carrying its own directory, which is node's model exactly.
+The module registry keys on the paths the preloader produced, which are
+relative to the working directory. `__dirname` is absolute (node guarantees
+it), so a resolution starting from it has to come back to the registry's form
+or every lookup misses.
+
 ### `reportUnresolved`
 
 ```milo
