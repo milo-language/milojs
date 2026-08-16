@@ -885,6 +885,40 @@ fn coerceGenericStringReceiver(prog: &Prog, st: &mut Interp, boundObj: i64, recv
     }
 }
 
+// Function.prototype.apply takes an ARRAY-LIKE, not only a real array: it reads
+// `length` and then the index properties. Accepting arrays alone silently called
+// the function with NO arguments for `fn.apply(null, arguments)` and for the
+// `{0: x, length: 1}` shape feature-detectors use — is-callable probes exactly
+// that, with a length getter that throws.
+fn applyArgsInto(prog: &Prog, st: &mut Interp, v: &JSValue, out: &mut Vec<JSValue>) {
+    let h = objHandle(v)
+    if h < 0 {
+        return
+    }
+    if st.objects[h].isArray {
+        var ai: i64 = 0
+        while ai < arrLen(st, h) {
+            out.push(arrGet(st, h, ai))
+            ai = ai + 1
+        }
+        return
+    }
+    // reading length can run a getter, and that getter can throw
+    let lenV = getMemberDyn(prog, h, "length", st)
+    if st.throwing {
+        return
+    }
+    let n = toNum(lenV) as i64
+    var i: i64 = 0
+    while i < n {
+        out.push(getMemberDyn(prog, h, numToStr(i as f64), st))
+        if st.throwing {
+            return
+        }
+        i = i + 1
+    }
+}
+
 fn brandName(brand: i64): string {
     if brand == 2 {
         return "ArrayBuffer"
@@ -2569,14 +2603,7 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 var uRest: Vec<JSValue> = Vec.new()
                 if name == "apply" {
                     if args.len() > 1 {
-                        let ah = objHandle(args[1])
-                        if ah >= 0 && st.objects[ah].isArray {
-                            var ai: i64 = 0
-                            while ai < arrLen(st, ah) {
-                                uRest.push(arrGet(st, ah, ai))
-                                ai = ai + 1
-                            }
-                        }
+                        applyArgsInto(prog, st, args[1], uRest)
                     }
                 } else {
                     var ai: i64 = 1
@@ -2834,14 +2861,7 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 var rest: Vec<JSValue> = Vec.new()
                 if name == "apply" {
                     if args.len() > 1 {
-                        let ah = objHandle(args[1])
-                        if ah >= 0 && st.objects[ah].isArray {
-                            var ai: i64 = 0
-                            while ai < arrLen(st, ah) {
-                                rest.push(arrGet(st, ah, ai))
-                                ai = ai + 1
-                            }
-                        }
+                        applyArgsInto(prog, st, args[1], rest)
                     }
                 } else {
                     var ai: i64 = 1
@@ -2890,14 +2910,7 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 var rest: Vec<JSValue> = Vec.new()
                 if name == "apply" {
                     if args.len() > 1 {
-                        let ah = objHandle(args[1])
-                        if ah >= 0 && st.objects[ah].isArray {
-                            var ai: i64 = 0
-                            while ai < arrLen(st, ah) {
-                                rest.push(arrGet(st, ah, ai))
-                                ai = ai + 1
-                            }
-                        }
+                        applyArgsInto(prog, st, args[1], rest)
                     }
                 } else {
                     var ai: i64 = 1
@@ -3124,6 +3137,15 @@ fn setMemberDyn(prog: &Prog, o: i64, key: string, v: JSValue, st: &mut Interp) {
 }
 
 pub fn getMember(st: &Interp, o: i64, key: &string): JSValue {
+    // globalThis.x reads the global BINDING, the same as a bare `x`. getMemberDyn
+    // already did this; getMember did not, so a compound assignment
+    // (`globalThis.x += y`) read undefined for its own left-hand side while a
+    // plain read of the same property worked.
+    if st.objects[o].isGlobal && objOwnIndex(st, o, key) < 0 {
+        if scopeHasOwn(st, 0, key) {
+            return scopeLookup(st, 0, key)
+        }
+    }
     let nativeLen = nativeBufferLen(st, o)
     if nativeLen >= 0 {
         if key == "length" {
@@ -15282,14 +15304,7 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                 var rest: Vec<JSValue> = Vec.new()
                 if name == "apply" {
                     if argVals.len() > 1 {
-                        let ah = objHandle(argVals[1])
-                        if ah >= 0 && st.objects[ah].isArray {
-                            var ai: i64 = 0
-                            while ai < arrLen(st, ah) {
-                                rest.push(arrGet(st, ah, ai))
-                                ai = ai + 1
-                            }
-                        }
+                        applyArgsInto(prog, st, argVals[1], rest)
                     }
                 } else {
                     var ai: i64 = 1
@@ -15605,14 +15620,7 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                 if name == "apply" {
                     // apply takes the args as one array
                     if argVals.len() > 1 {
-                        let ah = objHandle(argVals[1])
-                        if ah >= 0 && st.objects[ah].isArray {
-                            var ai: i64 = 0
-                            while ai < arrLen(st, ah) {
-                                rest.push(arrGet(st, ah, ai))
-                                ai = ai + 1
-                            }
-                        }
+                        applyArgsInto(prog, st, argVals[1], rest)
                     }
                 } else {
                     var ai: i64 = 1

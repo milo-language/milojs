@@ -2086,8 +2086,55 @@ receiver is net POSITIVE — the earlier attempt cost 9 assertions and was
 reverted, and the reason was this getPrototypeOf bug, not the brand. Corpus 797
 to 800 assertions and 26 to 28 complete suites.
 
-Still wrong: `isCallable(class {})` is true. That check regex-matches
-`/^\s*class\b/` against the source, and a class's source is not yet recorded —
-classes are built from `ClassDef`, which has no span. Same fix, different node.
+Follow-up, done the same day: classes now carry a span too, recorded on the
+constructor FuncDef (declared or synthesised) since that is the function value a
+class becomes. `isCallable(class {})` is false, as node has it.
 
 Locked by `tests/functionSourceText.js`.
+
+## Function.prototype.apply took an array only, and globalThis.x += y read undefined — DONE 2026-08-16
+
+Both found while tracing why `deep-equal` cannot load.
+
+**apply took an ARRAY; the spec takes an array-LIKE.** It reads `length` and then
+the index properties, and reading `length` can run a getter that throws.
+Accepting arrays alone silently called the function with NO arguments, which is
+wrong for the commonest form there is, `fn.apply(null, arguments)`. is-callable's
+feature probe is built on precisely the throwing-length-getter case, so its
+`reflectApply` branch was disabled on this engine.
+
+**`globalThis.x += y` read `undefined` for its own left-hand side.** A plain read
+goes through `getMemberDyn`, which resolves a global binding; the
+compound-assignment read goes through `getMember`, which did not. So
+`globalThis.x` and `globalThis.x += 1` disagreed about the same property. Worth
+recording separately: this bug also corrupted my own instrumentation while
+debugging the above — a trace that stashed state on globalThis reported
+"undefined" for a value it had just written, and I read that as evidence about
+is-callable rather than about the tracer.
+
+Locked by `tests/applyAndGlobalThisWrites.js`.
+
+## OPEN: deep-equal cannot load — is-callable answers false inside its dependency chain
+
+`require('deep-equal')` then calling it throws "iterator must be a function" from
+`for-each`, reached through `which-typed-array`. That gate is
+`if (!isCallable(iterator))`, and the iterator is a plain function expression:
+`typeof` is "function", `Function.prototype.toString` on it returns the correct
+source, `Object.prototype.toString` gives `[object Function]`, and
+`isCallable(function(){})` called from a test file answers **true**.
+
+Inside the chain it answers **false**, and only there. Same single resolved copy
+of is-callable (no nested node_modules), so this is not two module instances. Not
+yet diagnosed. Three candidate defects were found and fixed while chasing it —
+apply's array-like handling, the globalThis compound read, and class source spans
+— and none of them changed this result.
+
+It blocks a large share of the corpus: tape's `deepEqual` is what
+function-bind (37 assertions), array.prototype.flatmap (16) and object.assign
+(44) all die on.
+
+Next step when picking this up: instrument is-callable's module-load probe
+itself, not the exported function. The exported function's behaviour differs
+between programs, which points at load-time state (`badArrayLike`,
+`isCallableMarker`, whether `reflectApply` survived the probe) rather than at the
+value being tested.

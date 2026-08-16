@@ -1,0 +1,14 @@
+apply with array -> 3
+apply with array-like -> 3
+apply with arguments -> 7
+apply with no args object -> 0
+apply length getter runs -> 7/true
+apply length getter throws -> marker
+Reflect.apply array-like -> 42
+call is unaffected -> 11
+plain read -> one
+after += -> one-two
+bare name sees it -> one-two
+explicit increment -> 2
+compound minus -> 7
+write inside a function -> set

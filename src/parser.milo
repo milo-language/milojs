@@ -1961,6 +1961,11 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
 // is the quietest kind of wrong doc: it under-claims, so nobody hits a bug, they
 // just avoid a feature that works.
 fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
+    // `C.toString()` is the whole class text, so the span is recorded on the
+    // constructor FuncDef — declared or synthesised — since that is the function
+    // value a class becomes. is-callable rejects a class by regex-matching
+    // /^\s*class\b/ against exactly this text.
+    let classStartAt = p.toks[p.pos].at
     expect(p, T_CLASS)
     var name = ""
     if peekKind(p) == T_IDENT {
@@ -2165,6 +2170,13 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     }
     )
     let defaultCtor = prog.funcs.len() - 1
+    let classEndAt = p.toks[p.pos - 1].end
+    prog.funcs[defaultCtor].srcStart = classStartAt
+    prog.funcs[defaultCtor].srcEnd = classEndAt
+    if ctorFn >= 0 {
+        prog.funcs[ctorFn].srcStart = classStartAt
+        prog.funcs[ctorFn].srcEnd = classEndAt
+    }
     prog.classes[classIdx] = ClassDef {
         name: name, superKey: superKey, superName: superName, ctorFn: ctorFn, defaultCtor: defaultCtor, members: members, staticFieldNames: staticFieldNames, staticFieldInits: staticFieldInits
     }
