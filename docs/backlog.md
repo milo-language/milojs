@@ -1230,7 +1230,32 @@ Two things to keep from this:
 - **Conformance numbers must not be republished while the toolchain is
   suspect.** The 1500-sample read 682 during the outage against the 699 on
   record; publishing that would have recorded a 17-case decline that never
-  happened in this repo.
+  happened in this repo. Re-measured after the fix: 699 and 99 again, exactly
+  what was already published.
+- **Check `uptime` before believing a number that moved without a code change.**
+  This machine is shared with other agents building the compiler. A suite run
+  here went 4s to 16s (and run-milo 14s to 49s) with no source change at a load
+  average of 12.96, and the milo maintainer independently saw full-suite runs
+  report 19, then 202, then 21, then 32 failures with different membership each
+  time, every one of which passed when run alone. Re-run before diagnosing.
+
+Resolved on the milo side by `3436dd96`: the codegen glue had been swept into an
+unrelated commit WITHOUT its std/runtime half, so spawn paths were not forgetting
+what they hand over. Verified from this repo against `e551a4e6`: 209/209 fixtures
+over three consecutive runs, both GC-pinning fixtures clean under
+`MILOJS_GC_THRESHOLD=1`, tahoeroads and chat still byte-identical to node, and
+conformance back to 699/99.
+
+**The lifetime question is still open, and this repo is the one that can answer
+it.** milojs matches tasks by RAW POINTER and holds those pointers past the
+body's completion, in `genTask`/`genEnv`, `actTask`, and
+`awaitTask`/`suspendedTask`. The abandoned-generator case is unbounded rather
+than a window: `for (const x of g()) break;` leaves a body task that never
+finishes and never gets a terminal read, so `removeGen` never runs. A
+"task is about to be reclaimed" hook would let us drop our record and delete the
+recycled-address workaround documented above `removeGen`; the requirements we
+need from it are recorded in that discussion (fire before reuse, fire for
+abandoned tasks too, hand back the task pointer, be safe to call mid-reap).
 
 Open on the milo side, and this repo is the one that can answer it: something
 reaches a spawned task's environment AFTER the task is reaped, which is why
