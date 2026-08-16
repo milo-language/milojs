@@ -251,6 +251,13 @@ pub fn reportUnresolved(st: &mut Interp, spec: &string) {
         i = i + 1
     }
     st.reportedMissing.push(spec.clone())
+    // A path specifier is not a package lookup, so the "no such package, and
+    // node builtins are not implemented" note is wrong for it and misleading:
+    // the file simply is not there. The thrown MODULE_NOT_FOUND already says so,
+    // and node prints nothing extra, so neither does this.
+    if spec.len() > 0 && (spec[0] == '/' || spec[0] == '.') {
+        return
+    }
     eprint("milojs: cannot resolve '" + spec + "' — no such package, and node builtin modules are not implemented yet")
 }
 
@@ -406,6 +413,21 @@ pub fn resolveSpec(dir: &string, spec: &string): string {
     // Only "./" and "../" are relative. A bare leading dot is part of a PACKAGE
     // name — @prisma/client requires ".prisma/client", which node resolves through
     // node_modules, not against the requiring file's directory.
+    // An ABSOLUTE specifier resolves directly, as a file or a directory. node
+    // accepts `require('/abs/path/mod.js')` and `require('/abs/path/pkg')`
+    // alike; both used to fall through to the node_modules walk and report "no
+    // such package", which is what any tool that requires by absolute path hits
+    // — generated code and test harnesses do it routinely.
+    if spec[0] == '/' {
+        let absHit = resolveAsFileOrDir(normalizePath(spec.clone()))
+        if absHit.len() > 0 {
+            // back into the registry's cwd-relative form, or the module graph
+            // records this file under a key its own relative requires can never
+            // match and every one of them reports "was not pre-loaded"
+            return relativizeToCwd(absHit)
+        }
+        return ""
+    }
     var isRelative = false
     if spec[0] == '.' {
         if spec.len() == 1 {

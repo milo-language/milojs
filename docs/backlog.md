@@ -2039,13 +2039,6 @@ also only half a fix while the source text is missing, since class detection
 stays broken either way. Both halves want the lexer-offset work in the
 Function.prototype.toString entry above; they should land together.
 
-## OPEN: require() of an absolute path to a package directory
-
-`require('/abs/path/to/node_modules/function-bind')` fails with "no such
-package", where node resolves the directory through its package.json `main`.
-Relative and bare specifiers both work; only the absolute-directory form is
-missing. Found while writing a probe against the package corpus.
-
 ## Function.prototype.toString now returns real source — DONE 2026-08-16
 
 Every function stringified to `[object Function]`. Not merely imprecise: lodash
@@ -2160,13 +2153,6 @@ being spent inside its dispatch, and the engine is only reporting the ceiling.
 It blocks a large share of the corpus: tape's `deepEqual` is what function-bind
 (37 assertions), array.prototype.flatmap (16) and object.assign (44) die on.
 
-## OPEN: require() of an absolute path to a package directory
-
-`require('/abs/path/to/node_modules/function-bind')` fails with "no such
-package", where node resolves the directory through its package.json `main`.
-Relative and bare specifiers both work; only the absolute-directory form is
-missing. Found while writing a probe against the package corpus.
-
 ## Function.prototype.toString now returns real source — DONE 2026-08-16
 
 Every function stringified to `[object Function]`. Not merely imprecise: lodash
@@ -2234,31 +2220,6 @@ debugging the above — a trace that stashed state on globalThis reported
 is-callable rather than about the tracer.
 
 Locked by `tests/applyAndGlobalThisWrites.js`.
-
-## OPEN: deep-equal cannot load — is-callable answers false inside its dependency chain
-
-`require('deep-equal')` then calling it throws "iterator must be a function" from
-`for-each`, reached through `which-typed-array`. That gate is
-`if (!isCallable(iterator))`, and the iterator is a plain function expression:
-`typeof` is "function", `Function.prototype.toString` on it returns the correct
-source, `Object.prototype.toString` gives `[object Function]`, and
-`isCallable(function(){})` called from a test file answers **true**.
-
-Inside the chain it answers **false**, and only there. Same single resolved copy
-of is-callable (no nested node_modules), so this is not two module instances. Not
-yet diagnosed. Three candidate defects were found and fixed while chasing it —
-apply's array-like handling, the globalThis compound read, and class source spans
-— and none of them changed this result.
-
-It blocks a large share of the corpus: tape's `deepEqual` is what
-function-bind (37 assertions), array.prototype.flatmap (16) and object.assign
-(44) all die on.
-
-Next step when picking this up: instrument is-callable's module-load probe
-itself, not the exported function. The exported function's behaviour differs
-between programs, which points at load-time state (`badArrayLike`,
-`isCallableMarker`, whether `reflectApply` survived the probe) rather than at the
-value being tested.
 
 ## apply's argument read did not abort the call when it threw — DONE 2026-08-16
 
@@ -2486,3 +2447,39 @@ that group needs the iterator protocol to drive destructuring rather than
 indexing a spread temp, which is a larger change than this one.
 
 Locked by `tests/destructuringErrors.js`.
+
+## require() of an absolute path failed for files as well as directories — DONE 2026-08-16
+
+Filed as a directory-only problem; verifying it showed it was broader.
+`require('/abs/path/mod.js')` failed too. Neither form was handled: an absolute
+specifier fell through to the node_modules walk and reported "no such package",
+which is what any tool that requires by absolute path hits — generated code and
+test harnesses do it routinely.
+
+Absolute specifiers now resolve directly as a file or a directory, and the
+result is converted back to the registry's cwd-relative form. That second half
+matters: the module graph keys on that form, so an absolute key leaves every
+transitive relative require inside the module reporting "was not pre-loaded" —
+the module loads and its dependencies silently do not.
+
+Also corrected the diagnostic. A path specifier is not a package lookup, so
+"no such package, and node builtin modules are not implemented yet" was both
+wrong and misleading for it; the thrown MODULE_NOT_FOUND already says the file is
+missing, and node prints nothing extra.
+
+Locked by `tests/runtime/absoluteRequire.js`.
+
+## Backlog hygiene, 2026-08-16
+
+Two entries were duplicated and one was superseded but left in place:
+
+- `OPEN: deep-equal cannot load — is-callable answers false inside its dependency
+  chain` was replaced by a corrected entry (the cause is stack exhaustion, not
+  is-callable) but the original was never deleted, so the file carried both the
+  wrong diagnosis and the right one.
+- `OPEN: require() of an absolute path` appeared twice verbatim.
+
+Both removed. The remaining OPEN entries were re-verified against the current
+build rather than trusted: absolute-path require was still broken and is fixed
+above; deep-equal still fails; private-name keyspace and the strict-mode frozen
+write are both still reproducible.
