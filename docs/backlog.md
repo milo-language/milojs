@@ -1245,6 +1245,41 @@ conversion at the boundary and bytes kept internally.
 
 `built-ins/RegExp` 734/1879 → **736/1879**.
 
+### A NULL out-param killed the process and exited 0 — DONE 2026-08-16
+
+Prompted by the milo maintainer finding that std/crypto passed constant lengths
+across an FFI boundary where `requires` contracts are dropped at -O2. Their rule
+is the transferable part: **the same construct is a different risk at an FFI
+boundary**, because there the check is the last line of defence and nothing else
+is watching.
+
+milojs's Node-API surface is that boundary here. 45 entry points wrote to an
+addon-supplied `result` pointer with no null check. node DEFINES this case: it
+answers `napi_invalid_arg` and writes nothing. milojs called `memcpy` to address
+0, and the observed failure is worse than the crash it sounds like:
+
+    node:   status from NULL out-param: 1     (napi_invalid_arg)
+    milojs: <no output>                       exit code 0
+
+The process died mid-callback and reported success. A CI run reads that as a
+pass. All 45 now return `NAPI_INVALID_ARG`, matching node.
+
+Severity, checked before claiming it rather than after: **prospective, not
+live.** No addon in the five applications tested does this, and one that did
+would be broken against node too. What makes it worth fixing is the failure
+MODE, not its likelihood.
+
+Nine entry points are deliberately NOT guarded, because a NULL out-param is
+meaningful for them: `napi_get_value_string_utf8` (NULL buf means "tell me the
+length"), `napi_get_cb_info`, `napi_get_typedarray_info` and the handle-scope
+family all treat it as "I do not want this output". Guarding those uniformly
+would have broken working addons, which is why the sweep was reviewed per
+function rather than applied to every `*u8` parameter.
+
+Locked by `tests/napi/nullout.c`, which asserts the returned STATUS rather than
+that the process survived: a run that died would print nothing and still exit 0,
+so "we got here" is not an assertion.
+
 ### util.types lied about features this engine has — DONE 2026-08-16
 
 Found with the milo maintainer's mechanical grep (functions whose whole body is a

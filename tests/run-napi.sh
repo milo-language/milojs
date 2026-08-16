@@ -37,3 +37,15 @@ MILOJS_NAPI_ADDON="$TMP/surface.node" node tests/napi/surface.js >"$TMP/expected
 MILOJS_NAPI_ADDON="$TMP/surface.node" "$RUNTIME" tests/napi/surface.js >"$TMP/actual2"
 diff -u "$TMP/expected2" "$TMP/actual2"
 echo "node-api surface ok"
+
+# A NULL out-param: node answers napi_invalid_arg, milojs used to write to
+# address 0 and exit 0 with no output.
+case "$(uname -s)" in
+  Darwin) "$CC" -dynamiclib -undefined dynamic_lookup tests/napi/nullout.c -o "$TMP/nullout.node" ;;
+  *)      "$CC" -shared -fPIC tests/napi/nullout.c -o "$TMP/nullout.node" ;;
+esac
+
+MILOJS_NAPI_ADDON="$TMP/nullout.node" node tests/napi/nullout.js >"$TMP/expected3"
+MILOJS_NAPI_ADDON="$TMP/nullout.node" "$RUNTIME" tests/napi/nullout.js >"$TMP/actual3"
+diff -u "$TMP/expected3" "$TMP/actual3"
+echo "node-api null out-param ok"
