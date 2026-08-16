@@ -23,6 +23,9 @@ from "std/math" import {
 from "std/unicode" import {
     decodeCodepoint, utf16UnitCount, highSurrogate, lowSurrogate, isSupplementary, encodeCodepoint
 }
+from "./unicase" import {
+    upperCp1, lowerCp1, upperSpecial, lowerSpecial
+}
 
 // A minimal error object (same shape makeError in eval.milo builds — that one
 // can't be imported here without a cycle).
@@ -175,41 +178,24 @@ fn jsEndsWith(s: &string, sub: &string): bool {
     return true
 }
 
-// Case mapping over code points, covering ASCII and the Latin-1 Supplement
-// letters (À-Þ / à-þ, the accented characters French/Spanish/Portuguese/German
-// use), with the ÷/× math-symbol holes skipped and ÿ→Ÿ's irregular target. Wider
-// scripts (Latin Extended, Greek, Cyrillic) are not mapped — a documented limit.
-fn upperCp(cp: i32): i32 {
-    let v = cp as i64
-    if v >= 97 && v <= 122 {
-        return (v - 32) as i32
-    }
-    if (v >= 224 && v <= 246) || (v >= 248 && v <= 254) {
-        return (v - 32) as i32
-    }
-    if v == 255 {
-        return 376 as i32
-    }
-    return cp
-}
-
-fn lowerCp(cp: i32): i32 {
-    let v = cp as i64
-    if v >= 65 && v <= 90 {
-        return (v + 32) as i32
-    }
-    if (v >= 192 && v <= 214) || (v >= 216 && v <= 222) {
-        return (v + 32) as i32
-    }
-    return cp
-}
-
+// Case mapping. The tables live in the generated src/unicase.milo (see
+// tools/gen-unicase.mjs); everything above the code-point level is here.
+//
+// A case mapping can GROW the string — ß uppercases to SS, ﬁ to FI, and the
+// Greek iota-subscript family to two or three code points — so neither loop can
+// be a per-code-point transform. `upperSpecial`/`lowerSpecial` answer "" when
+// the character maps to a single code point, which is the common case.
 fn strUpper(s: &string): string {
     var out = String.withCapacity(s.len())
     var i: i64 = 0
     while i < s.len() {
         let cp = decodeCodepoint(s, i)
-        encodeCodepoint(out, upperCp(cp.value))
+        let sp = upperSpecial(cp.value)
+        if sp.len() > 0 {
+            out = out + sp
+        } else {
+            encodeCodepoint(out, upperCp1(cp.value))
+        }
         i = i + cp.size
     }
     return out
@@ -220,7 +206,12 @@ fn strLower(s: &string): string {
     var i: i64 = 0
     while i < s.len() {
         let cp = decodeCodepoint(s, i)
-        encodeCodepoint(out, lowerCp(cp.value))
+        let sp = lowerSpecial(cp.value)
+        if sp.len() > 0 {
+            out = out + sp
+        } else {
+            encodeCodepoint(out, lowerCp1(cp.value))
+        }
         i = i + cp.size
     }
     return out
