@@ -330,9 +330,12 @@ fn parseArrowHead(p: &mut PState, prog: &mut Prog, params: &mut Vec<string>, pre
 
 // `x = <default>` in a pattern: JS only substitutes on undefined. This compares
 // loosely, so an explicit null also takes the default — a small deviation.
+// A pattern default applies ONLY to undefined. `==` also matches null, so
+// `const [a = 7] = [null]` bound 7 where the spec binds null — a silent wrong
+// value, not an error.
 fn withDefault(prog: &mut Prog, valExpr: ExprId, dflt: ExprId): ExprId {
     let undef = addExpr(prog, Expr.UndefLit)
-    let cond = addExpr(prog, Expr.Bin("==", valExpr, undef))
+    let cond = addExpr(prog, Expr.Bin("===", valExpr, undef))
     return addExpr(prog, Expr.Cond(cond, dflt, valExpr))
 }
 
@@ -421,6 +424,9 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
                     if peekKind(p) == T_EQ {
                         advance(p)
                         let dflt = parseExpr(p, prog)
+                        // an ANONYMOUS default takes the binding's name:
+                        // `const { a = () => {} } = {}` gives a.name === "a"
+                        inferFuncName(prog, dflt, target)
                         valExpr = withDefault(prog, valExpr, dflt)
                     }
                     out.push(DeclItem {
@@ -494,6 +500,7 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
                 if peekKind(p) == T_EQ {
                     advance(p)
                     let dflt = parseExpr(p, prog)
+                    inferFuncName(prog, dflt, name)
                     valExpr = withDefault(prog, valExpr, dflt)
                 }
                 out.push(DeclItem {
@@ -553,6 +560,8 @@ fn parseParam(p: &mut PState, prog: &mut Prog, params: &mut Vec<string>, prelude
         if peekKind(p) == T_EQ {
             advance(p)
             let dflt = parseExpr(p, prog)
+            // a PARAMETER default infers the parameter's name too
+            inferFuncName(prog, dflt, name)
             let src = addExpr(prog, Expr.Ident(name.clone()))
             prelude.push(DeclItem {
                 name: name.clone(), init: withDefault(prog, src, dflt), isVar: false
@@ -1443,6 +1452,9 @@ fn parseExpr(p: &mut PState, prog: &mut Prog): ExprId {
         let leftNode = getExpr(prog, left)
         match leftNode {
             Expr.Ident(name) => {
+                // `z = function () {}` infers z as the name, the same as a
+                // declaration does; only assignment to a plain identifier
+                inferFuncName(prog, rhs, name)
                 return addExpr(prog, Expr.Assign(name, rhs))
             }
             Expr.Member(objIdx, name) => {
@@ -1500,6 +1512,21 @@ fn inferFuncName(prog: &mut Prog, initId: ExprId, name: &string) {
         Expr.FuncExpr(f) => {
             if prog.funcs[f].name.len() == 0 {
                 prog.funcs[f].name = name.clone()
+            }
+        }
+        // an anonymous CLASS takes the binding's name too: `const A = class {}`
+        // gives A.name === "A", and so does a destructuring default
+        Expr.ClassExpr(ci) => {
+            if prog.classes[ci].name.len() == 0 {
+                prog.classes[ci].name = name.clone()
+                let dc = prog.classes[ci].defaultCtor
+                if dc >= 0 && prog.funcs[dc].name.len() == 0 {
+                    prog.funcs[dc].name = name.clone()
+                }
+                let cf = prog.classes[ci].ctorFn
+                if cf >= 0 && prog.funcs[cf].name.len() == 0 {
+                    prog.funcs[cf].name = name.clone()
+                }
             }
         }
         _ => {

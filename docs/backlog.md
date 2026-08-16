@@ -2608,3 +2608,28 @@ names it rather than asserting around it.
 
 test262: 814 to 815, but the value is not the case count — this one is a silent
 wrong answer in ordinary code.
+
+## Pattern defaults fired on null, and anonymous defaults had no name — DONE 2026-08-16
+
+Destructuring was the largest identifiable cluster left in the sample: 106
+failures, 16% of everything still failing. Two defects behind most of it, both
+in the desugaring rather than the evaluator.
+
+**A pattern default applied to NULL as well as undefined.** `withDefault`
+compared with `==`, which matches both, so `const [a = 7] = [null]` bound 7 where
+the spec binds null. A silent wrong value, not an error, in the single most
+common destructuring idiom there is.
+
+**An anonymous function, arrow or class used as a default took no name.**
+`const [a = () => {}] = []` left `a.name` empty. Fixing it turned up three more
+sites that share the same helper and were all missing it: parameter defaults
+(`function f(a = () => {}) {}`), plain assignment (`z = function () {}` infers
+`z`), and anonymous CLASS expressions anywhere — `inferFuncName` only understood
+`FuncExpr`, so `const A = class {}` had an empty name too. A class needs its
+constructor FuncDef renamed as well, since that is the function value a class
+becomes.
+
+test262: 815 to 856 of 1470, the largest single jump of the session. dstr
+failures 106 to 67.
+
+Locked by `tests/destructuringDefaults.js`.

@@ -1,0 +1,21 @@
+nested array val null THREW TypeError
+nested obj val null THREW TypeError
+obj prop array val null THREW TypeError
+default not evaluated -> 5/0
+default evaluated when absent -> 1/1
+default undefined triggers -> 7
+default null does not -> null
+fn name from array binding -> a
+arrow name from array binding -> a
+fn name from obj binding -> a
+class name from binding -> a
+named fn keeps its name -> named
+iterator get throws THREW TypeError
+rest after elements -> 1/[2,3]
+holes -> 2
+const anon fn -> f
+const anon class -> C
+const arrow -> g
+object value -> h
+param default -> a
+assignment does not infer -> "z"
