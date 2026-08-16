@@ -2577,3 +2577,34 @@ forces the implementation to be called `withFields`, and test262 has a name.js
 per member.
 
 test262: 804 to 814. Temporal failures 128 to 83.
+
+## `new` on a non-constructor built an object instead of throwing — DONE 2026-08-16
+
+Found while chasing Temporal's `not-a-constructor.js` tests, and much broader
+than them. Every arrow, every method shorthand, and every plain built-in
+function — `Math.max`, `Object.keys`, `Array.prototype.map` — answered to `new`
+by building an object and running the body against it. A typo like
+`new arr.map()` produced a value rather than failing.
+
+Four rules now decide it: arrows and METHODS are never constructors (`FuncDef`
+carries `isMethod`, set for object shorthand and class members); a native is a
+constructor only if it is on the list of ones that actually construct; a bound
+BUILT-IN METHOD value is not a constructor while a genuine `bind()` result is,
+when its target is.
+
+Two things the fixture caught while landing it. Marking class members as methods
+also marked the class CONSTRUCTOR, which broke `new C()` across 19 fixtures —
+the constructor is a class member syntactically but is exactly what `new` must
+reach. And `Proxy` had to be added to the constructor list; it is a native that
+does construct, and four proxy fixtures said so immediately.
+
+**A limit worth naming.** `new JSON.parse(...)` still does not throw. JSON.parse
+is a JS function defined in the prelude, because the native cannot call a
+reviver, and a JS function expression IS constructible. The same applies to every
+Temporal method: `not-a-constructor.js` and `builtin.js` (8 cases in the sample)
+are unreachable while those APIs are written in JS rather than as natives. That
+is a real cost of the implementation strategy, not an oversight, and the fixture
+names it rather than asserting around it.
+
+test262: 814 to 815, but the value is not the case count — this one is a silent
+wrong answer in ordinary code.

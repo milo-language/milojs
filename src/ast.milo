@@ -194,6 +194,10 @@ pub struct FuncDef {
     isGenerator: bool,
     // parsed in strict code, so a receiver-less call keeps `this` undefined
     isStrict: bool,
+    // a METHOD (object shorthand or class member). Methods and arrows are not
+    // constructors: `new ({m(){}}).m` is a TypeError, and test262 checks that
+    // per built-in member.
+    isMethod: bool,
     // byte range of this function's VERBATIM source text within its file, for
     // Function.prototype.toString. A pretty-printer cannot answer that: the
     // result is compared against node byte for byte, and the author's spacing is

@@ -980,6 +980,22 @@ fn validDescriptor(st: &mut Interp, o: i64, key: &string, d: i64): bool {
     return true
 }
 
+// Which natives answer to `new`. Everything else — Math.max, JSON.parse, every
+// Object static — is a plain function, and `new` on one is a TypeError rather
+// than a silently constructed object.
+fn nativeIsConstructor(id: i64): bool {
+    if id >= NATIVE_TA_BASE && id <= NATIVE_TA_BASE + TA_MAX {
+        return true
+    }
+    if id >= NATIVE_ERROR && id <= NATIVE_REFERENCE_ERROR {
+        return true
+    }
+    return id == NATIVE_PROXY || id == NATIVE_OBJECT_CTOR || id == NATIVE_STRING || id == NATIVE_NUMBER || id == NATIVE_BOOLEAN
+        || id == NATIVE_DATE || id == NATIVE_MAP || id == NATIVE_SET || id == NATIVE_REGEXP
+        || id == NATIVE_ARRAYBUFFER || id == NATIVE_DATAVIEW || id == NATIVE_FUNCTION_CTOR
+        || id == NATIVE_EVAL_ERROR || id == NATIVE_URI_ERROR
+}
+
 fn brandName(brand: i64): string {
     if brand == 2 {
         return "ArrayBuffer"
@@ -9395,6 +9411,14 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             }
             match calleeVal {
                 JSValue.Func(fIdx, envIdx) => {
+                    // arrows and methods are NOT constructors. `new` on one is a
+                    // TypeError, and every one of them used to build an object
+                    // and run the body against it instead.
+                    if prog.funcs[fIdx].isArrow || prog.funcs[fIdx].isMethod {
+                        st.throwing = true
+                        st.thrownValue = makeError(st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor" + currentModule(st))
+                        return JSValue.Undefined
+                    }
                     pushTemp(st, JSValue.Func(fIdx, envIdx))
                     let argVals = evalArgs(prog, argsIdx, st, scope)
                     let obj = newObject(st)
@@ -9426,6 +9450,11 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     }
                 }
                 JSValue.Native(nativeId) => {
+                    if !nativeIsConstructor(nativeId) {
+                        st.throwing = true
+                        st.thrownValue = makeError(st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor" + currentModule(st))
+                        return JSValue.Undefined
+                    }
                     let argVals = evalArgs(prog, argsIdx, st, scope)
                     // Called as a function these three coerce; called with `new`
                     // they BOX. Ignoring `new` made `new Boolean(false)` falsy
@@ -9491,6 +9520,15 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     // — the spec's [[Construct]] on a bound function. It fell
                     // through to "value is not a constructor".
                     if st.objects[co].isBound {
+                        // a BUILT-IN method value (Array.prototype.map, JSON.parse
+                        // read off its namespace) is bound but is not a
+                        // constructor. A genuine bind() RESULT is, when its
+                        // target is, and that is the case just below.
+                        if st.objExtras[st.objects[co].extra].boundMethod.len() > 0 {
+                            st.throwing = true
+                            st.thrownValue = makeError(st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor" + currentModule(st))
+                            return JSValue.Undefined
+                        }
                         let bex = st.objects[co].extra
                         let btarget = cloneValue(st.objExtras[bex].boundTarget)
                         let callArgs = evalArgs(prog, argsIdx, st, scope)

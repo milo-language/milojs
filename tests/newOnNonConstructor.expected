@@ -1,0 +1,30 @@
+new arrow THREW TypeError
+new object method THREW TypeError
+new class method THREW TypeError
+new getter fn THREW TypeError
+new Math.max THREW TypeError
+new Object.keys THREW TypeError
+new Symbol THREW TypeError
+new BigInt THREW TypeError
+new Array.prototype.map THREW TypeError
+new function decl -> object
+new function expr -> object
+new class -> 1
+new derived class -> 1
+new class no ctor -> object
+new Object -> object
+new Array -> 3
+new Map -> 0
+new Set -> 0
+new Date -> number
+new RegExp -> /a/
+new Error -> x
+new TypeError -> TypeError
+new Promise -> object
+new Proxy -> 1
+new ArrayBuffer -> 8
+new DataView -> 8
+new Uint8Array -> 2
+new Function -> 7
+new String -> object
+new bound function -> 5
