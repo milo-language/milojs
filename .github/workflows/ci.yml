@@ -16,6 +16,16 @@ jobs:
         with:
           bun-version: latest
 
+      # Pinned, not "latest". node IS the oracle here — every .expected is its
+      # byte-exact output — so the node version is part of the contract, and a
+      # runner image bumping its default would rewrite that contract silently.
+      # util.inspect layout and error text move between majors. Bumping this line
+      # is a deliberate act: re-run tools/verify-expected.sh --update and read the
+      # diff, it is the only place the oracle changes.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '25'
+
       # milo needs clang 16+ for the element-type-free intrinsic mangling
       # (@llvm.memcpy.p0.p0.i64); ubuntu-latest's default is older.
       - name: install clang 18
@@ -60,6 +70,15 @@ jobs:
       # stopped being proven — see the header of the script for why those are separate.
       - name: verify contracts
         run: ./tools/verify-contracts.sh
+
+      # The other half of the differential contract. tests/run.sh proves milojs
+      # matches the .expected files; this proves the .expected files are what
+      # node actually prints. Without it "node is the oracle" is honor-system,
+      # and a hand-written .expected locks in the engine's own bug as the
+      # contract. Runs before the build on purpose: it needs no binaries, so a
+      # bad .expected fails in seconds instead of after a full LLVM build.
+      - name: verify .expected came from node
+        run: ./tools/verify-expected.sh
 
       # Built once and reused: run.sh compiles per-pass otherwise, and an LLVM
       # build per fixture dwarfs the test time.

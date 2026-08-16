@@ -1,0 +1,38 @@
+# Fixtures tools/verify-expected.sh does NOT check against node.
+#
+# The gate exists because "node is the oracle" was an honor-system rule. Every
+# exemption is a hole in it, so each one is argued here rather than buried in a
+# comment at the top of a fixture where nobody reads it. Format:
+#
+#   <path>    <reason>
+#
+# Two kinds live here, and they are not the same:
+#   NOT-RUNNABLE — node cannot execute the fixture at all, or its output is not
+#                  a function of the program (paths, pids, benchmarks).
+#   DIVERGENCE   — node runs it fine and milojs disagrees. The .expected encodes
+#                  the milojs answer on purpose. These are open bugs with the
+#                  fixture passing; do not add one without a backlog entry.
+
+# --- NOT-RUNNABLE ---
+
+tests/binaryLength.js    calls __byteLength, a milojs engine intrinsic with no node equivalent
+tests/membench.js        peak-RSS benchmark; the headline number is /usr/bin/time -l, not stdout
+
+# --- DIVERGENCE (open bugs) ---
+
+tests/promises.js        await of an ALREADY-SETTLED promise resumes inline instead of after a
+#                        microtask tick, so chain() completes before its .then() attaches and
+#                        "then 42" prints first; node prints it seventh. Every other line and
+#                        value matches node exactly.
+tests/radixToString.js   Number.prototype.toString(radix) emits QuickJS/JSC shortest-round-trip
+#                        digits, not node's: (1.3).toString(7) is 1.204620462046204621 here and
+#                        1.2046204620462046205 under node. The .expected is a QuickJS capture,
+#                        which is the one place in this suite where node is deliberately not the
+#                        oracle.
+tests/errorInspect.js    console.log(new Error("boom")) prints "Error: boom"; node prints the
+#                        message followed by the full stack, because milojs Errors carry no
+#                        stack property yet.
+tests/eventLoop.js       setImmediate runs BEFORE the 0ms/1ms timers; node runs the timer phase
+#                        first and prints "immediate" two lines later. `await` cannot suspend a
+#                        native frame here (no coroutines), so a nested drain runs the loop in
+#                        place. Every value matches node; only the phase order does not.

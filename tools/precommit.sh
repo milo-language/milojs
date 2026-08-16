@@ -12,6 +12,13 @@ if ! tools/lint-symbols.sh; then
     status=1
 fi
 
+# A fixture with no .expected is printed as SKIP by tests/run.sh and exits 0, so
+# it passes forever while testing nothing. --structure is the instant half of the
+# node-oracle gate; CI runs the half that actually executes node.
+if ! tools/verify-expected.sh --structure; then
+    status=1
+fi
+
 # docs/api is generated; a stale copy is worse than none, since agents grep it
 # and trust it. Regenerate and stage if anything moved.
 before=$(find docs/api -name '*.md' -exec shasum {} + 2>/dev/null | shasum)

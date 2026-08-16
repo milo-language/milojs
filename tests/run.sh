@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Run every tests/*.js through milojs and diff against its *.expected (captured
-# from bun). Regenerate an expected file with:  bun tests/foo.js > tests/foo.expected
+# from NODE — node is this repo's oracle). Regenerate an expected file with:
+#   tools/verify-expected.sh --update foo
+# That script is also the gate proving each .expected really is node's output;
+# the handful that deliberately are not are argued in tests/.node-oracle-exempt.
 #
 # Two passes:
 #   tests/*.js          run on the ENGINE  (milojs-engine.milo)
