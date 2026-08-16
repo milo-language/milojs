@@ -1047,10 +1047,21 @@ Both are recorded in `docs/status.md` under Evidence. Keep doing this.
 
 ## Smaller gaps found by probe on 2026-08-15
 
-- `String.prototype.normalize` returns its input unchanged, so
-  `"e\u0301".normalize("NFC").length` is 2 where node gives 1. Needs
-  composition/decomposition tables; the same generator approach as
-  `tools/gen-unicase.mjs` would work.
+- **`String.prototype.normalize` is a SILENT no-op.** It returns its input, so
+  `"e\u0301".normalize("NFC").length` is 2 where node gives 1, and a caller
+  normalizing before an equality check gets `false` for strings that are equal.
+  The in-source comment justified it with "strings are byte buffers, so every
+  form is already normalized", which is false reasoning: UTF-8 says nothing about
+  canonical composition. Comment corrected; the behaviour is unchanged and still
+  wrong. Needs composition/decomposition tables, generatable from node the way
+  `tools/gen-unicase.mjs` does (canonical decomposition, combining-class
+  ordering, composition with the exclusion list).
+
+  The form ARGUMENT is validated now, because that costs nothing and an invalid
+  form is a RangeError in the spec: `"a".normalize("NFZ")` throws instead of
+  silently pretending. `built-ins/String/prototype/normalize` 3/14 → **4/14**.
+  Asserted by `tests/normalizeFormArg.js`, which deliberately encodes only the
+  part that matches node, so it will not need rewriting when the gap closes.
 - Unicode property escapes do not match: `/\p{L}/u.test("é")` is `false`.
 
 ## ToString reached neither Date.prototype nor Object.prototype — DONE 2026-08-15
@@ -1233,6 +1244,32 @@ the wrong place. `.index`, the offset a replace callback receives, and
 conversion at the boundary and bytes kept internally.
 
 `built-ins/RegExp` 734/1879 → **736/1879**.
+
+### An audit for silent limitations, mostly negative — 2026-08-16
+
+Run at the milo maintainer's suggestion after they found `std/json` decoding
+surrogate pairs into CESU-8. Their refined property is the useful one: **grep for
+limitations that are SILENT, not for limitation comments.** A comment saying
+"only X is supported" next to code that throws is fine; the dangerous shape is a
+comment that justifies returning a plausible wrong answer, and it survives review
+because the code matches its own documentation perfectly.
+
+Yield here, reported in full because most of it is negative:
+
+- Every other limitation in `src/` and `lib/` is LOUD: `child_process`, `https`,
+  `net.createServer`, `http.request`, `tls.connect` and the sqlite BigInt cases
+  all throw with a message naming the gap.
+- **`normalize` was the exception**, and its comment was actively false. See
+  above.
+- **A stale comment in `parseClass`** said class fields and getters are
+  unsupported and that a getter parses as a method. All of it works. This is the
+  quietest kind of wrong doc: it under-claims, so nobody hits a bug, they just
+  avoid a feature that works.
+- **Fixture flakiness: none.** Six fixtures use `setImmediate`, `Math.random`,
+  `Date.now` or `hrtime`. Ran node 6x and milojs 8x against each: all
+  deterministic on both sides. The one that WAS flaky by construction
+  (`eventLoop`) had already been found and fixed. Note the method: running only
+  the side you control proves nothing, which is the lesson from that fixture.
 
 ### Error stacks carry frames, and a subclass gets one at all — DONE 2026-08-16
 

@@ -1,0 +1,12 @@
+valid form NFC string
+valid form NFD string
+valid form NFKC string
+valid form NFKD string
+no argument string
+undefined argument string
+invalid form RangeError
+lowercase form RangeError
+empty form RangeError
+numeric form RangeError
+ascii is unchanged abc
+already composed stays true

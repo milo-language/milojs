@@ -1929,7 +1929,13 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
 }
 
 // class Name [extends Base] { [static] [async] name(params) { body } ... }
-// Class fields and getters are not supported; a getter parses as a method.
+//
+// Fields (instance and static), getters, setters, private members, computed
+// keys, generator methods and `static { }` blocks all parse. The comment here
+// used to say fields and getters were unsupported and that a getter parsed as a
+// method; that stopped being true and nothing forced it to be revisited, which
+// is the quietest kind of wrong doc: it under-claims, so nobody hits a bug, they
+// just avoid a feature that works.
 fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     expect(p, T_CLASS)
     var name = ""
