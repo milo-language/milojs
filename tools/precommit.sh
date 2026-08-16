@@ -29,6 +29,12 @@ if [ "$before" != "$after" ]; then
     echo "precommit: docs/api was stale; regenerated and staged"
 fi
 
+# src/unicase.milo is generated from node's ICU and says "do not edit by hand",
+# which was a request until this ran. 0.1s.
+if command -v node >/dev/null 2>&1 && ! node tools/gen-unicase.mjs --check; then
+    status=1
+fi
+
 # doc-meta present, key-files real, AGENTS tables complete, staleness ratchet.
 # All filesystem + git-log reads, so it costs nothing.
 if command -v node >/dev/null 2>&1 && ! node tools/check-docs.mjs; then

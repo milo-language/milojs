@@ -71,6 +71,12 @@ jobs:
       - name: verify contracts
         run: ./tools/verify-contracts.sh
 
+      # src/unicase.milo is generated from node's ICU. Its header says "do not
+      # edit by hand"; this is what makes that true, and it also catches a node
+      # upgrade silently changing what the engine believes about case mapping.
+      - name: generated sources match their generators
+        run: node tools/gen-unicase.mjs --check
+
       # "Keep the docs current" was a request in AGENTS.md, and requests are not
       # gates. This checks the parts a machine can: every doc has a doc-meta
       # block, its key-files exist, the AGENTS tables name everything on disk,

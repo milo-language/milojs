@@ -8,6 +8,12 @@
 // UnicodeData.txt by hand. Re-run after a node upgrade if a case mapping changes.
 //
 //   node tools/gen-unicase.mjs > src/unicase.milo
+//   node tools/gen-unicase.mjs --check      # fail if src/unicase.milo has drifted
+//
+// The header says "do not edit by hand", which was a request until --check existed.
+// A generated file with no regeneration gate is a generated file that quietly
+// stops matching its generator — and this one is a correctness table, so drift
+// means the engine case-maps differently from the node it was derived from.
 //
 // Emitted as balanced if-trees rather than data tables: milo has no static
 // array initialiser, and a tree of comparisons is O(log n) per character with
@@ -127,4 +133,18 @@ pub fn lowerSpecial(cp: i32): string {
     let v = cp as i64
 ${multiTree(lo.multi, 1)}}
 `;
-process.stdout.write(out);
+if (process.argv.includes("--check")) {
+  const { readFileSync } = await import("node:fs");
+  const target = new URL("../src/unicase.milo", import.meta.url);
+  const have = readFileSync(target, "utf8");
+  if (have !== out) {
+    console.error("gen-unicase: src/unicase.milo does not match its generator.");
+    console.error("Regenerate with: node tools/gen-unicase.mjs > src/unicase.milo");
+    console.error("(If node's ICU changed under you, read the diff before committing it —");
+    console.error(" it moves what the engine believes about Unicode case mapping.)");
+    process.exit(1);
+  }
+  console.log("gen-unicase: src/unicase.milo matches its generator");
+} else {
+  process.stdout.write(out);
+}
