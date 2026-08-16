@@ -770,6 +770,12 @@ fn parseNew(p: &mut PState, prog: &mut Prog): ExprId {
             argIdxs.push(parseArg(p, prog))
             while peekKind(p) == T_COMMA {
                 advance(p)
+                // a trailing comma before `)` is legal (ES2017) and every
+                // formatter emits one on a multi-line call, so this was a parse
+                // error on ordinary prettier-formatted source
+                if peekKind(p) == T_RPAREN {
+                    break
+                }
                 argIdxs.push(parseArg(p, prog))
             }
         }
@@ -830,12 +836,6 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
                 advance(p)
                 isMethodGen = true
             }
-            // `{ [expr]: v }` — the key is evaluated at construction time
-            if peekKind(p) == T_LBRACKET {
-                advance(p)
-                keyExpr = Option.Some(parseExpr(p, prog))
-                expect(p, T_RBRACKET)
-            }
             var accessorKind: i64 = 0
             // `get name() {}` / `set name(v) {}` — only an accessor when a name
             // and parameter list follow, since `get` is a valid property name too
@@ -857,6 +857,16 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
                     advance(p)
                     isMethodGen = true
                 }
+            }
+            // `{ [expr]: v }` — the key is evaluated at construction time.
+            // This runs AFTER the get/set/async/star modifiers, not before:
+            // with it first, `{ get [k]() {} }` never reached the accessor
+            // check, the key parser then hit `[` as an unrecognised token and
+            // dropped it, and the method came out nameless.
+            if peekKind(p) == T_LBRACKET {
+                advance(p)
+                keyExpr = Option.Some(parseExpr(p, prog))
+                expect(p, T_RBRACKET)
             }
             if keyExpr is Option.None {
                 if peekKind(p) == T_NUM {
@@ -941,6 +951,9 @@ fn parsePostfix(p: &mut PState, prog: &mut Prog): ExprId {
                 argIdxs.push(parseArg(p, prog))
                 while peekKind(p) == T_COMMA {
                     advance(p)
+                    if peekKind(p) == T_RPAREN {
+                        break
+                    }
                     argIdxs.push(parseArg(p, prog))
                 }
             }
@@ -968,6 +981,9 @@ fn parsePostfix(p: &mut PState, prog: &mut Prog): ExprId {
                     callArgs.push(parseArg(p, prog))
                     while peekKind(p) == T_COMMA {
                         advance(p)
+                        if peekKind(p) == T_RPAREN {
+                            break
+                        }
                         callArgs.push(parseArg(p, prog))
                     }
                 }
