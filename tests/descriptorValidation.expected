@@ -1,0 +1,28 @@
+on a primitive THREW TypeError
+null descriptor THREW TypeError
+primitive descriptor THREW TypeError
+get and value together THREW TypeError
+set and writable together THREW TypeError
+non-callable get THREW TypeError
+non-callable set THREW TypeError
+undefined get is allowed -> undefined
+redefine non-configurable THREW TypeError
+redefine to configurable THREW TypeError
+same value re-define is fine -> 1
+configurable redefine is fine -> 2
+defineProperties null THREW TypeError
+defineProperties on primitive THREW TypeError
+defineProperties bad member THREW TypeError
+defineProperties works -> 3
+defineProperty on a function -> 1
+defineProperty on a native -> 1
+redefined length is read back -> 5
+fn decl name v="foo" w=false e=false c=true
+fn decl length v=2 w=false e=false c=true
+arrow name v="" w=false e=false c=true
+class name v="K" w=false e=false c=true
+shorthand method name v="m" w=false e=false c=true
+native name v="cos" w=false e=false c=true
+native length v=1 w=false e=false c=true
+hasOwn name: true
+name not enumerable: []

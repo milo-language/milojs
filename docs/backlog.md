@@ -2411,3 +2411,44 @@ fixture pins that too, because the obvious over-broad fix breaks it.
 test262: 735 to 761 of 1470. Predicted 29 from two failure buckets, got 26.
 
 Locked by `tests/propertyEnumerability.js`.
+
+## Object.defineProperty validated nothing, and a function's name/length were not own properties — DONE 2026-08-16
+
+**defineProperty accepted everything.** All ten spec rejections probed were
+silently allowed — a non-object target, a null or primitive descriptor, `get`
+together with `value`, `set` together with `writable`, a non-callable accessor,
+and redefining a non-configurable property. A call that must throw returned the
+object unchanged, so the caller carried on believing the property was defined.
+`validDescriptor` now runs ValidateAndApplyPropertyDescriptor's rejection rules
+before anything is applied, for `defineProperty` and `defineProperties` alike.
+
+**A function's `name` and `length` were synthesised on READ only.** Every
+`getOwnPropertyDescriptor(fn, "name")` answered undefined, which is how test262
+checks them and how any library that copies function metadata reads them. They
+are materialised in `propertyBagOf` — the one place every descriptor path goes
+through — with the spec's attributes. `hasOwnProperty` was routed through the
+same helper so it cannot disagree with `getOwnPropertyDescriptor`, and the member
+READ now consults the bag so a redefined `length` is honoured rather than being
+recomputed from the FuncDef.
+
+**A regression I shipped into the gates and had to back out of.** The first guard
+was `objHandle(argVals[0]) < 0`. A function is an object in JS but is a `Func`
+here, not an `Obj`, so that rejected every `defineProperty(fn, ...)` — which
+call-bind does on load, taking the npm corpus from 802 assertions to 0 and both
+real apps with it. `propertyBagOf` is the right test: it answers for functions
+and natives too and is -1 only for a genuine primitive. The fixtures and
+test262 were all green while this was broken; check-apps and check-packages
+caught it.
+
+test262: 761 to 766 of 1470.
+
+Locked by `tests/descriptorValidation.js`.
+
+## OPEN: assignment to a frozen property does not throw in strict mode
+
+`"use strict"; const o = Object.freeze({a:1}); o.a = 2;` silently ignores the
+write where node throws TypeError. The strict flag now exists on FuncDef, but the
+assignment path has no access to the enclosing function's strictness at runtime —
+it would need to be carried on the frame, as `this` binding is. Same shape as the
+other strict-mode rules still unimplemented (assignment to an undeclared name,
+`with`, duplicate parameter names, octal literals).

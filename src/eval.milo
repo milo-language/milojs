@@ -919,6 +919,67 @@ fn applyArgsInto(prog: &Prog, st: &mut Interp, v: &JSValue, out: &mut Vec<JSValu
     }
 }
 
+// ValidateAndApplyPropertyDescriptor's rejection rules, as a check run before
+// the descriptor is applied. Returns false having set the throw.
+fn validDescriptor(st: &mut Interp, o: i64, key: &string, d: i64): bool {
+    let hasGet = objOwnIndex(st, d, "get") >= 0
+    let hasSet = objOwnIndex(st, d, "set") >= 0
+    let hasValue = objOwnIndex(st, d, "value") >= 0
+    let hasWritable = objOwnIndex(st, d, "writable") >= 0
+    // an accessor descriptor and a data descriptor cannot be combined
+    if (hasGet || hasSet) && (hasValue || hasWritable) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Invalid property descriptor. Cannot both specify accessors and a value or writable attribute" + currentModule(st))
+        return false
+    }
+    if hasGet {
+        let g = getMember(st, d, "get")
+        if !isCallableIn(st, g) && !isUndefinedValue(g) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Getter must be a function" + currentModule(st))
+            return false
+        }
+    }
+    if hasSet {
+        let sv = getMember(st, d, "set")
+        if !isCallableIn(st, sv) && !isUndefinedValue(sv) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Setter must be a function" + currentModule(st))
+            return false
+        }
+    }
+    // redefining a non-configurable property is only allowed when nothing
+    // observable changes; the common case in real code is a plain re-define,
+    // which must throw
+    let existing = objOwnIndex(st, o, key)
+    if existing >= 0 && !st.objects[o].props[existing].configurable {
+        var wantsConfigurable = false
+        if objOwnIndex(st, d, "configurable") >= 0 {
+            wantsConfigurable = truthy(getMember(st, d, "configurable"))
+        }
+        if wantsConfigurable {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
+            return false
+        }
+        if hasValue && !st.objects[o].props[existing].writable {
+            let nv = getMember(st, d, "value")
+            let cur = cloneValue(st.objects[o].props[existing].value)
+            if !jsStrictEquals(nv, cur) {
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
+                return false
+            }
+        }
+        if hasWritable && !st.objects[o].props[existing].writable && truthy(getMember(st, d, "writable")) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
+            return false
+        }
+    }
+    return true
+}
+
 fn brandName(brand: i64): string {
     if brand == 2 {
         return "ArrayBuffer"
@@ -2900,7 +2961,10 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 if args.len() > 0 {
                     key = toStr(args[0])
                 }
-                let statics = getFuncStatics(st, bf, benv)
+                // through propertyBagOf, so `name`/`length` are materialised
+                // first — hasOwnProperty must agree with
+                // getOwnPropertyDescriptor about what a function owns
+                let statics = propertyBagOf(st, JSValue.Func(bf, benv))
                 return JSValue.Bool(objOwnIndex(st, statics, key) >= 0)
             }
             // Function.prototype.apply.call(fn, thisArg, args) lands here with
@@ -4261,21 +4325,36 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
     }
     if id == NATIVE_OBJECT_DEFINEPROPERTY {
+        // Every one of these was silently accepted, so a call that the spec says
+        // must throw returned the object unchanged and the caller carried on
+        // believing the property was defined.
         if argVals.len() < 3 {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Object.defineProperty called on non-object" + currentModule(st))
             return JSValue.Undefined
         }
+        // NOT objHandle: a function is an object in JS but is a Func here, not
+        // an Obj, so an objHandle test rejects every `defineProperty(fn, ...)`.
+        // propertyBagOf answers for functions and natives too, and is -1 only
+        // for a genuine primitive.
         let target = cloneValue(argVals[0])
         let key = toStr(argVals[1])
         let o = propertyBagOf(st, target)
         if o < 0 {
-            return target
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Object.defineProperty called on non-object" + currentModule(st))
+            return JSValue.Undefined
         }
         let d = objHandle(argVals[2])
-        if d >= 0 {
-            applyDescriptor(st, o, key, d)
-            return JSValue.Obj(o)
+        if d < 0 {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Property description must be an object" + currentModule(st))
+            return JSValue.Undefined
         }
-        setMember(st, o, key, JSValue.Undefined)
+        if !validDescriptor(st, o, key, d) {
+            return JSValue.Undefined
+        }
+        applyDescriptor(st, o, key, d)
         return JSValue.Obj(o)
     }
     if id >= NATIVE_RESOLVER_BASE {
@@ -4366,15 +4445,23 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         let o = propertyBagOf(st, argVals[0])
         let descs = objHandle(argVals[1])
         if o < 0 || descs < 0 {
-            return cloneValue(argVals[0])
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Object.defineProperties called on non-object" + currentModule(st))
+            return JSValue.Undefined
         }
         var i: i64 = 0
         while i < st.objects[descs].props.len() {
             let key = st.objects[descs].props[i].key.clone()
             let d = objHandle(st.objects[descs].props[i].value)
-            if d >= 0 {
-                applyDescriptor(st, o, key, d)
+            if d < 0 {
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", "Property description must be an object" + currentModule(st))
+                return JSValue.Undefined
             }
+            if !validDescriptor(st, o, key, d) {
+                return JSValue.Undefined
+            }
+            applyDescriptor(st, o, key, d)
             i = i + 1
         }
         return JSValue.Obj(o)
@@ -8895,11 +8982,15 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                             return makeBoundMethod(st, JSValue.Func(fIdx, fe), name.clone())
                         }
                     }
-                    if name == "length" {
-                        return JSValue.Number(funcArity(prog, fIdx) as f64)
-                    }
-                    if name == "name" {
-                        return JSValue.Str(prog.funcs[fIdx].name.clone())
+                    // through the bag, so a REDEFINED length/name is honoured:
+                    // these are ordinary own properties now, and reading them
+                    // from the FuncDef ignored any defineProperty on them
+                    if name == "length" || name == "name" {
+                        let nbag = propertyBagOf(st, JSValue.Func(fIdx, fe))
+                        let ni = objOwnIndex(st, nbag, name)
+                        if ni >= 0 {
+                            return cloneValue(st.objects[nbag].props[ni].value)
+                        }
                     }
                     let statics = getFuncStatics(st, fIdx, fe)
                     // getMemberDyn, not getMember: a `static get v()` is stored on
@@ -9643,11 +9734,15 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                             return JSValue.Native(NATIVE_FUNCTION_CTOR)
                         }
                     }
-                    if name == "length" {
-                        return JSValue.Number(funcArity(prog, fIdx) as f64)
-                    }
-                    if name == "name" {
-                        return JSValue.Str(prog.funcs[fIdx].name.clone())
+                    // through the bag, so a REDEFINED length/name is honoured:
+                    // these are ordinary own properties now, and reading them
+                    // from the FuncDef ignored any defineProperty on them
+                    if name == "length" || name == "name" {
+                        let nbag = propertyBagOf(st, JSValue.Func(fIdx, fe))
+                        let ni = objOwnIndex(st, nbag, name)
+                        if ni >= 0 {
+                            return cloneValue(st.objects[nbag].props[ni].value)
+                        }
                     }
                     let statics = getFuncStatics(st, fIdx, fe)
                     return getMemberDyn(prog, statics, name, st)
@@ -12200,7 +12295,20 @@ fn propertyBagOf(st: &mut Interp, v: &JSValue): i64 {
     }
     let f = funcHandle(v)
     if f >= 0 {
-        return getFuncStatics(st, f, funcEnv(v))
+        let bag = getFuncStatics(st, f, funcEnv(v))
+        // `name` and `length` are real OWN properties of a function, and
+        // test262 checks that with getOwnPropertyDescriptor rather than by
+        // reading them. They were synthesised on read only, so every descriptor
+        // query answered undefined. Materialised here, at the one place every
+        // descriptor path goes through, with the spec's attributes:
+        // { writable: false, enumerable: false, configurable: true }.
+        if objOwnIndex(st, bag, "name") < 0 {
+            objDefineBuiltinAttr(st, bag, "name", JSValue.Str(gProg.funcs[f].name.clone()))
+        }
+        if objOwnIndex(st, bag, "length") < 0 {
+            objDefineBuiltinAttr(st, bag, "length", JSValue.Number(funcArity(gProg, f) as f64))
+        }
+        return bag
     }
     let n = nativeHandle(v)
     if n >= 0 {
