@@ -6083,9 +6083,23 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     }
     if id == NATIVE_OBJECT_ASSIGN {
         if argVals.len() == 0 {
+            // no target at all is the same as an undefined one
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot convert undefined or null to object" + currentModule(st))
             return JSValue.Undefined
         }
-        let target = cloneValue(argVals[0])
+        // ToObject on the target: nullish is a TypeError, and a PRIMITIVE is
+        // boxed rather than handed back unchanged — `typeof Object.assign(1, {})`
+        // is "object".
+        if isNullish(argVals[0]) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot convert undefined or null to object" + currentModule(st))
+            return JSValue.Undefined
+        }
+        var target = cloneValue(argVals[0])
+        if propertyBagOf(st, target) < 0 {
+            target = makeWrapper(st, argVals[0])
+        }
         let t = propertyBagOf(st, target)
         if t < 0 {
             return target
@@ -7859,6 +7873,13 @@ pub fn setupGlobals(st: &mut Interp) {
     nameGlobalCtor(st, "RegExp", NATIVE_REGEXP)
     let promiseCtor = newObject(st)
     nameNativesOf(st, promiseCtor)
+    // Array and Promise are constructor OBJECTS here, not Natives, so the
+    // native naming pass never reached them and both lacked own `length` and
+    // `name`. get-intrinsic resolves %Array.length% and reports "base intrinsic
+    // exists, but the property is not available" without them, which is where
+    // call-bound stops.
+    objDefineBuiltinAttr(st, promiseCtor, "length", JSValue.Number(1.0))
+    objDefineBuiltinAttr(st, promiseCtor, "name", JSValue.Str("Promise"))
     st.promiseCtorObj = promiseCtor
     objSet(st, promiseCtor, "resolve", JSValue.Native(NATIVE_PROMISE_RESOLVE))
     objSet(st, promiseCtor, "reject", JSValue.Native(NATIVE_PROMISE_REJECT))
@@ -8099,6 +8120,8 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, arrayCtor, "prototype", JSValue.Obj(arrayProto))
     objSet(st, arrayCtor, "name", JSValue.Str("Array"))
     nameNativesOf(st, arrayCtor)
+    objDefineBuiltinAttr(st, arrayCtor, "length", JSValue.Number(1.0))
+    objDefineBuiltinAttr(st, arrayCtor, "name", JSValue.Str("Array"))
     st.arrayCtorObj = arrayCtor
     st.arrayProtoObj = arrayProto
     // Set only now that setup has finished writing the methods in, so the setup

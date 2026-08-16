@@ -1,0 +1,19 @@
+assign undefined target THREW TypeError
+assign null target THREW TypeError
+assign no args THREW TypeError
+number target is boxed -> object
+string target is boxed -> object
+boolean target is boxed -> object
+boxed target keeps its value -> 5
+nullish SOURCE is skipped -> {"a":1}
+copies own enumerable -> {"a":1,"b":2}
+later sources win -> {"a":2}
+returns the target -> true
+Array.length v=1 w=false e=false c=true
+Promise.length v=1 w=false e=false c=true
+Object.length v=1 w=false e=false c=true
+Map.length v=0 w=false e=false c=true
+Set.length v=0 w=false e=false c=true
+Error.length v=1 w=false e=false c=true
+Array.name v=Array w=false e=false c=true
+Promise.name v=Promise w=false e=false c=true

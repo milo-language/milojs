@@ -2470,3 +2470,26 @@ source pointed at the branch. Depth measurements described the loop; the first
 look at the DATA identified it.
 
 Locked by `tests/arrayBufferByteLength.js`.
+
+## Object.assign skipped ToObject, and Array/Promise had no own length — DONE 2026-08-16
+
+Two defects, each of which stops a package on its first line.
+
+**`Object.assign` did no ToObject on its target.** A nullish target returned
+quietly where the spec throws, and a PRIMITIVE target came back unboxed, so
+`typeof Object.assign(1, {})` was "number" rather than "object". Sources stay
+lenient — a nullish SOURCE is skipped, not an error — which is the asymmetry the
+object.assign package tests first.
+
+**`Array` and `Promise` had no own `length` or `name`.** Both are constructor
+OBJECTS in this engine rather than Natives, so the native naming pass never
+reached them. get-intrinsic resolves `%Array.length%` and reports "base intrinsic
+for Array.length exists, but the property is not available" without it, which is
+where call-bound stopped — taking 16 assertions with it, plus everything
+downstream that call-bound loads.
+
+Corpus: 897 to 911 assertions. test262 unchanged at 769, which is expected: both
+of these are reached through package code rather than through the language
+surface the sample covers.
+
+Locked by `tests/toObjectAndCtorLength.js`.
