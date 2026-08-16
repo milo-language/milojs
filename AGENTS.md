@@ -143,7 +143,13 @@ Need a local corpus, so they are manual, not CI:
 ```sh
 TEST262=~/git/test262 MILOJS_ENGINE=.dev/mj-engine bun scripts/test262-sweep.ts --sample 1500
 QUICKJS_TESTS=~/git/quickjs/tests MILOJS_ENGINE=.dev/mj-engine bun scripts/quickjs-sweep.ts
+node tools/gen-facts.mjs   # compile the new numbers into the docs
 ```
+
+Each sweep writes committed evidence to `docs/conformance/<suite>.json`, stamped
+with the milojs revision it measured. Run them from a CLEAN checkout — a report
+marked `dirty` is refused at publication time, because a score measured on
+uncommitted work cannot be reproduced by anyone.
 
 Both scripts default to `/tmp` paths for the corpora. Point them at the checkouts
 above instead: a corpus under `/tmp` gets reaped, and the sweep then reports
@@ -152,7 +158,9 @@ above instead: a corpus under `/tmp` gets reaped, and the sweep then reports
 `--sample N` is seeded, so the same N is comparable across runs; `-v` lists every
 failing case and `--json <file>` writes the machine-readable form.
 
-Current numbers live in `docs/backlog.md`. Update them there when they move.
+Never type a score into prose — see `docs/conformance-reports.md` §Publication
+rule. `docs/backlog.md` carries the per-change attribution narrative; the headline
+numbers are compiled from the report.
 
 ## Contracts
 
