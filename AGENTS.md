@@ -88,8 +88,13 @@ opening several.
 | `docs/milojs-quickjs-plan.md` | QuickJS as an architecture reference |
 | `docs/api/*.md` | generated symbol reference for this project |
 
-**Keep them current.** If you change behavior a doc describes, update the doc in
-the same commit and bump its `last-verified`.
+**Keep them current, and it is checked.** If you change behavior a doc describes,
+update the doc in the same commit and bump its `last-verified`.
+`tools/check-docs.mjs` compares each doc's `last-verified` against the commit date
+of its own `key-files`: if the code moved after the doc was verified, the doc is
+stale by definition. Existing debt is ratcheted in `tools/docs-staleness.txt` —
+seven docs are on that list today — so only a NEWLY stale doc fails. Re-verify one,
+bump its date, delete its line; the list is only allowed to shrink.
 
 ## Tests — always run them
 
@@ -186,6 +191,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/verify-expected.sh` | proves every `.expected` is what node prints. `--update` captures a new one, `--structure` is the instant registry-only half the hook runs. |
 | `tools/verify-contracts.sh` | static contract gate: fails on a refuted contract, or one that quietly stopped being proven. `--update` re-baselines. |
 | `tools/gen-unicase.mjs` | regenerates `src/unicase.milo` (case-mapping tables) from node's ICU |
+| `tools/check-docs.mjs` | doc-meta present, key-files real, AGENTS tables complete, and a staleness ratchet against each doc's key-files |
 | `tools/gen-facts.mjs` | compiles the numbers prose quotes (line counts, fixture counts, entry points) into `<!--fact:...-->` spans. `--check` gates, `--list` prints them all. |
 | `tools/precommit.sh` | lint + fixture registry + docs freshness; wire with `git config core.hooksPath .githooks` |
 

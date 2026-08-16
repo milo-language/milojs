@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: milojs-async-suspension
 purpose: plan of record for making await suspend in milojs — requirements, design, per-requirement status, and test plan
-key-files: src/eval.milo, src/runtime.milo, std/runtime.milo, tests/fixtures/asyncCallOrdering.milo
+key-files: src/eval.milo, src/runtime.milo, std/runtime.milo, tests/milo/AwaitPark.milo
 update-when: a requirement is implemented, dropped, or revised, or the suspension mechanism changes
 last-verified: 2026-07-21
 -->
@@ -17,7 +17,7 @@ document, and the document changes first if the plan changes.
 |------|-------|
 | Interpreter runs on a green task | done (`530dfe8`) |
 | `Task.spawnWithStack` for interpreter-sized stacks | done (`5613f78`) |
-| Ordering mechanism (caller parks, body unparks it) | proven, `tests/fixtures/asyncCallOrdering.milo` |
+| Ordering mechanism (caller parks, body unparks it) | proven, `tests/milo/AwaitPark.milo` |
 | R1 async call returns at first await | done in the **runtime** for a pending awaited promise — matches node; 71/71 fixtures, integration app green (0 errors, ~34ms) |
 | R1b same in the engine binary | **still not landed**, but the cause is now narrowed: the engine running on `gProg` alone is SAFE (landed independently for proxy traps, `adae042`, CI green). The unkillable hang came from `gProg` **plus** running the whole program on a green task — that combination, not `gProg` itself, is what wedged. So R1b needs the green-task part done differently |
 | R1a `await` of a non-thenable / settled value yields a microtask tick | **met** — a settled/non-thenable await runs the microtasks pending AT the await point (a snapshot) INLINE via `awaitYieldMicrotasks` (drainMicrotasks with a `limit`), then continues. No park, so the activation's ExecCtx stays live in the Interp and rooted — which is why this is safe where the reverted bare-`schedulerYield` was not. Covered by `tests/runtime/awaitMicrotaskYield.js`; app stays clean (0 errors, ~3ms/route) and run.sh 119/119, GC-stress clean |
@@ -86,7 +86,7 @@ body runs; at its first `await`, or on completion if it never awaits, it unparks
 the caller and then parks. The caller resumes with the body's synchronous
 portion already run. Only `schedulerPark`/`schedulerUnpark` are used — no new
 scheduler primitive, so the task struct that channels, select and net share is
-untouched. Proven in `tests/fixtures/asyncCallOrdering.milo`.
+untouched. Proven in `tests/milo/AwaitPark.milo`.
 
 **Suspension (R2, R3).** `await` on a pending promise records the current task
 as a waiter on that promise and parks. Settling a promise unparks its waiters in

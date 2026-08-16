@@ -1,3 +1,11 @@
+<!-- doc-meta
+system: backlog
+purpose: what to work on next, with measured conformance attribution per change
+key-files: src/eval.milo, src/builtins.milo, src/parser.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts
+update-when: an item lands, a gap is discovered, or a sweep re-attributes a score
+last-verified: 2026-08-15
+-->
+
 # milojs backlog
 
 Work items carried over from the milo repo's backlog when milojs moved to its own

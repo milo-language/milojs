@@ -29,6 +29,12 @@ if [ "$before" != "$after" ]; then
     echo "precommit: docs/api was stale; regenerated and staged"
 fi
 
+# doc-meta present, key-files real, AGENTS tables complete, staleness ratchet.
+# All filesystem + git-log reads, so it costs nothing.
+if command -v node >/dev/null 2>&1 && ! node tools/check-docs.mjs; then
+    status=1
+fi
+
 # Numbers quoted in prose are compiled from the tree. Rewritten and staged rather
 # than failed: the counts move on ordinary commits, and a hook that blocks on
 # "your line count changed" just trains people to use --no-verify. CI runs the

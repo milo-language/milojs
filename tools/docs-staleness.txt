@@ -1,0 +1,11 @@
+# Docs whose key-files moved after their last-verified date.
+# A RATCHET: tools/check-docs.mjs fails on a doc that goes stale and is not
+# listed here. Re-verify the doc, bump its last-verified, delete its line.
+# The list is only ever allowed to shrink. Re-record with --baseline.
+docs/milojs-arena-safety.md
+docs/milojs-async-suspension.md
+docs/milojs-embedding.md
+docs/milojs-generators.md
+docs/milojs-object-footprint.md
+docs/milojs-quickjs-plan.md
+docs/milojs-roadmap.md

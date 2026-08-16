@@ -71,6 +71,13 @@ jobs:
       - name: verify contracts
         run: ./tools/verify-contracts.sh
 
+      # "Keep the docs current" was a request in AGENTS.md, and requests are not
+      # gates. This checks the parts a machine can: every doc has a doc-meta
+      # block, its key-files exist, the AGENTS tables name everything on disk,
+      # and no doc silently went stale against the code it describes.
+      - name: docs are in step with the tree
+        run: node tools/check-docs.mjs
+
       # Line counts, fixture counts and the Node-API entry-point count are
       # compiled into README/AGENTS/docs from the tree. README, AGENTS.md and
       # status.md each carried a DIFFERENT line count for the same tree before
