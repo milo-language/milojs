@@ -25,3 +25,15 @@ MILOJS_NAPI_ADDON="$TMP/callback.node" node --expose-gc tests/napi/callback.js >
 MILOJS_NAPI_ADDON="$TMP/callback.node" "$RUNTIME" tests/napi/callback.js >"$TMP/actual"
 diff -u "$TMP/expected" "$TMP/actual"
 echo "node-api callback ok"
+
+# The entry points that were absent from the binary rather than stubbed. This is
+# a LINK test first: a missing symbol makes dlopen fail before a line runs.
+case "$(uname -s)" in
+  Darwin) "$CC" -dynamiclib -undefined dynamic_lookup tests/napi/surface.c -o "$TMP/surface.node" ;;
+  *)      "$CC" -shared -fPIC tests/napi/surface.c -o "$TMP/surface.node" ;;
+esac
+
+MILOJS_NAPI_ADDON="$TMP/surface.node" node tests/napi/surface.js >"$TMP/expected2"
+MILOJS_NAPI_ADDON="$TMP/surface.node" "$RUNTIME" tests/napi/surface.js >"$TMP/actual2"
+diff -u "$TMP/expected2" "$TMP/actual2"
+echo "node-api surface ok"

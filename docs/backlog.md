@@ -1167,23 +1167,67 @@ hour later against unchanged milojs source. Gone as of milo `b5a40d2b`. Recorded
 because the failure mode is worth recognising: `milo` is a symlink to
 `~/git/milo/milo`, so a red build here can be a compiler that moved underneath.
 
-## Node-API: 10 of 64 entry points are stubs
+## Node-API: 20 entry points added, and three real addons load — 2026-08-15
 
-`src/napi.milo` marks them honestly in-source (they exist only so `dlopen`, which
-resolves eagerly, does not fail the whole module). Each returns `napi_ok` without
-doing anything, which is a lie an addon can act on. Ranked by what a real addon
-hits:
+An audit of every `.node` file across five real applications, by diffing the
+symbols each one needs against the symbols milojs exports:
 
-1. `napi_create_external_buffer`: owned and copied Buffers now expose stable
-   shared memory in both C and JavaScript, but addon-owned memory still needs an
-   exactly-once finalizer before external buffers can be honest.
-2. `napi_get_and_clear_last_exception`, `napi_fatal_exception` — errors vanish
-   instead of propagating.
-3. `napi_create_bigint_words` and the three `napi_get_value_bigint_*`.
-   `src/bigint.milo` already exists, so this is wiring, not new work.
-4. `napi_coerce_to_object`, `napi_add_env_cleanup_hook`, `napi_fatal_error`.
+| addon | v8 syms | napi syms | status |
+|---|---:|---:|---|
+| prisma query engine | 0 | 60 | loads (tahoeroads serves DB-backed pages) |
+| `sharp` | 0 | 52 | **now loads** |
+| `fsevents` | 0 | 20 | **now loads** |
+| `onnxruntime-node` | 0 | 65 | linux/x64 build, not testable here |
+| `better-sqlite3` | **49** | 0 | cannot load, see below |
 
-Already real: `napi_define_class`, `napi_wrap`/`unwrap`, references, promises and
-deferreds, synchronous calls back into JavaScript, and the full
-threadsafe-function set. Node-API handles are collector roots, including while a
-native callback re-enters JavaScript.
+`sharp` named 18 entry points that were **absent from the binary rather than
+stubbed**, which is a different failure: a missing symbol makes `dlopen` fail
+before the addon runs a line. Added, with `fsevents`'s two on top:
+
+- handle scopes: `napi_open_handle_scope`, `napi_close_handle_scope`, the
+  escapable pair, and `napi_escape_handle`. Every handle is already mirrored into
+  the interpreter's foreign-host root set for its lifetime, so a scope has no
+  storage to reclaim and these are bookkeeping.
+- async work: `napi_create_async_work`, `napi_queue_async_work`,
+  `napi_delete_async_work`. node runs `execute` on a libuv threadpool and
+  `complete` on the loop thread; milojs has one JS thread, so queueing runs
+  execute and then complete in that order. An addon sees its work finish
+  correctly, but gets no parallelism, so a long execute blocks the loop.
+- values: `napi_create_string_latin1` (one byte per code point, not UTF-8),
+  `napi_get_value_int64`, `napi_get_typedarray_info` (length in ELEMENTS, and
+  `data` pointing at the VIEW's first byte, not the buffer's, or a subarray reads
+  the wrong bytes), `napi_create_external` / `napi_get_value_external`.
+- properties: `napi_define_properties` (honouring accessors, not flattening a
+  getter into a data property), `napi_has_property`, `napi_has_own_property`,
+  `napi_add_finalizer`.
+- errors: `napi_get_last_error_info`, `napi_is_exception_pending`,
+  `napi_create_type_error`.
+
+Two bugs in the engine came out of writing the test addon for them:
+
+- **A Node-API accessor never fired.** `getMemberDyn` gated its getter on
+  `isCallable`, the value-only predicate, and a Node-API function is an OBJECT
+  carrying a `napiFn` index. `isCallableIn` recognises it.
+- **`objHasInChain` stopped one level short.** A plain object's `proto` field is
+  -1 and the link to Object.prototype is resolved by type, so the raw walk
+  reported `toString` as absent.
+
+Also fixed: **the preloader tried to PARSE `.node` files as JavaScript**, and
+reported `expected an expression, found '<'` against a Mach-O load command table.
+`.node` files are dlopened at require time and must not be followed by the module
+graph walk.
+
+Locked by `tests/napi/surface.c` and `tests/napi/surface.js`, which are a link
+test first: if any of these regresses out of the build, loading the addon fails
+outright. Writing them also caught a misuse worth recording: deleting an
+async_work straight after queueing frees it under a live threadpool worker, and
+node segfaults. The handle is deleted from the complete callback instead.
+
+**better-sqlite3 stays out of reach, and no amount of Node-API work changes
+that.** Its 11.10.0 prebuilt links the V8 C++ API: `nm -u` shows 49 `v8::`
+symbols and zero `napi_`. Implementing those means reproducing V8's object
+layout, not just its function names, because the V8 headers inline much of it.
+For scale: Bun's V8 compatibility layer is ~4,300 lines and its own notes
+describe it as "V8-compatible object layouts that inline V8 functions can read"
+plus tagged pointers and handle-scope buffers. The three sqlite apps need a
+sqlite package that is napi-native instead.

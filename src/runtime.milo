@@ -494,6 +494,10 @@ struct JSObjExtra {
     regexId: i64,
     napiFn: i64,
     napiWrap: i64,
+    // set when napiWrap holds an opaque C pointer handed over by
+    // napi_create_external, so napi_typeof can report napi_external (8) rather
+    // than object and the addon recognises its own value coming back
+    napiIsExternal: bool,
     // Stable native storage for Node-API Buffer byte views. A negative length
     // means this is not a native view; the view owns the allocation when flagged.
     nativeBufPtr: i64,
@@ -528,6 +532,7 @@ pub fn defaultExtra(): JSObjExtra {
         regexId: -1,
         napiFn: -1,
         napiWrap: 0,
+        napiIsExternal: false,
         nativeBufPtr: 0,
         nativeBufLen: -1,
         nativeBufOwned: false,
@@ -1625,7 +1630,17 @@ pub fn objHasInChain(st: &Interp, o: i64, key: &string): bool {
         if objHas(st, cur, key) {
             return true
         }
-        cur = st.objects[cur].proto
+        let next = st.objects[cur].proto
+        if next >= 0 {
+            cur = next
+        } else if cur != st.objectProtoObj && st.objectProtoObj >= 0 {
+            // A plain object's `proto` field is -1: the link to Object.prototype
+            // is resolved by type, not stored, so a raw walk of the field stops
+            // one level short and reports `toString` as absent.
+            cur = st.objectProtoObj
+        } else {
+            cur = -1
+        }
     }
     return false
 }

@@ -40,9 +40,7 @@ is legal in a plain script.
 pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64
 ```
 
-Parse `path` (and everything it requires, transitively) into `prog`, filling
-the interpreter's module registry. Returns the entry module's registry index,
-or -1 if the entry could not be read.
+_Undocumented._
 
 ### `reportUnresolved`
 

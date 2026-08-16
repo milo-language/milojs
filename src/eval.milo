@@ -504,12 +504,16 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
         // does not use. So `({}).toString` read as undefined — and ToPrimitive
         // with the STRING hint then skipped straight to valueOf, which is the
         // wrong order (`String({valueOf: () => 5})` answered "5").
-        if key == "toString" && !objHasInChain(st, o, key) {
+        // the condition is "the ordinary chain walk found nothing", not
+        // objHasInChain: that helper now reaches Object.prototype by type, which
+        // is what `in` and napi_has_property need, but getMember still walks the
+        // raw proto field and so still needs the synthesised method here
+        if key == "toString" && isUndefinedValue(getMember(st, o, key)) {
             // unbound, so the call-site receiver wins, exactly as the copy
             // stored on Object.prototype is
             return makeBoundMethod(st, JSValue.Undefined, "@@objProtoToString")
         }
-        if key == "valueOf" && !objHasInChain(st, o, key) {
+        if key == "valueOf" && isUndefinedValue(getMember(st, o, key)) {
             return makeBoundMethod(st, JSValue.Obj(o), "valueOf")
         }
         if st.objects[o].isError && (key == "toString" || key == "valueOf") {
@@ -551,7 +555,10 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
         return JSValue.Number(st.objExtras[st.objects[o].extra].mapKeys.len() as f64)
     }
     let g = findGetter(st, o, key)
-    if isCallable(g) {
+    // isCallableIn, not isCallable: a Node-API function is an OBJECT carrying a
+    // napiFn index, which the value-only predicate does not recognise, so an
+    // accessor defined by an addon never fired and read as undefined.
+    if isCallableIn(st, g) {
         var noArgs: Vec<JSValue> = Vec.new()
         return callValue(prog, g, noArgs, JSValue.Obj(o), st)
     }

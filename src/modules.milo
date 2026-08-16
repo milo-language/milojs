@@ -551,6 +551,14 @@ pub fn findModule(st: &Interp, path: &string): i64 {
 // Parse `path` (and everything it requires, transitively) into `prog`, filling
 // the interpreter's module registry. Returns the entry module's registry index,
 // or -1 if the entry could not be read.
+fn hasAddonExt(p: &string): bool {
+    let n = p.len()
+    if n < 6 {
+        return false
+    }
+    return p[n - 5] == '.' && p[n - 4] == 'n' && p[n - 3] == 'o' && p[n - 2] == 'd' && p[n - 1] == 'e'
+}
+
 pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
     var queue: Vec<string> = Vec.new()
     queue.push(entryPath.clone())
@@ -583,6 +591,17 @@ pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
                 bs = bs + 1
             }
         } else {
+            // A .node file is a shared library, not JavaScript. The preloader
+            // read one and handed the Mach-O bytes to the lexer, which reported
+            // `expected an expression, found '<'` against the load command
+            // table. dlopen handles these at require time; the graph walk must
+            // not follow them.
+            if hasAddonExt(path) {
+                st.modPaths.push(path.clone())
+                st.modBlocks.push(BlockId { index: 0 })
+                st.modExports.push(JSValue.Undefined)
+                st.modState.push(2)
+            } else {
             match readFile(path.clone()) {
                 Result.Ok(src) => {
                     // a .json module is its parsed contents — JSON is a subset of
@@ -615,6 +634,7 @@ pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
                 Result.Err(_e) => {
                     eprint("milojs: cannot read module '" + path + "'")
                 }
+            }
             }
         }
     }

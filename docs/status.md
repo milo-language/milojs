@@ -30,7 +30,7 @@ The project deliberately has two deliverables:
 Engine maturity comes first. Runtime compatibility cannot be credible while the
 language engine and embedding contract are unstable.
 
-About <!--fact:loc-total-->39.5k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
+About <!--fact:loc-total-->40.0k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
 program, with no V8, JavaScriptCore, or C JavaScript engine underneath.
 
 ## Evidence
@@ -247,7 +247,7 @@ compatibility. `http.request`/`http.get` are exported but never complete: a
 client request against our own in-process server hangs instead of failing, which
 is worse than an absent export and should be treated as a client-side gap, not a
 shipped API. TLS serving, child processes, computed module discovery, and
-significant package-facing edges remain. Ten of <!--fact:napi-entry-points-->64<!--/fact--> Node-API entry points are
+significant package-facing edges remain. Ten of <!--fact:napi-entry-points-->84<!--/fact--> Node-API entry points are
 honest stubs; external-Buffer finalization remains from the Buffer family. A
 compiled-addon differential test locks native callbacks and shared Buffer
 mutation into JavaScript.
