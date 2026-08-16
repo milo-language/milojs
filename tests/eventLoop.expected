@@ -3,7 +3,6 @@ end sync
 micro
 cleanup
 still rejected: keep
-immediate
 t 0
 args x y
 tick 1
@@ -12,6 +11,7 @@ tick 3
 deferred handler 42
 all [1,2,3]
 race fast
+immediate
 settled fulfilled rejected
 all rejects: boom
 t 20

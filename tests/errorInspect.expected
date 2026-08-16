@@ -1,4 +1,8 @@
 Error: boom
+    at tests/errorInspect.js
 TypeError: bad
-MyErr: custom
+    at tests/errorInspect.js
+Error: custom
+    at tests/errorInspect.js
+    at tests/errorInspect.js
 1970-01-01T00:00:00.000Z

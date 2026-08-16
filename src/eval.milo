@@ -3533,7 +3533,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if msg.len() > 0 {
             stackHead = stackHead + ": " + msg
         }
-        objSet(st, o, "stack", JSValue.Str(stackHead))
+        objSet(st, o, "stack", JSValue.Str(stackHead + errorStackFrames(st)))
         // new Error(msg, { cause }) — ES2022 error chaining
         if argVals.len() > 1 {
             let oh = objHandle(argVals[1])
@@ -9789,7 +9789,7 @@ pub fn makeError(st: &mut Interp, kind: string, msg: string): JSValue {
     if msg.len() > 0 {
         stackHead = stackHead + ": " + msg
     }
-    objSet(st, o, "stack", JSValue.Str(stackHead))
+    objSet(st, o, "stack", JSValue.Str(stackHead + errorStackFrames(st)))
     // same prototype a constructed error of this kind gets, so a caught runtime
     // TypeError answers e.constructor and getPrototypeOf the way a thrown one does
     let ep = errorProtoFor(st, errorCtorIdFor(kind))
@@ -14889,6 +14889,34 @@ fn evalInOperator(prog: &Prog, key: string, ov: JSValue, st: &mut Interp): JSVal
     }
 }
 
+// The frame lines for an Error's `.stack`, innermost first. milojs records the
+// source file of every function on the call stack (see fnFileStack, added for
+// V8-style structured traces), so a stack can name where it came from instead of
+// being a bare "Name: message" header.
+//
+// No line or column: this engine does not record positions per frame, and
+// printing ":0:0" would be fake precision a reader would try to use. The path
+// alone is the part that is true.
+fn errorStackFrames(st: &Interp): string {
+    var out = ""
+    var n: i64 = 0
+    var i = st.fnFileStack.len() - 1
+    while i >= 0 && n < 10 {
+        if st.fnFileStack[i].len() > 0 {
+            out = out + "\n    at " + st.fnFileStack[i].clone()
+            n = n + 1
+        }
+        i = i - 1
+    }
+    var m = st.modPathStack.len() - 1
+    while m >= 0 && n < 10 {
+        out = out + "\n    at " + st.modPathStack[m].clone()
+        n = n + 1
+        m = m - 1
+    }
+    return out
+}
+
 fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {
     // builtin: console.log(...)
     match prog.exprs[calleeId.index] {
@@ -14914,7 +14942,16 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                         if argVals.len() > 0 {
                             msg = toStr(argVals[0])
                         }
-                        objSet(st, selfObj, "message", JSValue.Str(msg))
+                        objSet(st, selfObj, "message", JSValue.Str(msg.clone()))
+                        // `class E extends Error {}` produced an instance with
+                        // NO stack at all, so the one thing a caller reaches for
+                        // when logging a custom error was undefined
+                        var subHead = nativeErrorName(baseNative)
+                        if msg.len() > 0 {
+                            subHead = subHead + ": " + msg
+                        }
+                        objSet(st, selfObj, "stack", JSValue.Str(subHead + errorStackFrames(st)))
+                        objSetNonEnumerable(st, selfObj, "stack")
                     }
                     return JSValue.Undefined
                 }

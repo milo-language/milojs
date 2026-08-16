@@ -29,6 +29,9 @@ tests/radixToString.js   Number.prototype.toString(radix) emits QuickJS/JSC shor
 #                        1.2046204620462046205 under node. The .expected is a QuickJS capture,
 #                        which is the one place in this suite where node is deliberately not the
 #                        oracle.
-tests/errorInspect.js    console.log(new Error("boom")) prints "Error: boom"; node prints the
-#                        message followed by the full stack, because milojs Errors carry no
-#                        stack property yet.
+tests/errorInspect.js    console.log(new Error("boom")) prints the message and a frame per
+#                        function on the call stack, naming the source file of each. node
+#                        prints ABSOLUTE paths with line:column, plus its own internal
+#                        module-loader frames, none of which milojs has or should invent.
+#                        milojs frames stay repo-relative on purpose: an absolute path would
+#                        make this fixture machine-specific and uncommittable.

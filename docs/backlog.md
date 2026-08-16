@@ -1234,6 +1234,43 @@ conversion at the boundary and bytes kept internally.
 
 `built-ins/RegExp` 734/1879 → **736/1879**.
 
+### Error stacks carry frames, and a subclass gets one at all — DONE 2026-08-16
+
+`new Error("boom").stack` was the header line alone, with no frames, and
+`class E extends Error {}` produced an instance whose `.stack` was **undefined** —
+the one property a caller reaches for when logging a custom error.
+
+Both fixed using the frame machinery added for V8 structured traces
+(`fnFileStack`). A stack now names the source file of each function on the call
+stack. Deliberately no line or column: this engine records no per-frame position,
+and `:0:0` would be fake precision a reader would try to use. Frames stay
+repo-relative rather than absolute, because an absolute path would make the
+fixture machine-specific and uncommittable. Locked by `tests/errorStacks.js`,
+which is byte-identical to node.
+
+### A fixture that pinned an order node does not guarantee — DONE 2026-08-16
+
+`tests/eventLoop.js` asserted that `setImmediate` runs after the 0ms/1ms timers.
+**node does not guarantee that in the main module**, and does not deliver it
+consistently: across 15 runs it printed "immediate" at line 6 eight times and at
+line 8 seven times, because whether the 0ms timer is already due depends on how
+long process startup took. milojs is deterministic (15/15 at line 6).
+
+So the fixture was flaky by construction, and its exemption was recording a
+divergence that was really a coin flip. The fixture now asserts what node does
+guarantee: that `setImmediate` runs, and after the microtask drain. Deterministic
+in both engines, 10/10 against the committed capture, and the exemption is gone
+for a real reason this time.
+
+**How this was found is the part worth keeping.** I deleted that exemption
+earlier the same hour on a SINGLE observation that it matched node, which is the
+exact mistake this file warns about elsewhere: one run is not a measurement. The
+STALE check added minutes before caught it and put the exemption back. Then the
+12-run retest said "deterministically divergent", which was also wrong, because
+it compared against one node capture that happened to be the other coin face.
+The truth needed running BOTH engines repeatedly. A gate written an hour earlier
+caught its author.
+
 ### An exemption that stopped diverging — DONE 2026-08-16
 
 `tools/verify-expected.sh` checks every `.expected` against node, and

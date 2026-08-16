@@ -1,0 +1,16 @@
+stack is a string string
+header Error: boom
+has frames true
+no-message header Error
+nested has more frames true
+thrown runtime error string
+thrown header TypeError
+subclass default ctor string
+subclass explicit ctor string
+subclass header Error: m
+subclass message m
+subclass instanceof true,true
+stack is own property true
+stack not enumerable false
+error.toString unaffected Error: boom
+cause still works c

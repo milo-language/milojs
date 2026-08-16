@@ -13,7 +13,15 @@ setTimeout((a, b) => console.log("args", a, b), 1, "x", "y");
 const cancelled = setTimeout(() => console.log("NEVER"), 5);
 clearTimeout(cancelled);
 queueMicrotask(() => console.log("micro"));
-setImmediate(() => console.log("immediate"));
+// setImmediate is asserted for the fact that it RUNS, and after the microtask
+// drain, not for its position relative to the 0ms/1ms timers. node does not
+// guarantee that order in the main module: across 15 runs here it printed
+// "immediate" at line 6 eight times and line 8 seven times, because whether the
+// 0ms timer is already due depends on how long process startup took. A fixture
+// that pins an order the platform does not guarantee is flaky by construction,
+// and this one was: it is why the exemption covering it read as "fixed" on one
+// run and "deterministically broken" on the next.
+setTimeout(() => setImmediate(() => console.log("immediate")), 100);
 
 let r; const p = new Promise(res => { r = res; });
 p.then(v => console.log("deferred handler", v));
