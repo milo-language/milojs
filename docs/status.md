@@ -3,15 +3,15 @@ system: status
 purpose: canonical current capability, evidence, and next-milestone dashboard for milojs
 key-files: src/milojs-engine.milo, src/milojs.milo, tests/run.sh, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts
 update-when: a product gate lands, a conformance sweep is rerun, or the supported host surface changes
-last-verified: 2026-07-31
+last-verified: 2026-08-15 (both sweeps re-run against 573b2fb; the built-in prototype sweep and generator completions landed; Gate 0 is RED on linux-arm64)
 -->
 
 # milojs status
 
 This is the canonical current-state dashboard. The roadmap preserves design and
-implementation history; the backlog carries detailed work items. When an older
-narrative conflicts with this page, verify the source and tests, then update this
-page.
+implementation history; the backlog carries detailed work items and the
+per-change conformance attribution. When an older narrative conflicts with this
+page, verify the source and tests, then update this page.
 
 ## Product status
 
@@ -30,49 +30,73 @@ The project deliberately has two deliverables:
 Engine maturity comes first. Runtime compatibility cannot be credible while the
 language engine and embedding contract are unstable.
 
+About 35.2k lines of Milo across `src/` and `lib/`, from source text to running
+program, with no V8, JavaScriptCore, or C JavaScript engine underneath.
+
 ## Evidence
 
-Last QuickJS sweep: 2026-07-30. The test262 sample was last run on 2026-07-31
-against test262 `5ef1e572`.
+Both sweeps re-run 2026-08-15 against milojs `573b2fb`, built with the Milo
+compiler at `d6adecc5`. Corpora are local checkouts rather than vendored, so the
+revisions are recorded here and the two scores are informative but not yet a
+reproducible release artifact.
 
-| measure | result | interpretation |
+| measure | result | corpus |
 |---|---:|---|
-| deterministic test262 sample | 513/1470 (34.9%) | broad language and builtin coverage is still early |
-| QuickJS `tests/` at `fced162` | 96/166 (57.8%) | useful subset, with a substantial semantic long tail |
-| locked engine fixtures | 151 | byte-exact differential output |
-| locked runtime fixtures | 30 | module, async, fetch, HTTP, sqlite, and host behavior |
-| Milo invariant fixtures | 3 | scheduler/context and GC-root invariants |
+| deterministic test262 sample (1500 selected, 30 skipped) | **662/1470 = 45.0%** | test262 `b363f29d`, seed `0x2f6e2b1` |
+| QuickJS `tests/` | **97/149 = 65.1%** | quickjs `ef7a3a74`, 58 files |
+| locked engine fixtures (`tests/*.js`) | 170 | byte-exact differential output vs node |
+| locked runtime fixtures (`tests/runtime/*.js`) | 28 | module, async, fetch, HTTP, sqlite, host behavior |
+| Milo invariant fixtures (`tests/milo/`, `tests/milo-errors/`) | 3 + 8 | scheduler/context and GC-root invariants |
+| ESM / Node-API / embedding fixtures | 2 / 2 / 1 | lowering, addon callbacks, C ABI |
 
-The QuickJS numerator rose from 93 to 96 while its current corpus added 17
-scored cases, changing 62.4% to 57.8%; this is not an engine regression. The
-current run also verifies that recursive `.call`/`.apply` throws a catchable
-`RangeError` instead of the prior native `SIGSEGV`. The conformance corpora are
-local rather than vendored, so the two sweep numbers are informative but not yet
-a reproducible release artifact. Fixture counts are not conformance percentages.
+Fixture counts are not conformance percentages.
 
-Large sparse array lengths use an implicit logical tail and numeric property
-entries for far-out elements. Assigning a multi-billion length no longer
-allocates or loops once per hole; truncation removes stored sparse elements.
+**test262 moved 34.6% → 45.0% on 2026-08-15**, from one structural finding
+repeated across the whole builtin surface: constructors that had no `prototype`
+object at all. See the backlog for the per-change attribution, including the two
+places where the harness rather than the engine was at fault, and the one area
+(`built-ins/Boolean`) that legitimately went down.
+
+Where the remaining failures are, by absolute count in the sample:
+
+| area | failing | of | note |
+|---|---:|---:|---|
+| `language/statements` | 130 | 282 | class, generator and declaration edges |
+| `language/expressions` | 128 | 334 | |
+| `built-ins/Temporal` | 128 | 131 | not implemented at all |
+| `built-ins/Object` | 66 | 127 | property-descriptor fidelity |
+| `built-ins/RegExp` | 49 | 73 | |
+| `built-ins/Array` | 47 | 91 | |
+| `built-ins/TypedArray` | 30 | 38 | mostly `BigInt64Array`/`BigUint64Array` |
+| `built-ins/String` | 28 | 39 | |
+
+`Temporal` is 16% of all failures in the sample and is an unimplemented API
+rather than a defect. Excluding it, the score is 659/1339 = 49.2%. Report the
+45.0% figure — the exclusion is context, not a headline.
+
+The top failure bucket, at 154 cases, is
+`TypeError: cannot read property '…' of undefined` — still the signature of
+something the harness reads before testing anything, so it is worth probing
+before writing feature work against the individual areas.
 
 ### Native stack status
 
 Gate 0 is green on the normal 8 MB Linux process stack. Splitting hot recursive
 nodes from the full expression dispatcher reduced `evalExpr`'s native frame from
 about 250 KB to 824 bytes; binary evaluation uses about 5.7 KB. The unchanged
-closure and catchable-recursion fixtures now pass without a stack override.
-The engine and embedding default now permits 100 ordinary recursive calls and
-guards at 104; the runtime retains a 500-frame limit on its green task. The
-earlier 108 guard proved too close to the native ceiling under stack-layout and
-ASLR variation.
+closure and catchable-recursion fixtures pass without a stack override. The
+engine and embedding default permits 100 ordinary recursive calls and guards at
+104; the runtime retains a 500-frame limit on its green task. The earlier 108
+guard proved too close to the native ceiling under stack-layout and ASLR
+variation.
 
 ### Arena safety status
 
 MiloJS still stores auxiliary AST, scope, and object references as raw `i64`
 indices. Expression, statement, block, call-argument, literal, declaration, and
-switch descriptor slots now use distinct ID types, with absence represented by
+switch descriptor slots use distinct ID types, with absence represented by
 `Option<Id>` and retained compile-fail fixtures. No recyclable engine arena has
-migrated yet.
-The staged migration is specified in
+migrated yet. The staged migration is specified in
 `docs/milojs-arena-safety.md`. Its upstream blocker is resolved: Milo `9a0bfa4e`
 provides release-checked live-handle snapshots, stale/free rejection, slot
 retirement at generation exhaustion, and the method-oriented `Arena<T>` API
@@ -81,23 +105,85 @@ before the AST phase is complete.
 
 ## Shipped engine surface
 
-- Tree-walking evaluator with lexical closures, classes, generators on the
-  runtime, async functions, promises, exceptions, modules, and common modern
-  syntax.
+- Tree-walking evaluator with lexical closures, classes, generators, async
+  functions, promises, exceptions, modules, and common modern syntax.
+- **Both binaries run the program on a green task**, so generators and async
+  activations work in the engine as well as the runtime. The `tests/` vs
+  `tests/runtime/` split is now only about the node layer — process/fs/http/fetch
+  — not about which language features work.
 - Stable-slot mark-sweep GC for scopes and objects, including suspended async
   and generator activation roots. These slots are not generational handles yet.
 - Objects, arrays, prototype chains, Proxy, symbols, Map/Set, Date, RegExp,
   ArrayBuffer/DataView, integer typed arrays, and arbitrary-precision BigInt.
+- **Every built-in constructor now has a real prototype object**, built by a
+  shared `buildNativeProto`, with instances linked to it — including the buffer
+  family behind a `%TypedArray%` intrinsic, so `Object.getPrototypeOf(Int8Array)`
+  resolves and `TypedArray.prototype.map.call(ta, fn)` works. Built-ins carry own
+  `name` and `length` with the spec's descriptors, and assignment to a built-in
+  `prototype` respects writability.
+- Receiver brand checks on the buffer family: name dispatch stays generic for
+  `Array.prototype`, where ES says it is, and throws a TypeError for
+  `%TypedArray%`/`ArrayBuffer`/`DataView`, as node does. The brand survives
+  `bind()`.
+- Generator completions: `gen.throw()` / `gen.return()`, IteratorClose on a
+  for-of abandoned by break/return/throw, and `yield*` forwarding completions to
+  the inner iterator (which also gave `yield*` two-way `next(v)` threading).
+- Async generators and `for await`, preferring `Symbol.asyncIterator` and
+  awaiting each value over a plain sync iterable.
+- Detached ArrayBuffer views behave as the spec says — zero length, `undefined`
+  at every index, dropped writes, TypeError from every prototype method.
 - Common builtins implemented partly in Milo and partly in the embedded
   `lib/engine-prelude.js` specification layer.
 - Object-to-string conversion runs a user-defined `toString` from every path that
-  can re-enter the interpreter, including `String(x)` and `Array.prototype.join`;
-  tagged templates carry the un-escaped `raw` chunks; `JSON.parse` rejects
-  malformed input with a `SyntaxError` rather than returning a partial value.
+  can re-enter the interpreter; tagged templates carry the un-escaped `raw`
+  chunks; `JSON.parse` rejects malformed input with a `SyntaxError`.
+- `console.log` / `util.inspect` reproduce node's defaults (depth 2, breakLength
+  80, compact 3) rather than bun's shape.
+- Large sparse array lengths use an implicit logical tail and numeric property
+  entries for far-out elements; assigning a multi-billion length does not
+  allocate or loop per hole.
 
-Important limits include incomplete test262 behavior, runtime-only generators,
-no direct `eval`, incomplete typed-array methods, and remaining whitelist-based
-builtin prototype dispatch. See `docs/backlog.md` for the maintained detail.
+### Known engine limits
+
+- **`BigInt64Array` / `BigUint64Array` do not exist** — the largest single
+  bucket at 538 test262 cases. `taElem` returns `f64` and every typed-array
+  method is written against that, so this needs a parallel `JSValue`-returning
+  element path, not a new width. `NATIVE_TA_BASE` must also move off 79 first.
+- **No duplicate-declaration check** — `const x = 1; const x = 2;` in one scope
+  is accepted where node raises a `SyntaxError`.
+- **No direct `eval`** — limited to a bare identifier in scope.
+- **`Temporal`, `Atomics`, `Float16Array`** are absent.
+- **`await` of an already-settled promise resumes inline** rather than after a
+  microtask tick.
+- Property descriptors: `name`/`length` read correctly but are not own
+  properties on function values (~42 cases suite-wide), because JS functions and
+  natives have no own-property bag.
+- `Date` is UTC-only on purpose. The local getters used to decompose in the host
+  timezone while the setters used UTC, so `d.setHours(d.getHours())` shifted the
+  date. Everything is UTC now, which makes milojs behave as node under `TZ=UTC`;
+  a correct local setter family needs `mktime`, which std does not expose.
+  Anyone adding a timezone database must do getters and setters together.
+- `toLocale*` is en-US only and ignores its arguments; `Intl` is not modelled.
+- `@@match`/`@@replace`/`@@split` delegate to the String methods, the reverse of
+  the spec's direction. Correct while nothing overrides them, wrong for a
+  subclass that redefines them.
+
+### The one shape that can hang
+
+`next()` on an async generator drives the body instead of scheduling it. Node
+returns a pending promise immediately and runs the body afterwards; milojs parks
+the caller, drives the body to its next yield, and returns an already-settled
+promise. Values are always identical, but interleaving differs whenever two
+async functions are in flight — and it deadlocks when a caller invokes `next()`
+*without* awaiting it and the body then awaits a promise that only settles after
+`next()` returns. QuickJS `bug1355.js` is exactly this.
+
+A request-queue fix was attempted on 2026-08-15 and reverted. The queue worked;
+the event loop is what killed it, with a nondeterministic hang in ordinary
+sequential code that was strictly worse than the one pathological shape it
+fixed. Read the backlog entry before trying again — the note there says where to
+start (make the body's runnability explicit instead of inferring it from "a
+request is queued").
 
 ## Shipped runtime surface
 
@@ -112,9 +198,9 @@ builtin prototype dispatch. See `docs/backlog.md` for the maintained detail.
   positional and named parameters, foreign keys on by default, and Node's
   `ERR_SQLITE_ERROR`/`ERR_INVALID_ARG_TYPE` codes. A differential fixture locks
   the output byte-for-byte against Node. Only the `node:` specifier resolves, as
-  in Node, so the unrelated `sqlite` npm package is not shadowed. Results are
-  JS numbers rather than BigInt, so `setReadBigInts(true)` and rowids past 2^53
-  are rejected rather than silently wrong; blobs come back as text.
+  in Node, so the unrelated `sqlite` npm package is not shadowed. Results are JS
+  numbers rather than BigInt, so `setReadBigInts(true)` and rowids past 2^53 are
+  rejected rather than silently wrong; blobs come back as text.
 - Node-API addon loading with promises, references, wrapping, classes, and
   threadsafe functions.
 
@@ -122,34 +208,52 @@ This is an application-oriented compatibility slice, not general Node
 compatibility. `http.request`/`http.get` are exported but never complete: a
 client request against our own in-process server hangs instead of failing, which
 is worse than an absent export and should be treated as a client-side gap, not a
-shipped API. TLS serving, child processes,
-computed module discovery, and significant package-facing edges remain. Ten of
-64 Node-API entry points are honest stubs; external-Buffer finalization remains
-from the Buffer family. A compiled-addon differential test locks native callbacks
-and shared Buffer mutation into JavaScript.
+shipped API. TLS serving, child processes, computed module discovery, and
+significant package-facing edges remain. Ten of 64 Node-API entry points are
+honest stubs; external-Buffer finalization remains from the Buffer family. A
+compiled-addon differential test locks native callbacks and shared Buffer
+mutation into JavaScript.
 
 ## Product gates
 
-### Gate 0: green and measurable
+### Gate 0: green and measurable — **RED as of 2026-08-15**
 
-**Satisfied on 2026-07-30.**
+Satisfied 2026-07-30, and regressed the same day the prototype sweep began.
 
-- Both binaries build against the released Milo compiler.
-- All engine, runtime, Milo invariant, symbol, docs, and contract guards pass.
+- **The release pipeline has failed on every push since `0f167c5`.** The
+  `linux-arm64` job aborts on the runtime smoke test — `console.log("hello from
+  milojs")` — with `free(): invalid pointer` and exit 134. `linux-x64` and
+  `darwin-arm64` build and smoke clean. The engine binary passes; only the
+  runtime binary aborts, which is the discriminator worth starting from.
+  The published rolling tarballs are consequently stuck at the 16:53 build of
+  2026-08-15 while `main` moves on.
+- Leading hypothesis, unproven: the release job installs Milo's rolling `latest`
+  compiler, which refreshed to `d6adecc5` — *main is codegen'd as a green task
+  wherever spawn is reachable* — 23 minutes before the first failure. The runtime
+  has the event loop, so spawn is reachable there and not in the engine. Confirm
+  by building milojs HEAD against the preceding compiler before looking anywhere
+  else.
+- Milo's own CI has **no linux-arm64 runner** (macOS-arm64, linux-x64,
+  windows-x64 only), so this release job is the only thing exercising that
+  target's codegen. That coverage hole is the reason the failure surfaced here
+  instead of upstream.
+- All engine, runtime, Milo invariant, symbol, docs, and contract guards pass on
+  the CI workflow itself.
 - Compiler compatibility is recorded rather than inferred from a rolling tag.
 - Recursive fixtures pass on the platform's normal stack; a larger test-only
   stack is not an acceptable compatibility mechanism.
 
 ### Gate 1: embeddable engine preview
 
-- A real `libmilojs` C ABI now builds with opaque context/value handles; retained
+- A real `libmilojs` C ABI builds with opaque context/value handles; retained
   objects survive forced GC and release invalidates their handles.
 - An embedder can evaluate source, inspect exceptions, exchange primitive
   values, access object properties, and release handles. Native-function
   registration is still missing.
 - A C ABI test builds and links outside the MiloJS implementation on Linux;
   macOS coverage remains.
-- Pinned test262 and QuickJS reports are checked in and reproducible.
+- Pinned test262 and QuickJS reports are checked in and reproducible. **Not
+  done** — the corpora are still local checkouts and the sweeps are hand-run.
 
 The initial ABI is explicitly single-context because async/generator and
 Node-API re-entry currently use process-global interpreter state. The migration
@@ -160,7 +264,9 @@ to isolated contexts is specified in `docs/milojs-embedding.md`.
 - Core `language/` and non-Intl builtins have explicit conformance targets and
   a regression ratchet.
 - Remaining fake prototype dispatch is removed before bytecode freezes it into
-  a second execution engine.
+  a second execution engine. **Substantially done** — every constructor has a
+  real prototype and the buffer family brand-checks its receiver. What is left is
+  own-property bags on function values.
 - Memory limits, interruption, stack limits, and deterministic teardown are
   exposed through the embedding API.
 - Raw arena indices are replaced by typed AST IDs and generational object/scope
@@ -185,10 +291,20 @@ Decide on bytecode from measurements, not chronology. A bytecode VM is justified
 when tree-walker dispatch, native stack depth, or suspension complexity blocks a
 published gate. Keep the tree walker as a differential oracle if the VM lands.
 
+The tree walker keeps the implementation understandable but is substantially
+slower than a production bytecode VM or JIT.
+
 ## Immediate order
 
-1. Restore Gate 0 whenever Milo's released standard library changes.
-2. Replace the stale conformance summaries with generated, checked-in reports.
-3. Implement the smallest complete C embedding vertical slice.
-4. Finish real builtin prototype dispatch, continuing with Map/Set.
-5. Grow conformance and runtime application gates in separate, measured lanes.
+1. **Restore Gate 0**: fix the linux-arm64 runtime abort, and get a linux-arm64
+   runner into Milo's own CI so the next one is caught upstream.
+2. Replace the hand-run conformance summaries with generated, checked-in reports
+   over pinned corpora — this is the last item blocking Gate 1.
+3. Probe the 154-case `cannot read property of undefined` bucket. Two of the
+   three largest wins so far were one missing object each, not a feature.
+4. `BigInt64Array` / `BigUint64Array` — the largest single addressable bucket at
+   538 cases.
+5. Make the async-generator body's runnability explicit, then retry the request
+   queue. It is the only known hang.
+6. Implement the smallest complete C embedding vertical slice.
+7. Grow conformance and runtime application gates in separate, measured lanes.

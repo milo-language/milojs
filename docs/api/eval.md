@@ -11,6 +11,16 @@ task is parked forever. Such a task keeps the scheduler's task count > 0, which
 would block main's final -1 poll and hang the process at exit — Node instead
 drops an unfinished generator, so the entry point exits directly when this holds.
 
+### `awaitValue`
+
+```milo
+pub fn awaitValue(prog: &Prog, va: &JSValue, st: &mut Interp): JSValue
+```
+
+`await v`, factored out of the Unary branch so `for await (… of …)` can reuse
+it verbatim rather than growing a second, drifting copy of the thenable
+unwrapping, the activation park, and the main-task drain.
+
 ### `callNativeProg`
 
 ```milo

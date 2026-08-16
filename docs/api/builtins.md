@@ -1,5 +1,17 @@
 ## builtins
 
+### `argPresent`
+
+```milo
+pub fn argPresent(args: &Vec<JSValue>, i: i64): bool
+```
+
+An argument passed explicitly as `undefined` is the same as an absent one to
+every built-in that has a default for it: `"abcd".slice(1, undefined)` is
+`"abcd".slice(1)`, not the empty string. Presence checks written as
+`args.len() > i` alone get the explicit-undefined form wrong, and it is the
+common shape in real code (a forwarded optional parameter).
+
 ### `byteToUtf16`
 
 ```milo

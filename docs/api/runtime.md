@@ -325,6 +325,32 @@ pub fn objDefineAccessor(st: &mut Interp, obj: i64, key: string, getter: JSValue
 
 Define (or replace) an accessor property.
 
+### `objDefineBuiltinAttr`
+
+```milo
+pub fn objDefineBuiltinAttr(st: &mut Interp, obj: i64, key: string, value: JSValue)
+```
+
+Mark an existing own property non-enumerable, so it stays out of Object.keys,
+for-in, spread and JSON.stringify. Used for the error surface (name/message/
+stack), which the spec makes non-enumerable — `Object.keys(new TypeError("x"))`
+is `[]` in a real engine, and code that spreads or serializes a caught error
+otherwise picks up three fields that should not be there.
+A built-in's own `name` / `length`: the spec gives both
+{ writable: false, enumerable: false, configurable: true }, and test262 has a
+name.js and a length.js per method that check exactly that with
+verifyProperty — which also deletes the property to prove it is configurable.
+
+### `objDefineProtoAttr`
+
+```milo
+pub fn objDefineProtoAttr(st: &mut Interp, obj: i64, key: string, value: JSValue)
+```
+
+A built-in constructor's `prototype`: { writable: false, enumerable: false,
+configurable: false }. test262 checks this per constructor with
+verifyNotWritable / verifyNotConfigurable.
+
 ### `objDeleteKey`
 
 ```milo
@@ -376,17 +402,21 @@ pub fn objSet(st: &mut Interp, obj: i64, key: string, value: JSValue)
 
 _Undocumented._
 
+### `objSetNonConfigurable`
+
+```milo
+pub fn objSetNonConfigurable(st: &mut Interp, obj: i64, key: &string)
+```
+
+RegExp's lastIndex is the odd one out: writable but NOT configurable.
+
 ### `objSetNonEnumerable`
 
 ```milo
 pub fn objSetNonEnumerable(st: &mut Interp, obj: i64, key: &string)
 ```
 
-Mark an existing own property non-enumerable, so it stays out of Object.keys,
-for-in, spread and JSON.stringify. Used for the error surface (name/message/
-stack), which the spec makes non-enumerable — `Object.keys(new TypeError("x"))`
-is `[]` in a real engine, and code that spreads or serializes a caught error
-otherwise picks up three fields that should not be there.
+_Undocumented._
 
 ### `popActive`
 
