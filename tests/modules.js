@@ -13,3 +13,11 @@ const A = require('./modfix/cycleA');
 console.log(A.name, A.fromB);
 const B = require('./modfix/cycleB');
 console.log(B.name, B.sawA, B.sawFromB);
+
+// A relative require inside a closure resolves against the module the closure
+// was DEFINED in, not the one running when it fires. modDirStack is dynamic and
+// is popped when a module body ends, so a lazy require saw its caller instead.
+const outer = require('./modfix/lazyOuter');
+console.log(outer.eager, outer.readLazy(), outer.readViaCallback());
+const lazypkg = require('./modfix/lazypkg');
+console.log(lazypkg.lazy.tag, lazypkg.lazy === lazypkg.lazy);

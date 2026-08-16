@@ -6096,10 +6096,22 @@ pub fn runModule(prog: &Prog, idx: i64, st: &mut Interp): JSValue {
     return finalExports
 }
 
-// require(spec) — resolved against the directory of the module doing the calling.
-fn requireModule(prog: &Prog, spec: &string, st: &mut Interp): JSValue {
+// require(spec) — resolved against the directory of the module the call SITE
+// belongs to, which is not always the module currently running.
+//
+// `st.modDirStack` is dynamic: it is popped when a module body finishes. A lazy
+// require inside a closure runs long after that, so it saw whoever triggered it.
+// body-parser's `Object.defineProperty(exports, 'json', {get: … require('./lib/types/json')})`
+// is exactly this shape, and express reaching for `bodyParser.json` resolved it
+// as `node_modules/express/lib/lib/types/json` — express 4 could not load at all.
+// The lexical `__dirname` binding is per module scope, so looking it up through
+// the closure's own env chain names the right module.
+fn requireModule(prog: &Prog, spec: &string, st: &mut Interp, scope: i64): JSValue {
     var dir = ""
-    if st.modDirStack.len() > 0 {
+    if scope >= 0 && scopeHas(st, scope, "__dirname") {
+        dir = toStr(scopeLookup(st, scope, "__dirname"))
+    }
+    if dir.len() == 0 && st.modDirStack.len() > 0 {
         dir = st.modDirStack[st.modDirStack.len() - 1].clone()
     }
     // A .node file is a shared library, not JS: it never goes through the module
@@ -14542,7 +14554,7 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                 if argVals.len() > 0 {
                     spec = toStr(argVals[0])
                 }
-                return requireModule(prog, spec, st)
+                return requireModule(prog, spec, st, scope)
             }
         }
         Expr.Member(objIdx, name) => {

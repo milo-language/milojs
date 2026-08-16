@@ -4,3 +4,5 @@ true 42
 true
 A B
 B A undefined
+deep-ok deep-ok deep-ok
+deep-ok true
