@@ -19,7 +19,7 @@ document, and the document changes first if the plan changes.
 | `Task.spawnWithStack` for interpreter-sized stacks | done (`5613f78`) |
 | Ordering mechanism (caller parks, body unparks it) | proven, `tests/milo/AwaitPark.milo` |
 | R1 async call returns at first await | done in the **runtime** for a pending awaited promise — matches node; 71/71 fixtures, integration app green (0 errors, ~34ms) |
-| R1b same in the engine binary | **still not landed**, but the cause is now narrowed: the engine running on `gProg` alone is SAFE (landed independently for proxy traps, `adae042`, CI green). The unkillable hang came from `gProg` **plus** running the whole program on a green task — that combination, not `gProg` itself, is what wedged. So R1b needs the green-task part done differently |
+| R1b same in the engine binary | **landed.** The engine now runs the program on a green task, so `async`/`await`, generators, `gen.throw()`/`gen.return()` and async generators all work under `milojs-engine`. Verified 2026-08-15 by running each under the engine binary. One divergence remains and is tracked in the backlog: an `await` of an ALREADY-SETTLED promise resumes inline instead of after a microtask tick, so an async function whose awaits all settle synchronously runs to completion before returning, and the interleaving with surrounding sync code differs from node |
 | R1a `await` of a non-thenable / settled value yields a microtask tick | **met** — a settled/non-thenable await runs the microtasks pending AT the await point (a snapshot) INLINE via `awaitYieldMicrotasks` (drainMicrotasks with a `limit`), then continues. No park, so the activation's ExecCtx stays live in the Interp and rooted — which is why this is safe where the reverted bare-`schedulerYield` was not. Covered by `tests/runtime/awaitMicrotaskYield.js`; app stays clean (0 errors, ~3ms/route) and run.sh 119/119, GC-stress clean |
 | R2 suspension is per-activation | done — park/wake on a promise (`ceb9aea`), wired into the `await` path (`parkOnPromise` at src/eval.milo:3619, taken on an activation task). Covered by `tests/runtime/r2r3Barrier.js` (both participants suspend on a pending barrier) + `r2TimerDuringSuspend.js` (a self-rescheduling timer chain keeps firing while an activation is parked) |
 | R3 resume order | **revised to best-effort** — `wakeAwaiters` registers and unparks waiters front-to-back, but the green scheduler does not guarantee they *resume* in that order (a cross-thread unpark drains its transfer list LIFO, and there are other interleaving points), so the observable resume order flaked ~1/15. Dropped to best-effort per the "candidates to drop" note below: it is observable but nothing depends on it — `Promise.all` preserves value order by index regardless of resume order (verified stable). `tests/runtime/r2r3Barrier.js` now asserts both participants resume (R2) without pinning their order |
@@ -295,7 +295,13 @@ This matters for the plan of record for two reasons:
    and allocation-light; the app is none of those. R5 ("existing values
    unchanged") is satisfied by tests that cannot see this class of bug.
 
-## R1b: R1 is runtime-only — the engine does not run on a green task
+## R1b: R1 was runtime-only (RESOLVED 2026-08-15)
+
+> Everything in this section describes the state BEFORE the engine ran the
+> program on a green task. It is kept for the failure analysis, which is
+> still the record of why the first two attempts wedged. The gap itself is
+> closed: see the R1b row in the table above.
+
 
 `src/milojs.milo` runs the program on a green task, so `schedulerCurrent()` is
 non-zero and an async call can spawn an activation. `src/milojs-engine.milo` calls

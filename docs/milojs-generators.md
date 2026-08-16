@@ -3,7 +3,7 @@ system: milojs-generators
 purpose: design of record for generator functions in milojs, reusing the async-activation green-task machinery
 key-files: src/eval.milo, src/parser.milo, src/ast.milo
 update-when: generators are implemented or the design changes
-last-verified: 2026-07-21
+last-verified: 2026-08-15
 -->
 
 # milojs: generators (design of record)
@@ -29,15 +29,19 @@ Two design points that changed during implementation:
   record on the terminal read; a later `next()` on the object (still flagged
   `isGenerator`) returns `{done:true}`.
 
-**Runtime only (R1b).** Generators need the green-task scheduler, which only the
-runtime binary runs the program on; on the engine `next()` throws. So the QuickJS
-sweep (engine) does not benefit — that gap is the R1b wall in
-docs/milojs-async-suspension.md, not a generator gap.
+**No longer runtime-only.** This section used to say generators need the
+green-task scheduler that only the runtime binary starts, that `next()` throws on
+the engine, and that the QuickJS sweep therefore cannot benefit. The engine now
+runs the program on a green task too, so all of it works under
+`milojs-engine`. Re-verified 2026-08-15: `next()`, `yield*` delegation with
+`finally`, `gen.return()`, `gen.throw()`, async generators and `for await` all
+produce output byte-identical to node under the engine binary.
 
-Not yet done (slice 3): `gen.return()` / `gen.throw()`, and direct array
-destructuring `const [a,b] = gen()` (the parser desugars destructuring to indexed
-access `_t[0]`, which fails for every non-indexable iterable, not just
-generators; `const [a,b] = [...gen()]` works).
+**Slice 3 is done.** `gen.return()` and `gen.throw()` ship (see the backlog for
+`genResume`, the per-task `genReturning` flag, IteratorClose, and completions
+forwarded inward through `yield*`). Direct array destructuring
+`const [a, b] = gen()` also works: declarators now bind the temp to `[...expr]`,
+so the iteration protocol runs instead of an indexed read.
 
 ---
 

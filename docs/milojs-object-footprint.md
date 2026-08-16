@@ -1,9 +1,9 @@
 <!-- doc-meta
 system: milojs-object-footprint
-purpose: measured per-object memory cost in milojs and the plan to shrink JSObj by moving rare capabilities to a side table
+purpose: measured per-object memory cost in milojs, and the JSObjExtra side table that shrank it
 key-files: src/runtime.milo
 update-when: JSObj gains or loses fields, or the side-table split lands
-last-verified: 2026-07-30
+last-verified: 2026-08-15
 -->
 
 # milojs: object footprint
@@ -11,47 +11,38 @@ last-verified: 2026-07-30
 ## Measured
 
 Measured with `/usr/bin/time -l`, 50,000 iterations each, differences against a
-baseline of 50,000 numbers pushed into an array:
+baseline of 50,000 numbers pushed into an array. Re-measured 2026-08-15:
 
-| what | cost |
-|------|------|
-| baseline (50k numbers in an array) | 19.1 MB |
-| per empty object `{}` | **1008 bytes** |
-| per added property `{a:1}` | 145 bytes |
+| what | cost | was (2026-07-30) |
+|------|------|------|
+| baseline (50k numbers in an array) | 34.2 MB | 19.1 MB |
+| per empty object `{}` | **337 bytes** | 1008 bytes |
+| per added property `{a:1}` | 130 bytes | 145 bytes |
 
-The per-property figure was 1044 bytes before the Vec first-allocation fix
-(`ced9ad0`, size the first allocation in bytes rather than elements). It is no
-longer the problem. The **object header is**: an object with no properties at
-all costs a kilobyte.
+## Why it shrank: the side table landed
 
-## Why
+The plan this document used to describe is done. `JSObj` carried 42 fields
+because every optional capability was inline: promise state, bound-function
+state, proxy target and handler, Map/Set backing, typed-array view, ArrayBuffer
+bytes, regex id, date, node-api wrapper. A plain `{}` paid for all of them, and
+an object with no properties at all cost a kilobyte.
 
-`JSObj` has 42 fields, because every optional capability is inline: promise
-state, bound-function state, proxy target/handler, Map/Set backing, typed-array
-view, ArrayBuffer bytes, regex id, date, node-api wrapper. A plain `{}` pays for
-all of them.
+Those fields now live in `JSObjExtra`, a side table reached through a single
+`extra` index on `JSObj`. Current shape, counted from `src/runtime.milo`:
 
-Rough sizing of the struct (Vec 24, JSValue 32, string 24, i64 8):
+| | fields |
+|---|---:|
+| `JSObj` (the hot header) | 28 |
+| `JSObjExtra` (the side table) | 25 |
 
-| | |
-|---|---|
-| total | ~465 bytes |
-| fields a plain object actually uses | ~74 bytes |
-| fields that could move to a side table | **~391 bytes across 28 fields** |
+The header keeps what a plain object actually touches: `props`, `elems`,
+`holes`, `logicalLen`, `proto`, `ctor`, the boolean brand flags the dispatcher
+tests on the hot path, `extra`, and the collector's `mark` and `free` bits.
+Everything a plain object never becomes is one index away instead of inline.
 
-Largest movable: `promiseValue`, `boundTarget`, `boundThis`, `proxyTarget`,
-`proxyHandler` (32 each), then `bytes`, `reactions`, `boundArgs`, `boundMethod`,
-`mapKeys`, `mapVals` (24 each).
-
-The measured 1008 bytes exceeds the ~465-byte struct because the object arena
-grows by doubling, so live objects sit in an array with up to 2× headroom.
-
-## Plan
-
-Move the 28 rare fields into a side table keyed by object index, leaving the hot
-header: `props`, `elems`, `proto`, `ctor`, and the flags a plain object needs.
-Objects that never become a promise, a proxy, a Map, a typed array or a bound
-function then pay ~74 bytes plus arena headroom instead of ~465.
+The measured per-object cost still exceeds the struct's own width because the
+object arena grows by doubling, so live objects sit in an array carrying up to
+2x headroom.
 
 The current hot header also carries one `logicalLen` integer. It is `-1` for an
 ordinary dense array and records only an implicit sparse tail, preventing a huge

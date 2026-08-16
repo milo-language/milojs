@@ -1,0 +1,243 @@
+{
+  "schemaVersion": 1,
+  "suite": "quickjs",
+  "corpus": {
+    "path": "~/git/quickjs/tests",
+    "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
+  },
+  "milojs": {
+    "revision": "52ebdd2f4f1a13508aace34216e501815fca86fd",
+    "dirty": false
+  },
+  "engine": "~/git/milo-language/milojs/.dev/mj-engine",
+  "selection": {
+    "filter": null,
+    "skippedFiles": [
+      "assert.js",
+      "fixture_cyclic_import.js",
+      "fixture_string_exports.js",
+      "fixture_throwing_module.js",
+      "microbench.js",
+      "test_bjson.js",
+      "test_std.js",
+      "test_worker.js",
+      "test_worker_module.js"
+    ]
+  },
+  "totals": {
+    "pass": 97,
+    "fail": 52,
+    "total": 149,
+    "files": 58
+  },
+  "failureBuckets": [
+    {
+      "reason": "Uncaught Error: assertion failed: got |…|, expected |…|",
+      "count": 20,
+      "cases": [
+        "bug1301.js:<whole>",
+        "bug1302.js:<whole>",
+        "bug1498.js:<whole>",
+        "bug492.js:test_resize_shrink",
+        "bug492.js:test_detach",
+        "bug492.js:test_resize_zero",
+        "bug492.js:test_resize_grow",
+        "bug652.js:<whole>",
+        "bug858.js:<whole>",
+        "for-await-normal-close.js:<whole>",
+        "parse-error-column.js:<whole>",
+        "test_bigint.js:test_bigint_asintn",
+        "test_builtin.js:test_array",
+        "test_builtin.js:test_rope",
+        "test_builtin.js:test_date",
+        "test_builtin.js:test_exception_source_pos",
+        "test_builtin.js:test_exception_prepare_stack",
+        "test_builtin.js:test_exception_stack_size_limit",
+        "test_closure.js:test_eval_const",
+        "test_domexception.js:test_properties"
+      ]
+    },
+    {
+      "reason": "Uncaught Error: assertion failed: got |…|, expected |…| (exception expected)",
+      "count": 4,
+      "cases": [
+        "test_bigint.js:test_bigint2",
+        "test_builtin.js:test_function",
+        "test_builtin.js:test_exception_capture_stack_trace",
+        "test_builtin.js:test_cur_pc"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: concat is not a function (in /case.js)",
+      "count": 3,
+      "cases": [
+        "bug1368.js:test_symbol_iterator_reentry",
+        "bug1368.js:test_next_getter_reentry",
+        "bug1368.js:test_value_getter_reentry"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: cannot read property '…' of undefined",
+      "count": 2,
+      "cases": [
+        "array-fromasync-enumerable.js:<whole>",
+        "callsite-isconstructor.js:<whole>"
+      ]
+    },
+    {
+      "reason": "timeout/crash (SIGTERM)",
+      "count": 2,
+      "cases": [
+        "bug1355.js:<whole>",
+        "test_builtin.js:test_proxy_is_array"
+      ]
+    },
+    {
+      "reason": "expected uncaught SyntaxError, nothing thrown",
+      "count": 1,
+      "cases": [
+        "bug1354.js:<whole>"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: DisposableStack is not defined",
+      "count": 1,
+      "cases": [
+        "bug1564.js:<whole>"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: escape is not a function (in /case.js)",
+      "count": 1,
+      "cases": [
+        "bug1571.js:<whole>"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: map is not a function (in /case.js)",
+      "count": 1,
+      "cases": [
+        "bug493.js:<whole>"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: f is not a function (in /bug567.js)",
+      "count": 1,
+      "cases": [
+        "bug567.js:<whole>"
+      ]
+    },
+    {
+      "reason": "milojs: /case.js: expected '…', found end of input",
+      "count": 1,
+      "cases": [
+        "bug741.js:<whole>"
+      ]
+    },
+    {
+      "reason": "Uncaught RangeError: Offset is outside the bounds of the DataView",
+      "count": 1,
+      "cases": [
+        "bug988.js:<whole>"
+      ]
+    },
+    {
+      "reason": "Uncaught Error: Nuke the entire site from orbit. It's the only way to be sure.",
+      "count": 1,
+      "cases": [
+        "dynamic_import_rejection_handled.js:<whole>"
+      ]
+    },
+    {
+      "reason": "Uncaught Error: [object Function]",
+      "count": 1,
+      "cases": [
+        "function_source.js:<whole>"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: B is not a function (in /case.js)",
+      "count": 1,
+      "cases": [
+        "test_base64.js:<whole>"
+      ]
+    },
+    {
+      "reason": "Uncaught Error: assertion failed: got |…|, expected |…| (extensible)",
+      "count": 1,
+      "cases": [
+        "test_builtin.js:test"
+      ]
+    },
+    {
+      "reason": "Uncaught Error: assertion failed: got |…|, expected |…| (unicode)",
+      "count": 1,
+      "cases": [
+        "test_builtin.js:test_string"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: sumPrecise is not a function (in /case.js)",
+      "count": 1,
+      "cases": [
+        "test_builtin.js:test_math"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: N+N;",
+      "count": 1,
+      "cases": [
+        "test_builtin.js:test_eval"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: Float16Array is not defined",
+      "count": 1,
+      "cases": [
+        "test_builtin.js:test_typed_array"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: cannot read property '…' of null",
+      "count": 1,
+      "cases": [
+        "test_builtin.js:test_regexp"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: function f() {} f",
+      "count": 1,
+      "cases": [
+        "test_builtin.js:test_function_source_pos"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: new.target",
+      "count": 1,
+      "cases": [
+        "test_closure.js:test_arrow_function"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: var z=\"var_obj\";",
+      "count": 1,
+      "cases": [
+        "test_closure.js:test_with"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: tab.push(function g1() { return i; })",
+      "count": 1,
+      "cases": [
+        "test_closure.js:test_eval_closure"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: cannot read property '…' of a non-object (in /case.js)",
+      "count": 1,
+      "cases": [
+        "test_for_of_line_numbers.js:<whole>"
+      ]
+    }
+  ]
+}

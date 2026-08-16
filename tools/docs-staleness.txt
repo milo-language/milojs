@@ -5,7 +5,5 @@
 docs/milojs-arena-safety.md
 docs/milojs-async-suspension.md
 docs/milojs-embedding.md
-docs/milojs-generators.md
-docs/milojs-object-footprint.md
 docs/milojs-quickjs-plan.md
 docs/milojs-roadmap.md

@@ -42,8 +42,8 @@ reproducible release artifact.
 
 | measure | result | corpus |
 |---|---:|---|
-| deterministic test262 sample (1500 selected, 30 skipped) | **664/1470 = 45.2%** | test262 `b363f29d`, seed `0x2f6e2b1` |
-| QuickJS `tests/` | **97/149 = 65.1%** | quickjs `ef7a3a74`, 58 files |
+| deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->680<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->46.3%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
+| QuickJS `tests/` | **<!--fact:qjs-pass-->97<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = <!--fact:qjs-pct-->65.1%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
 | locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->176<!--/fact--> | byte-exact differential output vs node |
 | locked runtime fixtures (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->29<!--/fact--> | module, async, fetch, HTTP, sqlite, host behavior |
 | Milo invariant fixtures (`tests/milo/`, `tests/milo-errors/`) | <!--fact:fixtures-milo-->3<!--/fact--> + <!--fact:fixtures-milo-errors-->8<!--/fact--> | scheduler/context and GC-root invariants |
@@ -88,7 +88,7 @@ Not every remaining difference is milojs's: `/api/v2/roads` hangs under node too
 (it needs a live upstream), and `analytics/middleware` keeps both runtimes alive
 because it installs a `setInterval` at module scope.
 
-**test262 moved 34.6% → 45.2% on 2026-08-15**, from one structural finding
+**test262 moved 34.6% to <!--fact:t262-pct-->46.3%<!--/fact--> over 2026-08-15**, from one structural finding
 repeated across the whole builtin surface: constructors that had no `prototype`
 object at all. See the backlog for the per-change attribution, including the two
 places where the harness rather than the engine was at fault, and the one area
@@ -107,9 +107,10 @@ Where the remaining failures are, by absolute count in the sample:
 | `built-ins/TypedArray` | 30 | 38 | mostly `BigInt64Array`/`BigUint64Array` |
 | `built-ins/String` | 28 | 39 | |
 
-`Temporal` is 16% of all failures in the sample and is an unimplemented API
-rather than a defect. Excluding it, the score is 659/1339 = 49.2%. Report the
-45.2% figure — the exclusion is context, not a headline.
+`Temporal` is a large share of the failures in the sample and is an
+unimplemented API rather than a defect. Excluding it lifts the score by several
+points, but nothing recomputes that adjusted number, so report the
+<!--fact:t262-pct-->46.3%<!--/fact--> figure: the exclusion is context, not a headline.
 
 The top failure bucket, at 154 cases, is
 `TypeError: cannot read property '…' of undefined` — still the signature of

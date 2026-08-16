@@ -1,0 +1,3244 @@
+{
+  "schemaVersion": 1,
+  "suite": "test262",
+  "corpus": {
+    "path": "~/git/test262",
+    "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
+  },
+  "milojs": {
+    "revision": "52ebdd2f4f1a13508aace34216e501815fca86fd",
+    "dirty": false
+  },
+  "engine": "~/git/milo-language/milojs/.dev/mj-engine",
+  "selection": {
+    "directory": null,
+    "sample": 1500,
+    "limit": null,
+    "seed": "0x2f6e2b1"
+  },
+  "totals": {
+    "pass": 680,
+    "fail": 790,
+    "skip": 30,
+    "scored": 1470,
+    "selected": 1500
+  },
+  "areas": [
+    {
+      "area": "language/expressions",
+      "pass": 207,
+      "fail": 127,
+      "total": 334
+    },
+    {
+      "area": "language/statements",
+      "pass": 152,
+      "fail": 130,
+      "total": 282
+    },
+    {
+      "area": "built-ins/Temporal",
+      "pass": 3,
+      "fail": 128,
+      "total": 131
+    },
+    {
+      "area": "built-ins/Object",
+      "pass": 61,
+      "fail": 66,
+      "total": 127
+    },
+    {
+      "area": "built-ins/Array",
+      "pass": 45,
+      "fail": 46,
+      "total": 91
+    },
+    {
+      "area": "built-ins/RegExp",
+      "pass": 24,
+      "fail": 49,
+      "total": 73
+    },
+    {
+      "area": "built-ins/String",
+      "pass": 13,
+      "fail": 26,
+      "total": 39
+    },
+    {
+      "area": "built-ins/TypedArray",
+      "pass": 17,
+      "fail": 21,
+      "total": 38
+    },
+    {
+      "area": "built-ins/Promise",
+      "pass": 12,
+      "fail": 13,
+      "total": 25
+    },
+    {
+      "area": "built-ins/Iterator",
+      "pass": 7,
+      "fail": 17,
+      "total": 24
+    },
+    {
+      "area": "built-ins/DataView",
+      "pass": 13,
+      "fail": 9,
+      "total": 22
+    },
+    {
+      "area": "language/literals",
+      "pass": 22,
+      "fail": 0,
+      "total": 22
+    },
+    {
+      "area": "annexB/language",
+      "pass": 4,
+      "fail": 17,
+      "total": 21
+    },
+    {
+      "area": "built-ins/Date",
+      "pass": 9,
+      "fail": 12,
+      "total": 21
+    },
+    {
+      "area": "built-ins/TypedArrayConstructors",
+      "pass": 5,
+      "fail": 14,
+      "total": 19
+    },
+    {
+      "area": "built-ins/Math",
+      "pass": 7,
+      "fail": 10,
+      "total": 17
+    },
+    {
+      "area": "built-ins/Number",
+      "pass": 7,
+      "fail": 6,
+      "total": 13
+    },
+    {
+      "area": "built-ins/ArrayBuffer",
+      "pass": 4,
+      "fail": 7,
+      "total": 11
+    },
+    {
+      "area": "built-ins/Set",
+      "pass": 6,
+      "fail": 5,
+      "total": 11
+    },
+    {
+      "area": "language/eval-code",
+      "pass": 0,
+      "fail": 11,
+      "total": 11
+    },
+    {
+      "area": "built-ins/Proxy",
+      "pass": 1,
+      "fail": 7,
+      "total": 8
+    },
+    {
+      "area": "language/block-scope",
+      "pass": 8,
+      "fail": 0,
+      "total": 8
+    },
+    {
+      "area": "annexB/built-ins",
+      "pass": 1,
+      "fail": 6,
+      "total": 7
+    },
+    {
+      "area": "built-ins/Atomics",
+      "pass": 0,
+      "fail": 7,
+      "total": 7
+    },
+    {
+      "area": "built-ins/Function",
+      "pass": 3,
+      "fail": 3,
+      "total": 6
+    },
+    {
+      "area": "built-ins/Map",
+      "pass": 2,
+      "fail": 4,
+      "total": 6
+    },
+    {
+      "area": "language/identifiers",
+      "pass": 5,
+      "fail": 1,
+      "total": 6
+    },
+    {
+      "area": "built-ins/JSON",
+      "pass": 3,
+      "fail": 2,
+      "total": 5
+    },
+    {
+      "area": "built-ins/NativeErrors",
+      "pass": 3,
+      "fail": 2,
+      "total": 5
+    },
+    {
+      "area": "built-ins/Symbol",
+      "pass": 2,
+      "fail": 3,
+      "total": 5
+    },
+    {
+      "area": "language/function-code",
+      "pass": 4,
+      "fail": 1,
+      "total": 5
+    },
+    {
+      "area": "built-ins/BigInt",
+      "pass": 1,
+      "fail": 3,
+      "total": 4
+    },
+    {
+      "area": "language/arguments-object",
+      "pass": 4,
+      "fail": 0,
+      "total": 4
+    },
+    {
+      "area": "language/statementList",
+      "pass": 2,
+      "fail": 2,
+      "total": 4
+    },
+    {
+      "area": "built-ins/decodeURI",
+      "pass": 1,
+      "fail": 2,
+      "total": 3
+    },
+    {
+      "area": "built-ins/DisposableStack",
+      "pass": 0,
+      "fail": 3,
+      "total": 3
+    },
+    {
+      "area": "built-ins/Error",
+      "pass": 0,
+      "fail": 3,
+      "total": 3
+    },
+    {
+      "area": "built-ins/parseInt",
+      "pass": 2,
+      "fail": 1,
+      "total": 3
+    },
+    {
+      "area": "built-ins/Reflect",
+      "pass": 0,
+      "fail": 3,
+      "total": 3
+    },
+    {
+      "area": "built-ins/ShadowRealm",
+      "pass": 0,
+      "fail": 3,
+      "total": 3
+    },
+    {
+      "area": "language/asi",
+      "pass": 3,
+      "fail": 0,
+      "total": 3
+    },
+    {
+      "area": "built-ins/AsyncDisposableStack",
+      "pass": 0,
+      "fail": 2,
+      "total": 2
+    },
+    {
+      "area": "built-ins/FinalizationRegistry",
+      "pass": 0,
+      "fail": 2,
+      "total": 2
+    },
+    {
+      "area": "built-ins/SuppressedError",
+      "pass": 0,
+      "fail": 2,
+      "total": 2
+    },
+    {
+      "area": "built-ins/WeakRef",
+      "pass": 1,
+      "fail": 1,
+      "total": 2
+    },
+    {
+      "area": "language/future-reserved-words",
+      "pass": 2,
+      "fail": 0,
+      "total": 2
+    },
+    {
+      "area": "language/reserved-words",
+      "pass": 2,
+      "fail": 0,
+      "total": 2
+    },
+    {
+      "area": "built-ins/ArrayIteratorPrototype",
+      "pass": 0,
+      "fail": 1,
+      "total": 1
+    },
+    {
+      "area": "built-ins/AsyncFunction",
+      "pass": 0,
+      "fail": 1,
+      "total": 1
+    },
+    {
+      "area": "built-ins/AsyncGeneratorPrototype",
+      "pass": 0,
+      "fail": 1,
+      "total": 1
+    },
+    {
+      "area": "built-ins/Boolean",
+      "pass": 0,
+      "fail": 1,
+      "total": 1
+    },
+    {
+      "area": "built-ins/encodeURI",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "built-ins/GeneratorFunction",
+      "pass": 0,
+      "fail": 1,
+      "total": 1
+    },
+    {
+      "area": "built-ins/Infinity",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "built-ins/isFinite",
+      "pass": 0,
+      "fail": 1,
+      "total": 1
+    },
+    {
+      "area": "built-ins/isNaN",
+      "pass": 0,
+      "fail": 1,
+      "total": 1
+    },
+    {
+      "area": "built-ins/MapIteratorPrototype",
+      "pass": 0,
+      "fail": 1,
+      "total": 1
+    },
+    {
+      "area": "built-ins/NaN",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "built-ins/ThrowTypeError",
+      "pass": 0,
+      "fail": 1,
+      "total": 1
+    },
+    {
+      "area": "built-ins/Uint8Array",
+      "pass": 0,
+      "fail": 1,
+      "total": 1
+    },
+    {
+      "area": "built-ins/WeakMap",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "built-ins/WeakSet",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "harness/assert-obj.js",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "harness/asyncHelpers-asyncTest-return-not-thenable.js",
+      "pass": 0,
+      "fail": 1,
+      "total": 1
+    },
+    {
+      "area": "harness/asyncHelpers-throwsAsync-custom-typeerror.js",
+      "pass": 0,
+      "fail": 1,
+      "total": 1
+    },
+    {
+      "area": "harness/propertyhelper-verifyconfigurable-not-configurable.js",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "harness/propertyhelper-verifyenumerable-not-enumerable.js",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "language/computed-property-names",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "language/directive-prologue",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "language/identifier-resolution",
+      "pass": 0,
+      "fail": 1,
+      "total": 1
+    },
+    {
+      "area": "language/rest-parameters",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "language/types",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    }
+  ],
+  "failureBuckets": [
+    {
+      "reason": "Uncaught TypeError: cannot read property '…' of undefined",
+      "count": 155,
+      "cases": [
+        "built-ins/Temporal/ZonedDateTime/prototype/epochNanoseconds/prop-desc.js",
+        "built-ins/ThrowTypeError/extensible.js",
+        "language/expressions/generators/eval-body-proto-realm.js",
+        "built-ins/Temporal/Duration/prototype/add/argument-mixed-sign.js",
+        "built-ins/Temporal/Duration/prototype/round/relativeto-string-invalid.js",
+        "built-ins/Temporal/PlainMonthDay/prototype/toLocaleString/name.js",
+        "built-ins/Temporal/PlainYearMonth/prototype/until/throws-if-year-outside-valid-iso-range.js",
+        "built-ins/Atomics/and/not-a-constructor.js",
+        "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/argument-string-calendar-annotation.js",
+        "built-ins/Temporal/Duration/prototype/round/end-of-month-round-up.js",
+        "built-ins/Temporal/Instant/prototype/toJSON/basic.js",
+        "built-ins/Temporal/PlainDate/prototype/since/argument-propertybag-calendar-leap-second.js",
+        "built-ins/Temporal/PlainDate/prototype/since/argument-string-multiple-calendar.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/toJSON/builtin.js",
+        "built-ins/Object/prototype/__proto__/set-non-obj-coercible.js",
+        "built-ins/Temporal/PlainDateTime/prototype/subtract/blank-duration.js",
+        "built-ins/Temporal/ZonedDateTime/compare/argument-string-sub-minute-offset.js",
+        "built-ins/Temporal/Instant/prototype/subtract/infinity-throws-rangeerror.js",
+        "built-ins/Temporal/Instant/prototype/subtract/order-of-operations.js",
+        "built-ins/Temporal/PlainDate/from/name.js",
+        "built-ins/Temporal/Instant/prototype/until/roundingincrement-non-integer.js",
+        "built-ins/Temporal/Duration/prototype/round/relativeto-duration-out-of-range-added-to-relative-date.js",
+        "built-ins/Temporal/PlainYearMonth/prototype/add/negative-infinity-throws-rangeerror.js",
+        "built-ins/ShadowRealm/prototype/evaluate/wrapped-function-arguments-are-wrapped-into-the-inner-realm.js",
+        "built-ins/Temporal/Duration/from/not-a-constructor.js",
+        "built-ins/Temporal/PlainDate/prototype/toZonedDateTime/timezone-string-year-zero.js",
+        "built-ins/ShadowRealm/prototype/evaluate/name.js",
+        "built-ins/Temporal/Duration/prototype/round/invalid-increments.js",
+        "built-ins/SuppressedError/prototype/constructor.js",
+        "built-ins/DisposableStack/prototype/defer/prop-desc.js",
+        "built-ins/ShadowRealm/prototype/evaluate/wrapped-function-arguments-are-wrapped-into-the-inner-realm-extended.js",
+        "built-ins/Temporal/Instant/prototype/toJSON/negative-epochnanoseconds.js",
+        "built-ins/Temporal/PlainDate/prototype/equals/argument-string-unknown-annotation.js",
+        "built-ins/Temporal/PlainDateTime/prototype/subtract/argument-duration-out-of-range.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/toString/calendarname-undefined.js",
+        "built-ins/Temporal/Instant/from/argument-zoneddatetime.js",
+        "built-ins/Temporal/PlainYearMonth/prototype/with/builtin.js",
+        "built-ins/Set/Symbol.species/return-value.js",
+        "built-ins/Temporal/PlainMonthDay/prototype/with/order-of-operations.js",
+        "built-ins/Temporal/PlainTime/prototype/nanosecond/prop-desc.js",
+        "built-ins/Temporal/PlainTime/prototype/since/argument-number.js",
+        "built-ins/Temporal/Now/zonedDateTimeISO/return-value.js",
+        "built-ins/Temporal/Duration/prototype/round/relativeto-string.js",
+        "built-ins/Temporal/PlainTime/compare/use-internal-slots.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/since/zoneddatetime-string.js",
+        "built-ins/Temporal/PlainTime/prototype/prop-desc.js",
+        "built-ins/Array/prototype/filter/15.4.4.20-1-9.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/since/does-not-include-higher-units-than-necessary.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-propertybag-timezone-string-leap-second.js",
+        "built-ins/Temporal/ZonedDateTime/compare/argument-propertybag-calendar-invalid-iso-string.js",
+        "built-ins/Temporal/PlainYearMonth/prototype/monthsInYear/branding.js",
+        "built-ins/Temporal/Duration/prototype/toJSON/options.js",
+        "built-ins/Object/freeze/proxy-with-defineProperty-handler.js",
+        "built-ins/Proxy/construct/return-not-object-throws-undefined-realm.js",
+        "built-ins/Array/prototype/map/create-proto-from-ctor-realm-non-array.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/withPlainTime/argument-string-unknown-annotation.js",
+        "built-ins/Temporal/ZonedDateTime/from/argument-string-variant-decimal-separator.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/equals/argument-string-limits.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/until/options-wrong-type.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/dayOfWeek/prop-desc.js",
+        "built-ins/Temporal/PlainYearMonth/prototype/subtract/infinity-throws-rangeerror.js",
+        "built-ins/Temporal/PlainYearMonth/prototype/since/largestunit-auto.js",
+        "built-ins/ArrayBuffer/Symbol.species/return-value.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/until/smallestunit-undefined.js",
+        "built-ins/Temporal/PlainDateTime/prototype/toString/fractionalseconddigits-out-of-range.js",
+        "built-ins/Temporal/PlainDate/prototype/with/options-object.js",
+        "built-ins/Proxy/construct/return-not-object-throws-symbol-realm.js",
+        "built-ins/Temporal/PlainYearMonth/prototype/add/options-object.js",
+        "built-ins/Temporal/PlainDateTime/prototype/add/branding.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/since/largestunit-plurals-accepted.js",
+        "built-ins/Temporal/PlainYearMonth/compare/argument-propertybag-calendar-case-insensitive.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/with/options-object.js",
+        "built-ins/Temporal/PlainMonthDay/from/argument-string-calendar-annotation.js",
+        "built-ins/Temporal/PlainTime/prototype/since/branding.js",
+        "built-ins/Temporal/PlainDate/prototype/until/prop-desc.js",
+        "built-ins/Temporal/Duration/prototype/round/roundingmode-undefined.js",
+        "built-ins/Temporal/PlainDate/prototype/subtract/balance-smaller-units.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/since/largestunit-invalid-string.js",
+        "built-ins/Temporal/PlainDateTime/prototype/with/not-a-constructor.js",
+        "built-ins/Temporal/ZonedDateTime/from/argument-propertybag-timezone-string.js",
+        "built-ins/Temporal/Instant/from/argument-string-time-separators.js",
+        "built-ins/Temporal/PlainDateTime/prototype/since/not-a-constructor.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-wrong-type.js",
+        "built-ins/Temporal/PlainTime/prototype/until/roundingincrement-non-integer.js",
+        "built-ins/Temporal/Duration/prototype/toLocaleString/builtin.js",
+        "built-ins/Temporal/Instant/prototype/since/argument-string-date-with-utc-offset.js",
+        "built-ins/Temporal/PlainDate/prototype/subtract/argument-propertybag-optional-properties.js",
+        "built-ins/AsyncDisposableStack/prototype/move/length.js",
+        "built-ins/ArrayBuffer/prototype/sliceToImmutable/argument-coercion.js",
+        "built-ins/Temporal/PlainTime/prototype/until/argument-string-too-many-decimals.js",
+        "built-ins/Error/prototype/stack/getter-error-as-prototype.js",
+        "built-ins/TypedArrayConstructors/internals/GetOwnProperty/BigInt/detached-buffer-realm.js",
+        "annexB/built-ins/RegExp/legacy-accessors/lastParen/prop-desc.js",
+        "built-ins/Temporal/Instant/prototype/until/options-wrong-type.js",
+        "built-ins/Temporal/PlainTime/prototype/toJSON/branding.js",
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-5.js",
+        "built-ins/Temporal/PlainTime/prototype/add/argument-singular-properties.js",
+        "built-ins/Temporal/PlainDate/prototype/until/order-of-operations.js",
+        "built-ins/Temporal/Instant/prototype/toString/fractionalseconddigits-negative.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/since/no-fractional-minutes-hours.js",
+        "built-ins/Temporal/PlainDateTime/prototype/add/ambiguous-date.js",
+        "built-ins/Temporal/PlainDate/from/argument-leap-second.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/toPlainTime/length.js",
+        "language/statements/for/dstr/var-obj-ptrn-id-init-fn-name-gen.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/withPlainTime/get-start-of-day-throws.js",
+        "built-ins/Temporal/PlainDateTime/prototype/withCalendar/name.js",
+        "built-ins/Temporal/PlainTime/prototype/round/roundto-invalid-string.js",
+        "built-ins/Temporal/Instant/prototype/round/roundingmode-halfTrunc.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/toInstant/prop-desc.js",
+        "built-ins/Temporal/PlainDateTime/prototype/since/largestunit-wrong-type.js",
+        "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/not-a-constructor.js",
+        "built-ins/Temporal/PlainDateTime/prototype/toPlainDate/builtin.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/subtract/options-read-before-algorithmic-validation.js",
+        "language/function-code/block-decl-onlystrict.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/until/name.js",
+        "built-ins/Temporal/PlainDate/prototype/dayOfWeek/basic.js",
+        "built-ins/Temporal/Duration/prototype/with/negative-infinity-throws-rangeerror.js",
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-34.js",
+        "built-ins/Array/prototype/reduceRight/15.4.4.22-9-c-ii-1.js",
+        "built-ins/Temporal/PlainDateTime/compare/argument-propertybag-calendar-leap-second.js",
+        "built-ins/Temporal/PlainYearMonth/prototype/until/prop-desc.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/weekOfYear/branding.js",
+        "built-ins/Temporal/PlainDateTime/prototype/add/basic-arithmetic.js",
+        "built-ins/Temporal/PlainYearMonth/prototype/until/argument-propertybag-calendar-string.js",
+        "built-ins/Temporal/Instant/prototype/since/instant-string.js",
+        "built-ins/Temporal/PlainDate/prototype/toString/branding.js",
+        "language/expressions/class/private-static-setter-multiple-evaluations-of-class-realm.js",
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-47.js",
+        "language/statements/for-of/dstr/array-elem-iter-rtrn-close-err.js",
+        "built-ins/Object/S15.2_A1.js",
+        "built-ins/Temporal/PlainTime/prototype/toString/roundingmode-halfExpand.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/second/prop-desc.js",
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-178.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/withPlainTime/argument-string-no-implicit-midnight.js",
+        "built-ins/Temporal/Instant/prototype/round/smallestunit-invalid-string.js",
+        "built-ins/Temporal/Duration/prototype/round/relativeto-propertybag-timezone-wrong-type.js",
+        "built-ins/DisposableStack/prototype/dispose/prop-desc.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-propertybag-timezone-string-year-zero.js",
+        "built-ins/Atomics/waitAsync/undefined-index-defaults-to-zero-agent.js",
+        "built-ins/Temporal/PlainDateTime/prototype/withCalendar/calendar-temporal-object.js",
+        "built-ins/Temporal/PlainMonthDay/prototype/with/subclassing-ignored.js",
+        "built-ins/Temporal/Instant/compare/argument-string-time-separators.js",
+        "built-ins/Temporal/ZonedDateTime/compare/length.js",
+        "built-ins/Temporal/PlainDateTime/prototype/until/roundingincrement-nan.js",
+        "built-ins/AsyncGeneratorPrototype/next/length.js",
+        "built-ins/Temporal/PlainDateTime/prototype/until/float64-representable-integer.js",
+        "built-ins/Temporal/PlainDateTime/prototype/round/rounding-direction.js",
+        "built-ins/Temporal/PlainDateTime/compare/year-zero.js",
+        "built-ins/Temporal/PlainYearMonth/name.js",
+        "built-ins/Temporal/PlainYearMonth/subclass.js",
+        "built-ins/Set/Symbol.species/symbol-species.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/since/options-wrong-type.js",
+        "built-ins/Temporal/PlainTime/prototype/until/options-read-before-algorithmic-validation.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/toPlainDateTime/length.js",
+        "built-ins/Temporal/PlainDateTime/prototype/toZonedDateTime/options-object.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all",
+      "count": 52,
+      "cases": [
+        "built-ins/Symbol/prototype/toString/toString-default-attributes-strict.js",
+        "built-ins/Object/defineProperties/property-description-must-be-an-object-not-null.js",
+        "built-ins/Error/prototype/toString/called-as-function.js",
+        "built-ins/Object/assign/target-set-not-writable.js",
+        "built-ins/Object/defineProperties/15.2.3.7-1.js",
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-186.js",
+        "language/statements/class/elements/privatefieldset-typeerror-5.js",
+        "language/statements/variable/dstr/ary-init-iter-get-err-array-prototype.js",
+        "language/statements/generators/dstr/dflt-ary-ptrn-elem-ary-val-null.js",
+        "built-ins/Proxy/deleteProperty/targetdesc-is-configurable-target-is-not-extensible.js",
+        "built-ins/Array/prototype/flatMap/target-array-non-extensible.js",
+        "language/statements/for-of/dstr/let-ary-init-iter-get-err-array-prototype.js",
+        "built-ins/Array/prototype/shift/set-length-array-length-is-non-writable.js",
+        "language/statements/async-generator/dstr/dflt-ary-init-iter-get-err-array-prototype.js",
+        "built-ins/MapIteratorPrototype/next/does-not-have-mapiterator-internal-slots-map.js",
+        "built-ins/Array/prototype/reduceRight/15.4.4.22-4-15.js",
+        "built-ins/TypedArrayConstructors/Int8Array/prototype/not-typedarray-object.js",
+        "built-ins/Date/prototype/toISOString/15.9.5.43-0-16.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-22.js",
+        "language/statements/const/dstr/ary-init-iter-get-err-array-prototype.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-192.js",
+        "language/expressions/async-generator/dstr/obj-ptrn-prop-ary-value-null.js",
+        "language/statements/class/definition/invalid-extends.js",
+        "built-ins/Promise/all/S25.4.4.1_A4.1_T1.js",
+        "language/statements/generators/restricted-properties.js",
+        "language/expressions/object/dstr/gen-meth-dflt-obj-ptrn-prop-obj-value-null.js",
+        "language/expressions/class/dstr/async-gen-meth-ary-ptrn-elem-obj-val-null.js",
+        "language/expressions/class/dstr/async-gen-meth-static-ary-ptrn-elem-ary-val-null.js",
+        "language/statements/generators/dstr/ary-ptrn-elem-obj-val-undef.js",
+        "language/expressions/class/dstr/async-gen-meth-static-dflt-ary-init-iter-get-err-array-prototype.js",
+        "built-ins/Function/prototype/bind/15.3.4.5-2-10.js",
+        "built-ins/String/prototype/startsWith/this-is-null-throws.js",
+        "language/expressions/assignment/dstr/array-elem-nested-obj-undefined-own.js",
+        "language/statements/try/dstr/obj-init-undefined.js",
+        "built-ins/Array/prototype/copyWithin/return-abrupt-from-start-as-symbol.js",
+        "built-ins/Set/prototype/clear/this-not-object-throw-number.js",
+        "language/expressions/object/dstr/meth-dflt-obj-ptrn-prop-obj-value-null.js",
+        "built-ins/Proxy/get/trap-is-not-callable.js",
+        "built-ins/Reflect/ownKeys/target-is-not-object-throws.js",
+        "language/expressions/function/dstr/dflt-obj-init-undefined.js",
+        "language/expressions/async-generator/dstr/named-ary-ptrn-elem-ary-val-null.js",
+        "language/expressions/class/dstr/meth-obj-init-undefined.js",
+        "built-ins/String/prototype/trimEnd/this-value-object-tostring-returns-object-err.js",
+        "language/statements/for/dstr/let-obj-ptrn-prop-obj-value-null.js",
+        "built-ins/Object/keys/15.2.3.14-1-4.js",
+        "built-ins/Object/defineProperty/property-description-must-be-an-object-not-string.js",
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-9.js",
+        "language/statements/class/dstr/gen-meth-obj-init-null.js",
+        "language/statements/class/dstr/meth-dflt-ary-init-iter-get-err-array-prototype.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-527.js",
+        "built-ins/isFinite/return-abrupt-from-tonumber-number-symbol.js",
+        "built-ins/Promise/prototype/then/ctor-null.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a Test262Error to be thrown but no exception was thrown at al",
+      "count": 40,
+      "cases": [
+        "built-ins/TypedArrayConstructors/ctors/buffer-arg/custom-proto-access-throws.js",
+        "built-ins/Promise/allSettled/ctx-ctor-throws.js",
+        "built-ins/RegExp/prototype/Symbol.replace/arg-2-coerce-err.js",
+        "language/expressions/class/dstr/gen-meth-static-ary-ptrn-elem-id-init-throws.js",
+        "language/expressions/class/dstr/async-gen-meth-obj-ptrn-prop-eval-err.js",
+        "built-ins/Promise/reject/ctx-ctor-throws.js",
+        "language/expressions/object/dstr/meth-ary-ptrn-elem-id-iter-step-err.js",
+        "built-ins/String/prototype/trimStart/this-value-object-toprimitive-meth-err.js",
+        "language/expressions/class/dstr/gen-meth-static-obj-ptrn-list-err.js",
+        "language/expressions/async-generator/dstr/obj-ptrn-prop-eval-err.js",
+        "built-ins/String/prototype/repeat/return-abrupt-from-count.js",
+        "built-ins/Proxy/getPrototypeOf/return-is-abrupt.js",
+        "language/expressions/class/dstr/gen-meth-static-obj-ptrn-prop-id-get-value-err.js",
+        "language/expressions/class/dstr/gen-meth-static-dflt-ary-init-iter-get-err.js",
+        "language/statements/class/dstr/meth-static-ary-init-iter-get-err.js",
+        "built-ins/Date/prototype/toJSON/to-primitive-abrupt.js",
+        "language/statements/class/dstr/async-gen-meth-dflt-obj-ptrn-id-init-throws.js",
+        "language/expressions/async-generator/dstr/named-obj-ptrn-id-init-throws.js",
+        "built-ins/TypedArray/prototype/toLocaleString/return-abrupt-from-firstelement-valueof.js",
+        "built-ins/String/prototype/endsWith/return-abrupt-from-searchstring.js",
+        "built-ins/Array/prototype/reduce/15.4.4.21-8-c-8.js",
+        "language/expressions/object/dstr/gen-meth-obj-ptrn-prop-id-get-value-err.js",
+        "language/statements/async-generator/dstr/obj-ptrn-id-get-value-err.js",
+        "language/expressions/object/dstr/async-gen-meth-ary-ptrn-elem-id-iter-step-err.js",
+        "language/expressions/class/dstr/gen-meth-obj-ptrn-id-init-throws.js",
+        "language/statements/class/dstr/async-gen-meth-static-obj-ptrn-prop-eval-err.js",
+        "built-ins/Array/prototype/copyWithin/return-abrupt-from-start.js",
+        "language/expressions/class/dstr/gen-meth-ary-ptrn-rest-id-elision-next-err.js",
+        "built-ins/Iterator/prototype/flatMap/get-next-method-throws.js",
+        "built-ins/RegExp/prototype/Symbol.match/g-get-exec-err.js",
+        "language/expressions/class/dstr/async-gen-meth-static-dflt-ary-ptrn-elision-step-err.js",
+        "built-ins/RegExp/prototype/Symbol.search/set-lastindex-init-err.js",
+        "language/expressions/generators/dstr/obj-ptrn-prop-id-init-throws.js",
+        "built-ins/RegExp/prototype/Symbol.match/g-match-empty-coerce-lastindex-err.js",
+        "language/statements/for/dstr/let-obj-ptrn-id-get-value-err.js",
+        "built-ins/Proxy/setPrototypeOf/return-abrupt-from-get-trap.js",
+        "language/expressions/class/async-gen-method-static/dflt-params-abrupt.js",
+        "language/statements/class/dstr/meth-ary-ptrn-elision-step-err.js",
+        "built-ins/Date/prototype/setMilliseconds/arg-to-number-err.js",
+        "built-ins/TypedArray/prototype/subarray/speciesctor-get-species-abrupt.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: BigInt64Array is not defined",
+      "count": 21,
+      "cases": [
+        "built-ins/TypedArrayConstructors/internals/Set/BigInt/detached-buffer-key-is-symbol.js",
+        "built-ins/TypedArrayConstructors/BigInt64Array/prototype.js",
+        "built-ins/TypedArray/prototype/set/BigInt/typedarray-arg-set-values-same-buffer-same-type.js",
+        "built-ins/TypedArray/prototype/map/BigInt/callbackfn-arguments-without-thisarg.js",
+        "built-ins/TypedArrayConstructors/ctors-bigint/buffer-arg/length-is-symbol-throws-sab.js",
+        "built-ins/TypedArray/prototype/every/BigInt/callbackfn-this.js",
+        "built-ins/TypedArray/prototype/slice/coerced-start-end-grow.js",
+        "built-ins/TypedArrayConstructors/internals/Set/BigInt/key-is-canonical-invalid-index-reflect-set.js",
+        "built-ins/TypedArrayConstructors/ctors-bigint/buffer-arg/byteoffset-to-number-detachbuffer.js",
+        "built-ins/TypedArrayConstructors/prototype/map/bigint-inherited.js",
+        "built-ins/TypedArrayConstructors/ctors-bigint/buffer-arg/is-referenced.js",
+        "built-ins/TypedArray/prototype/map/BigInt/speciesctor-destination-resizable.js",
+        "built-ins/Array/prototype/findIndex/resizable-buffer.js",
+        "built-ins/TypedArray/prototype/set/BigInt/array-arg-return-abrupt-from-src-length.js",
+        "built-ins/TypedArray/prototype/slice/BigInt/return-abrupt-from-start-symbol.js",
+        "built-ins/TypedArray/prototype/forEach/resizable-buffer-shrink-mid-iteration.js",
+        "built-ins/TypedArray/prototype/subarray/BigInt/speciesctor-get-species-use-default-ctor.js",
+        "built-ins/TypedArray/prototype/fill/BigInt/get-length-ignores-length-prop.js",
+        "built-ins/TypedArray/prototype/filter/resizable-buffer.js",
+        "built-ins/TypedArray/prototype/reduce/BigInt/get-length-uses-internal-arraylength.js",
+        "built-ins/Array/prototype/values/resizable-buffer-shrink-mid-iteration.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«N», «N») to be true",
+      "count": 14,
+      "cases": [
+        "language/statements/class/dstr/meth-static-ary-ptrn-rest-obj-id.js",
+        "language/statements/for/dstr/let-ary-ptrn-rest-ary-elision.js",
+        "built-ins/Iterator/prototype/forEach/fn-throws.js",
+        "language/expressions/object/dstr/meth-dflt-ary-ptrn-elision.js",
+        "language/statements/variable/dstr/ary-ptrn-rest-obj-id.js",
+        "language/statements/for-of/dstr/array-elem-trlg-iter-list-rtrn-close-err.js",
+        "language/statements/for-of/uint32array-mutate.js",
+        "language/statements/class/dstr/private-gen-meth-static-dflt-ary-ptrn-elem-ary-elision-init.js",
+        "language/statements/try/dstr/ary-ptrn-elem-obj-prop-id.js",
+        "built-ins/RegExp/prototype/Symbol.match/exec-invocation.js",
+        "built-ins/String/prototype/replaceAll/replaceValue-call-matching-empty.js",
+        "built-ins/String/prototype/replaceAll/replaceValue-call-each-match-position.js",
+        "language/statements/class/dstr/gen-meth-static-ary-ptrn-elision.js",
+        "language/expressions/function/dstr/ary-ptrn-elem-ary-elision-init.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: name should be an own property",
+      "count": 13,
+      "cases": [
+        "built-ins/TypedArrayConstructors/Uint8ClampedArray/name.js",
+        "annexB/built-ins/String/prototype/small/name.js",
+        "language/statements/const/fn-name-class.js",
+        "built-ins/ArrayIteratorPrototype/next/name.js",
+        "built-ins/Math/cosh/name.js",
+        "language/expressions/object/fn-name-arrow.js",
+        "language/expressions/assignment/dstr/obj-prop-elem-init-fn-name-fn.js",
+        "built-ins/Math/cos/name.js",
+        "built-ins/String/fromCodePoint/name.js",
+        "built-ins/Math/exp/name.js",
+        "built-ins/Object/getOwnPropertyDescriptor/name.js",
+        "language/statements/const/fn-name-gen.js",
+        "language/expressions/object/fn-name-fn.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«undefined», «null») to be true",
+      "count": 10,
+      "cases": [
+        "language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-skipped.js",
+        "language/expressions/object/dstr/meth-ary-ptrn-elem-id-init-skipped.js",
+        "language/statements/try/dstr/ary-ptrn-elem-id-init-skipped.js",
+        "language/statements/class/dstr/private-gen-meth-obj-ptrn-id-init-skipped.js",
+        "language/expressions/generators/dstr/dflt-ary-ptrn-elem-id-init-skipped.js",
+        "language/statements/function/dstr/dflt-ary-ptrn-elem-id-init-skipped.js",
+        "language/statements/function/dstr/dflt-obj-ptrn-prop-id-init-skipped.js",
+        "language/statements/class/dstr/gen-meth-static-ary-ptrn-elem-id-init-skipped.js",
+        "language/expressions/class/dstr/private-meth-ary-ptrn-elem-id-init-skipped.js",
+        "language/statements/class/dstr/private-meth-static-obj-ptrn-id-init-skipped.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: asyncTest called without async flag",
+      "count": 9,
+      "cases": [
+        "built-ins/AsyncDisposableStack/prototype/use/Symbol.asyncDispose-getter.js",
+        "language/statements/await-using/function-local-use-before-initialization-in-declaration-statement.js",
+        "built-ins/Promise/allSettledKeyed/getownproperty-not-enumerable.js",
+        "language/statements/await-using/throws-if-initializer-Symbol.dispose-property-is-null.js",
+        "built-ins/Promise/allKeyed/symbol-keys.js",
+        "built-ins/Array/fromAsync/mapfn-not-callable.js",
+        "harness/asyncHelpers-asyncTest-return-not-thenable.js",
+        "built-ins/Promise/allSettledKeyed/get-value-throws-reject.js",
+        "harness/asyncHelpers-throwsAsync-custom-typeerror.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: indirect eval is not supported: milojs has no runtime compiler",
+      "count": 8,
+      "cases": [
+        "annexB/language/eval-code/indirect/global-switch-case-eval-global-no-skip-try.js",
+        "annexB/language/eval-code/indirect/global-if-decl-else-decl-a-eval-global-no-skip-try.js",
+        "annexB/language/eval-code/indirect/global-if-decl-no-else-eval-global-skip-early-err-try.js",
+        "annexB/language/eval-code/indirect/global-if-decl-no-else-eval-global-existing-block-fn-no-init.js",
+        "annexB/language/eval-code/indirect/global-if-stmt-else-decl-eval-global-skip-early-err-block.js",
+        "language/eval-code/indirect/cptn-nrml-expr-prim.js",
+        "language/statements/variable/12.2.1-20-s.js",
+        "annexB/language/eval-code/indirect/global-if-decl-else-decl-b-eval-global-skip-early-err.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: static is not defined",
+      "count": 8,
+      "cases": [
+        "language/expressions/class/elements/same-line-gen-rs-static-privatename-identifier-alt.js",
+        "language/statements/class/elements/after-same-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
+        "language/expressions/class/elements/after-same-line-gen-rs-static-privatename-identifier-by-classname.js",
+        "language/expressions/class/elements/new-no-sc-line-method-rs-static-generator-method-privatename-identifier-alt.js",
+        "language/expressions/class/elements/same-line-gen-rs-static-privatename-identifier.js",
+        "language/statements/class/elements/new-no-sc-line-method-rs-static-method-privatename-identifier-alt.js",
+        "language/expressions/class/elements/new-no-sc-line-method-rs-static-privatename-identifier-by-classname.js",
+        "language/expressions/class/elements/new-sc-line-gen-rs-static-generator-method-privatename-identifier-alt.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected TypeError, got Test262Error: Expected an exception.",
+      "count": 8,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-319.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-87.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-305.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-218.js",
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-309.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-307.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-246.js",
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-289.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«N», «N») to be tr",
+      "count": 7,
+      "cases": [
+        "built-ins/Promise/all/S25.4.4.1_A7.2_T1.js",
+        "language/statements/async-generator/dstr/ary-ptrn-elision.js",
+        "language/statements/class/dstr/async-private-gen-meth-dflt-ary-ptrn-elem-id-iter-val-array-prototype.js",
+        "language/expressions/async-generator/dstr/dflt-ary-ptrn-rest-obj-id.js",
+        "language/expressions/async-generator/yield-star-getiter-async-null-sync-get-abrupt.js",
+        "built-ins/Promise/any/invoke-resolve-get-once-multiple-calls.js",
+        "language/expressions/object/dstr/async-gen-meth-dflt-ary-ptrn-elision.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: m descriptor should not be enumerable",
+      "count": 7,
+      "cases": [
+        "language/expressions/class/elements/after-same-line-method-rs-static-async-method-privatename-identifier-alt.js",
+        "language/expressions/class/elements/after-same-line-gen-computed-symbol-names.js",
+        "language/statements/class/elements/multiple-definitions-private-method-usage.js",
+        "language/statements/class/elements/multiple-definitions-literal-names-asi.js",
+        "language/expressions/class/elements/same-line-async-method-static-private-methods.js",
+        "language/expressions/class/elements/new-sc-line-method-private-names.js",
+        "language/expressions/class/elements/same-line-async-method-computed-symbol-names.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«\"\"», «\"gen\"») to be true",
+      "count": 6,
+      "cases": [
+        "language/expressions/class/dstr/gen-meth-static-dflt-ary-ptrn-elem-id-init-fn-name-gen.js",
+        "language/statements/let/dstr/obj-ptrn-id-init-fn-name-gen.js",
+        "language/statements/generators/dstr/dflt-ary-ptrn-elem-id-init-fn-name-gen.js",
+        "language/statements/generators/dstr/obj-ptrn-id-init-fn-name-gen.js",
+        "language/statements/class/dstr/private-meth-obj-ptrn-id-init-fn-name-gen.js",
+        "language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-id-init-fn-name-gen.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: testResult !== true",
+      "count": 6,
+      "cases": [
+        "built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-18.js",
+        "built-ins/Array/prototype/reduce/15.4.4.21-9-b-12.js",
+        "built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-16.js",
+        "built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-30.js",
+        "built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-29.js",
+        "built-ins/Array/prototype/reduceRight/15.4.4.22-9-b-10.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«\"\"», «\"cls\"») to ",
+      "count": 5,
+      "cases": [
+        "language/expressions/object/dstr/async-gen-meth-obj-ptrn-id-init-fn-name-class.js",
+        "language/statements/async-generator/dstr/ary-ptrn-elem-id-init-fn-name-class.js",
+        "language/expressions/class/dstr/async-private-gen-meth-dflt-obj-ptrn-id-init-fn-name-class.js",
+        "language/expressions/class/dstr/async-private-gen-meth-obj-ptrn-id-init-fn-name-class.js",
+        "language/expressions/class/dstr/async-private-gen-meth-static-ary-ptrn-elem-id-init-fn-name-class.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: TypeError Expected SameValue(«functio",
+      "count": 5,
+      "cases": [
+        "language/statements/class/async-gen-method/yield-star-getiter-async-not-callable-string-throw.js",
+        "language/expressions/async-generator/yield-star-getiter-sync-not-callable-object-throw.js",
+        "language/expressions/object/method-definition/async-gen-yield-star-getiter-sync-returns-boolean-throw.js",
+        "language/statements/class/async-gen-method/yield-star-next-not-callable-undefined-throw.js",
+        "language/statements/class/async-gen-method/yield-star-getiter-sync-returns-symbol-throw.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: with is not defined",
+      "count": 5,
+      "cases": [
+        "language/expressions/compound-assignment/S11.13.2_A5.10_T1.js",
+        "language/statements/with/S12.10_A3.11_T1.js",
+        "language/statements/with/S12.10_A3.8_T1.js",
+        "language/statements/with/S12.10_A3.7_T2.js",
+        "language/identifier-resolution/S10.2.2_A1_T9.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a SyntaxError but got a EvalError",
+      "count": 5,
+      "cases": [
+        "language/eval-code/indirect/parse-failure-3.js",
+        "language/statements/class/elements/nested-derived-cls-indirect-eval-contains-superproperty-1.js",
+        "language/statements/class/elements/private-derived-cls-indirect-eval-contains-superproperty-1.js",
+        "language/statements/function/13.0-16-s.js",
+        "language/statements/class/elements/privatename-not-valid-eval-earlyerr-3.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a SyntaxError to be thrown but no exception was thrown at all",
+      "count": 5,
+      "cases": [
+        "language/eval-code/direct/gen-meth-a-preceding-parameter-is-named-arguments-declare-arguments-and-assign.js",
+        "language/eval-code/direct/async-gen-func-decl-fn-body-cntns-arguments-lex-bind-declare-arguments.js",
+        "language/eval-code/direct/async-gen-func-decl-no-pre-existing-arguments-bindings-are-present-declare-arguments.js",
+        "language/expressions/object/method-definition/async-gen-meth-eval-var-scope-syntax-err.js",
+        "language/expressions/async-generator/named-eval-var-scope-syntax-err.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a TypeError but got a Test262Error",
+      "count": 5,
+      "cases": [
+        "built-ins/DataView/prototype/getInt32/resizable-buffer.js",
+        "built-ins/DataView/prototype/setInt16/resizable-buffer.js",
+        "language/expressions/compound-assignment/S11.13.2_A7.1_T2.js",
+        "built-ins/DataView/prototype/setUint8/resizable-buffer.js",
+        "language/expressions/compound-assignment/S11.13.2_A7.11_T1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«\"\"», «\"arrow\"») to be true",
+      "count": 5,
+      "cases": [
+        "language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-id-init-fn-name-arrow.js",
+        "language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-fn-name-arrow.js",
+        "language/expressions/class/dstr/meth-dflt-obj-ptrn-id-init-fn-name-arrow.js",
+        "language/statements/for-of/dstr/var-ary-ptrn-elem-id-init-fn-name-arrow.js",
+        "language/expressions/class/dstr/meth-obj-ptrn-id-init-fn-name-arrow.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: property exists Expected SameValue(«undefined», «N») to be true",
+      "count": 5,
+      "cases": [
+        "language/expressions/assignment/member-expr-ident-name-case-escaped.js",
+        "language/expressions/object/ident-name-prop-name-literal-finally-escaped.js",
+        "language/expressions/assignment/member-expr-ident-name-catch-escaped.js",
+        "language/expressions/assignment/dstr/ident-name-prop-name-literal-try-escaped.js",
+        "language/expressions/assignment/member-expr-ident-name-interface-escaped.js"
+      ]
+    },
+    {
+      "reason": "milojs: /case.js: expected '…', found '…'",
+      "count": 4,
+      "cases": [
+        "language/statements/class/elements/same-line-async-method-rs-private-method.js",
+        "language/expressions/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt.js",
+        "language/statements/class/elements/after-same-line-static-async-method-rs-static-generator-method-privatename-identifier-alt.js",
+        "language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt-by-classname.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected true but got false",
+      "count": 4,
+      "cases": [
+        "language/eval-code/direct/async-func-decl-a-following-parameter-is-named-arguments-declare-arguments-and-assign.js",
+        "language/eval-code/direct/async-func-expr-named-no-pre-existing-arguments-bindings-are-present-declare-arguments.js",
+        "language/eval-code/direct/async-func-decl-no-pre-existing-arguments-bindings-are-present-declare-arguments.js",
+        "language/eval-code/direct/async-func-decl-no-pre-existing-arguments-bindings-are-present-declare-arguments-and-assign.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: value is not defined",
+      "count": 4,
+      "cases": [
+        "language/expressions/class/elements/wrapped-in-sc-rs-static-generator-method-privatename-identifier.js",
+        "language/statements/class/elements/same-line-gen-rs-static-generator-method-privatename-identifier.js",
+        "language/expressions/class/elements/multiple-stacked-definitions-rs-static-generator-method-privatename-identifier.js",
+        "language/expressions/class/elements/same-line-method-rs-static-method-privatename-identifier.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: cannot read property '…' of a non-object (in /var/folders/zc/m2tbb4v54",
+      "count": 4,
+      "cases": [
+        "built-ins/String/prototype/split/call-split-1-math-pow-2-32-1-instance-is-number.js",
+        "built-ins/String/prototype/toUpperCase/S15.5.4.18_A1_T8.js",
+        "built-ins/Date/prototype/Symbol.toPrimitive/hint-default-first-invalid.js",
+        "built-ins/String/prototype/charAt/S15.5.4.4_A1_T1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: desc.enumerable Expected SameValue(«true», «false») to be true",
+      "count": 4,
+      "cases": [
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-25.js",
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-97.js",
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-158.js",
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-100.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«\"\"», «\"cls\"») to be true",
+      "count": 4,
+      "cases": [
+        "language/statements/generators/dstr/ary-ptrn-elem-id-init-fn-name-class.js",
+        "language/statements/class/dstr/meth-ary-ptrn-elem-id-init-fn-name-class.js",
+        "language/statements/class/dstr/private-gen-meth-dflt-obj-ptrn-id-init-fn-name-class.js",
+        "language/expressions/class/dstr/private-gen-meth-static-dflt-obj-ptrn-id-init-fn-name-class.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«undefined», «N») to be true",
+      "count": 4,
+      "cases": [
+        "language/statements/class/cpn-class-decl-accessors-computed-property-name-from-arrow-function-expression.js",
+        "built-ins/GeneratorFunction/instance-length.js",
+        "built-ins/Map/prototype/getOrInsertComputed/returns-value-if-key-is-not-present-different-key-types.js",
+        "language/statements/using/syntax/using-for-using-of-of.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: length should be an own property",
+      "count": 4,
+      "cases": [
+        "built-ins/Iterator/prototype/toArray/length.js",
+        "built-ins/Promise/reject/length.js",
+        "annexB/built-ins/String/prototype/blink/length.js",
+        "built-ins/Symbol/length.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: m descriptor should not be enumerable; m descriptor should be configur",
+      "count": 4,
+      "cases": [
+        "language/expressions/class/elements/after-same-line-static-method-rs-static-async-method-privatename-identifier-alt.js",
+        "language/statements/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
+        "language/statements/class/elements/after-same-line-static-async-method-static-private-methods.js",
+        "language/statements/class/elements/after-same-line-static-async-method-computed-symbol-names.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Number.prototype.toString(N) must return \"N\" Expected SameValue(«\"[obj",
+      "count": 4,
+      "cases": [
+        "built-ins/Number/prototype/toString/S15.7.4.2_A2_T02.js",
+        "built-ins/Number/prototype/toString/S15.7.4.2_A2_T19.js",
+        "built-ins/Number/prototype/toString/S15.7.4.2_A2_T17.js",
+        "built-ins/Number/prototype/toString/S15.7.4.2_A2_T24.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: The result of evaluating (e instanceof SyntaxError) is expected to be ",
+      "count": 4,
+      "cases": [
+        "built-ins/RegExp/S15.10.1_A1_T15.js",
+        "built-ins/RegExp/S15.10.2.15_A1_T14.js",
+        "built-ins/RegExp/S15.10.1_A1_T11.js",
+        "built-ins/RegExp/S15.10.3.1_A2_T2.js"
+      ]
+    },
+    {
+      "reason": "no completion marker",
+      "count": 3,
+      "cases": [
+        "language/expressions/dynamic-import/catch/nested-async-function-import-source-specifier-tostring-abrupt-rejects.js",
+        "built-ins/Promise/allSettled/invoke-then-error-reject.js",
+        "language/expressions/dynamic-import/catch/nested-async-function-return-await-import-source-specifier-tostring-abrupt-rejects.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«\"\"», «\"arrow\"») t",
+      "count": 3,
+      "cases": [
+        "language/statements/class/dstr/async-private-gen-meth-static-ary-ptrn-elem-id-init-fn-name-arrow.js",
+        "language/statements/class/dstr/async-gen-meth-dflt-ary-ptrn-elem-id-init-fn-name-arrow.js",
+        "language/expressions/class/dstr/async-private-gen-meth-static-ary-ptrn-elem-id-init-fn-name-arrow.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: #ZW_ is not defined",
+      "count": 3,
+      "cases": [
+        "language/statements/class/elements/same-line-method-rs-privatename-identifier-initializer.js",
+        "language/statements/class/elements/multiple-stacked-definitions-rs-static-privatename-identifier-initializer-alt-by-classname.js",
+        "language/expressions/class/elements/after-same-line-method-rs-privatename-identifier-initializer-alt.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: u2118 is not defined",
+      "count": 3,
+      "cases": [
+        "language/expressions/class/elements/wrapped-in-sc-grammar-privatename-identifier-semantics-stringvalue.js",
+        "language/statements/class/elements/wrapped-in-sc-rs-privatename-identifier.js",
+        "language/statements/class/elements/multiple-definitions-grammar-privatename-identifier-semantics-stringvalue.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #gen does not appear as an own property on C prototype",
+      "count": 3,
+      "cases": [
+        "language/statements/class/elements/async-gen-private-method/yield-star-next-then-non-callable-null-fulfillpromise.js",
+        "language/statements/class/elements/async-gen-private-method/yield-star-getiter-sync-not-callable-object-throw.js",
+        "language/statements/class/elements/async-gen-private-method/yield-star-getiter-async-not-callable-boolean-throw.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: afterWrite Expected SameValue(«false», «true») to be true",
+      "count": 3,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-3-161.js",
+        "built-ins/Object/create/15.2.3.5-4-185.js",
+        "built-ins/Object/create/15.2.3.5-4-187.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: An initialized binding is not created prior to evaluation Expected a R",
+      "count": 3,
+      "cases": [
+        "annexB/language/global-code/if-decl-else-stmt-global-skip-early-err-try.js",
+        "annexB/language/function-code/if-decl-else-decl-a-func-skip-early-err-try.js",
+        "annexB/language/function-code/if-decl-else-stmt-func-skip-early-err-try.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: isConstructor invoked with a non-function value",
+      "count": 3,
+      "cases": [
+        "annexB/built-ins/String/prototype/fontcolor/not-a-constructor.js",
+        "built-ins/Math/atanh/not-a-constructor.js",
+        "built-ins/JSON/rawJSON/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: it should not get Symbol.iterator",
+      "count": 2,
+      "cases": [
+        "language/statements/async-generator/yield-star-next-then-non-callable-number-fulfillpromise.js",
+        "language/statements/async-generator/yield-star-next-then-non-callable-object-fulfillpromise.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:TypeError: cannot read property '…' of a non-object (in /case.js)",
+      "count": 2,
+      "cases": [
+        "language/expressions/dynamic-import/usage/top-level-import-then-eval-gtbndng-indirect-update-dflt.js",
+        "language/expressions/dynamic-import/usage/nested-async-arrow-function-return-await-eval-gtbndng-indirect-update-dflt.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:TypeError: cannot read property '…' of undefined",
+      "count": 2,
+      "cases": [
+        "language/expressions/dynamic-import/usage/nested-function-import-then-is-call-expression-square-brackets.js",
+        "language/expressions/dynamic-import/namespace/promise-then-ns-prop-descs.js"
+      ]
+    },
+    {
+      "reason": "Uncaught Error: Cannot find module '…'",
+      "count": 2,
+      "cases": [
+        "language/expressions/dynamic-import/syntax/valid/nested-do-while-import-source-script-code-valid.js",
+        "language/expressions/dynamic-import/syntax/valid/nested-while-empty-str-is-valid-assign-expr.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: assert.throws(Refe",
+      "count": 2,
+      "cases": [
+        "annexB/language/eval-code/direct/func-if-decl-else-decl-b-eval-func-skip-early-err-for.js",
+        "annexB/language/eval-code/direct/func-if-decl-else-decl-a-eval-func-skip-early-err-for-of.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: let f = N;",
+      "count": 2,
+      "cases": [
+        "annexB/language/eval-code/direct/func-if-decl-else-decl-b-eval-func-skip-early-err.js",
+        "annexB/language/eval-code/direct/func-switch-case-eval-func-skip-early-err.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: sw is not defined",
+      "count": 2,
+      "cases": [
+        "language/expressions/object/ident-name-prop-name-literal-switch-escaped.js",
+        "language/expressions/object/covered-ident-name-prop-name-literal-switch-escaped.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: x is not defined",
+      "count": 2,
+      "cases": [
+        "language/statements/try/dstr/ary-init-iter-no-close.js",
+        "language/statements/for-in/head-var-expr.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: y is not defined",
+      "count": 2,
+      "cases": [
+        "language/statements/for/dstr/const-obj-ptrn-prop-ary-trailing-comma.js",
+        "language/statements/for/dstr/const-obj-ptrn-prop-id-init.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: concat is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh0",
+      "count": 2,
+      "cases": [
+        "built-ins/Iterator/concat/throws-typeerror-when-iterator-not-an-object.js",
+        "built-ins/Iterator/concat/get-iterator-method-only-once.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: includes is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcm",
+      "count": 2,
+      "cases": [
+        "built-ins/Iterator/prototype/includes/exhaustion-does-not-call-return.js",
+        "built-ins/Iterator/prototype/includes/basic-match-and-miss.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: N is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh0000gn",
+      "count": 2,
+      "cases": [
+        "language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-numeric-literal.js",
+        "language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-condition-expression-true.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: windows is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh",
+      "count": 2,
+      "cases": [
+        "built-ins/Iterator/prototype/windows/return-is-not-forwarded-after-exhaustion.js",
+        "built-ins/Iterator/prototype/windows/next-method-returns-throwing-value.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: arr.some(callbackfn) !== true",
+      "count": 2,
+      "cases": [
+        "built-ins/Array/prototype/some/15.4.4.17-7-b-16.js",
+        "built-ins/Array/prototype/some/15.4.4.17-7-b-15.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: desc.writable Expected SameValue(«true», «false») to be true",
+      "count": 2,
+      "cases": [
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-182.js",
+        "built-ins/Object/prototype/15.2.3.1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a RangeError but got a TypeError",
+      "count": 2,
+      "cases": [
+        "built-ins/Temporal/PlainMonthDay/infinity-throws-rangeerror.js",
+        "built-ins/Iterator/prototype/includes/skipped-elements-negative-integral-rangeerror.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a ReferenceError to be thrown but no exception was thrown at ",
+      "count": 2,
+      "cases": [
+        "language/statements/function/dflt-params-ref-later.js",
+        "language/expressions/class/gen-method/dflt-params-ref-self.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a Test262Error but got a TypeError",
+      "count": 2,
+      "cases": [
+        "language/statements/for-of/dstr/const-ary-ptrn-rest-id-elision-next-err.js",
+        "built-ins/Object/groupBy/iterator-next-throws.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a TypeError but got a RangeError",
+      "count": 2,
+      "cases": [
+        "built-ins/DataView/prototype/setInt16/return-abrupt-from-tonumber-byteoffset-symbol.js",
+        "built-ins/DataView/prototype/setFloat32/return-abrupt-from-tonumber-byteoffset-symbol.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«\"\"», «\"cover\"») to be true",
+      "count": 2,
+      "cases": [
+        "language/statements/class/dstr/private-gen-meth-ary-ptrn-elem-id-init-fn-name-cover.js",
+        "language/expressions/class/dstr/gen-meth-static-dflt-obj-ptrn-id-init-fn-name-cover.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«N», «null») to be true",
+      "count": 2,
+      "cases": [
+        "language/expressions/object/method-definition/gen-meth-dflt-params-arg-val-not-undefined.js",
+        "language/statements/for-of/dstr/array-elem-init-assignment.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«true», «false») to be true",
+      "count": 2,
+      "cases": [
+        "built-ins/Reflect/defineProperty/return-boolean.js",
+        "language/statements/for-of/dstr/obj-prop-elem-target-yield-expr.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected true but got false",
+      "count": 2,
+      "cases": [
+        "built-ins/Promise/resolve-function-extensible.js",
+        "built-ins/String/prototype/search/invoke-builtin-search-searcher-undef.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: initializer not evaluated: null Expected SameValue(«N», «N») to be tru",
+      "count": 2,
+      "cases": [
+        "language/expressions/class/async-method-static/dflt-params-arg-val-not-undefined.js",
+        "language/expressions/class/async-gen-method-static/dflt-params-arg-val-not-undefined.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: invalid access of c1 private method Expected a TypeError to be thrown ",
+      "count": 2,
+      "cases": [
+        "language/expressions/class/private-getter-brand-check-multiple-evaluations-of-class-factory.js",
+        "language/statements/class/elements/private-setter-brand-check-multiple-evaluations-of-class.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: iteration occurred as expected Expected SameValue(«false», «true») to ",
+      "count": 2,
+      "cases": [
+        "language/statements/for-of/dstr/const-ary-ptrn-elision-iter-close.js",
+        "language/statements/for/dstr/let-ary-ptrn-elision-iter-close.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: object's valueOf Expected SameValue(«N», «N») to be true",
+      "count": 2,
+      "cases": [
+        "built-ins/ArrayBuffer/toindex-length.js",
+        "built-ins/DataView/toindex-bytelength.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: source.byteLength Expected SameValue(«N», «N») to be true",
+      "count": 2,
+      "cases": [
+        "built-ins/ArrayBuffer/prototype/transferToFixedLength/from-fixed-to-larger-no-resizable.js",
+        "built-ins/ArrayBuffer/prototype/transferToFixedLength/from-resizable-to-same.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«\"undefined\"», «tr",
+      "count": 1,
+      "cases": [
+        "language/expressions/dynamic-import/namespace/await-ns-get-own-property-sym.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«[object Promise]»",
+      "count": 1,
+      "cases": [
+        "language/statements/async-generator/yield-star-return-missing-value-is-awaited.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«function», «funct",
+      "count": 1,
+      "cases": [
+        "language/statements/for-await-of/async-func-dstr-let-ary-ptrn-rest-id-iter-val-err.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«undefined», «null",
+      "count": 1,
+      "cases": [
+        "language/expressions/async-generator/dstr/ary-ptrn-elem-id-init-skipped.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: log.length Expected SameValue(«N», «N",
+      "count": 1,
+      "cases": [
+        "language/expressions/async-generator/named-yield-star-sync-throw.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Promise incorrectly resolved.",
+      "count": 1,
+      "cases": [
+        "language/expressions/class/async-gen-method/yield-promise-reject-next-yield-star-sync-iterator.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:TypeError: preventExtensions is not a function (in /case.js)",
+      "count": 1,
+      "cases": [
+        "language/expressions/dynamic-import/namespace/promise-then-ns-prevent-extensions-reflect.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:TypeError: slice is not a function",
+      "count": 1,
+      "cases": [
+        "language/statements/class/dstr/async-gen-meth-static-ary-ptrn-rest-ary-empty.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: ",
+      "count": 1,
+      "cases": [
+        "language/eval-code/direct/switch-case-decl-eval-source-is-strict-nostrict.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: \"use strict\"; var ",
+      "count": 1,
+      "cases": [
+        "language/eval-code/direct/var-env-lower-lex-strict-source.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: assert.sameValue(f",
+      "count": 1,
+      "cases": [
+        "annexB/language/eval-code/direct/global-switch-case-eval-global-existing-block-fn-no-init.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: BindingIdentifier ",
+      "count": 1,
+      "cases": [
+        "language/expressions/function/named-no-strict-reassign-fn-name-in-body-in-eval.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: class C {}() => N;",
+      "count": 1,
+      "cases": [
+        "language/statementList/eval-class-arrow-function-assignment-expr.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: executed = true; (",
+      "count": 1,
+      "cases": [
+        "language/expressions/class/elements/arrow-body-private-derived-cls-direct-eval-contains-superproperty-2.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: for (let f; ; ) {s",
+      "count": 1,
+      "cases": [
+        "annexB/language/eval-code/direct/global-switch-dflt-eval-global-skip-early-err-for.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: for (var i = N; i ",
+      "count": 1,
+      "cases": [
+        "language/statements/try/cptn-catch-empty-break.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: for(var ind in (ar",
+      "count": 1,
+      "cases": [
+        "language/statements/for-in/S12.6.4_A3.1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: function fn() {}()",
+      "count": 1,
+      "cases": [
+        "language/statementList/eval-fn-arrow-function-assignment-expr.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: if (false) functio",
+      "count": 1,
+      "cases": [
+        "annexB/language/eval-code/direct/func-if-decl-else-decl-b-eval-func-existing-var-update.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: N\t%\tN",
+      "count": 1,
+      "cases": [
+        "language/expressions/modulus/S11.5.3_A1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: N\t>\tN",
+      "count": 1,
+      "cases": [
+        "language/expressions/greater-than/S11.8.2_A1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: N; if (false) { }",
+      "count": 1,
+      "cases": [
+        "language/statements/if/cptn-no-else-false.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: N; switch (\"a\") { ",
+      "count": 1,
+      "cases": [
+        "language/statements/switch/cptn-dflt-b-abrupt-empty.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: new\tNumber()",
+      "count": 1,
+      "cases": [
+        "language/expressions/new/S11.2.2_A1.2.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: switch (N) {",
+      "count": 1,
+      "cases": [
+        "annexB/language/eval-code/direct/global-if-decl-else-decl-b-eval-global-skip-early-err-switch.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: test262id: { N; br",
+      "count": 1,
+      "cases": [
+        "language/statements/labeled/cptn-break.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: this.#m",
+      "count": 1,
+      "cases": [
+        "language/statements/class/elements/private-getter-visible-to-direct-eval.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: this.#m = \"Test262",
+      "count": 1,
+      "cases": [
+        "language/statements/class/elements/private-static-setter-visible-to-direct-eval.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: var x = \"inside\";",
+      "count": 1,
+      "cases": [
+        "language/expressions/object/scope-gen-meth-param-rest-elem-var-close.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: var x = N;",
+      "count": 1,
+      "cases": [
+        "language/statements/for-of/scope-head-var-none.js"
+      ]
+    },
+    {
+      "reason": "Uncaught EvalError: eval is limited to a bare identifier in scope, got: var x = N; typeof\t",
+      "count": 1,
+      "cases": [
+        "language/expressions/typeof/syntax.js"
+      ]
+    },
+    {
+      "reason": "Uncaught RangeError: Maximum call stack size exceeded",
+      "count": 1,
+      "cases": [
+        "language/expressions/logical-or/tco-right.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError:  is not defined",
+      "count": 1,
+      "cases": [
+        "language/expressions/object/dstr/meth-dflt-ary-ptrn-rest-ary-elision.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: _ is not defined",
+      "count": 1,
+      "cases": [
+        "language/statements/class/elements/new-sc-line-gen-rs-private-getter-alt.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: __super$C$N is not defined",
+      "count": 1,
+      "cases": [
+        "language/statements/class/elements/super-access-from-arrow-func-on-field.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: Atomics is not defined",
+      "count": 1,
+      "cases": [
+        "built-ins/Atomics/add/expected-return-value.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: Atomics is not defined (Testing with Int32Array and makeArrayBuff",
+      "count": 1,
+      "cases": [
+        "built-ins/Atomics/sub/non-shared-bufferdata.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: Atomics is not defined (Testing with Int32Array and makePassthrou",
+      "count": 1,
+      "cases": [
+        "built-ins/Atomics/sub/good-views.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: DisposableStack is not defined",
+      "count": 1,
+      "cases": [
+        "built-ins/DisposableStack/prototype/use/throws-if-value-Symbol.dispose-property-is-null.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: st is not defined",
+      "count": 1,
+      "cases": [
+        "language/expressions/object/ident-name-method-def-static-escaped.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: SuppressedError is not defined",
+      "count": 1,
+      "cases": [
+        "built-ins/SuppressedError/order-of-args-evaluation.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: u is not defined",
+      "count": 1,
+      "cases": [
+        "language/identifiers/part-digits-via-escape-hex.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: using is not defined",
+      "count": 1,
+      "cases": [
+        "language/statements/using/syntax/using-outer-inner-using-bindings.js"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: ZW_ is not defined",
+      "count": 1,
+      "cases": [
+        "language/statements/class/elements/syntax/valid/grammar-field-identifier-alt.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: __lookupGetter__ is not a function (in /var/folders/zc/m2tbb4v542b9c11",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/prototype/__lookupGetter__/lookup-not-found.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: [object Object] is not a function (in /var/folders/zc/m2tbb4v542b9c11g",
+      "count": 1,
+      "cases": [
+        "language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-generator-function-declaration.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: apply is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh00",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/concat/Array.prototype.concat_non-array.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: cannot read property '…' of a non-object",
+      "count": 1,
+      "cases": [
+        "language/expressions/object/dstr/gen-meth-dflt-ary-ptrn-rest-ary-rest.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: cannot read property '…' of a non-object (in /var/folders/zc/",
+      "count": 1,
+      "cases": [
+        "built-ins/parseInt/S15.1.2.2_A9.5.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: cannot read property '…' of a non-object (in /var/folders/zc/m2tbb4",
+      "count": 1,
+      "cases": [
+        "built-ins/Number/S15.7.5_A1_T04.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: cannot read property '…' of null",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/named-groups/unicode-match.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: case is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh000",
+      "count": 1,
+      "cases": [
+        "language/expressions/class/ident-name-method-def-case-escaped.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: default is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh",
+      "count": 1,
+      "cases": [
+        "language/expressions/class/ident-name-method-def-default-escaped.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: drop is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh000",
+      "count": 1,
+      "cases": [
+        "built-ins/Iterator/prototype/drop/limit-rangeerror.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: escape is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh0",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/escape/escaped-control-characters.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: every is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh00",
+      "count": 1,
+      "cases": [
+        "built-ins/Iterator/prototype/every/predicate-this.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: Function is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcm",
+      "count": 1,
+      "cases": [
+        "language/expressions/instanceof/S15.3.5.3_A1_T1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: groupBy is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh",
+      "count": 1,
+      "cases": [
+        "built-ins/Map/groupBy/emptyList.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: in is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh0000g",
+      "count": 1,
+      "cases": [
+        "language/statements/class/ident-name-method-def-in-escaped.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: instanceof is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103t",
+      "count": 1,
+      "cases": [
+        "language/statements/class/ident-name-method-def-instanceof-escaped.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: revocable is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tc",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/map/create-revoked-proxy.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: static is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh0",
+      "count": 1,
+      "cases": [
+        "language/statements/class/ident-name-method-def-static-escaped.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: toHex is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh00",
+      "count": 1,
+      "cases": [
+        "built-ins/Uint8Array/prototype/toHex/results.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: while is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh00",
+      "count": 1,
+      "cases": [
+        "language/statements/class/ident-name-method-def-while-escaped.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: zipKeyed is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcm",
+      "count": 1,
+      "cases": [
+        "built-ins/Iterator/zipKeyed/iterables-iteration-symbol-key.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined",
+      "count": 1,
+      "cases": [
+        "language/statements/class/elements/public-class-field-initialization-on-super-class-with-setter.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: -N:N:N.N is not a valid time zone string Expected a RangeError but got",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/Now/plainDateISO/timezone-string-sub-minute-offset.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: -N.N Expected SameValue(«N», «-N») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Math/ceil/S15.8.2.6_A6.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: . should match a in modified group",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/regexp-modifiers/remove-dotAll-does-not-affect-multiline-flag.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: \" abc\".trim() Expected SameValue(«\" abc\"», «\"abc\"») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/String/prototype/trim/15.5.4.20-4-8.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: [, , , ].lastIndexOf(N) Expected SameValue(«-N», «N») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-b-i-15.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: [[Get]] operation of an accessor without getter Expected a TypeError t",
+      "count": 1,
+      "cases": [
+        "language/statements/class/elements/private-getter-shadowed-by-setter-on-nested-class.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: [N, true].lastIndexOf(true, child) Expected SameValue(«-N», «N») to be",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-25.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: \\ud834\\udf06 (surrogate pairs) Expected SameValue(«\"%uD834\"», «\"%uD834",
+      "count": 1,
+      "cases": [
+        "annexB/built-ins/escape/escape-above.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: \\x61 should match a",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-characterEscapes.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #00F0-00F7 ",
+      "count": 1,
+      "cases": [
+        "built-ins/decodeURI/S15.1.3.1_A1.9_T1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #gen does not appear as an own property on C constructor",
+      "count": 1,
+      "cases": [
+        "language/expressions/class/elements/async-gen-private-method-static/yield-star-getiter-sync-not-callable-symbol-throw.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: __fcc__func = String.fromCharCode; var __obj = new __fcc__func(N,N",
+      "count": 1,
+      "cases": [
+        "built-ins/String/fromCharCode/S15.5.3.2_A4.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: __gunc.prototype.constructor === __gunc. Actual: __gunc.prototype.",
+      "count": 1,
+      "cases": [
+        "language/statements/function/S13.2_A4_T2.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: __str = new String(new Array(N,N,N)); typeof __str === \"object\". A",
+      "count": 1,
+      "cases": [
+        "built-ins/String/S15.5.2.1_A1_T19.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: \"Hello, WoRlD!\".toLocaleLowerCase() !== new String(\"hello, world!\"",
+      "count": 1,
+      "cases": [
+        "built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A2_T1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: (var y = new Boolean(false); (y ? y : true) === y",
+      "count": 1,
+      "cases": [
+        "language/expressions/conditional/S11.12_A4_T1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: [object, object].sort(); counter < N. Actual: N",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/sort/bug_596_1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: Array.prototype[N] = N; x = [N]; x.length = N; x.reverse(); x[N] =",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/reverse/S15.4.4.8_A4_T1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: decodeURI(\"%3B\") equal \"%3B\", not \";\"",
+      "count": 1,
+      "cases": [
+        "built-ins/decodeURI/S15.1.3.1_A3_T1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: new Object() !== new Object()",
+      "count": 1,
+      "cases": [
+        "language/expressions/strict-does-not-equals/S11.9.5_A7.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: test failed with error TypeError: value is not a constructor (in /",
+      "count": 1,
+      "cases": [
+        "built-ins/Function/S15.3.2.1_A3_T15.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: true !== new Number(true)",
+      "count": 1,
+      "cases": [
+        "language/expressions/strict-equals/S11.9.4_A8_T1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: true instanceof true throw TypeError",
+      "count": 1,
+      "cases": [
+        "language/expressions/instanceof/S11.8.6_A3.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: typeof Object.constructor === \"function\". Actual: undefined",
+      "count": 1,
+      "cases": [
+        "language/expressions/property-accessors/S11.2.1_A4_T2.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: var __obj = {valueOf:function(){return N;}}; var __str = \"5ABBBABA",
+      "count": 1,
+      "cases": [
+        "built-ins/String/prototype/substring/S15.5.4.15_A1_T10.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: var __proto={phylum:\"avis\"}; \"valueOf\" in __proto",
+      "count": 1,
+      "cases": [
+        "language/expressions/in/S8.12.6_A2_T2.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: var object = {valueOf: function() {return N}}; String.fromCharCode",
+      "count": 1,
+      "cases": [
+        "built-ins/String/fromCharCode/S9.7_A3.1_T4.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N.N: \"finally\" block must be evaluated",
+      "count": 1,
+      "cases": [
+        "language/statements/try/S12.14_A10_T4.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `[[N-N]&&p{ASCII_Hex_Digit}]` should match N (U+N)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/unicodeSets/generated/character-class-intersection-character-property-escape.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `[p{ASCII_Hex_Digit}&&p{ASCII_Hex_Digit}]` should match N (U+N)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/unicodeSets/generated/character-property-escape-intersection-character-property-escape.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{ASCII_Hex_Digit}` should match U+N (`N`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/ASCII_Hex_Digit.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Bidi_Mirrored}` should match U+00003C (`<`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Bidi_Mirrored.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Extended_Pictographic}` should match U+0000A9 (`©`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Extended_Pictographic.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{General_Category=Modifier_Letter}` should match U+0002EC (`ˬ`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/General_Category_-_Modifier_Letter.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{General_Category=Symbol}` should match U+N (`$`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/General_Category_-_Symbol.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Hex_Digit}` should match U+N (`N`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Hex_Digit.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Noncharacter_Code_Point}` should match U+00FDD0 (`﷐`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Noncharacter_Code_Point.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Pattern_Syntax}` should match U+N (```)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Pattern_Syntax.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script_Extensions=Bengali}` should match U+0002BC (`ʼ`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Bengali.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script_Extensions=Bhaiksuki}` should match U+011C00 (`𑰀`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Bhaiksuki.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script_Extensions=Coptic}` should match U+0000B7 (`·`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Coptic.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script_Extensions=Gurung_Khema}` should match U+N (`॥`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Gurung_Khema.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script_Extensions=Hiragana}` should match U+N (`〷`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Hiragana.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script_Extensions=Inscriptional_Pahlavi}` should match U+010B60 (`",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Inscriptional_Pahlavi.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script_Extensions=Medefaidrin}` should match U+016E40 (`𖹀`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Medefaidrin.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script_Extensions=Meroitic_Cursive}` should match U+0109A0 (`𐦠`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Meroitic_Cursive.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script_Extensions=Osage}` should match U+N (`́`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Osage.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script_Extensions=Osmanya}` should match U+N (`𐒀`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Osmanya.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script_Extensions=Phoenician}` should match U+01091F (`𐤟`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Phoenician.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script_Extensions=Rejang}` should match U+00A95F (`꥟`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Rejang.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script_Extensions=Tolong_Siki}` should match U+011DB0 (`𑶰`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Tolong_Siki.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script_Extensions=Yi}` should match U+0030FB (`・`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Yi.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script=Cherokee}` should match U+0013A0 (`Ꭰ`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_-_Cherokee.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script=Old_South_Arabian}` should match U+010A60 (`𐩠`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_-_Old_South_Arabian.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script=Osage}` should match U+0104B0 (`𐒰`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_-_Osage.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script=Pahawh_Hmong}` should match U+016B00 (`𖬀`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_-_Pahawh_Hmong.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: `\\p{Script=Tai_Yo}` should match U+01E6C0 (`𞛀`)",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_-_Tai_Yo.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: a.concat() throws a TypeError exception Expected a TypeError to be thr",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/concat/create-ctor-non-object.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: accessed private field from an arbritary object Expected a TypeError t",
+      "count": 1,
+      "cases": [
+        "language/statements/class/elements/private-static-field-shadowed-by-field-on-nested-class.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: accessed private field from an ordinary object Expected a TypeError to",
+      "count": 1,
+      "cases": [
+        "language/statements/class/elements/grammar-private-field-optional-chaining.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Actual [] and expected [method] should have the same contents. ",
+      "count": 1,
+      "cases": [
+        "language/statements/class/elements/privatefield-on-proxy.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Actual [] and expected [N, foo, Symbol()] should have the same content",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/isFrozen/proxy-no-ownkeys-returned-keys-order.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Actual [] and expected [N, N] should have the same contents. ",
+      "count": 1,
+      "cases": [
+        "built-ins/Set/prototype/symmetricDifference/combines-Map.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Actual [] and expected [toString, cause] should have the same contents",
+      "count": 1,
+      "cases": [
+        "built-ins/Error/constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Actual [get originalIter.next, get originalIter[Symbol.iterator]] and ",
+      "count": 1,
+      "cases": [
+        "built-ins/Iterator/from/get-return-method-when-call-return.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Actual [N, N, N] and expected [N, N, N, undefined, undefined, undefine",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/concat/Array.prototype.concat_strict-arguments.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Actual [N, N, N] and expected [N, undefined, N] should have the same c",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArray/prototype/reduceRight/callbackfn-resize.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: afterDeleted Expected SameValue(«true», «false») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/create/15.2.3.5-4-149.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: arr.flatMap(mapperFn) throws a TypeError exception Expected a TypeErro",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/flatMap/this-value-ctor-object-species-bad-throws.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: arr.indexOf(targetObj, fromIndex) Expected SameValue(«-N», «N») to be ",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: arr.length Expected SameValue(«N», «N») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-127.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Array.from.call(poisonedPrototypeLength, items) throws a Test262Error ",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/from/iter-set-length-err.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Array.isArray(new Proxy([], {})) must return true Expected SameValue(«",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/isArray/proxy.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Array.prototype.every.call(obj, callbackfn2) Expected SameValue(«true»",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/every/15.4.4.16-3-21.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Array.prototype.reduce.call(\"abc\", callbackfn, N) !== true",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/reduce/15.4.4.21-1-7.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Array.prototype.some.call(\"hello",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/some/15.4.4.17-1-7.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: arrObj.length Expected SameValue(«N», «N») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-154.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: assign should be an own property",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/assign/assign-descriptor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Atomics.sub(new Float64Array(buffer), N, N) throws TypeError Expected ",
+      "count": 1,
+      "cases": [
+        "built-ins/Atomics/sub/non-shared-int-views-throws.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: bare date-time string is not a time zone Expected a RangeError but got",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/Now/plainDateISO/timezone-string-datetime.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Boolean.prototype.valueOf() must return false Expected SameValue(«[obj",
+      "count": 1,
+      "cases": [
+        "built-ins/Boolean/prototype/valueOf/S15.6.4.3_A1_T1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Conforms to NativeFunction Syntax: \"function\" (async f /* a */ ( /* b ",
+      "count": 1,
+      "cases": [
+        "built-ins/Function/prototype/toString/async-method-class-expression.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Date.prototype.toUTCString serializes year -N to \"-N\" Expected SameVal",
+      "count": 1,
+      "cases": [
+        "built-ins/Date/prototype/toUTCString/negative-year.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: desc1.hasOwnProperty(\"get\") !== true",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-448.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: E descriptor should not be enumerable; E descriptor should not be writ",
+      "count": 1,
+      "cases": [
+        "built-ins/Math/E/prop-desc.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: executor not called at all Expected SameValue(«\"\"», «\"a\"») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Promise/allKeyed/capability-executor-not-callable.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a Error to be thrown but no exception was thrown at all",
+      "count": 1,
+      "cases": [
+        "built-ins/Map/prototype/getOrInsertComputed/check-state-after-callback-fn-throws.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a RangeError but got a ReferenceError",
+      "count": 1,
+      "cases": [
+        "built-ins/Atomics/wait/out-of-range-index-throws.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a ReferenceError but got a Test262Error",
+      "count": 1,
+      "cases": [
+        "language/statements/class/subclass/class-definition-null-proto-this.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a Test262Error but got a ReferenceError",
+      "count": 1,
+      "cases": [
+        "language/statements/for/dstr/var-ary-ptrn-rest-id-elision-next-err.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a TypeError but got a Test262Error (Testing with Float64Array",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArray/prototype/reduce/return-abrupt-from-this-out-of-bounds.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all (",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArray/prototype/map/speciesctor-get-species-custom-ctor-length-throws-resizable-arraybuffer.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected obj[foo] to equal N, actually N",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-91.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected obj[N] to equal N, actually N",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-298.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected obj[N] to equal N, actually undefined",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-253.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«\"\"», «\"fn\"») to be true",
+      "count": 1,
+      "cases": [
+        "language/statements/class/dstr/private-gen-meth-dflt-obj-ptrn-id-init-fn-name-fn.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«\"\"», «\"foo\"») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/prototype/Symbol.replace/result-coerce-matched-global.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«\"{\\\"N\\\":N}\"», «\"{\\\"toString\\\":N}\"») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/JSON/stringify/replacer-array-number-object.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«\"Ningu$$$m $$$ igual a ningu$$$m. Todo o ser human",
+      "count": 1,
+      "cases": [
+        "built-ins/String/prototype/replaceAll/getSubstitution-0x0024.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«\"undefined\"», «\"function\"») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Date/prototype/Symbol.toPrimitive/this-val-non-obj.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«[object Object]», «[object Object]») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Iterator/prototype/flatMap/proto.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«[object Object]», «function») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/NativeErrors/SyntaxError/proto.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«false», «true») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/prototype/isPrototypeOf/arg-is-proxy.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«N», «N») to be true (Testing with Float64Array and",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArray/prototype/includes/search-undefined-after-shrinking-buffer-index-is-oob.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«undefined», «\"ArrayBuffer\"») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/ArrayBuffer/prototype/Symbol.toStringTag.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«undefined», «\"get string\"») to be true",
+      "count": 1,
+      "cases": [
+        "language/statements/class/accessor-name-static/literal-numeric-octal.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected SameValue(«undefined», «\"Math\"») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Math/Symbol.toStringTag.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: flatMap descriptor should not be enumerable",
+      "count": 1,
+      "cases": [
+        "built-ins/Iterator/prototype/flatMap/prop-desc.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: foo descriptor should be enumerable; foo descriptor should be writable",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-102.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: foo descriptor value should be N; foo value should be N; foo descripto",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-38.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: foo should be an own property",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/seal/object-seal-p-is-own-property-of-a-date-object-that-uses-object-s-get-own-property.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: fooDescrip.configurable Expected SameValue(«false», «true») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperty/8.12.9-9-b-i_2.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: For index -N Expected SameValue(«-N», «N») to be true (Testing with Fl",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArray/prototype/lastIndexOf/negative-index-and-resize-to-smaller.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Fractional minutes not allowed in time string Expected a RangeError bu",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/ZonedDateTime/from/no-fractional-minutes-hours.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: generator function proxy Expected SameValue(«\"[object Function]\"», «\"[",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/prototype/toString/proxy-function.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: If _radix_ is BigInt, BigInt.prototype.toString must throw a TypeError",
+      "count": 1,
+      "cases": [
+        "built-ins/BigInt/prototype/toString/radix-tointegerorinfinity-throws-toprimitive-or-bigint.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: If _radix_ is Symbol, BigInt.prototype.toString must throw a TypeError",
+      "count": 1,
+      "cases": [
+        "built-ins/BigInt/prototype/toString/radix-tointegerorinfinity-throws-symbol.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: inner binding rejects modification (from parameters) Expected a TypeEr",
+      "count": 1,
+      "cases": [
+        "language/expressions/function/scope-name-var-open-strict.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Invalid string processed before throwing TypeError Expected a RangeErr",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDate/from/options-wrong-type.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: invoked exactly once Expected SameValue(«N», «N») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Date/prototype/setFullYear/arg-date-to-number.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: isConstructor(Array.prototype.findLast) must return false Expected Sam",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/findLast/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: isConstructor(DataView.prototype.getInt8) must return false Expected S",
+      "count": 1,
+      "cases": [
+        "built-ins/DataView/prototype/getInt8/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: isConstructor(Date.prototype.toGMTString) must return false Expected S",
+      "count": 1,
+      "cases": [
+        "annexB/built-ins/Date/prototype/toGMTString/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: isConstructor(isNaN) must return false Expected SameValue(«true», «fal",
+      "count": 1,
+      "cases": [
+        "built-ins/isNaN/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: isConstructor(Map.prototype.forEach) must return false Expected SameVa",
+      "count": 1,
+      "cases": [
+        "built-ins/Map/prototype/forEach/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: isConstructor(Math.sqrt) must return false Expected SameValue(«true», ",
+      "count": 1,
+      "cases": [
+        "built-ins/Math/sqrt/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: isConstructor(Object.fromEntries) must return false Expected SameValue",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/fromEntries/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: isConstructor(Object.keys) must return false Expected SameValue(«true»",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/keys/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: isConstructor(String.prototype.substring) must return false Expected S",
+      "count": 1,
+      "cases": [
+        "built-ins/String/prototype/substring/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: isConstructor(String.prototype.toString) must return false Expected Sa",
+      "count": 1,
+      "cases": [
+        "built-ins/String/prototype/toString/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: isConstructor(TypedArray.prototype.filter) must return false Expected ",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArray/prototype/filter/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: length descriptor value should be N",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-120.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: message descriptor should not be enumerable",
+      "count": 1,
+      "cases": [
+        "built-ins/NativeErrors/TypeError/prototype/message.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Method must exist. Expected SameValue(«\"undefined\"», «\"function\"») to ",
+      "count": 1,
+      "cases": [
+        "built-ins/ArrayBuffer/prototype/sliceToImmutable/this-becomes-detached.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: N value should be N",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-200.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: N.N Expected SameValue(«true», «false») to be true (Testing with Float",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/key-is-not-integer.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: name descriptor value should be [Symbol.replace]; name value should be",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/prototype/Symbol.replace/name.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: name descriptor value should be toString; name value should be toStrin",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/prototype/toString/name.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: newArr.length Expected SameValue(«N», «N») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/filter/15.4.4.20-9-c-i-16.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: newArr[N] Expected SameValue(«N», «N») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/filter/15.4.4.20-9-c-i-6.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: newObj.hasOwnProperty(\"prop\") !== true",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/create/15.2.3.5-4-24.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: no more than N decimal places are allowed Expected a RangeError but go",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainMonthDay/from/argument-string-too-many-decimals.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: null on an array Expected a TypeError to be thrown but no exception wa",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/toSorted/comparefn-not-a-function.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: null value Expected a TypeError to be thrown but no exception was thro",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/slice/create-ctor-non-object.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Number.prototype.toFixed must throw a TypeError if _fractionDigits_ is",
+      "count": 1,
+      "cases": [
+        "built-ins/Number/prototype/toFixed/toFixed-tonumber-throws-typeerror-bigint.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: obj.prop Expected SameValue(«N», «N») to be true",
+      "count": 1,
+      "cases": [
+        "language/expressions/logical-assignment/lgcl-or-assignment-operator-no-set.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: obj.prop Expected SameValue(«undefined», «\"data\"») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-593.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Object.getPrototypeOf(Function) Expected SameValue(«[object Object]», ",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/getPrototypeOf/15.2.3.2-2-4.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Object.getPrototypeOf(obj) Expected SameValue(«[object Object]», «[obj",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/getPrototypeOf/15.2.3.2-2-28.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Object.isExtensible(Proxy.revocable) must return true",
+      "count": 1,
+      "cases": [
+        "built-ins/Proxy/revocable/builtin.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: object's valueOf length Expected SameValue(«N», «N») to be true (Testi",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArrayConstructors/ctors/buffer-arg/toindex-bytelength-sab.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: ordinary object Expected a TypeError to be thrown but no exception was",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/prototype/source/this-val-invalid-obj.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: overflow due to hours Expected SameValue(«N», «NaN») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Date/prototype/setHours/new-value-time-clip.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: prop descriptor should be enumerable; prop descriptor should be config",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-538.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: prop descriptor should be writable",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-333-7.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: property descriptor should be configurable",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-354-1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: random descriptor should not be enumerable",
+      "count": 1,
+      "cases": [
+        "built-ins/Math/random/prop-desc.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: RegExp(\"(?-:a)\", \"\"):  Expected a SyntaxError to be thrown but no exce",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/syntax-err-arithmetic-modifiers-both-empty.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: RegExp(\"(?s",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/syntax-err-arithmetic-modifiers-reverse-other-code-point-non-display-1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: RegExp(\"(?ſ:a)\", \"u\"):  Expected a SyntaxError to be thrown but no exc",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/early-err-modifiers-should-not-unicode-case-fold-s.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: RegExp(\"(?y:a)\", \"\"):  Expected a SyntaxError to be thrown but no exce",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/early-err-modifiers-other-code-point-y.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: reject minus zero as extended year Expected a RangeError but got a Typ",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/Duration/compare/relativeto-propertybag-timezone-string-year-zero.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: reject unknown annotation with critical flag: N-N-01T00:N[!foo=bar] Ex",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDateTime/from/argument-string-critical-unknown-annotation.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: res Expected SameValue(«\"N\"», «\"N\"») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/reduceRight/15.4.4.22-9-6.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: result !== true",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/forEach/15.4.4.18-1-15.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: returns false Expected SameValue(«true», «false») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Reflect/set/receiver-is-not-object.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Same date value Expected SameValue(«NaN», «N») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Date/construct_with_date.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Set-like class Expected a TypeError to be thrown but no exception was ",
+      "count": 1,
+      "cases": [
+        "built-ins/Set/prototype/isSupersetOf/receiver-not-set.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: setFloat32(N, poisoned) Expected a Test262Error but got a RangeError",
+      "count": 1,
+      "cases": [
+        "built-ins/DataView/prototype/setFloat32/range-check-after-value-conversion.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: side effect check Expected SameValue(«N», «N») to be true (Testing wit",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/key-is-numericindex-desc-configurable.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: String.prototype.localeCompare considers ö (\\u006f\\u0308) ≠ ö (\\u00f6",
+      "count": 1,
+      "cases": [
+        "built-ins/String/prototype/localeCompare/15.5.4.9_CE.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Symbol should be an own property",
+      "count": 1,
+      "cases": [
+        "built-ins/Symbol/symbol.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: test N",
+      "count": 1,
+      "cases": [
+        "language/statements/class/elements/regular-definitions-private-names.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: testResult2 !== true",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/reduceRight/15.4.4.22-3-19.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: The expression should evaluate to the short-circuit value Expected Sam",
+      "count": 1,
+      "cases": [
+        "language/expressions/logical-assignment/left-hand-side-private-reference-readonly-accessor-property-short-circuit-and.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: The result of evaluating (N / Math.round(-N.N)) is expected to be N / ",
+      "count": 1,
+      "cases": [
+        "built-ins/Math/round/S15.8.2.15_A7.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: The value of __split.length is expected to equal the value of __expect",
+      "count": 1,
+      "cases": [
+        "built-ins/String/prototype/split/arguments-are-new-reg-exp-and-0-and-instance-is-string-hello.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: The value of `typeof Object(N)` is expected to be \"object\" Expected Sa",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/S9.9_A4.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: The value of `typeof String.prototype.isWellFormed` is \"function\" Expe",
+      "count": 1,
+      "cases": [
+        "built-ins/String/prototype/isWellFormed/prop-desc.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: The value of arr[N] is expected to be N Expected SameValue(«undefined»",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/concat/S15.4.4.4_A3_T1.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: The value of called is expected to be N Expected SameValue(«N», «N») t",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/flatMap/this-value-ctor-object-species.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: The value of x[N] is expected to be N Expected SameValue(«undefined», ",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/S15.4_A1.1_T9.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: thisArg becomes the predicate this Expected SameValue(«undefined», «[o",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArray/prototype/findLastIndex/predicate-call-this-non-strict.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: thisVal.toString expected to have been accessed. Expected SameValue(«N",
+      "count": 1,
+      "cases": [
+        "built-ins/String/prototype/trimStart/this-value-object-tostring-meth-priority.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: ToBigInt: no argument => undefined => TypeError Expected a TypeError t",
+      "count": 1,
+      "cases": [
+        "built-ins/BigInt/asUintN/bigint-tobigint-errors.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: toLocaleTimeString descriptor should not be enumerable",
+      "count": 1,
+      "cases": [
+        "built-ins/Date/prototype/toLocaleTimeString/prop-desc.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: toStringTag value Expected SameValue(«undefined», «\"AsyncFunction\"») t",
+      "count": 1,
+      "cases": [
+        "built-ins/AsyncFunction/AsyncFunctionPrototype-to-string.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: undefined Expected a TypeError to be thrown but no exception was throw",
+      "count": 1,
+      "cases": [
+        "built-ins/FinalizationRegistry/prototype/unregister/this-not-object-throws.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: undefined should be an own property",
+      "count": 1,
+      "cases": [
+        "built-ins/Iterator/prototype/Symbol.dispose/prop-desc.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Unicode property escapes with u flag Expected SameValue(«-N», «N») to ",
+      "count": 1,
+      "cases": [
+        "built-ins/String/prototype/search/regexp-prototype-search-v-u-flag.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: unregister descriptor should not be enumerable",
+      "count": 1,
+      "cases": [
+        "built-ins/FinalizationRegistry/prototype/unregister/prop-desc.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: value: Infinity Expected SameValue(«N», «N») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/DataView/prototype/setUint8/set-values-return-undefined.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: valueOf called exactly once Expected SameValue(«N», «N») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Date/prototype/setUTCSeconds/date-value-read-before-tonumber-when-date-is-invalid.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: verifyValue !== true",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-333-11.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: WeakRef should be an own property",
+      "count": 1,
+      "cases": [
+        "built-ins/WeakRef/prop-desc.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: x1.toString() must return \"[object Date]\" Expected SameValue(«\"Thu Jan",
+      "count": 1,
+      "cases": [
+        "built-ins/Date/S15.9.3.1_A3_T3.2.js"
+      ]
+    }
+  ]
+}
