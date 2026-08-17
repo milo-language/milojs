@@ -3,7 +3,7 @@ system: conformance-reports
 purpose: reproducible procedure and format for checked-in test262 and QuickJS sweep evidence
 key-files: scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, docs/status.md
 update-when: report flags, schema, corpus policy, or score publication policy changes
-last-verified: 2026-08-17 (`--fails` dumps every failure for clustering; `--dir` scores one area exhaustively)
+last-verified: 2026-08-17 (engine-agnostic failure detection, which corrected both a bogus 100% for QuickJS and milojs's own figure; `--fails` and `--dir`)
 -->
 
 # conformance reports
@@ -51,6 +51,21 @@ the console summary states this limitation.
 bucket, which is enough to NAME a cluster and not enough to work one; this is the
 full set, and clustering it by directory and by reason is how a session picks its
 next target.
+
+**A failure must be detected the same way for every engine.** The sweep used to
+decide "did this throw?" by looking for milojs's own `Uncaught …` prefix. Point it
+at another engine and that prefix never appears: QuickJS prints a bare
+`ReferenceError: …` and exits 1, so every one of its runtime failures scored as a
+PASS. It measured **qjs at 100% on Temporal, an API QuickJS does not implement at
+all**, and at 90.2% overall against a true 85.9%. Detection is now
+`Uncaught …` OR a non-zero exit status OR a leading `SomeError:` line, and the
+negative-test check matches the error NAME anywhere in the output rather than only
+after `Uncaught`. Correcting it also lowered milojs's own published figure by ~2
+points, because milojs parse errors exit non-zero without printing `Uncaught`.
+
+Comparing against another engine is the point of this: `MILOJS_ENGINE=<other>`
+scores any binary, and the set difference between two runs' `--fails` dumps is a
+prioritized worklist rather than a guess.
 
 `--dir <subpath>` restricts the run to one area and scores it exhaustively rather
 than by sample — `--dir built-ins/RegExp/property-escapes` is how the property-escape

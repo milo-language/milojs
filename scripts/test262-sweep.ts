@@ -161,23 +161,39 @@ function runOne(file: string): { res: Res; why: string } {
   writeFileSync(casePath, source);
 
   let out = "";
+  let exitCode = 0;
   try {
     out = execFileSync(ENGINE, [casePath], { encoding: "utf-8", timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] });
   } catch (e: any) {
     out = (e.stdout ?? "") + (e.stderr ?? "") || `crash(${e.signal ?? e.status})`;
+    exitCode = typeof e.status === "number" ? e.status : 1;
   }
-  const threw = /^Uncaught /m.test(out);
+  // "Did the case throw?" has to be answered the same way for EVERY engine, or a
+  // cross-engine comparison is meaningless. milojs prints `Uncaught …` and still
+  // exits 0; QuickJS prints a bare `ReferenceError: …` and exits 1. Detecting only
+  // milojs's shape made every QuickJS runtime failure look like a pass and scored
+  // qjs at 100% on an API it does not implement at all.
+  const threw = /^Uncaught /m.test(out) || exitCode !== 0 ||
+    /^(?:[A-Za-z_$][\w$]*Error|Test262Error)\b/m.test(out);
 
   if (meta.negType) {
     // negative test: must fail. parse-phase → any throw; runtime → matching type.
     if (!threw) return { res: "fail", why: `expected ${meta.negType}, nothing thrown` };
     if (meta.negPhase === "parse" || meta.negPhase === "early") return { res: "pass", why: "" };
-    return new RegExp("Uncaught .*" + meta.negType).test(out) ? { res: "pass", why: "" } : { res: "fail", why: `wanted ${meta.negType}: ${out.split("\n")[0]}` };
+    // the type may be reported as `Uncaught TypeError: …` (milojs) or as a bare
+    // `TypeError: …` (QuickJS, node), so match the NAME anywhere in the output
+    return new RegExp("\\b" + meta.negType + "\\b").test(out) ? { res: "pass", why: "" } : { res: "fail", why: `wanted ${meta.negType}: ${out.split("\n")[0]}` };
   }
   if (meta.flags.has("async")) {
     return out.includes("Test262:AsyncTestComplete") ? { res: "pass", why: "" } : { res: "fail", why: out.split("\n").find(l => l.trim()) ?? "no completion marker" };
   }
-  if (threw) return { res: "fail", why: (out.match(/^Uncaught .*/m)?.[0] ?? "").slice(0, 100) };
+  if (threw) {
+    const line = out.match(/^Uncaught .*/m)?.[0]
+      ?? out.match(/^(?:[A-Za-z_$][\w$]*Error|Test262Error)\b.*/m)?.[0]
+      ?? out.split("\n").find(l => l.trim())
+      ?? `exit ${exitCode}`;
+    return { res: "fail", why: line.slice(0, 100) };
+  }
   return { res: "pass", why: "" };
 }
 
