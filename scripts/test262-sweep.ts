@@ -35,6 +35,10 @@ const sampleN = arg("--sample") ? parseInt(arg("--sample")!) : null;
 const subDir = arg("--dir") ?? "";
 const limit = arg("--limit") ? parseInt(arg("--limit")!) : Infinity;
 const jsonPath = arg("--json") ?? "docs/conformance/test262.json";
+// Every failing case with its reason, one JSON object per line. The bucket
+// listing above truncates at 8 examples per bucket, which is enough to name a
+// cluster and not enough to work one; this is the full set.
+const failsPath = arg("--fails");
 
 
 // The published score has to be traceable to something committed, not to a file
@@ -184,6 +188,7 @@ function bucket(why: string): string {
 let pass = 0, fail = 0, skip = 0;
 const areaTotals = new Map<string, { p: number; f: number }>();
 const buckets = new Map<string, string[]>();
+const allFails: { file: string; why: string }[] = [];
 const areaOf = (f: string) => { const rel = f.slice(root.length + 1); const parts = rel.split("/"); return subDir ? parts[0]! : parts.slice(0, 2).join("/"); };
 
 let done = 0;
@@ -193,7 +198,7 @@ for (const file of files) {
   const a = areaOf(file);
   const t = areaTotals.get(a) ?? areaTotals.set(a, { p: 0, f: 0 }).get(a)!;
   if (res === "pass") { pass++; t.p++; }
-  else { fail++; t.f++; const b = bucket(why); (buckets.get(b) ?? buckets.set(b, []).get(b)!).push(file.slice(root.length + 1)); }
+  else { fail++; t.f++; const b = bucket(why); (buckets.get(b) ?? buckets.set(b, []).get(b)!).push(file.slice(root.length + 1)); allFails.push({ file: file.slice(root.length + 1), why }); }
   if (++done % 500 === 0) process.stderr.write(`  ${done}/${files.length}\r`);
 }
 
@@ -210,6 +215,11 @@ console.log("\ntop failure buckets:");
 for (const [b, cs] of [...buckets.entries()].sort((x, y) => y[1].length - x[1].length).slice(0, verbose ? 999 : 20)) {
   console.log(`  ${String(cs.length).padStart(4)}  ${b}`);
   if (verbose) console.log(`        ${cs.slice(0, 8).join(", ")}${cs.length > 8 ? " …" : ""}`);
+}
+
+if (failsPath) {
+  writeFileSync(failsPath, allFails.map(f => JSON.stringify(f)).join("\n") + "\n");
+  console.log(`wrote ${failsPath} (${allFails.length} failures)`);
 }
 
 if (jsonPath) {

@@ -3185,6 +3185,27 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
             if name == "valueOf" {
                 return cloneValue(recv)
             }
+            // A native builtin is a function OBJECT: it owns `name` and
+            // `length`, and test262's verifyProperty asks about them with
+            // `Object.prototype.hasOwnProperty.call(Math.sqrt, "name")`. That
+            // borrowed call lands here, where the primitive adapter below
+            // answered the string "function" — so every name.js/length.js/
+            // prop-desc.js for a native failed on the own-property check before
+            // it ever looked at the value.
+            if nativeHandle(recv) >= 0 && (name == "hasOwnProperty" || name == "propertyIsEnumerable") {
+                var nkey = ""
+                if args.len() > 0 {
+                    nkey = toStr(args[0])
+                }
+                let nbag = propertyBagOf(st, cloneValue(recv))
+                if nbag >= 0 {
+                    let npi = objOwnIndex(st, nbag, nkey)
+                    if name == "hasOwnProperty" {
+                        return JSValue.Bool(npi >= 0)
+                    }
+                    return JSValue.Bool(npi >= 0 && st.objects[nbag].props[npi].enumerable)
+                }
+            }
             // Array.prototype.<m>.call(null) must throw the spec's ToObject
             // TypeError, and .call(42) must behave as an empty array — both
             // handled by the generic adapter rather than silently answering
@@ -10951,9 +10972,7 @@ fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
         // A non-strict function called with no receiver gets globalThis, not
         // undefined. That is OrdinaryCallBindThis, and it is what
         // `Function("return this")()` — the standard global probe, and the core
-        // of every UMD wrapper — depends on. This engine has no strict-mode
-        // tracking, so it applies the sloppy rule throughout, which is also the
-        // mode the test262 sweep runs in.
+        // of every UMD wrapper — depends on.
         var boundThisVal = thisVal
         if !prog.funcs[fIdx].isStrict && isNullish(boundThisVal) {
             // sloppy mode substitutes globalThis for BOTH undefined and null:
