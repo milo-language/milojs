@@ -703,7 +703,12 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
         // built-in constructors — `Object.hasOwnProperty.call(x, k)` is a common
         // way to borrow the method, and it read as undefined before
         if key == "hasOwnProperty" || key == "isPrototypeOf" || key == "propertyIsEnumerable" {
-            if !objHasInChain(st, o, key) {
+            // "the ordinary walk found nothing", the same condition toString
+            // uses below: objHasInChain reaches Object.prototype by TYPE, so it
+            // reported the method as present on objects whose raw proto walk
+            // could never reach it — a function's property bag among them, which
+            // is why `fn.hasOwnProperty` read as undefined
+            if isUndefinedValue(getMember(st, o, key)) {
                 return makeBoundMethod(st, JSValue.Obj(o), key.clone())
             }
         }
@@ -5828,7 +5833,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     }
     if id == NATIVE_OBJECT_FREEZE {
         if argVals.len() > 0 {
-            let fh = objHandle(argVals[0])
+            let fh = propertyBagOf(st, argVals[0])
             if fh >= 0 {
                 st.objects[fh].frozen = true
             }
@@ -5917,7 +5922,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     }
     if id == NATIVE_OBJECT_PREVENTEXT || id == NATIVE_OBJECT_SEAL {
         if argVals.len() > 0 {
-            let h = objHandle(argVals[0])
+            let h = propertyBagOf(st, argVals[0])
             if h >= 0 {
                 st.objects[h].noExtend = true
                 if id == NATIVE_OBJECT_SEAL {
@@ -5930,7 +5935,9 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     }
     if id == NATIVE_OBJECT_ISEXT {
         if argVals.len() > 0 {
-            let h = objHandle(argVals[0])
+            // a function is an ordinary extensible object; objHandle answers -1
+            // for one, so every builtin used to report itself non-extensible
+            let h = propertyBagOf(st, argVals[0])
             if h >= 0 {
                 return JSValue.Bool(!st.objects[h].noExtend && !st.objects[h].frozen)
             }
@@ -6025,7 +6032,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     }
     if id == NATIVE_OBJECT_ISSEALED {
         if argVals.len() > 0 {
-            let h = objHandle(argVals[0])
+            let h = propertyBagOf(st, argVals[0])
             if h >= 0 {
                 return JSValue.Bool(st.objects[h].sealed || st.objects[h].frozen)
             }
@@ -6034,7 +6041,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     }
     if id == NATIVE_OBJECT_ISFROZEN {
         if argVals.len() > 0 {
-            let fh = objHandle(argVals[0])
+            let fh = propertyBagOf(st, argVals[0])
             if fh >= 0 {
                 return JSValue.Bool(st.objects[fh].frozen)
             }
@@ -9193,7 +9200,10 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                             return cloneValue(st.objects[nbag].props[ni].value)
                         }
                     }
-                    let statics = getFuncStatics(st, fIdx, fe)
+                    // propertyBagOf, not getFuncStatics: this is the lookup a
+                    // borrowed `fn.hasOwnProperty("name")` ends up querying, and
+                    // it has to see the materialised name/length
+                    let statics = propertyBagOf(st, JSValue.Func(fIdx, fe))
                     // getMemberDyn, not getMember: a `static get v()` is stored on
                     // the statics object as an accessor, and the plain read never
                     // invoked it — every static getter returned undefined
@@ -9254,11 +9264,14 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     if key == "prototype" {
                         return JSValue.Obj(getFuncProto(st, fIdx))
                     }
-                    let statics = getFuncStatics(st, fIdx, fe)
+                    let statics = propertyBagOf(st, JSValue.Func(fIdx, fe))
                     if (key == "call" || key == "apply" || key == "bind") && objOwnIndex(st, statics, key) < 0 {
                         return makeBoundMethod(st, JSValue.Func(fIdx, fe), key.clone())
                     }
-                    return getMember(st, statics, key)
+                    // getMemberDyn, like the dotted form: a computed read must
+                    // reach static accessors and the inherited Object.prototype
+                    // methods too, not just what is literally in the bag
+                    return getMemberDyn(prog, statics, key, st)
                 }
                 JSValue.Native(nid) => {
                     let bag = getNativeProps(st, nid)

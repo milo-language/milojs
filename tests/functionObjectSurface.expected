@@ -1,0 +1,8 @@
+function function function function
+true false
+true false false
+true true true true
+false
+threw TypeError
+undefined true
+false false
