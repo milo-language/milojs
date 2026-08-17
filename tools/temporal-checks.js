@@ -138,4 +138,33 @@ eq(T.PlainDate.prototype.with.name, "with", "method name is the key");
 eq(T.PlainTime.prototype.round.name, "round", "round name");
 eq(T.PlainDate.prototype.toString.name, "toString", "toString name");
 
+// Duration.round / .total. The fractional part of a calendar total is measured
+// against the length of the very unit being counted, so a month here is 28, 29,
+// 30 or 31 days depending on where it starts — these expectations are computed
+// from the ISO calendar by hand, not read off another engine.
+var R = "2020-01-01";
+eq(new T.Duration(0, 0, 0, 1, 2, 30).total("hour"), 26.5, "total hours, no relativeTo");
+eq(new T.Duration(0, 0, 0, 1, 2, 30).total({ unit: "day" }), 26.5 / 24, "total days, no relativeTo");
+eq(new T.Duration(0, 0, 0, 1, 2, 30).round("hour").toString(), "P1DT3H", "round to hour");
+eq(new T.Duration(0, 0, 0, 0, 0, 90).round({ largestUnit: "hour" }).toString(), "PT1H30M", "balance minutes to hours");
+eq(new T.Duration(1).total({ unit: "day", relativeTo: R }), 366, "a year from 2020-01-01 is 366 days");
+eq(new T.Duration(0, 1).total({ unit: "day", relativeTo: R }), 31, "January is 31 days");
+eq(new T.Duration(0, 0, 0, 45).total({ unit: "month", relativeTo: R }), 1 + 14 / 29, "45 days is 1 month and 14/29");
+eq(new T.Duration(0, 0, 0, -45).total({ unit: "month", relativeTo: R }), -(1 + 14 / 30), "and backwards, into a 30-day November");
+eq(new T.Duration(0, 0, 0, 400).round({ largestUnit: "year", relativeTo: R }).toString(), "P1Y1M3D", "400 days is 1Y1M3D");
+eq(new T.Duration(0, 0, 0, -400).round({ largestUnit: "year", relativeTo: R }).toString(), "-P1Y1M4D", "and backwards");
+eq(new T.Duration(0, 13).round({ largestUnit: "year", relativeTo: R }).toString(), "P1Y1M", "13 months is 1Y1M");
+eq(new T.Duration(0, 0, 0, 45).round({ smallestUnit: "month", roundingMode: "ceil", relativeTo: R }).toString(), "P2M", "ceil");
+eq(new T.Duration(0, 0, 0, 45).round({ smallestUnit: "month", roundingMode: "floor", relativeTo: R }).toString(), "P1M", "floor");
+eq(new T.Duration(0, 0, 0, 1, 2).add(new T.Duration(0, 0, 0, 0, 3)).toString(), "P1DT5H", "add");
+eq(new T.Duration(0, 0, 0, 1, 2).subtract("PT30M").toString(), "P1DT1H30M", "subtract");
+throws(function () { new T.Duration(0, 0, 0, 1).round(); }, TypeError, "round with no argument");
+throws(function () { new T.Duration(0, 0, 0, 1).total(); }, TypeError, "total with no argument");
+throws(function () { new T.Duration(0, 0, 0, 1).total("fortnight"); }, RangeError, "unknown unit");
+throws(function () { new T.Duration(1).total("day"); }, RangeError, "a year cannot be totalled without relativeTo");
+throws(function () { new T.Duration(0, 0, 0, 1).round({}); }, RangeError, "round needs a unit");
+throws(function () { new T.Duration(0, 0, 0, 1).round({ smallestUnit: "hour", roundingIncrement: 0 }); }, RangeError, "increment 0");
+throws(function () { new T.Duration(0, 0, 0, 1).round({ smallestUnit: "hour", largestUnit: "minute" }); }, RangeError, "smallest larger than largest");
+throws(function () { new T.Duration(1).add(new T.Duration(0, 0, 0, 1)); }, RangeError, "adding calendar units needs relativeTo");
+
 console.log(failures === 0 ? ("temporal-checks: " + checks + " checks, all ok") : ("temporal-checks: " + failures + " of " + checks + " FAILED"));
