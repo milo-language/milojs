@@ -656,6 +656,12 @@ struct JSObj {
     // the object's prototype (index into objects), or -1 — the fallback for
     // property lookup; set by `new F()` to F's prototype object
     proto: i64,
+    // -1 in `proto` means "no explicit link", and an object with no explicit
+    // link still inherits Object.prototype. A NULL prototype is a different
+    // thing and needs its own bit: Object.create(null) and `__proto__ = null`
+    // produce an object that inherits nothing, and without this flag both
+    // answered Object.prototype and carried toString/hasOwnProperty.
+    protoNull: bool,
     // objects produced by the Error-family native constructors; the specific
     // kind lives in the `name` property
     isError: bool,
@@ -1001,7 +1007,7 @@ pub var gInterp: Interp = Interp {
 fn allocObj(st: &mut Interp, isArray: bool): i64 {
     st.allocSinceGc = st.allocSinceGc + 1
     let obj = JSObj {
-        props: Vec.new(), elems: Vec.new(), holes: Vec.new(), logicalLen: -1, isArray: isArray, ctor: -1, proto: -1, isError: false, frozen: false, fnStatInit: false, noExtend: false, sealed: false, isGlobal: false, isArrayBuffer: false, abDetached: false, isDataView: false, promiseState: -1, isBound: false, isEnv: false, isFunctionLike: false, isDate: false, isMap: false, isSet: false, isProxy: false, isGenerator: false, isAsyncGenerator: false, extra: 0, mark: false, free: false
+        props: Vec.new(), elems: Vec.new(), holes: Vec.new(), logicalLen: -1, isArray: isArray, ctor: -1, proto: -1, protoNull: false, isError: false, frozen: false, fnStatInit: false, noExtend: false, sealed: false, isGlobal: false, isArrayBuffer: false, abDetached: false, isDataView: false, promiseState: -1, isBound: false, isEnv: false, isFunctionLike: false, isDate: false, isMap: false, isSet: false, isProxy: false, isGenerator: false, isAsyncGenerator: false, extra: 0, mark: false, free: false
     }
     // reuse a freed slot if one exists (indices are stable — handles hold them),
     // otherwise grow the arena
@@ -1725,17 +1731,70 @@ pub fn enumOrder(st: &Interp, o: i64): Vec<i64> {
 }
 
 pub fn arrGet(st: &Interp, obj: i64, idx: i64): JSValue {
-    if idx < 0 || idx >= arrLen(st, obj) {
+    if idx < 0 {
         return JSValue.Undefined
     }
-    if idx < st.objects[obj].elems.len() {
-        return cloneValue(st.objects[obj].elems[idx])
+    if idx < arrLen(st, obj) {
+        if idx < st.objects[obj].elems.len() {
+            if !arrIsHole(st, obj, idx) {
+                return cloneValue(st.objects[obj].elems[idx])
+            }
+        } else {
+            let sparse = objOwnIndex(st, obj, i64ToStr(idx))
+            if sparse >= 0 {
+                return cloneValue(st.objects[obj].props[sparse].value)
+            }
+        }
     }
-    let sparse = objOwnIndex(st, obj, i64ToStr(idx))
-    if sparse >= 0 {
-        return cloneValue(st.objects[obj].props[sparse].value)
+    // Past the end is the same case as a hole: no own property, so the read
+    // continues up the chain. Truncating with `a.length = 0` re-exposes an
+    // inherited index that the array's own element was shadowing.
+    return protoIndexValue(st, obj, idx)
+}
+
+// A HOLE is the ABSENCE of an own property, so the read continues up the
+// prototype chain: with `Array.prototype[1] = 1`, `[0]` extended to length 2
+// reads 1 at index 1, not undefined. Reading a hole as undefined made every
+// hole shadow the inherited index the spec says it should expose.
+fn protoIndexValue(st: &Interp, obj: i64, idx: i64): JSValue {
+    let key = i64ToStr(idx)
+    var cur = st.objects[obj].proto
+    while cur >= 0 {
+        let pi = objOwnIndex(st, cur, key)
+        if pi >= 0 {
+            return cloneValue(st.objects[cur].props[pi].value)
+        }
+        if st.objects[cur].isArray && !arrIsHole(st, cur, idx) {
+            return arrGet(st, cur, idx)
+        }
+        cur = st.objects[cur].proto
     }
     return JSValue.Undefined
+}
+
+// HasProperty for an array index: an own element, an own sparse property, or
+// anything the prototype chain supplies. indexOf/lastIndexOf and the callback
+// methods are specified over PRESENT indices, and "present" includes inherited
+// ones — which is why this is not simply !arrIsHole.
+pub fn arrHasIndex(st: &Interp, obj: i64, idx: i64): bool {
+    if idx < 0 {
+        return false
+    }
+    if !arrIsHole(st, obj, idx) {
+        return true
+    }
+    let key = i64ToStr(idx)
+    var cur = st.objects[obj].proto
+    while cur >= 0 {
+        if objOwnIndex(st, cur, key) >= 0 {
+            return true
+        }
+        if st.objects[cur].isArray && !arrIsHole(st, cur, idx) {
+            return true
+        }
+        cur = st.objects[cur].proto
+    }
+    return false
 }
 
 // Sequential writes stay dense. Far writes use the ordinary numeric property

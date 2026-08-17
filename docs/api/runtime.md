@@ -25,6 +25,17 @@ pub fn arrGet(st: &Interp, obj: i64, idx: i64): JSValue
 
 _Undocumented._
 
+### `arrHasIndex`
+
+```milo
+pub fn arrHasIndex(st: &Interp, obj: i64, idx: i64): bool
+```
+
+HasProperty for an array index: an own element, an own sparse property, or
+anything the prototype chain supplies. indexOf/lastIndexOf and the callback
+methods are specified over PRESENT indices, and "present" includes inherited
+ones — which is why this is not simply !arrIsHole.
+
 ### `arrIsHole`
 
 ```milo

@@ -702,6 +702,12 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
         // every object inherits these from Object.prototype, including the
         // built-in constructors — `Object.hasOwnProperty.call(x, k)` is a common
         // way to borrow the method, and it read as undefined before
+        // Every one of these synthesises an Object.prototype method for an
+        // object the raw proto walk cannot reach it from. An object with a NULL
+        // prototype must reach nothing, so it skips the whole group.
+        if st.objects[o].protoNull {
+            return getMember(st, o, key)
+        }
         if key == "hasOwnProperty" || key == "isPrototypeOf" || key == "propertyIsEnumerable" {
             // "the ordinary walk found nothing", the same condition toString
             // uses below: objHasInChain reaches Object.prototype by TYPE, so it
@@ -3430,11 +3436,13 @@ fn setMemberDyn(prog: &Prog, o: i64, key: string, v: JSValue, st: &mut Interp) {
         match v {
             JSValue.Null => {
                 st.objects[o].proto = -1
+                st.objects[o].protoNull = true
             }
             _ => {
                 let np = propertyBagOf(st, v)
                 if np >= 0 {
                     st.objects[o].proto = np
+                    st.objects[o].protoNull = false
                 }
             }
         }
@@ -3557,7 +3565,11 @@ pub fn getMember(st: &Interp, o: i64, key: &string): JSValue {
         if objHas(st, cur, key) {
             return objGet(st, cur, key)
         }
-        cur = st.objects[cur].proto
+        // protoOfHandle, not the raw field: a plain `{}` has proto == -1 and
+        // still inherits Object.prototype. Walking the raw link stopped there,
+        // so anything a program added to Object.prototype was invisible —
+        // `Object.prototype.x = 1; ({}).x` answered undefined.
+        cur = protoOfHandle(st, cur)
     }
     return JSValue.Undefined
 }
@@ -5794,6 +5806,17 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             let proto = objHandle(argVals[0])
             if proto >= 0 {
                 st.objects[o].proto = proto
+            } else {
+                // Object.create(null) is the standard "bare dictionary" idiom;
+                // without the flag the result still inherited Object.prototype,
+                // so `"toString" in dict` was true for every such dictionary.
+                match argVals[0] {
+                    JSValue.Null => {
+                        st.objects[o].protoNull = true
+                    }
+                    _ => {
+                    }
+                }
             }
         }
         // second argument: property descriptors, same shape as
@@ -5903,6 +5926,9 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             if h >= 0 {
                 let p = propertyBagOf(st, argVals[1])
                 st.objects[h].proto = p
+                // setPrototypeOf(o, null) must sever the chain, not fall back
+                // to the default Object.prototype that proto == -1 means
+                st.objects[h].protoNull = p < 0
             }
         }
         if argVals.len() > 0 {
@@ -6405,6 +6431,10 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
 // the right singleton by type here rather than reading a real link.
 fn protoOfHandle(st: &Interp, h: i64): i64 {
     if h < 0 {
+        return -1
+    }
+    // an explicit null prototype inherits nothing, not even Object.prototype
+    if st.objects[h].protoNull {
         return -1
     }
     // Object.prototype is the top of the chain; its own proto is null
@@ -14986,6 +15016,17 @@ fn arrayNeedsCallback(name: &string): bool {
         || name == "flatMap" || name == "reduce" || name == "reduceRight"
 }
 
+// Element read that honours the prototype chain including ACCESSORS. arrGet
+// has no Prog and so cannot call a getter: with a getter installed at
+// `Array.prototype[1]`, a hole at index 1 read as undefined and indexOf could
+// never find its value.
+fn arrGetDyn(prog: &Prog, o: i64, idx: i64, st: &mut Interp): JSValue {
+    if !arrIsHole(st, o, idx) {
+        return arrGet(st, o, idx)
+    }
+    return getMemberDyn(prog, o, i64ToStr(idx), st)
+}
+
 fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     let n = arrLen(st, o)
     if arrayNeedsCallback(name) {
@@ -15092,7 +15133,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         while i < arrLen(st, o) && found < 0 {
             // some/every are specified over PRESENT indices; find/findIndex are
             // not, and visit a hole as undefined
-            if (name == "some" || name == "every") && arrIsHole(st, o, i) {
+            if (name == "some" || name == "every") && !arrHasIndex(st, o, i) {
                 i = i + 1
                 continue
             }
@@ -15142,7 +15183,10 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         // 0) is not the same as no second argument at all.
         var i = n - 1
         if args.len() > 1 {
-            var from = toNum(args[1]) as i64
+            // toNumProg, not toNum: fromIndex may be an object whose valueOf
+            // runs user code — and that code can add the very element being
+            // searched for, which the spec orders BEFORE the scan
+            var from = toNumProg(prog, args[1], st) as i64
             if from < 0 {
                 from = n + from
             }
@@ -15151,7 +15195,9 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
             }
         }
         while i >= 0 {
-            if jsStrictEquals(arrGet(st, o, i), target) {
+            // specified over PRESENT indices, like indexOf: a hole never
+            // matches, not even a search for undefined
+            if arrHasIndex(st, o, i) && jsStrictEquals(arrGetDyn(prog, o, i, st), target) {
                 return JSValue.Number(i as f64)
             }
             i = i - 1
@@ -15541,7 +15587,9 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         // optional fromIndex (negative counts from the end)
         var i: i64 = 0
         if args.len() > 1 {
-            var fi = toNum(args[1]) as i64
+            // see lastIndexOf: a valueOf on fromIndex runs before the scan and
+            // may mutate the array
+            var fi = toNumProg(prog, args[1], st) as i64
             if fi < 0 {
                 fi = n + fi
                 if fi < 0 {
@@ -15551,14 +15599,14 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
             i = fi
         }
         while i < n {
-            if arrIsHole(st, o, i) {
+            if !arrHasIndex(st, o, i) {
                 // indexOf is specified over PRESENT indices, so a hole never
                 // matches — not even a search for undefined. includes() does
                 // look at holes, and stays as it is.
                 i = i + 1
                 continue
             }
-            let e = arrGet(st, o, i)
+            let e = arrGetDyn(prog, o, i, st)
             if args.len() > 0 && jsEquals(e, args[0]) {
                 return JSValue.Number(i as f64)
             }
@@ -16625,9 +16673,12 @@ fn evalInOperator(prog: &Prog, key: string, ov: JSValue, st: &mut Interp): JSVal
             }
             if st.objects[o].isArray {
                 let ai = asArrayIndex(key)
-                if ai >= 0 && ai < arrLen(st, o) {
-                    return JSValue.Bool(!arrIsHole(st, o, ai))
+                if ai >= 0 && ai < arrLen(st, o) && !arrIsHole(st, o, ai) {
+                    return JSValue.Bool(true)
                 }
+                // A hole is the ABSENCE of an own property, so `in` continues up
+                // the chain rather than answering false — `1 in [,,,]` is true
+                // once Array.prototype has an index 1.
             }
             var cur = o
             while cur >= 0 {
