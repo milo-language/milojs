@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "083de9c0add94860249967f74a5a04e389c0a187",
+    "revision": "7527da7f4cc62c5d63a8315db7b38f878a876b20",
     "dirty": true
   },
   "engine": ".dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 1010,
-    "fail": 460,
+    "pass": 1011,
+    "fail": 459,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -236,8 +236,8 @@
     },
     {
       "area": "built-ins/DisposableStack",
-      "pass": 0,
-      "fail": 3,
+      "pass": 1,
+      "fail": 2,
       "total": 3
     },
     {
@@ -459,49 +459,6 @@
   ],
   "failureBuckets": [
     {
-      "reason": "Uncaught TypeError: cannot read property '…' of undefined",
-      "count": 37,
-      "cases": [
-        "built-ins/ThrowTypeError/extensible.js",
-        "language/expressions/generators/eval-body-proto-realm.js",
-        "built-ins/Atomics/and/not-a-constructor.js",
-        "built-ins/ShadowRealm/prototype/evaluate/wrapped-function-arguments-are-wrapped-into-the-inner-realm.js",
-        "built-ins/ShadowRealm/prototype/evaluate/name.js",
-        "built-ins/SuppressedError/prototype/constructor.js",
-        "built-ins/DisposableStack/prototype/defer/prop-desc.js",
-        "built-ins/ShadowRealm/prototype/evaluate/wrapped-function-arguments-are-wrapped-into-the-inner-realm-extended.js",
-        "built-ins/Set/Symbol.species/return-value.js",
-        "built-ins/Array/prototype/filter/15.4.4.20-1-9.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-propertybag-timezone-string-leap-second.js",
-        "built-ins/Object/freeze/proxy-with-defineProperty-handler.js",
-        "built-ins/Proxy/construct/return-not-object-throws-undefined-realm.js",
-        "built-ins/Array/prototype/map/create-proto-from-ctor-realm-non-array.js",
-        "built-ins/ArrayBuffer/Symbol.species/return-value.js",
-        "language/eval-code/direct/switch-case-decl-eval-source-is-strict-nostrict.js",
-        "built-ins/Proxy/construct/return-not-object-throws-symbol-realm.js",
-        "language/expressions/class/elements/arrow-body-private-derived-cls-direct-eval-contains-superproperty-2.js",
-        "built-ins/Temporal/Instant/prototype/since/argument-string-date-with-utc-offset.js",
-        "built-ins/AsyncDisposableStack/prototype/move/length.js",
-        "built-ins/ArrayBuffer/prototype/sliceToImmutable/argument-coercion.js",
-        "built-ins/Error/prototype/stack/getter-error-as-prototype.js",
-        "built-ins/TypedArrayConstructors/internals/GetOwnProperty/BigInt/detached-buffer-realm.js",
-        "annexB/built-ins/RegExp/legacy-accessors/lastParen/prop-desc.js",
-        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-5.js",
-        "language/statements/for/dstr/var-obj-ptrn-id-init-fn-name-gen.js",
-        "language/function-code/block-decl-onlystrict.js",
-        "built-ins/Array/prototype/reduceRight/15.4.4.22-9-c-ii-1.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/weekOfYear/branding.js",
-        "language/expressions/class/private-static-setter-multiple-evaluations-of-class-realm.js",
-        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-47.js",
-        "built-ins/Object/S15.2_A1.js",
-        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-178.js",
-        "built-ins/DisposableStack/prototype/dispose/prop-desc.js",
-        "built-ins/Atomics/waitAsync/undefined-index-defaults-to-zero-agent.js",
-        "built-ins/AsyncGeneratorPrototype/next/length.js",
-        "built-ins/Set/Symbol.species/symbol-species.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all",
       "count": 36,
       "cases": [
@@ -541,6 +498,47 @@
         "language/statements/class/dstr/meth-dflt-ary-init-iter-get-err-array-prototype.js",
         "built-ins/isFinite/return-abrupt-from-tonumber-number-symbol.js",
         "built-ins/Promise/prototype/then/ctor-null.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: cannot read property '…' of undefined",
+      "count": 35,
+      "cases": [
+        "built-ins/ThrowTypeError/extensible.js",
+        "language/expressions/generators/eval-body-proto-realm.js",
+        "built-ins/Atomics/and/not-a-constructor.js",
+        "built-ins/ShadowRealm/prototype/evaluate/wrapped-function-arguments-are-wrapped-into-the-inner-realm.js",
+        "built-ins/ShadowRealm/prototype/evaluate/name.js",
+        "built-ins/SuppressedError/prototype/constructor.js",
+        "built-ins/ShadowRealm/prototype/evaluate/wrapped-function-arguments-are-wrapped-into-the-inner-realm-extended.js",
+        "built-ins/Set/Symbol.species/return-value.js",
+        "built-ins/Array/prototype/filter/15.4.4.20-1-9.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-propertybag-timezone-string-leap-second.js",
+        "built-ins/Object/freeze/proxy-with-defineProperty-handler.js",
+        "built-ins/Proxy/construct/return-not-object-throws-undefined-realm.js",
+        "built-ins/Array/prototype/map/create-proto-from-ctor-realm-non-array.js",
+        "built-ins/ArrayBuffer/Symbol.species/return-value.js",
+        "language/eval-code/direct/switch-case-decl-eval-source-is-strict-nostrict.js",
+        "built-ins/Proxy/construct/return-not-object-throws-symbol-realm.js",
+        "language/expressions/class/elements/arrow-body-private-derived-cls-direct-eval-contains-superproperty-2.js",
+        "built-ins/Temporal/Instant/prototype/since/argument-string-date-with-utc-offset.js",
+        "built-ins/AsyncDisposableStack/prototype/move/length.js",
+        "built-ins/ArrayBuffer/prototype/sliceToImmutable/argument-coercion.js",
+        "built-ins/Error/prototype/stack/getter-error-as-prototype.js",
+        "built-ins/TypedArrayConstructors/internals/GetOwnProperty/BigInt/detached-buffer-realm.js",
+        "annexB/built-ins/RegExp/legacy-accessors/lastParen/prop-desc.js",
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-5.js",
+        "language/statements/for/dstr/var-obj-ptrn-id-init-fn-name-gen.js",
+        "language/function-code/block-decl-onlystrict.js",
+        "built-ins/Array/prototype/reduceRight/15.4.4.22-9-c-ii-1.js",
+        "built-ins/Temporal/ZonedDateTime/prototype/weekOfYear/branding.js",
+        "language/expressions/class/private-static-setter-multiple-evaluations-of-class-realm.js",
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-47.js",
+        "built-ins/Object/S15.2_A1.js",
+        "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-178.js",
+        "built-ins/Atomics/waitAsync/undefined-index-defaults-to-zero-agent.js",
+        "built-ins/AsyncGeneratorPrototype/next/length.js",
+        "built-ins/Set/Symbol.species/symbol-species.js"
       ]
     },
     {
@@ -1164,13 +1162,6 @@
       "count": 1,
       "cases": [
         "built-ins/Atomics/sub/good-views.js"
-      ]
-    },
-    {
-      "reason": "Uncaught ReferenceError: DisposableStack is not defined",
-      "count": 1,
-      "cases": [
-        "built-ins/DisposableStack/prototype/use/throws-if-value-Symbol.dispose-property-is-null.js"
       ]
     },
     {
@@ -1832,10 +1823,24 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: defer descriptor should not be enumerable",
+      "count": 1,
+      "cases": [
+        "built-ins/DisposableStack/prototype/defer/prop-desc.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: desc.enumerable Expected SameValue(«true», «false») to be true",
       "count": 1,
       "cases": [
         "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-25.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: dispose descriptor should not be enumerable",
+      "count": 1,
+      "cases": [
+        "built-ins/DisposableStack/prototype/dispose/prop-desc.js"
       ]
     },
     {
