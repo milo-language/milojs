@@ -1369,6 +1369,56 @@ conservative estimate, it is a wrong one. The 2026-08-16 note had already worked
 out the right representation in its own second paragraph and then costed the first
 one.
 
+### UTF-16 indexing is O(index), so every string scan is quadratic — PARTIALLY FIXED 2026-08-17
+
+The most significant PERFORMANCE defect found so far, and it was found by accident:
+`RegExp.escape` on a 100k-character string took 38 seconds, and the cause was not
+in `RegExp.escape`.
+
+Measured, 100k-character ASCII string, one full loop:
+
+| operation | milojs before | milojs after | node |
+|---|---:|---:|---:|
+| `s.charCodeAt(i)` | 13947ms | 6012ms | 4ms |
+| `s.charAt(i)` | 27721ms | 11482ms | 3ms |
+| `s[i]` | 31655ms | 15368ms | 2ms |
+
+Strings are UTF-8 bytes; JS indices are UTF-16 units. `utf16Locate` walked from
+byte 0 calling `decodeCodepoint` per CHARACTER, so a single `charCodeAt(i)` cost
+O(i) and any loop over a string was O(n²). Every string-scanning program in this
+engine is affected — this is not a test-suite artifact.
+
+**What was fixed.** Below the first non-ASCII byte, byte offset and UTF-16 index are
+the same number, so the three converters (`utf16Locate`, `utf16ToByte`,
+`byteToUtf16`) now check that first, with a scan BOUNDED by the index asked for
+rather than by the string length. A bounds check against the byte length also
+short-circuits before any scan. Net ~2.3x, and short strings — the overwhelmingly
+common case — went from 3500x slower than node to ~28x (200k accesses on a 10-char
+string: 57ms vs node's 2ms). `RegExp.escape` also stopped doing three index
+conversions per character, which took the original case 38s to 7s overall.
+
+**What is NOT fixed, and why.** It is still O(index) per access, so a long string is
+still quadratic — `quickjs/tests/bug1571.js` (three escapes over ~100k characters)
+needs 28s against a 10s timeout and still fails. Getting to O(1) needs the ASCII
+prefix length CACHED per string, and a Milo `string` is a value with nowhere to put
+it. Several tempting shortcuts were considered and rejected as unsafe: keying a memo
+on the string's buffer ADDRESS (wrong after a free/reuse), on its byte length plus a
+first/last-bytes fingerprint (collides across distinct strings), or on a content
+hash (O(n) to compute, so no better than the scan).
+
+**The real fix is architectural**: JS string VALUES need somewhere to carry
+metadata — an interned string table, or a `JSStr` handle with `{bytes, asciiPrefix,
+utf16Len}` — at which point indexing is O(1), `.length` is a field read, and the
+converters disappear. That is the same shape as the object-heap migration in
+[docs/milojs-arena-safety.md](milojs-arena-safety.md) and wants its own session,
+with the string microbenchmark above as the acceptance test.
+
+**Lesson:** the 38-second symptom was in `RegExp.escape`, which I had written two
+ticks earlier, so the obvious read was "my new code is slow". Rewriting it to avoid
+`+=` (the other obvious culprit) changed nothing — 38s before, 38s after. Only then
+did measuring the primitive show that `charCodeAt` itself was the cost. Rewrite the
+suspect once; if the number does not move, stop rewriting and measure a level down.
+
 ### Annex B block-level function hoisting — DONE 2026-08-17
 
 Was scoped earlier the same day as "not started, wants a whole session", with the
