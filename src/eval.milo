@@ -16319,7 +16319,7 @@ pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
     let evalName = "<eval:" + numToStr(gProg.srcNames.len() as f64) + ">"
     registerSource(gProg, evalName.clone(), src.clone())
     var ep = PState {
-        toks: lex(src.clone()), pos: 0, curClass: "", file: evalName, errored: false, eofError: false, quiet: true, strict: false
+        toks: lex(src.clone()), pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: evalName, errored: false, eofError: false, quiet: true, strict: false
     }
     let top = parseProgram(ep, gProg)
     // The parser recovers by skipping tokens rather than stopping, so `errored`

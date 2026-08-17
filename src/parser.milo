@@ -21,6 +21,12 @@ pub struct PState {
     // enclosing class name while parsing a class body, so `super(...)` can be
     // rewritten to a call of that class's recorded base constructor
     curClass: string,
+    // Every private name in scope, innermost class last, with the class key that
+    // declared it. A nested class body can still reach the outer class's `#x`,
+    // so mangling `#x` with the innermost class alone was wrong; this is what
+    // says which class a given `#x` belongs to.
+    privNames: Vec<string>,
+    privOwners: Vec<string>,
     // the parser never stops at a bad token, so one mistake cascades into a
     // string of confusing follow-on errors. Only the first is worth showing.
     errored: bool,
@@ -1539,9 +1545,46 @@ fn parseExpr(p: &mut PState, prog: &mut Prog): ExprId {
 // across class boundaries. The class's unique super key makes it per-class.
 fn privName(p: &PState, name: &string): string {
     if name.len() > 0 && name[0] == '#' && p.curClass.len() > 0 {
+        // innermost declaration wins; an unknown name can only be a reference to
+        // the class being parsed, so the current class stays the fallback
+        var i: i64 = p.privNames.len() - 1
+        while i >= 0 {
+            if p.privNames[i] == name {
+                return name.clone() + "@" + p.privOwners[i].clone()
+            }
+            i = i - 1
+        }
         return name.clone() + "@" + p.curClass.clone()
     }
     return name.clone()
+}
+
+// Collect the private names this class body declares, before any of its members
+// are parsed, so a method that mentions `#x` ahead of `#x`'s own declaration
+// still resolves to it. `p.pos` is just past the class's `{`; only depth-1
+// tokens count, and `o.#x` / `#x in o` are uses rather than declarations.
+fn scanPrivateDecls(p: &mut PState, owner: &string) {
+    var depth: i64 = 0
+    var i: i64 = p.pos
+    while i < p.toks.len() {
+        let k = p.toks[i].kind
+        if k == T_LBRACE || k == T_LBRACKET || k == T_LPAREN {
+            depth = depth + 1
+        } else if k == T_RBRACE || k == T_RBRACKET || k == T_RPAREN {
+            if depth == 0 {
+                return
+            }
+            depth = depth - 1
+        } else if depth == 0 && p.toks[i].text.len() > 0 && p.toks[i].text[0] == '#' {
+            let prevDot = i > 0 && p.toks[i - 1].kind == T_DOT
+            let nextIn = i + 1 < p.toks.len() && p.toks[i + 1].kind == T_IN
+            if !prevDot && !nextIn {
+                p.privNames.push(p.toks[i].text.clone())
+                p.privOwners.push(owner.clone())
+            }
+        }
+        i = i + 1
+    }
 }
 
 fn inferFuncName(prog: &mut Prog, initId: ExprId, name: &string) {
@@ -2083,6 +2126,8 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
         }
     }
     expect(p, T_LBRACE)
+    let savedPrivDepth = p.privNames.len()
+    scanPrivateDecls(p, superKey)
     var ctorFn: i64 = -1
     var members: Vec<ClassMember> = Vec.new()
     // instance-field init statements (this.name = init), in declaration order,
@@ -2227,6 +2272,11 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     }
     expect(p, T_RBRACE)
     p.curClass = savedClass
+    // this class's private names leave scope with its body
+    while p.privNames.len() > savedPrivDepth {
+        let _ = p.privNames.pop()
+        let _ = p.privOwners.pop()
+    }
     // Inject instance-field initializers into a DECLARED constructor: prepend in
     // reverse so they run in declaration order at the top of the ctor. (milojs
     // binds `this` for the whole ctor, so this is fine even ahead of a super()
@@ -2441,6 +2491,12 @@ fn isSyntheticTemp(name: &string): bool {
     }
     var i: i64 = 3
     while i < name.len() {
+        // the array-pattern iterator temp is "__d<n>$it": everything from the
+        // '$' on is a suffix on the same synthetic name, and missing that made
+        // `export const [a] = xs` export the iterator temp alongside `a`
+        if name[i] == '$' {
+            return i > 3
+        }
         if name[i] < '0' || name[i] > '9' {
             return false
         }

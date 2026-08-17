@@ -961,7 +961,7 @@ pub fn repl(st: &mut Interp): i32 {
                     funcs: Vec.new(), objLits: Vec.new(), arrLits: Vec.new(), declLists: Vec.new(), classes: Vec.new(), switches: Vec.new(), srcNames: Vec.new(), srcTexts: Vec.new()
                 }
                 var probe = PState {
-                    toks: lex(source), pos: 0, curClass: "", file: "<repl>", errored: false, eofError: false, quiet: true, strict: false
+                    toks: lex(source), pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: "<repl>", errored: false, eofError: false, quiet: true, strict: false
                 }
                 let probeTop = parseProgram(probe, scratch)
                 if probe.eofError {
@@ -978,14 +978,14 @@ pub fn repl(st: &mut Interp): i32 {
                 // the session's Prog untouched.
                 if probe.errored {
                     var report = PState {
-                        toks: lex(source), pos: 0, curClass: "", file: "<repl>", errored: false, eofError: false, quiet: false, strict: false
+                        toks: lex(source), pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: "<repl>", errored: false, eofError: false, quiet: false, strict: false
                     }
                     let reportTop = parseProgram(report, scratch)
                     continue
                 }
 
                 var p = PState {
-                    toks: lex(source), pos: 0, curClass: "", file: "<repl>", errored: false, eofError: false, quiet: false, strict: false
+                    toks: lex(source), pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: "<repl>", errored: false, eofError: false, quiet: false, strict: false
                 }
                 let top = parseProgram(p, prog)
                 let val = runLine(prog, top, st)
