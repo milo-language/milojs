@@ -42,7 +42,7 @@ reproducible release artifact.
 
 | measure | result | corpus |
 |---|---:|---|
-| deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->992<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->67.5%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
+| deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->1015<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->69.0%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
 | QuickJS `tests/` | **<!--fact:qjs-pass-->104<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = <!--fact:qjs-pct-->69.8%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
 | locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->214<!--/fact--> | byte-exact differential output vs node |
 | locked runtime fixtures (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->35<!--/fact--> | module, async, fetch, HTTP, sqlite, host behavior |
@@ -88,7 +88,7 @@ Not every remaining difference is milojs's: `/api/v2/roads` hangs under node too
 (it needs a live upstream), and `analytics/middleware` keeps both runtimes alive
 because it installs a `setInterval` at module scope.
 
-**test262 moved 34.6% to <!--fact:t262-pct-->67.5%<!--/fact--> over 2026-08-15**, from one structural finding
+**test262 moved 34.6% to <!--fact:t262-pct-->69.0%<!--/fact--> over 2026-08-15**, from one structural finding
 repeated across the whole builtin surface: constructors that had no `prototype`
 object at all. See the backlog for the per-change attribution, including the two
 places where the harness rather than the engine was at fault, and the one area
