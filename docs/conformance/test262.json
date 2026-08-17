@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "1f522eef9e086ceb72c24c2b424eee0e7b30c0f8",
+    "revision": "87b37ed1ade91888b9fa788f778c8daff528934c",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 945,
-    "fail": 525,
+    "pass": 969,
+    "fail": 501,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -56,14 +56,14 @@
     },
     {
       "area": "built-ins/RegExp",
-      "pass": 24,
-      "fail": 49,
+      "pass": 47,
+      "fail": 26,
       "total": 73
     },
     {
       "area": "built-ins/String",
-      "pass": 26,
-      "fail": 13,
+      "pass": 27,
+      "fail": 12,
       "total": 39
     },
     {
@@ -1247,6 +1247,20 @@
       ]
     },
     {
+      "reason": "Uncaught SyntaxError: Invalid regular expression: /^\\p{Script_Extensions=Tolong_Siki}+$/: ",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Tolong_Siki.js"
+      ]
+    },
+    {
+      "reason": "Uncaught SyntaxError: Invalid regular expression: /^\\p{Script=Tai_Yo}+$/: Invalid property",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/Script_-_Tai_Yo.js"
+      ]
+    },
+    {
       "reason": "Uncaught TypeError: __lookupGetter__ is not a function (in /var/folders/zc/m2tbb4v542b9c11",
       "count": 1,
       "cases": [
@@ -1569,199 +1583,24 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: `[p{ASCII_Hex_Digit}&&p{ASCII_Hex_Digit}]` should match N (U+N)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/unicodeSets/generated/character-property-escape-intersection-character-property-escape.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{ASCII_Hex_Digit}` should match U+N (`N`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/ASCII_Hex_Digit.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Bidi_Mirrored}` should match U+00003C (`<`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Bidi_Mirrored.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Extended_Pictographic}` should match U+0000A9 (`©`)",
+      "reason": "Uncaught undefined: `\\P{Extended_Pictographic}` should match U+N (`☡`)",
       "count": 1,
       "cases": [
         "built-ins/RegExp/property-escapes/generated/Extended_Pictographic.js"
       ]
     },
     {
-      "reason": "Uncaught undefined: `\\p{General_Category=Modifier_Letter}` should match U+0002EC (`ˬ`)",
+      "reason": "Uncaught undefined: `\\p{General_Category=Modifier_Letter}` should match U+010EC5 (`𐻅`)",
       "count": 1,
       "cases": [
         "built-ins/RegExp/property-escapes/generated/General_Category_-_Modifier_Letter.js"
       ]
     },
     {
-      "reason": "Uncaught undefined: `\\p{General_Category=Symbol}` should match U+N (`$`)",
+      "reason": "Uncaught undefined: `\\p{General_Category=Symbol}` should match U+01FAC8 (`🫈`)",
       "count": 1,
       "cases": [
         "built-ins/RegExp/property-escapes/generated/General_Category_-_Symbol.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Hex_Digit}` should match U+N (`N`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Hex_Digit.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Noncharacter_Code_Point}` should match U+00FDD0 (`﷐`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Noncharacter_Code_Point.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Pattern_Syntax}` should match U+N (```)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Pattern_Syntax.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script_Extensions=Bengali}` should match U+0002BC (`ʼ`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Bengali.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script_Extensions=Bhaiksuki}` should match U+011C00 (`𑰀`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Bhaiksuki.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script_Extensions=Coptic}` should match U+0000B7 (`·`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Coptic.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script_Extensions=Gurung_Khema}` should match U+N (`॥`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Gurung_Khema.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script_Extensions=Hiragana}` should match U+N (`〷`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Hiragana.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script_Extensions=Inscriptional_Pahlavi}` should match U+010B60 (`",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Inscriptional_Pahlavi.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script_Extensions=Medefaidrin}` should match U+016E40 (`𖹀`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Medefaidrin.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script_Extensions=Meroitic_Cursive}` should match U+0109A0 (`𐦠`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Meroitic_Cursive.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script_Extensions=Osage}` should match U+N (`́`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Osage.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script_Extensions=Osmanya}` should match U+N (`𐒀`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Osmanya.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script_Extensions=Phoenician}` should match U+01091F (`𐤟`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Phoenician.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script_Extensions=Rejang}` should match U+00A95F (`꥟`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Rejang.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script_Extensions=Tolong_Siki}` should match U+011DB0 (`𑶰`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Tolong_Siki.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script_Extensions=Yi}` should match U+0030FB (`・`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Yi.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script=Cherokee}` should match U+0013A0 (`Ꭰ`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_-_Cherokee.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script=Old_South_Arabian}` should match U+010A60 (`𐩠`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_-_Old_South_Arabian.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script=Osage}` should match U+0104B0 (`𐒰`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_-_Osage.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script=Pahawh_Hmong}` should match U+016B00 (`𖬀`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_-_Pahawh_Hmong.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: `\\p{Script=Tai_Yo}` should match U+01E6C0 (`𞛀`)",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/Script_-_Tai_Yo.js"
       ]
     },
     {
@@ -2819,13 +2658,6 @@
       "count": 1,
       "cases": [
         "built-ins/Iterator/prototype/Symbol.dispose/prop-desc.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Unicode property escapes with u flag Expected SameValue(«-N», «N») to ",
-      "count": 1,
-      "cases": [
-        "built-ins/String/prototype/search/regexp-prototype-search-v-u-flag.js"
       ]
     },
     {
