@@ -3,7 +3,7 @@ system: status
 purpose: canonical current capability, evidence, and next-milestone dashboard for milojs
 key-files: src/milojs-engine.milo, src/milojs.milo, tests/run.sh, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts
 update-when: a product gate lands, a conformance sweep is rerun, or the supported host surface changes
-last-verified: 2026-08-16 (sweep republished after destructuring defaults; scores are compiled facts, not prose)
+last-verified: 2026-08-17 (property escapes, numeric regex escapes, runtime strict mode, null prototypes, iterator helpers on generators; the failing-area table re-measured)
 -->
 
 # milojs status
@@ -96,26 +96,37 @@ places where the harness rather than the engine was at fault, and the one area
 
 Where the remaining failures are, by absolute count in the sample:
 
-| area | failing | of | note |
-|---|---:|---:|---|
-| `language/statements` | 130 | 282 | class, generator and declaration edges |
-| `language/expressions` | 128 | 334 | |
-| `built-ins/Temporal` | 128 | 131 | not implemented at all |
-| `built-ins/Object` | 66 | 127 | property-descriptor fidelity |
-| `built-ins/RegExp` | 49 | 73 | |
-| `built-ins/Array` | 47 | 91 | |
-| `built-ins/TypedArray` | 30 | 38 | mostly `BigInt64Array`/`BigUint64Array` |
-| `built-ins/String` | 28 | 39 | |
+| area | failing | note |
+|---|---:|---|
+| `language/statements` + `language/expressions` | 138 | class members, generator parameter binding, declaration edges |
+| `built-ins/Temporal` | 69 | implemented but partial; failures are ISO-8601 parsing and range validation, 1-3 per cause |
+| `built-ins/Array/prototype` | 37 | species creation, coercion ordering |
+| `built-ins/Object` | 44 | property-descriptor fidelity |
+| `built-ins/TypedArray` | 17 | resizable buffers, species |
+| `annexB` + `dynamic-import` + `with` | 27 | legacy eval scoping, and two unimplemented features |
 
-`Temporal` is a large share of the failures in the sample and is an
-unimplemented API rather than a defect. Excluding it lifts the score by several
-points, but nothing recomputes that adjusted number, so report the
-<!--fact:t262-pct-->66.1%<!--/fact--> figure: the exclusion is context, not a headline.
+Temporal is no longer "not implemented at all" — it is implemented and partial,
+and its 69 remaining failures are spread ~1-3 per cause across string parsing and
+range checks rather than concentrated behind one gap. That makes it grind rather
+than a lever, which is the opposite of how it read when it was absent.
 
-The top failure bucket, at 154 cases, is
-`TypeError: cannot read property '…' of undefined` — still the signature of
-something the harness reads before testing anything, so it is worth probing
-before writing feature work against the individual areas.
+The reverse also holds and is worth stating: `built-ins/RegExp` was 49 failures
+and is now the area with the largest single WIN behind it, because `\p{...}` was
+one addressable feature rather than a spread. Measured on its own with
+`--dir built-ins/RegExp/property-escapes`: 0% to **86.0%** (527/613).
+
+The top two failure buckets are now assertion shapes rather than crashes:
+48 cases of "Expected a TypeError to be thrown but no exception was thrown at
+all" and 31 of the same for `Test262Error`. Both are dominated by destructuring
+(`*/dstr/*` across 15 directories) and by generator PARAMETER binding, which this
+engine still performs lazily: the parser desugars patterns and defaults into a
+body prologue, so `function* f([[x]] = [null]) {}` does not throw until the first
+`next()`, where the spec throws at the call. That one mechanism is the largest
+identified remaining lever.
+
+`TypeError: cannot read property '…' of undefined` — previously the top bucket at
+154 cases, the signature of a harness read failing before any test ran — is no
+longer in the top two.
 
 ### Native stack status
 
@@ -172,6 +183,30 @@ before the AST phase is complete.
   at every index, dropped writes, TypeError from every prototype method.
 - Common builtins implemented partly in Milo and partly in the embedded
   `lib/engine-prelude.js` specification layer.
+- **RegExp Unicode property escapes**: `\p{...}` and `\P{...}`, at the top level
+  and inside a character class, including `Script`/`Script_Extensions`, every
+  `General_Category` value, the binary properties, and all 1,682 spellings the
+  corpus uses. Resolved to code point ranges at pattern-COMPILE time from
+  `src/uniprops.txt` (generated, 103KB), so matching costs what `[a-z]` costs. An
+  unrecognised name is the early SyntaxError the spec requires.
+- **Numeric regex escapes**: `\xHH`, `\uHHHH`, `\u{H...}` and `\cX`, as atoms and
+  as character-class range endpoints. None of these existed — `/\x41/` was the
+  letter x followed by 41 — which also meant a mechanically generated pattern
+  (`RegExp.escape`'s output among them) could not be read back.
+- **Strict mode is tracked at run time.** A failed property write — frozen
+  target, non-extensible target, non-writable data property, accessor with no
+  setter — throws a TypeError in strict code and is dropped in sloppy code, per
+  activation, from `FuncDef.isStrict`.
+- **A null prototype is distinct from an absent one.** `Object.create(null)`,
+  `setPrototypeOf(o, null)` and `__proto__ = null` produce an object that inherits
+  nothing; a plain `{}` inherits `Object.prototype`, including anything a program
+  adds to it.
+- **The iterator helpers reach generators**: a generator object now has the
+  spec's prototype chain, so `gen().map(f).take(2).toArray()` works alongside
+  `[1].values().map(f)`.
+- ES2025 odds and ends: `RegExp.escape`, `Promise.try`, `Error.isError`,
+  `Math.asinh`/`acosh`/`atanh`, and `Math.log1p`/`expm1` that keep their
+  significant digits for small arguments.
 - Object-to-string conversion runs a user-defined `toString` from every path that
   can re-enter the interpreter; tagged templates carry the un-escaped `raw`
   chunks; `JSON.parse` rejects malformed input with a `SyntaxError`.
