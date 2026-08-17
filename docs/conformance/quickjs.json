@@ -6,8 +6,8 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "3851dcab99077921a1252cb79d87a6490ec00ae5",
-    "dirty": true
+    "revision": "2a2994603ea4d0741c4fd0c6da7981efcb587ee9",
+    "dirty": false
   },
   "engine": ".dev/mj-engine",
   "selection": {
