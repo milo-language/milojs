@@ -15276,7 +15276,27 @@ let ARRAY_LIKE_MAX: i64 = 1 << 24
 fn arrayLikeLength(prog: &Prog, o: i64, st: &mut Interp): i64
 ensures result >= -1 && result <= ARRAY_LIKE_MAX
 {
-    let raw = toNum(getMemberDyn(prog, o, "length", st))
+    let lenVal = getMemberDyn(prog, o, "length", st)
+    if st.throwing {
+        return -1
+    }
+    // ToLength on a Symbol is a TypeError, not NaN: the tests read `length` from a
+    // poisoned object precisely to check the abrupt completion propagates.
+    match cloneValue(lenVal) {
+        JSValue.Str(ls) => {
+            if isSymbolStr(ls) {
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a number" + currentModule(st))
+                return -1
+            }
+        }
+        _ => {
+        }
+    }
+    let raw = toNumProg(prog, lenVal, st)
+    if st.throwing {
+        return -1
+    }
     if !(raw == raw) || raw <= 0.0 {
         return 0
     }
@@ -15308,6 +15328,12 @@ fn arrayLikeToArray(prog: &Prog, recv: &JSValue, st: &mut Interp): i64 {
             let n = arrayLikeLength(prog, o, st)
             if n < 0 {
                 popTemp(st)
+                // -1 also means "already threw" — reading `length` can run a getter
+                // that throws, and ToLength on a Symbol is a TypeError. Overwriting
+                // st.thrownValue here reported those as this engine's own limit.
+                if st.throwing {
+                    return -1
+                }
                 st.throwing = true
                 st.thrownValue = makeError(st, "RangeError", "array-like length exceeds this engine's limit")
                 return -1
@@ -15583,7 +15609,33 @@ fn transferToSpecies(prog: &Prog, from: i64, to: i64, st: &mut Interp): JSValue 
     return JSValue.Obj(to)
 }
 
+// The methods that CHANGE an array's length, as opposed to only its elements. A
+// non-writable `length` blocks these and permits the others.
+fn arrayMethodResizes(name: &string): bool {
+    return name == "push" || name == "pop" || name == "shift" || name == "unshift" || name == "splice"
+}
+
 fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    // A mutating method on a FROZEN array, or one that resizes an array whose
+    // `length` is non-writable, is a TypeError. Both used to succeed silently:
+    // `Object.freeze([1,2]).push(3)` grew the array.
+    if arrayMethodMutates(name) && st.objects[o].isArray {
+        if st.objects[o].frozen {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot modify a frozen array" + currentModule(st))
+            return JSValue.Undefined
+        }
+        if st.objects[o].lengthNonWritable && arrayMethodResizes(name) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot assign to read only property 'length' of object" + currentModule(st))
+            return JSValue.Undefined
+        }
+        if st.objects[o].sealed && arrayMethodResizes(name) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot add property, object is not extensible" + currentModule(st))
+            return JSValue.Undefined
+        }
+    }
     let n = arrLen(st, o)
     if arrayNeedsCallback(name) {
         var cb = JSValue.Undefined
@@ -16427,6 +16479,16 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
             cbArgs.push(cloneValue(acc))
             cbArgs.push(arrGetDyn(prog, o, i, st))
             cbArgs.push(JSValue.Number(i as f64))
+            // the FOURTH argument is the object being reduced, and it was never
+            // pushed — a callback reading `obj.length` got it from undefined. On a
+            // scratch array adapting an array-like, the spec hands over the
+            // ORIGINAL receiver, which is what arrayLikeOrig records.
+            let reduceOrig = st.objExtras[st.objects[o].extra].arrayLikeOrig
+            if reduceOrig >= 0 {
+                cbArgs.push(JSValue.Obj(reduceOrig))
+            } else {
+                cbArgs.push(JSValue.Obj(o))
+            }
             acc = callValue(prog, cb, cbArgs, JSValue.Undefined, st)
             i = i + 1
         }
@@ -16463,6 +16525,16 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
             cbArgs.push(cloneValue(acc))
             cbArgs.push(arrGetDyn(prog, o, i, st))
             cbArgs.push(JSValue.Number(i as f64))
+            // the FOURTH argument is the object being reduced, and it was never
+            // pushed — a callback reading `obj.length` got it from undefined. On a
+            // scratch array adapting an array-like, the spec hands over the
+            // ORIGINAL receiver, which is what arrayLikeOrig records.
+            let reduceOrig = st.objExtras[st.objects[o].extra].arrayLikeOrig
+            if reduceOrig >= 0 {
+                cbArgs.push(JSValue.Obj(reduceOrig))
+            } else {
+                cbArgs.push(JSValue.Obj(o))
+            }
             acc = callValue(prog, cb, cbArgs, JSValue.Undefined, st)
             i = i - 1
         }

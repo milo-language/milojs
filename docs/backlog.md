@@ -1369,6 +1369,44 @@ conservative estimate, it is a wrong one. The 2026-08-16 note had already worked
 out the right representation in its own second paragraph and then costed the first
 one.
 
+### reduce passed three arguments where the spec says four — FIXED 2026-08-17
+
+`Array.prototype.reduce` and `reduceRight` built their callback arguments by hand
+and pushed only `(accumulator, value, index)`. The fourth — the object being
+reduced — was never pushed, so a callback reading `obj.length` read it from
+`undefined` and the engine reported `cannot read property 'length' of undefined`.
+That error text was the 4th-largest failure reason in `built-ins/Array/prototype`.
+
+Every other callback method builds its arguments through `makeCbArgsDyn`, which has
+always passed the object. These two did not, because they also thread an
+accumulator and so were written separately. When adapting an array-like the object
+handed over is the ORIGINAL receiver, which `arrayLikeOrig` records.
+
+### Mutating a frozen array silently succeeded — FIXED 2026-08-17
+
+`Object.freeze([1,2]).push(3)` grew the array. So did `pop`, `sort`, `reverse`, and
+the rest of the mutating set, on frozen arrays, sealed arrays, and arrays whose
+`length` had been made non-writable by the `defineProperty` work landed earlier the
+same day. All are TypeErrors.
+
+Also fixed alongside: `arrayLikeLength` read `length` with the Prog-free `toNum`,
+so a `length` getter returning a **Symbol** yielded NaN and was treated as 0 rather
+than throwing the TypeError that ToLength specifies. Its `-1` return now means
+either "too large" or "already threw", and the caller checks `st.throwing` before
+substituting its own RangeError — previously an abrupt completion from a poisoned
+`length` was reported as this engine's array-size limit, which is a confusing lie
+about whose fault the failure is.
+
+Measured across the two entries plus the recursion fix above: `built-ins/Array/prototype`
+67.2% → **76.3%**, +255 tests of 2811, in one session.
+
+**Still open in that area**, and both are design rather than bugs: 62 tests need
+resizable ArrayBuffers, and ~37 need the generic path to stop MATERIALISING an
+array-like (`ARRAY_LIKE_MAX` is 2^24, and the tests use lengths near 2^53 with
+methods like `pop` that only touch one element). The second is the same
+"arrayMethodGeneric copies" design already noted; making it read the original
+lazily per index would close both that and the remaining coercion-order cases.
+
 ### SIGBUS from ordinary JS, and two prototype-chain blind spots — FIXED 2026-08-17
 
 The top failure reason in `built-ins/Array/prototype` was not an assertion. It was

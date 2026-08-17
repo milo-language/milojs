@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "3bc1b993bdbe3e787ccc2a460a79d98ae0031488",
+    "revision": "3851dcab99077921a1252cb79d87a6490ec00ae5",
     "dirty": true
   },
   "engine": ".dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 987,
-    "fail": 483,
+    "pass": 992,
+    "fail": 478,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -50,8 +50,8 @@
     },
     {
       "area": "built-ins/Array",
-      "pass": 59,
-      "fail": 32,
+      "pass": 64,
+      "fail": 27,
       "total": 91
     },
     {
@@ -504,7 +504,7 @@
     },
     {
       "reason": "Uncaught TypeError: cannot read property '…' of undefined",
-      "count": 35,
+      "count": 34,
       "cases": [
         "built-ins/ThrowTypeError/extensible.js",
         "language/expressions/generators/eval-body-proto-realm.js",
@@ -532,7 +532,6 @@
         "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-5.js",
         "language/statements/for/dstr/var-obj-ptrn-id-init-fn-name-gen.js",
         "language/function-code/block-decl-onlystrict.js",
-        "built-ins/Array/prototype/reduceRight/15.4.4.22-9-c-ii-1.js",
         "built-ins/Temporal/ZonedDateTime/prototype/weekOfYear/branding.js",
         "language/expressions/class/private-static-setter-multiple-evaluations-of-class-realm.js",
         "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-47.js",
@@ -947,14 +946,6 @@
       "cases": [
         "language/statements/function/dflt-params-ref-later.js",
         "language/expressions/class/gen-method/dflt-params-ref-self.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Expected a Test262Error but got a TypeError",
-      "count": 2,
-      "cases": [
-        "built-ins/Date/prototype/toJSON/to-primitive-abrupt.js",
-        "built-ins/Array/prototype/reduce/15.4.4.21-8-c-8.js"
       ]
     },
     {
@@ -1535,13 +1526,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: #N: var obj = {}; obj.length = new Number(N); obj.shift = Array.protot",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/shift/S15.4.4.9_A2_T3.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: #N: var object = {valueOf: function() {return N}}; String.fromCharCode",
       "count": 1,
       "cases": [
@@ -1731,13 +1715,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Array.prototype.every.call(obj, callbackfn2) Expected SameValue(«true»",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/every/15.4.4.16-3-21.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Array.prototype.reduce.call(\"abc\", callbackfn, N) !== true",
       "count": 1,
       "cases": [
@@ -1924,6 +1901,13 @@
       "count": 1,
       "cases": [
         "language/statements/for/dstr/var-ary-ptrn-rest-id-elision-next-err.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a Test262Error but got a TypeError",
+      "count": 1,
+      "cases": [
+        "built-ins/Date/prototype/toJSON/to-primitive-abrupt.js"
       ]
     },
     {
@@ -2491,13 +2475,6 @@
       "count": 1,
       "cases": [
         "built-ins/Iterator/prototype/Symbol.dispose/prop-desc.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: testResult2 !== true",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/reduceRight/15.4.4.22-3-19.js"
       ]
     },
     {
