@@ -6,8 +6,8 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "ebc4e8466071aadd828a5ed02bac7c6f7d3a370b",
-    "dirty": false
+    "revision": "3bc1b993bdbe3e787ccc2a460a79d98ae0031488",
+    "dirty": true
   },
   "engine": ".dev/mj-engine",
   "selection": {
@@ -545,13 +545,12 @@
     },
     {
       "reason": "crash(SIGUSR1)",
-      "count": 25,
+      "count": 23,
       "cases": [
         "built-ins/RegExp/property-escapes/generated/ASCII_Hex_Digit.js",
         "built-ins/RegExp/S15.10.2.9_A1_T5.js",
         "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Bengali.js",
         "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Osmanya.js",
-        "built-ins/Array/prototype/shift/S15.4.4.9_A2_T3.js",
         "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Meroitic_Cursive.js",
         "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Phoenician.js",
         "built-ins/RegExp/property-escapes/generated/Script_-_Old_South_Arabian.js",
@@ -565,7 +564,6 @@
         "built-ins/RegExp/property-escapes/generated/Hex_Digit.js",
         "built-ins/RegExp/property-escapes/generated/Noncharacter_Code_Point.js",
         "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Bhaiksuki.js",
-        "built-ins/Array/prototype/reverse/S15.4.4.8_A4_T1.js",
         "built-ins/RegExp/property-escapes/generated/Script_-_Cherokee.js",
         "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Gurung_Khema.js",
         "built-ins/RegExp/property-escapes/generated/Script_-_Pahawh_Hmong.js",
@@ -1509,6 +1507,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: #N: Object.prototype[N] = N; Object.prototype.length = N; Object.proto",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/reverse/S15.4.4.8_A4_T1.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: #N: scope.x === N. Actual: N",
       "count": 1,
       "cases": [
@@ -1527,6 +1532,13 @@
       "count": 1,
       "cases": [
         "language/expressions/property-accessors/S11.2.1_A4_T2.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: #N: var obj = {}; obj.length = new Number(N); obj.shift = Array.protot",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/shift/S15.4.4.9_A2_T3.js"
       ]
     },
     {

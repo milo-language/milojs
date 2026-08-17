@@ -2748,6 +2748,20 @@ fn taSetElem(st: &mut Interp, view: i64, i: i64, v: f64) {
     taStore(st.objExtras[st.objects[buf].extra].bytes, kind, at, v)
 }
 
+// The method NAME a bound builtin value carries, or "" for anything else. Used to
+// notice that a lookup came back with the very method the dispatcher is already
+// handling, which would re-enter it.
+fn boundMethodNameOf(st: &Interp, v: &JSValue): string {
+    let h = objHandle(v)
+    if h < 0 {
+        return ""
+    }
+    if !st.objects[h].isBound {
+        return ""
+    }
+    return st.objExtras[st.objects[h].extra].boundMethod.clone()
+}
+
 // Invoke a builtin method by name against an already-evaluated receiver+args.
 fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSValue>, st: &mut Interp): JSValue {
     // a per-module `require` value: the receiver carries the directory it was
@@ -3112,6 +3126,19 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 return arrayMethod(prog, o, name, args, st)
             }
             let m = getMemberDyn(prog, o, name, st)
+            // The lookup may resolve THROUGH THE PROTOTYPE CHAIN to the same bound
+            // builtin this dispatch is handling — an object whose proto is an array
+            // inherits Array.prototype's methods. Calling it re-enters here with the
+            // same receiver and name, so
+            // `Array.prototype.forEach.call(Object.create([1,2,3]), f)` recursed
+            // until the native stack died with SIGBUS. That is the shape the
+            // Node-API buffer comment above warns about, reached a different way.
+            //
+            // A user method of the same name is a Func, not a bound builtin, so
+            // `({map: f}).map()` still calls f.
+            if isArrayMethod(name) && !st.objects[o].isArray && boundMethodNameOf(st, m) == name.clone() {
+                return arrayMethodGeneric(prog, JSValue.Obj(o), name, args, st)
+            }
             // Array.prototype.<m>.call(arrayLike, …): the receiver has no such
             // method of its own, so the spec's generic definition applies. Only
             // reached when lookup came up empty, so ({map: f}).map() still calls
@@ -3567,6 +3594,19 @@ pub fn getMember(st: &Interp, o: i64, key: &string): JSValue {
     while cur >= 0 {
         if objHas(st, cur, key) {
             return objGet(st, cur, key)
+        }
+        // An ARRAY in the chain carries `length` and its elements outside the Prop
+        // list, so the ordinary `objHas` test cannot see them. Without this,
+        // `Object.create([1,2,3]).length` was undefined — and every generic array
+        // method over such an object therefore saw length 0 and visited nothing.
+        if cur != o && st.objects[cur].isArray {
+            if key.clone() == "length" {
+                return JSValue.Number(arrLen(st, cur) as f64)
+            }
+            let inheritedIdx = asArrayIndex(key)
+            if inheritedIdx >= 0 && inheritedIdx < arrLen(st, cur) && !arrIsHole(st, cur, inheritedIdx) {
+                return arrGet(st, cur, inheritedIdx)
+            }
         }
         // protoOfHandle, not the raw field: a plain `{}` has proto == -1 and
         // still inherits Object.prototype. Walking the raw link stopped there,
@@ -17462,6 +17502,18 @@ fn evalInOperator(prog: &Prog, key: string, ov: JSValue, st: &mut Interp): JSVal
             while cur >= 0 {
                 if objHas(st, cur, key) {
                     return JSValue.Bool(true)
+                }
+                // an ARRAY in the chain holds `length` and its elements outside the
+                // Prop list, so objHas cannot see them — the same blind spot
+                // getMember had, and it made every inherited index absent to `in`
+                if st.objects[cur].isArray {
+                    if key.clone() == "length" {
+                        return JSValue.Bool(true)
+                    }
+                    let chainIdx = asArrayIndex(key)
+                    if chainIdx >= 0 && chainIdx < arrLen(st, cur) && !arrIsHole(st, cur, chainIdx) {
+                        return JSValue.Bool(true)
+                    }
                 }
                 cur = protoOfHandle(st, cur)
             }

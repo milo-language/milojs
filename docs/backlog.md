@@ -1369,6 +1369,58 @@ conservative estimate, it is a wrong one. The 2026-08-16 note had already worked
 out the right representation in its own second paragraph and then costed the first
 one.
 
+### SIGBUS from ordinary JS, and two prototype-chain blind spots — FIXED 2026-08-17
+
+The top failure reason in `built-ins/Array/prototype` was not an assertion. It was
+`crash(SIGUSR1)`, 156 times.
+
+**First, the signal was mislabelled.** bun reports signal 10 as `SIGUSR1`, which is
+its name on Linux; on macOS signal 10 is **SIGBUS**. So the histogram said "some
+scheduling signal" when it meant "memory fault". Worth knowing for any future
+triage: check the number, not the name bun prints.
+
+**Second, it did not reproduce.** Standalone the case exited 0. Under the sweep it
+died every time. The difference was not the harness: `$(…)` capture reproduced it
+10/10 while `| cat` did not, which sent me looking at pipes for a while. It was
+simply an unreliable read — the engine faults on this input regardless, and some of
+my earlier "0 failures" loops were reading the exit status of `head`, not of the
+engine. **Capture the status of the process you are testing, not of the pipeline.**
+
+Minimal case:
+
+    Array.prototype.forEach.call(Object.create([1, 2, 3]), fn)   // SIGBUS
+
+`callBuiltinByName` resolves the method with `getMemberDyn(o, name)`. For an object
+whose PROTOTYPE is an array, that resolves — through the chain — to the very bound
+builtin the dispatcher is currently handling. Calling it re-enters the dispatcher
+with the same receiver and name, forever, until the native stack dies. The comment
+90 lines above already warns about this exact shape for Node-API buffers; it was
+reachable a second way and only the first way had a guard.
+
+Fixed by noticing that the lookup came back with the method already being
+dispatched (`boundMethodNameOf`) and routing to the generic operation instead. A
+user method of the same name is a `Func`, not a bound builtin, so
+`({map: f}).map()` still calls `f`.
+
+**Then the tests still failed, for a different reason.** With the crash gone,
+`forEach` over such an object visited nothing. An array keeps `length` and its
+elements OUTSIDE the Prop list, so `objHas` cannot see them — and both chain walks
+that matter were built on `objHas`:
+
+- `getMember`'s prototype walk, so `Object.create([1,2,3]).length` was `undefined`
+  and every generic array method therefore saw length 0.
+- `evalInOperator`, so an inherited index was absent to `in` — which
+  `arrHasIndexDyn` consults, so the callback was skipped for every element.
+
+Both now check for an array at each level of the chain. Measured:
+`built-ins/Array/prototype` 67.2% → **71.4%**, +116 tests of 2811.
+
+**Lesson, and it is the third instance today:** the same blind spot (array storage
+is not Prop storage) produced the `defineProperty` gap above, these two chain walks,
+and the `setMember` non-extensible exemption. Each was found separately. A grep for
+`objHas`/`objOwnIndex` used as "does this object have this key" is the audit that
+would have found all four at once.
+
 ### defineProperty did not know arrays existed — FIXED 2026-08-17
 
 Found by the QuickJS-parity worklist, which is the first list this project has had
