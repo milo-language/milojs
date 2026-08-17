@@ -3,7 +3,7 @@ system: milojs-object-footprint
 purpose: measured per-object memory cost in milojs, and the JSObjExtra side table that shrank it
 key-files: src/runtime.milo
 update-when: JSObj gains or loses fields, or the side-table split lands
-last-verified: 2026-08-16 (JSObjExtra gained `boxed`, the primitive a wrapper object wraps; a plain object still pays nothing for it)
+last-verified: 2026-08-17 (JSObj gained `protoNull`, the bit that separates a null prototype from an absent link)
 -->
 
 # milojs: object footprint
@@ -77,7 +77,16 @@ allocator slack, and neither is a direct `sizeof`.
 
 ### Where it goes
 
-`JSObj` carries 28 scalar fields, 5 `Vec` fields and 3 `JSValue` fields inline.
+`JSObj` carries 29 scalar fields, 5 `Vec` fields and 3 `JSValue` fields inline.
+
+The 29th is `protoNull`, and it is worth naming because it is a bit that buys back
+correctness rather than a capability. `proto == -1` used to mean two different
+things — "no explicit link, so inherit `Object.prototype`" and "a null prototype"
+— so `Object.create(null)` returned an object that inherited `Object.prototype`
+and carried `toString`/`hasOwnProperty`. Separating them needs one bit per object
+and there is nowhere cheaper to put it: a side table keyed by object index costs a
+hash lookup on the hot property-read path, which is exactly the trade the sweep
+below argues against for the 1-byte flags.
 Every object pays for every optional capability: promise state and reactions,
 bound-function target/this/args, proxy target/handler, Map/Set key and value
 vectors, typed-array view fields, ArrayBuffer bytes.

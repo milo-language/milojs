@@ -3,7 +3,7 @@ system: conformance-reports
 purpose: reproducible procedure and format for checked-in test262 and QuickJS sweep evidence
 key-files: scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, docs/status.md
 update-when: report flags, schema, corpus policy, or score publication policy changes
-last-verified: 2026-08-16 (paths recorded home-relative; the dirty check ignores the report directory so both sweeps can run from one clean checkout)
+last-verified: 2026-08-17 (`--fails` dumps every failure for clustering; `--dir` scores one area exhaustively)
 -->
 
 # conformance reports
@@ -45,6 +45,17 @@ The sample seed is fixed in the script and included in the report. Module and
 Atomics host-mode tests are counted as explicit skips. The current harness runs
 ordinary tests in sloppy mode once rather than running both strict and sloppy;
 the console summary states this limitation.
+
+`--fails <file>` writes every failing case as one JSON object per line
+(`{file, why}`). The console's bucket listing truncates at eight examples per
+bucket, which is enough to NAME a cluster and not enough to work one; this is the
+full set, and clustering it by directory and by reason is how a session picks its
+next target.
+
+`--dir <subpath>` restricts the run to one area and scores it exhaustively rather
+than by sample — `--dir built-ins/RegExp/property-escapes` is how the property-escape
+tables were measured (0% to 86% in one sitting). Use it to attribute a feature,
+and the whole-suite sample for the headline.
 
 ## QuickJS
 

@@ -3,7 +3,7 @@ system: milojs-generators
 purpose: design of record for generator functions in milojs, reusing the async-activation green-task machinery
 key-files: src/eval.milo, src/parser.milo, src/ast.milo
 update-when: generators are implemented or the design changes
-last-verified: 2026-08-16
+last-verified: 2026-08-17 (generator objects gained the spec's prototype chain, which is what puts the iterator helpers on them)
 -->
 
 # milojs: generators (design of record)
@@ -42,6 +42,27 @@ produce output byte-identical to node under the engine binary.
 forwarded inward through `yield*`). Direct array destructuring
 `const [a, b] = gen()` also works: declarators now bind the temp to `[...expr]`,
 so the iteration protocol runs instead of an indexed read.
+
+**A generator object has a real prototype chain** (2026-08-17). It used to have
+none: `makeGenerator` built a bare object and `next`/`throw`/`return`/
+`[Symbol.iterator]` were synthesised in `getMemberDyn` before any chain walk, so
+nothing else was reachable. That was invisible until the iterator helpers landed
+on `%IteratorPrototype%` — `[1].values().map(f)` worked and `gen().map(f)` was
+`undefined`, for all eleven of `map`/`filter`/`take`/`drop`/`flatMap`/`reduce`/
+`toArray`/`forEach`/`some`/`every`/`find`.
+
+The chain is now the spec's shape: generator object → the generator function's
+`.prototype` → `%GeneratorPrototype%` → `%IteratorPrototype%`.
+`%GeneratorPrototype%` (`Interp.genProtoObj`, created on first use by
+`generatorProtoHandle`) holds nothing but `@@toStringTag = "Generator"`. It exists
+as its own level rather than linking straight to `%IteratorPrototype%` because
+that one tags itself `"Iterator"`, and `util.types.isGeneratorObject` reads the
+tag — linking one level higher made every generator report `[object Iterator]`.
+
+It is also an explicit GC root. Normally it is reachable through some generator
+function's `.prototype`, but it is created BEFORE that link is made, and a
+collection in that window would sweep it; `collect` marks the field directly and
+`generatorProtoHandle` publishes it before the `objSet` that can allocate.
 
 ---
 

@@ -3,7 +3,7 @@ system: backlog
 purpose: what to work on next, with measured conformance attribution per change
 key-files: src/eval.milo, src/builtins.milo, src/parser.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts
 update-when: an item lands, a gap is discovered, or a sweep re-attributes a score
-last-verified: 2026-08-16
+last-verified: 2026-08-17
 -->
 
 # milojs backlog
@@ -30,8 +30,8 @@ run by hand rather than in CI:
 
 | sweep | score | measured |
 |---|---:|---|
-| test262, <!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample | <!--fact:t262-pass-->969<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = **<!--fact:t262-pct-->65.9%<!--/fact-->** | 2026-08-15 |
-| QuickJS `tests/` at `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->` | <!--fact:qjs-pass-->100<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = **<!--fact:qjs-pct-->67.1%<!--/fact-->** | 2026-08-15 |
+| test262, <!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample | <!--fact:t262-pass-->971<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = **<!--fact:t262-pct-->66.1%<!--/fact-->** | 2026-08-15 |
+| QuickJS `tests/` at `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->` | <!--fact:qjs-pass-->101<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = **<!--fact:qjs-pct-->67.8%<!--/fact-->** | 2026-08-15 |
 
 Movement on 2026-08-15: the engine now runs the program on a green task, so
 generators work there (they threw "generators require the milojs runtime"
@@ -1122,7 +1122,7 @@ Both are recorded in `docs/status.md` under Evidence. Keep doing this.
   silently pretending. `built-ins/String/prototype/normalize` 3/14 → **4/14**.
   Asserted by `tests/normalizeFormArg.js`, which deliberately encodes only the
   part that matches node, so it will not need rewriting when the gap closes.
-- Unicode property escapes do not match: `/\p{L}/u.test("é")` is `false`.
+- ~~Unicode property escapes do not match~~ — DONE 2026-08-17, see below.
 
 ## ToString reached neither Date.prototype nor Object.prototype — DONE 2026-08-15
 
@@ -1330,19 +1330,66 @@ someone who already knew how this resolver behaves.
 
 Locked by `tests/modfix/updir/`, exercised from `tests/modules.js`.
 
-### `\p{...}` property escapes: measured, and NOT worth it as code — 2026-08-16
+### `\p{...}` property escapes — DONE 2026-08-17, and the estimate that blocked it was wrong
 
-Sized before building, which is why it was not built. Generating range tables for
-the 46 useful properties (general categories, Alphabetic, White_Space, ID_Start,
-ID_Continue, Emoji and friends) from node's own regex engine yields **10,869
-ranges**. As a balanced if-tree in the shape of `src/unicase.milo` that is tens of
-thousands of lines of generated Milo for a feature no application tested here has
-ever used.
+The 2026-08-16 entry sized this and declined to build it: 10,869 ranges for 46
+properties, "tens of thousands of lines of generated Milo". Its prescription was
+right and its arithmetic was wrong, in a way worth recording because the same
+mistake is easy to repeat.
 
-If it is built, it should be compact DATA decoded once at startup, not emitted
-code, and probably a subset (L, N, Alphabetic, White_Space, ID_Start/Continue)
-rather than all 46. The code-point work it was waiting on is done, so this is a
-size/benefit decision now rather than a blocked one.
+Right: *"if it is built, it should be compact DATA decoded once, not emitted
+code."* That is what shipped. `tools/gen-uniprops.mjs` writes `src/uniprops.txt`,
+one line per property, ranges as gap+length varint pairs in a base-64 alphabet.
+`src/uniprops.milo` decodes a property at pattern-COMPILE time straight into the
+regex's `ReClass`, so matching `\p{L}` costs what matching `[a-z]` costs and
+nothing decodes per character.
+
+Wrong, three ways:
+
+- **It priced the wrong representation.** 10,869 ranges is a real count, but as
+  data those ranges are ~2 characters per varint pair, not ~4 lines of if-tree.
+  The whole table is **103KB** — smaller than several files already in `lib/`.
+- **It scoped to a subset to save size, and the subset was the expensive part.**
+  Building all of it costs almost nothing extra: 1,682 property SPELLINGS,
+  including every `Script`/`Script_Extensions` value and every alias, because
+  identical range bodies are stored once and aliased by name.
+- **"A feature no application tested here has ever used"** was true of the app
+  corpus and irrelevant to the score. It was the single largest addressable block
+  in test262: **441 generated files**, measured 0% → **86.0%** (527/613 with
+  `--dir`), moving the whole-suite sample 64.3% → 65.9% in one sitting.
+
+The 14% that still fails is not fixable here: test262 tracks a newer Unicode than
+node 25.3.0's ICU 77.1, so those tests assert code points this oracle does not
+have. 101 of the harvested spellings are unknown to this node for the same reason
+and are deliberately absent from the table, which makes them a SyntaxError — which
+is what the spec wants for an unrecognised name anyway.
+
+**The general lesson:** an estimate that assumes the wrong representation is not a
+conservative estimate, it is a wrong one. The 2026-08-16 note had already worked
+out the right representation in its own second paragraph and then costed the first
+one.
+
+### A throwing argument did not abort its call — DONE 2026-08-17
+
+`arr.push(boom())` pushed a value. `Math.abs(boom())` and `JSON.stringify(boom())`
+caught correctly, and a user-function callee aborted correctly, so this looked like
+it worked everywhere it was checked.
+
+`evalArgs` sets `st.throwing` and returns the arguments evaluated so far; 41 of the
+42 call sites then dispatched anyway. The one that already guarded was the
+`console.log` fast path, added when someone noticed an argument that threw was
+still being printed — the same bug, found once and fixed locally.
+
+Where it actually hurt was invisible from the call site: a Promise executor doing
+`try { resolve(f()) } catch (e) { reject(e) }` — the standard shape, and what
+`Promise.try` is specified as — FULFILLED the promise with `undefined` before the
+catch ran, so `reject` hit an already-settled promise and the rejection vanished.
+That is `Promise.try`, and it is also why 32 test262 cases reported "Expected a
+Test262Error to be thrown but no exception was thrown at all".
+
+**Lesson:** a guard added at one call site to fix one symptom is a guard the other
+40 sites still need. `console.log` printing a thrown-away argument and a promise
+silently fulfilling with `undefined` do not look like the same bug, and they were.
 
 ### A NULL out-param killed the process and exited 0 — DONE 2026-08-16
 
@@ -1592,10 +1639,9 @@ It steps a whole character now.
 almost entirely ASCII, which is the same observation that made the real-app check
 worth building. The evidence is the 31-case differential fixture.
 
-**Still open, now genuinely unblocked:** `\p{...}` property escapes are
-unsupported and match nothing silently (`/\p{L}/u.test("é")` is false). Classes
-can hold the ranges now, so it is table generation in the shape of
-`tools/gen-unicase.mjs` plus a `\p{...}` branch in the class parser.
+**Closed 2026-08-17.** `\p{...}` shipped exactly in the shape this predicted:
+table generation plus a branch in the class parser. See the entry below for why
+the size estimate that had blocked it was wrong.
 
 ## The runtime hid globalThis behind a whitelist, and four missing members — DONE 2026-08-15
 
