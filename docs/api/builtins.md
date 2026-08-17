@@ -137,6 +137,24 @@ pub fn mjTrunc(x: f64): f64
 
 _Undocumented._
 
+### `numToIndex`
+
+```milo
+pub fn numToIndex(x: f64): i64
+```
+
+f64 -> i64 for an INDEX-like argument, saturating instead of trapping.
+
+`numToIndex(toNum(args[0]))` was used in 63 places. For an ordinary argument it is
+fine; for `Number.MAX_VALUE` the cast produces something near i64::MAX and the
+next arithmetic on it OVERFLOWS, which in Milo is a trap — so
+`dv.getFloat64(1e308)` killed the process with "integer overflow" instead of
+throwing a RangeError. Clamping to the safe-integer range keeps every existing
+bounds check meaningful (a clamped value is still out of range for any real
+buffer or string) and makes the arithmetic downstream unable to overflow.
+
+NaN answers 0, which is ToIntegerOrInfinity's rule.
+
 ### `strCodePoints`
 
 ```milo

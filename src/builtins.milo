@@ -252,9 +252,33 @@ fn jsCharAt(s: &string, idx: i64): string {
     return out
 }
 
+// f64 -> i64 for an INDEX-like argument, saturating instead of trapping.
+//
+// `numToIndex(toNum(args[0]))` was used in 63 places. For an ordinary argument it is
+// fine; for `Number.MAX_VALUE` the cast produces something near i64::MAX and the
+// next arithmetic on it OVERFLOWS, which in Milo is a trap — so
+// `dv.getFloat64(1e308)` killed the process with "integer overflow" instead of
+// throwing a RangeError. Clamping to the safe-integer range keeps every existing
+// bounds check meaningful (a clamped value is still out of range for any real
+// buffer or string) and makes the arithmetic downstream unable to overflow.
+//
+// NaN answers 0, which is ToIntegerOrInfinity's rule.
+pub fn numToIndex(x: f64): i64 {
+    if x != x {
+        return 0
+    }
+    if x > 9007199254740991.0 {
+        return 9007199254740991
+    }
+    if x < -9007199254740991.0 {
+        return 0 - 9007199254740991
+    }
+    return x as i64
+}
+
 fn argNum(args: &Vec<JSValue>, i: i64, dflt: i64): i64 {
     if argPresent(args, i) {
-        return toNum(args[i]) as i64
+        return numToIndex(toNum(args[i]))
     }
     return dflt
 }
@@ -914,6 +938,12 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
             st.throwing = true
             st.thrownValue = makeError(st, "RangeError", "Invalid count value: " + i64ToStr(cnt))
             return JSValue.Undefined
+        }
+        // Same cap padStart carries, and for the same reason: `"a".repeat(1e308)`
+        // ground through gigabytes and died with no output and exit 0, where node
+        // throws. The product is what has to be bounded, not just the count.
+        if cnt != 0 && s.len() != 0 && cnt > 536870888 / s.len() {
+            return throwRange(st, "Invalid string length")
         }
         return JSValue.Str(jsRepeat(s, cnt))
     }

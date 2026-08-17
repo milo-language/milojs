@@ -1369,6 +1369,45 @@ conservative estimate, it is a wrong one. The 2026-08-16 note had already worked
 out the right representation in its own second paragraph and then costed the first
 one.
 
+### A JS argument could kill the process: unchecked f64→i64 casts — FIXED 2026-08-17
+
+`dv.getFloat64(1e308)` did not throw a RangeError. It **terminated the process**
+with `runtime error: integer overflow at src/eval.milo:13715`, and
+`"a".repeat(1e308)` was worse: no output, exit status 0, after grinding through
+gigabytes. Either is reachable from ordinary untrusted JS.
+
+The shape was `toNum(args[0]) as i64`. For a real argument it is fine; for
+`Number.MAX_VALUE` the cast lands near `i64::MAX` and the *next arithmetic* on it
+overflows, which in Milo is a trap, not a wrap. So the bounds check written on the
+line below never got to run — the addition inside the check was what trapped.
+
+Found because the test262/QuickJS parity list surfaced four DataView cases whose
+failure reason was a Milo panic rather than a JS error. **A crash in the failure
+column is worth more attention than its test count**: four tests, but the class is
+"a script can halt the host".
+
+Fixed as a class, not four instances:
+
+- `numToIndex(x: f64): i64` saturates at ±(2^53−1) and answers 0 for NaN
+  (ToIntegerOrInfinity's rule), so a clamped value is still out of range for any
+  real buffer or string and the arithmetic downstream cannot overflow.
+- 64 call sites in `src/eval.milo` converted mechanically.
+- `argNum` in `src/builtins.milo` — the single funnel most string and array methods
+  take their index argument through — converted, which covers far more than the 64.
+- `String.prototype.repeat` gained the product cap that `padStart` already had.
+  `padStart`'s comment described exactly this failure mode; the guard had been
+  added there and not generalised, which is the same "fixed once, not as a class"
+  pattern as the 41 missing argument guards recorded above.
+
+Verified: 14 huge-argument cases across DataView, String, Array, TypedArray and
+ArrayBuffer now match node exactly, where before the third one killed the run.
+
+**Lesson:** `numToIndex` lives in ONE place. The first version of this fix defined
+it in `eval.milo` while `builtins.milo` kept its own unchecked cast — two
+definitions of the same idea, which is precisely the hazard AGENTS.md opens with.
+`tools/lint-symbols.sh` only catches a literal duplicate NAME, not a duplicated
+idea; the reviewer has to catch that.
+
 ### UTF-16 indexing is O(index), so every string scan is quadratic — PARTIALLY FIXED 2026-08-17
 
 The most significant PERFORMANCE defect found so far, and it was found by accident:
