@@ -1072,6 +1072,13 @@ pub fn valueIsConstructor(prog: &Prog, st: &Interp, v: &JSValue): bool {
         if f >= prog.funcs.len() {
             return false
         }
+        var mi: i64 = 0
+        while mi < st.nonCtorFns.len() {
+            if st.nonCtorFns[mi] == f {
+                return false
+            }
+            mi = mi + 1
+        }
         return !prog.funcs[f].isArrow && !prog.funcs[f].isMethod && !prog.funcs[f].isGenerator && !prog.funcs[f].isAsync
     }
     let o = objHandle(v)
@@ -4049,6 +4056,11 @@ pub let NATIVE_INSPECT: i64 = 146
 // without side effects, and test262's isConstructor helper asks it of every
 // builtin (one not-a-constructor.js per method).
 let NATIVE_IS_CONSTRUCTOR: i64 = 154
+// __markNotConstructor(fn): records that a JS-defined built-in method has no
+// [[Construct]]. The prelude and lib/temporal.js implement real built-ins as
+// ordinary JS functions, which the engine cannot otherwise tell from user code
+// — and an ordinary function IS a constructor.
+let NATIVE_MARK_NOT_CTOR: i64 = 155
 // ArrayBuffer.isView(x): true for a typed-array view or a DataView, and
 // crucially FALSE for an ArrayBuffer itself
 let NATIVE_ARRAYBUFFER_ISVIEW: i64 = 147
@@ -5541,6 +5553,15 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Bool(false)
         }
         return JSValue.Bool(st.objects[h].isDataView || st.objExtras[st.objects[h].extra].taBuf >= 0)
+    }
+    if id == NATIVE_MARK_NOT_CTOR {
+        if argVals.len() > 0 {
+            let mf = funcHandle(argVals[0])
+            if mf >= 0 {
+                st.nonCtorFns.push(mf)
+            }
+        }
+        return JSValue.Undefined
     }
     if id == NATIVE_IS_CONSTRUCTOR {
         if argVals.len() == 0 {
@@ -8363,6 +8384,7 @@ pub fn setupGlobals(st: &mut Interp) {
     // and console.log render identically
     scopeDefine(st, 0, "__inspect", JSValue.Native(NATIVE_INSPECT))
     scopeDefine(st, 0, "__isConstructor", JSValue.Native(NATIVE_IS_CONSTRUCTOR))
+    scopeDefine(st, 0, "__markNotConstructor", JSValue.Native(NATIVE_MARK_NOT_CTOR))
     // The raw "wrap a value in a resolved promise" primitive, exposed under its
     // own name so the prelude can build the public Promise.resolve on top of it.
     // Capturing `Promise.resolve` from JS does not work: reading a method off a
@@ -11969,7 +11991,15 @@ pub fn awaitValue(prog: &Prog, va: &JSValue, st: &mut Interp): JSValue {
                     let ps = st.objects[po].promiseState
                     let pv = cloneValue(st.objExtras[st.objects[po].extra].promiseValue)
                     if ps == 2 {
+                        // Root the promise across the drain. `await
+                        // Promise.reject(new Error(...))` awaits a TEMPORARY:
+                        // the only reference is this frame's local, and locals
+                        // are not a GC root set, so a collection inside the
+                        // drain swept the promise and the error with it and the
+                        // catch block saw a bare object with no message.
+                        pushTemp(st, JSValue.Obj(po))
                         awaitYieldMicrotasks(prog, st)
+                        popTemp(st)
                         markRejectHandled(st, po)
                         st.throwing = true
                         st.thrownValue = pv
@@ -11987,7 +12017,10 @@ pub fn awaitValue(prog: &Prog, va: &JSValue, st: &mut Interp): JSValue {
                             }
                         }
                         if !fnested {
+                            // same temporary-promise hazard as the reject arm
+                            pushTemp(st, JSValue.Obj(po))
                             awaitYieldMicrotasks(prog, st)
+                            popTemp(st)
                             return pv
                         }
                         awaited = pv
