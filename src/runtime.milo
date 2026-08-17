@@ -1906,6 +1906,10 @@ pub fn getNativeProps(st: &mut Interp, nativeId: i64): i64 {
     }
     if st.nativeProps[nativeId] < 0 {
         let o = newObject(st)
+        // A native IS callable, so its property bag must inherit Function.prototype
+        // — that is what makes `String.constructor` resolve to Function and
+        // `Object.getPrototypeOf(String)` answer Function.prototype.
+        st.objects[o].isFunctionLike = true
         st.nativeProps[nativeId] = o
     }
     return st.nativeProps[nativeId]

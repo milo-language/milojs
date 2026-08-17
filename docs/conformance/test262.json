@@ -6,8 +6,8 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "edffd2db09b888f9dc4ceb49768baee8554153e4",
-    "dirty": false
+    "revision": "52c71e253daa12a5b4be554d4adee3921e5835c2",
+    "dirty": true
   },
   "engine": ".dev/mj-engine",
   "selection": {
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 1015,
-    "fail": 455,
+    "pass": 1016,
+    "fail": 454,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -26,8 +26,8 @@
   "areas": [
     {
       "area": "language/expressions",
-      "pass": 282,
-      "fail": 52,
+      "pass": 283,
+      "fail": 51,
       "total": 334
     },
     {
@@ -1007,6 +1007,13 @@
       ]
     },
     {
+      "reason": "crash(SIGUSR1)",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/concat/Array.prototype.concat_non-array.js"
+      ]
+    },
+    {
       "reason": "Test262:AsyncTestFailure:ReferenceError: AsyncDisposableStack is not defined",
       "count": 1,
       "cases": [
@@ -1235,13 +1242,6 @@
       "count": 1,
       "cases": [
         "language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-generator-function-declaration.js"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: apply is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh00",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/concat/Array.prototype.concat_non-array.js"
       ]
     },
     {
@@ -1487,13 +1487,6 @@
       "count": 1,
       "cases": [
         "language/expressions/instanceof/S11.8.6_A3.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: #N: typeof Object.constructor === \"function\". Actual: undefined",
-      "count": 1,
-      "cases": [
-        "language/expressions/property-accessors/S11.2.1_A4_T2.js"
       ]
     },
     {

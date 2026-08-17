@@ -1369,6 +1369,36 @@ conservative estimate, it is a wrong one. The 2026-08-16 note had already worked
 out the right representation in its own second paragraph and then costed the first
 one.
 
+### A builtin constructor did not inherit Function.prototype — FIXED 2026-08-17
+
+`Array.constructor` was `undefined`. So was `Object.constructor` and
+`Function.constructor`, and `Object.getPrototypeOf(Array) === Function.prototype`
+was false.
+
+`get-intrinsic` resolves `%Array.constructor%` by exactly that route, so it failed
+with "base intrinsic for Array.constructor exists, but the property is not
+available" — and `get-intrinsic` sits under a large share of the es-shim ecosystem,
+so one missing prototype link stopped `call-bound` after 4 of its 16 assertions.
+
+Two links were missing:
+
+- `protoOfHandle` sent every callable OBJECT to `Object.prototype`. A callable
+  inherits `Function.prototype`; that is what makes `.constructor` resolve.
+- A native's property bag (`getNativeProps`) was a plain object, so `String`,
+  `Number`, `Object` and friends had no route to `Function.prototype` either. A
+  native is by definition callable, so the bag is now marked function-like at
+  creation.
+
+Measured: `call-bound` 4/16 → **16/16 complete**; package corpus 72% → **73%**,
+40 suites complete; test262 sample 69.0% → 69.1%.
+
+**Still open in that corpus:** `es-get-iterator` stops at 73/140 with
+`Maximum call stack size exceeded` somewhere after its fake-iterator section. Direct
+reproduction attempts all pass — iterating wrapper objects, arguments objects,
+`Function('return arguments')`, custom `Symbol.iterator` — so the recursion is
+further in, in tape or object-inspect machinery, and needs a stack trace rather than
+more guessing.
+
 ### Node builtin module NAMES, and what 650 missing assertions actually were — FIXED 2026-08-17
 
 `is-core-module` scored 68/718 in the package corpus — one package holding ~38% of

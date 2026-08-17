@@ -6509,6 +6509,13 @@ fn protoOfHandle(st: &Interp, h: i64): i64 {
     if st.objects[h].isArray && st.arrayProtoObj >= 0 {
         return st.arrayProtoObj
     }
+    // A CALLABLE object inherits Function.prototype, not Object.prototype. Without
+    // this `Array.constructor` was undefined and
+    // `Object.getPrototypeOf(Array) === Function.prototype` was false, which is
+    // what get-intrinsic checks when resolving `%Array.constructor%`.
+    if st.objects[h].isFunctionLike && st.functionProtoObj >= 0 && h != st.functionProtoObj {
+        return st.functionProtoObj
+    }
     // functions, errors and plain objects fall back to Object.prototype
     // (Function.prototype / Error.prototype are not distinct singletons here)
     return st.objectProtoObj
