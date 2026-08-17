@@ -956,10 +956,10 @@ fn applyArgsInto(prog: &Prog, st: &mut Interp, v: &JSValue, out: &mut Vec<JSValu
 // ValidateAndApplyPropertyDescriptor's rejection rules, as a check run before
 // the descriptor is applied. Returns false having set the throw.
 fn validDescriptor(st: &mut Interp, o: i64, key: &string, d: i64): bool {
-    let hasGet = objOwnIndex(st, d, "get") >= 0
-    let hasSet = objOwnIndex(st, d, "set") >= 0
-    let hasValue = objOwnIndex(st, d, "value") >= 0
-    let hasWritable = objOwnIndex(st, d, "writable") >= 0
+    let hasGet = objHasInChain(st, d, "get")
+    let hasSet = objHasInChain(st, d, "set")
+    let hasValue = objHasInChain(st, d, "value")
+    let hasWritable = objHasInChain(st, d, "writable")
     // an accessor descriptor and a data descriptor cannot be combined
     if (hasGet || hasSet) && (hasValue || hasWritable) {
         st.throwing = true
@@ -982,16 +982,38 @@ fn validDescriptor(st: &mut Interp, o: i64, key: &string, d: i64): bool {
             return false
         }
     }
-    // redefining a non-configurable property is only allowed when nothing
-    // observable changes; the common case in real code is a plain re-define,
-    // which must throw
+    // adding a property to a non-extensible object is a TypeError; changing one
+    // that is already there stays legal
     let existing = objOwnIndex(st, o, key)
+    if existing < 0 && (st.objects[o].frozen || st.objects[o].sealed || st.objects[o].noExtend) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Cannot define property " + key.clone() + ", object is not extensible" + currentModule(st))
+        return false
+    }
+    if existing >= 0 && st.objects[o].frozen {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
+        return false
+    }
     if existing >= 0 && !st.objects[o].props[existing].configurable {
         var wantsConfigurable = false
-        if objOwnIndex(st, d, "configurable") >= 0 {
+        if objHasInChain(st, d, "configurable") {
             wantsConfigurable = truthy(getMember(st, d, "configurable"))
         }
         if wantsConfigurable {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
+            return false
+        }
+        // a non-configurable property cannot change KIND, and cannot change its
+        // enumerability
+        let wasAccessor = propIsAccessor(st, o, existing)
+        if (hasGet || hasSet) != wasAccessor {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
+            return false
+        }
+        if objHasInChain(st, d, "enumerable") && truthy(getMember(st, d, "enumerable")) != st.objects[o].props[existing].enumerable {
             st.throwing = true
             st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
             return false
@@ -6488,19 +6510,54 @@ fn makeRegex(st: &mut Interp, pattern: string, flags: string): JSValue {
 // when omitted, per Object.defineProperty). Shared by defineProperty,
 // defineProperties, and Object.create's second argument — all three previously
 // dropped the attributes for accessors, and the latter two for data props too.
+// A descriptor is PARTIAL: every field it omits keeps whatever the property
+// already had, and an absent field on a NEW property takes the spec's default of
+// false/undefined. Treating omission as "false" overwrote the value with
+// undefined on `defineProperty(o, "x", { enumerable: false })`, so narrowing one
+// attribute silently destroyed the property's contents.
 fn applyDescriptor(st: &mut Interp, o: i64, key: &string, d: i64) {
-    let g = getMember(st, d, "get")
-    let sfn = getMember(st, d, "set")
-    if isCallable(g) || isCallable(sfn) {
-        objDefineAccessor(st, o, key.clone(), g, sfn)
-    } else {
+    let existed = objOwnIndex(st, o, key) >= 0
+    // objSet/objDefineAccessor write through the ordinary property path, which
+    // resets the attributes to a plain data property's defaults. Redefining an
+    // existing property must keep whatever the descriptor does not name, so the
+    // old attributes are captured here and put back below.
+    var prevEnum = false
+    var prevConf = false
+    var prevWrit = false
+    if existed {
+        let pi = objOwnIndex(st, o, key)
+        prevEnum = st.objects[o].props[pi].enumerable
+        prevConf = st.objects[o].props[pi].configurable
+        prevWrit = st.objects[o].props[pi].writable
+    }
+    let hasGet = objHasInChain(st, d, "get")
+    let hasSet = objHasInChain(st, d, "set")
+    let hasValue = objHasInChain(st, d, "value")
+    if hasGet || hasSet {
+        objDefineAccessor(st, o, key.clone(), getMember(st, d, "get"), getMember(st, d, "set"))
+    } else if hasValue {
         objSet(st, o, key.clone(), getMember(st, d, "value"))
+    } else if !existed {
+        // a new property with no value named at all is undefined
+        objSet(st, o, key.clone(), JSValue.Undefined)
     }
     let at = objOwnIndex(st, o, key)
     if at >= 0 {
-        st.objects[o].props[at].enumerable = truthy(getMember(st, d, "enumerable"))
-        st.objects[o].props[at].configurable = truthy(getMember(st, d, "configurable"))
-        st.objects[o].props[at].writable = truthy(getMember(st, d, "writable"))
+        if objHasInChain(st, d, "enumerable") {
+            st.objects[o].props[at].enumerable = truthy(getMember(st, d, "enumerable"))
+        } else {
+            st.objects[o].props[at].enumerable = existed && prevEnum
+        }
+        if objHasInChain(st, d, "configurable") {
+            st.objects[o].props[at].configurable = truthy(getMember(st, d, "configurable"))
+        } else {
+            st.objects[o].props[at].configurable = existed && prevConf
+        }
+        if objHasInChain(st, d, "writable") {
+            st.objects[o].props[at].writable = truthy(getMember(st, d, "writable"))
+        } else {
+            st.objects[o].props[at].writable = existed && prevWrit
+        }
     }
 }
 
@@ -12418,11 +12475,15 @@ fn proxyDelete(prog: &Prog, o: i64, key: string, st: &mut Interp): JSValue {
     return JSValue.Bool(true)
 }
 
+// `delete` reaches a function's own properties as well as a plain object's:
+// objHandle answers -1 for a Func, so every `delete fn.x` used to report true
+// while removing nothing, and test262's isConfigurable() probe (which deletes
+// and then checks hasOwnProperty) failed on every class static method.
 fn evalDelete(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSValue {
     match prog.exprs[targetId.index] {
         Expr.Member(objIdx, name) => {
             let ov = evalExpr(prog, objIdx, st, scope)
-            let o = objHandle(ov)
+            let o = propertyBagOf(st, ov)
             if o >= 0 {
                 if st.objects[o].isProxy {
                     return proxyDelete(prog, o, name.clone(), st)
@@ -12440,7 +12501,7 @@ fn evalDelete(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
             let kv = evalExpr(prog, keyIdx, st, scope)
             popTemp(st)
             let key = toStr(kv)
-            let o = objHandle(ov)
+            let o = propertyBagOf(st, ov)
             if o >= 0 {
                 if st.objects[o].isProxy {
                     return proxyDelete(prog, o, key, st)
@@ -12530,11 +12591,16 @@ fn propertyBagOf(st: &mut Interp, v: &JSValue): i64 {
         // query answered undefined. Materialised here, at the one place every
         // descriptor path goes through, with the spec's attributes:
         // { writable: false, enumerable: false, configurable: true }.
-        if objOwnIndex(st, bag, "name") < 0 {
-            objDefineBuiltinAttr(st, bag, "name", JSValue.Str(gProg.funcs[f].name.clone()))
-        }
-        if objOwnIndex(st, bag, "length") < 0 {
-            objDefineBuiltinAttr(st, bag, "length", JSValue.Number(funcArity(gProg, f) as f64))
+        // once only: `delete f.name` must stick, and a lazy "add it if absent"
+        // check would put it straight back on the next descriptor query
+        if !st.objects[bag].fnStatInit {
+            st.objects[bag].fnStatInit = true
+            if objOwnIndex(st, bag, "name") < 0 {
+                objDefineBuiltinAttr(st, bag, "name", JSValue.Str(gProg.funcs[f].name.clone()))
+            }
+            if objOwnIndex(st, bag, "length") < 0 {
+                objDefineBuiltinAttr(st, bag, "length", JSValue.Number(funcArity(gProg, f) as f64))
+            }
         }
         return bag
     }

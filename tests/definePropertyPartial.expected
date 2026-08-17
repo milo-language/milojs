@@ -1,0 +1,20 @@
+accessor to data non-config THREW TypeError
+data to accessor non-config THREW TypeError
+change enumerable non-config THREW TypeError
+same enumerable ok -> 1
+writable true->false ok -> 1
+non-extensible add THREW TypeError
+non-extensible existing ok -> 2
+frozen redefine THREW TypeError
+sealed add THREW TypeError
+sealed modify value ok -> 2
+partial descriptor keeps getter -> 7
+new prop defaults are false -> 1,false,false,false
+value omitted on new prop is undefined -> undefined
+configurable allows kind change -> 9
+redefine keeps attributes -> false,false,false
+array index accessor attributes -> false,false,true
+inherited descriptor field is seen -> p
+delete a static method -> true,true,false
+delete a function property -> false
+delete a function name -> false

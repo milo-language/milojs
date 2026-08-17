@@ -2728,7 +2728,22 @@ than inference:
   with and without an added Symbol.iterator.
 - `getIterator` answers undefined for all twelve non-iterables the section tests.
 
-So the recursion is in tape's own scheduling of `t.test` nested inside a
-`forEach`, not in the values or in the package under test. 67 assertions sit
-behind it. Next step: instrument tape's Test constructor and its results stream
-rather than the values, since the values are now accounted for.
+Not in tape's nested scheduling either, which was the next hypothesis and is now
+also ruled out by measurement:
+
+- one level of `t.test` inside a `forEach`, twelve times: fine;
+- TWO levels — the shape `fakeIterator` actually produces, since `t.iterate`
+  nests a second `t.test` inside it — twelve times: fine, and a stack probe
+  immediately afterwards reports 494 of 500 frames free, so the nesting leaks
+  no depth;
+- every value that section uses, through spread, `inspect` and `deepEqual`
+  individually: all correct.
+
+The synchronous phase of the section runs to completion (every marker fires); the
+overflow happens later, in the DEFERRED sub-test run, at the value after `{}`.
+67 assertions sit behind it.
+
+Five sittings have gone at this now and each one has only subtracted hypotheses.
+Recording that as the state rather than as progress: the next attempt should
+bisect the section by deleting values from `nonIterables` until it passes, which
+identifies the value directly instead of reasoning about which one it might be.
