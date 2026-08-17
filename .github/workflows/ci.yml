@@ -16,15 +16,23 @@ jobs:
         with:
           bun-version: latest
 
-      # Pinned, not "latest". node IS the oracle here — every .expected is its
-      # byte-exact output — so the node version is part of the contract, and a
-      # runner image bumping its default would rewrite that contract silently.
-      # util.inspect layout and error text move between majors. Bumping this line
-      # is a deliberate act: re-run tools/verify-expected.sh --update and read the
-      # diff, it is the only place the oracle changes.
+      # Pinned to a PATCH version, not "latest" and not a floating major. node IS
+      # the oracle here — every .expected is its byte-exact output — so the node
+      # version is part of the contract, and a runner image bumping its default
+      # would rewrite that contract silently. util.inspect layout and error text
+      # move between majors.
+      #
+      # The major alone ('25') is not enough: src/unicase.milo is generated from
+      # node's bundled ICU, so a PATCH bump that ships new Unicode data makes
+      # `gen-unicase --check` fail with no code change. That is what 25.9.0 did
+      # to a table generated on 25.3.0.
+      #
+      # Bumping this line is a deliberate act: re-run tools/verify-expected.sh
+      # --update and node tools/gen-unicase.mjs > src/unicase.milo, and read both
+      # diffs. It is the only place the oracle changes.
       - uses: actions/setup-node@v4
         with:
-          node-version: '25'
+          node-version: '25.3.0'
 
       # milo needs clang 16+ for the element-type-free intrinsic mangling
       # (@llvm.memcpy.p0.p0.i64); ubuntu-latest's default is older.
