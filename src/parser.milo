@@ -351,7 +351,12 @@ fn withDefault(prog: &mut Prog, valExpr: ExprId, dflt: ExprId): ExprId {
 fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<DeclItem>) {
     if peekKind(p) == T_LBRACE {
         advance(p)
-        // keys bound so far, so a trailing `...rest` can exclude them
+        // An EMPTY object pattern still performs RequireObjectCoercible on its
+        // source, and it binds nothing — so there is no member read to raise the
+        // TypeError that `const {} = null` owes. Emit the check explicitly for
+        // that case only; a pattern with at least one key throws on its first
+        // read, and paying for a call on every destructure would be waste.
+        let startLen = out.len()
         var seenKeys: Vec<string> = Vec.new()
         while peekKind(p) != T_RBRACE && peekKind(p) != T_EOF {
             // { a, ...rest } — rest takes every own key not already bound
@@ -446,6 +451,16 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
             }
         }
         expect(p, T_RBRACE)
+        if out.len() == startLen {
+            var rqArgs: Vec<ExprId> = Vec.new()
+            rqArgs.push(addExpr(prog, Expr.Ident(srcName.clone())))
+            let rqArgsId = addArgList(prog, rqArgs)
+            let rqCallee = addExpr(prog, Expr.Ident("__reqObj"))
+            out.push(DeclItem {
+                name: "__rq" + i64ToStr(p.pos), init: addExpr(prog, Expr.Call(rqCallee, rqArgsId)), isVar: false
+            }
+            )
+        }
         return
     }
     // An array pattern must STEP the iterator, once per element, and close it

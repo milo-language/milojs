@@ -6136,6 +6136,21 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             let fh = propertyBagOf(st, argVals[0])
             if fh >= 0 {
                 st.objects[fh].frozen = true
+                // The object-level flag is what the write paths consult, but a
+                // DESCRIPTOR is built per property, so freezing has to stamp each
+                // one too: without this `Object.freeze(o)` left
+                // getOwnPropertyDescriptor(o,'x').writable answering true, which
+                // is the observable half of freezing for anything that reflects
+                // over an object instead of assigning to it. An accessor keeps
+                // its writable field (a descriptor for one has no writable).
+                var fi: i64 = 0
+                while fi < st.objects[fh].props.len() {
+                    if st.objects[fh].props[fi].acc.isNone() {
+                        st.objects[fh].props[fi].writable = false
+                    }
+                    st.objects[fh].props[fi].configurable = false
+                    fi = fi + 1
+                }
             }
             return cloneValue(argVals[0])
         }
@@ -6227,6 +6242,14 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 st.objects[h].noExtend = true
                 if id == NATIVE_OBJECT_SEAL {
                     st.objects[h].sealed = true
+                    // Sealing makes every existing property non-configurable and
+                    // leaves writability alone; the per-property stamp is what
+                    // getOwnPropertyDescriptor reports. See the note in FREEZE.
+                    var si: i64 = 0
+                    while si < st.objects[h].props.len() {
+                        st.objects[h].props[si].configurable = false
+                        si = si + 1
+                    }
                 }
             }
             return cloneValue(argVals[0])
