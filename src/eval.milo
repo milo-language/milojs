@@ -1198,6 +1198,14 @@ fn builtinStaticArity(n: &string): i64 {
     if n == "abs" {
         return 1
     }
+    // annexB String HTML methods: only the four that take an attribute value
+    // report 1; the rest are 0, and check-arity holds that against node
+    if n == "anchor" || n == "fontcolor" || n == "fontsize" || n == "link" {
+        return 1
+    }
+    if n == "big" || n == "blink" || n == "bold" || n == "fixed" || n == "italics" || n == "small" || n == "strike" || n == "sub" || n == "sup" {
+        return 0
+    }
     if n == "acos" {
         return 1
     }
@@ -8119,7 +8127,21 @@ pub fn setupGlobals(st: &mut Interp) {
     // String.prototype.replace.call(str, ...) — the qs module's pattern — works
     let stringProto = newObject(st)
     for sm in strProtoMethodNames() {
-        objSet(st, stringProto, sm.clone(), makeBrandedMethod(st, sm.clone(), BRAND_STRING_GENERIC))
+        // trimLeft/trimRight are the SAME function objects as trimStart/trimEnd,
+        // not lookalikes: annexB defines them as aliases, so identity and .name
+        // both have to come from the ES method
+        var mname = sm.clone()
+        if sm == "trimLeft" {
+            mname = "trimStart"
+        }
+        if sm == "trimRight" {
+            mname = "trimEnd"
+        }
+        if mname == sm {
+            objSet(st, stringProto, sm.clone(), makeBrandedMethod(st, sm.clone(), BRAND_STRING_GENERIC))
+        } else {
+            objSet(st, stringProto, sm.clone(), getMember(st, stringProto, mname))
+        }
         objSetNonEnumerable(st, stringProto, sm)
     }
     var strBrand: Vec<string> = Vec.new()
@@ -8216,6 +8238,11 @@ pub fn setupGlobals(st: &mut Interp) {
     // callNativeProg; as an object it was only ever a namespace holding
     // .prototype, and `Function("return 1")` reported "Function is not a
     // function".
+    // Function.prototype is itself a function of no arguments and no name, and
+    // it owns both properties: `delete f.name` has to fall through to the empty
+    // string here rather than to undefined
+    objDefineBuiltinAttr(st, functionProto, "name", JSValue.Str(""))
+    objDefineBuiltinAttr(st, functionProto, "length", JSValue.Number(0.0))
     st.functionProtoObj = functionProto
     let functionCtorBag = getNativeProps(st, NATIVE_FUNCTION_CTOR)
     objDefineProtoAttr(st, functionCtorBag, "prototype", JSValue.Obj(functionProto))
@@ -9199,6 +9226,11 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                         if ni >= 0 {
                             return cloneValue(st.objects[nbag].props[ni].value)
                         }
+                        // deleted: the read continues up the chain to
+                        // Function.prototype, whose name is "" and length 0
+                        if st.functionProtoObj >= 0 {
+                            return getMember(st, st.functionProtoObj, name)
+                        }
                     }
                     // propertyBagOf, not getFuncStatics: this is the lookup a
                     // borrowed `fn.hasOwnProperty("name")` ends up querying, and
@@ -9985,6 +10017,11 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                         let ni = objOwnIndex(st, nbag, name)
                         if ni >= 0 {
                             return cloneValue(st.objects[nbag].props[ni].value)
+                        }
+                        // deleted: the read continues up the chain to
+                        // Function.prototype, whose name is "" and length 0
+                        if st.functionProtoObj >= 0 {
+                            return getMember(st, st.functionProtoObj, name)
                         }
                     }
                     let statics = getFuncStatics(st, fIdx, fe)
@@ -12747,7 +12784,7 @@ fn isPrimitiveMethodName(n: &string): bool {
 }
 
 fn isStringMethodName(n: &string): bool {
-    return n == "charAt" || n == "charCodeAt" || n == "codePointAt" || n == "at" || n == "indexOf" || n == "lastIndexOf" || n == "includes" || n == "startsWith" || n == "endsWith" || n == "slice" || n == "substring" || n == "substr" || n == "split" || n == "replace" || n == "replaceAll" || n == "toUpperCase" || n == "toLowerCase" || n == "toLocaleUpperCase" || n == "toLocaleLowerCase" || n == "isWellFormed" || n == "toWellFormed" || n == "trim" || n == "trimStart" || n == "trimEnd" || n == "trimLeft" || n == "trimRight" || n == "padStart" || n == "padEnd" || n == "repeat" || n == "concat" || n == "localeCompare" || n == "normalize" || n == "match" || n == "matchAll" || n == "search" || n == "toString" || n == "valueOf"
+    return n == "charAt" || n == "charCodeAt" || n == "codePointAt" || n == "at" || n == "indexOf" || n == "lastIndexOf" || n == "includes" || n == "startsWith" || n == "endsWith" || n == "slice" || n == "substring" || n == "substr" || n == "split" || n == "replace" || n == "replaceAll" || n == "toUpperCase" || n == "toLowerCase" || n == "toLocaleUpperCase" || n == "toLocaleLowerCase" || n == "isWellFormed" || n == "toWellFormed" || n == "trim" || n == "trimStart" || n == "trimEnd" || n == "trimLeft" || n == "trimRight" || n == "padStart" || n == "padEnd" || n == "repeat" || n == "concat" || n == "localeCompare" || n == "normalize" || n == "match" || n == "matchAll" || n == "search" || n == "toString" || n == "valueOf" || isHtmlMethodName(n)
 }
 
 fn stringPrimitiveMember(st: &mut Interp, value: &string, key: &string): JSValue {
@@ -13474,6 +13511,22 @@ fn strProtoMethodNames(): Vec<string> {
     out.push("search")
     out.push("toString")
     out.push("valueOf")
+    out.push("trimLeft")
+    out.push("trimRight")
+    // annexB's HTML methods; implemented in stringMethod
+    out.push("anchor")
+    out.push("big")
+    out.push("blink")
+    out.push("bold")
+    out.push("fixed")
+    out.push("fontcolor")
+    out.push("fontsize")
+    out.push("italics")
+    out.push("link")
+    out.push("small")
+    out.push("strike")
+    out.push("sub")
+    out.push("sup")
     return out
 }
 

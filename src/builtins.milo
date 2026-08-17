@@ -558,6 +558,49 @@ pub fn utf16Slice(s: &string, start: i64, end: i64): string {
     return strSlice(s, utf16ToByte(s, a), utf16ToByte(s, b))
 }
 
+// The annexB String HTML methods, as (name -> tag, attribute) tables. Kept
+// beside stringMethod because the by-name dispatch is what makes them reachable:
+// assigning them onto String.prototype from JS would mark it touched and turn
+// that dispatch off for every other method.
+pub fn isHtmlMethodName(n: &string): bool {
+    return n == "anchor" || n == "big" || n == "blink" || n == "bold" || n == "fixed" || n == "fontcolor" || n == "fontsize" || n == "italics" || n == "link" || n == "small" || n == "strike" || n == "sub" || n == "sup"
+}
+
+fn htmlTagFor(n: &string): string {
+    if n == "anchor" || n == "link" {
+        return "a"
+    }
+    if n == "bold" {
+        return "b"
+    }
+    if n == "fixed" {
+        return "tt"
+    }
+    if n == "fontcolor" || n == "fontsize" {
+        return "font"
+    }
+    if n == "italics" {
+        return "i"
+    }
+    return n.clone()
+}
+
+fn htmlAttrFor(n: &string): string {
+    if n == "anchor" {
+        return "name"
+    }
+    if n == "link" {
+        return "href"
+    }
+    if n == "fontcolor" {
+        return "color"
+    }
+    if n == "fontsize" {
+        return "size"
+    }
+    return ""
+}
+
 pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     if name == "toUpperCase" || name == "toLocaleUpperCase" {
         // the locale forms are the locale-independent ones here: this engine has
@@ -773,6 +816,29 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
             return JSValue.Str(cut + s.clone())
         }
         return JSValue.Str(s.clone() + cut)
+    }
+    // annexB's String HTML methods. CreateHTML: one `"` in an attribute value is
+    // escaped as &quot; and nothing else is, which is exactly what the spec says
+    // (these predate any real escaping and stay literal on purpose).
+    if isHtmlMethodName(name) {
+        let tag = htmlTagFor(name)
+        let attr = htmlAttrFor(name)
+        var open = "<" + tag.clone()
+        if attr.len() > 0 {
+            let raw = argStr(args, 0)
+            var esc = ""
+            var ci: i64 = 0
+            while ci < raw.len() {
+                if raw[ci] == '"' {
+                    esc = esc + "&quot;"
+                } else {
+                    esc = esc + strSlice(raw.clone(), ci, ci + 1)
+                }
+                ci = ci + 1
+            }
+            open = open + " " + attr.clone() + "=\"" + esc + "\""
+        }
+        return JSValue.Str(open + ">" + s.clone() + "</" + tag.clone() + ">")
     }
     if name == "trimStart" || name == "trimLeft" {
         var i: i64 = 0

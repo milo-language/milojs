@@ -20,6 +20,17 @@ pub fn byteToUtf16(s: &string, at: i64): i64
 
 byte offset -> UTF-16 index (the inverse, for indexOf-style results).
 
+### `isHtmlMethodName`
+
+```milo
+pub fn isHtmlMethodName(n: &string): bool
+```
+
+The annexB String HTML methods, as (name -> tag, attribute) tables. Kept
+beside stringMethod because the by-name dispatch is what makes them reachable:
+assigning them onto String.prototype from JS would mark it touched and turn
+that dispatch off for every other method.
+
 ### `jsIndexOf`
 
 ```milo

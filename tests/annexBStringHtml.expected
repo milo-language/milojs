@@ -1,0 +1,12 @@
+<a name="a&quot;b">hi</a> <big>hi</big> <blink>hi</blink> <b>hi</b> <tt>hi</tt>
+<font color="red">hi</font> <font size="3">hi</font> <i>hi</i> <a href="u&quot;v">hi</a>
+<small>hi</small> <strike>hi</strike> <sub>hi</sub> <sup>hi</sup>
+[x  ] [  x]
+true true
+anchor 1 anchor
+big 0 big
+fontcolor 1 fontcolor
+link 1 link
+small 0 small
+true "" 0
+"" false
