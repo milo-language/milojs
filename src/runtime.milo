@@ -662,6 +662,12 @@ struct JSObj {
     // produce an object that inherits nothing, and without this flag both
     // answered Object.prototype and carried toString/hasOwnProperty.
     protoNull: bool,
+    // The `arguments` object. It is built as a real array here so indexing,
+    // `length` and `Array.prototype.<m>.call(arguments, …)` all work for free, but
+    // the spec says it is NOT an Array: `Array.isArray(arguments)` is false, its
+    // tag is "[object Arguments]", and `[].concat(arguments)` appends it as ONE
+    // element instead of spreading. This flag is what those three ask.
+    isArguments: bool,
     // objects produced by the Error-family native constructors; the specific
     // kind lives in the `name` property
     isError: bool,
@@ -1017,7 +1023,7 @@ pub var gInterp: Interp = Interp {
 fn allocObj(st: &mut Interp, isArray: bool): i64 {
     st.allocSinceGc = st.allocSinceGc + 1
     let obj = JSObj {
-        props: Vec.new(), elems: Vec.new(), holes: Vec.new(), logicalLen: -1, isArray: isArray, ctor: -1, proto: -1, protoNull: false, isError: false, frozen: false, fnStatInit: false, noExtend: false, sealed: false, isGlobal: false, isArrayBuffer: false, abDetached: false, isDataView: false, promiseState: -1, isBound: false, isEnv: false, isFunctionLike: false, isDate: false, isMap: false, isSet: false, isProxy: false, isGenerator: false, isAsyncGenerator: false, extra: 0, mark: false, free: false
+        props: Vec.new(), elems: Vec.new(), holes: Vec.new(), logicalLen: -1, isArray: isArray, ctor: -1, proto: -1, protoNull: false, isArguments: false, isError: false, frozen: false, fnStatInit: false, noExtend: false, sealed: false, isGlobal: false, isArrayBuffer: false, abDetached: false, isDataView: false, promiseState: -1, isBound: false, isEnv: false, isFunctionLike: false, isDate: false, isMap: false, isSet: false, isProxy: false, isGenerator: false, isAsyncGenerator: false, extra: 0, mark: false, free: false
     }
     // reuse a freed slot if one exists (indices are stable — handles hold them),
     // otherwise grow the arena

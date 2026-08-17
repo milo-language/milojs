@@ -3301,6 +3301,9 @@ fn objectTag(st: &Interp, o: i64): string {
             }
         }
     }
+    if st.objects[o].isArguments {
+        return "Arguments"
+    }
     if st.objects[o].isArray {
         return "Array"
     }
@@ -4637,7 +4640,8 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if argVals.len() > 0 {
             let h = objHandle(argVals[0])
             if h >= 0 {
-                return JSValue.Bool(st.objects[h].isArray)
+                // the arguments object is array-SHAPED here but is not an Array
+                return JSValue.Bool(st.objects[h].isArray && !st.objects[h].isArguments)
             }
         }
         return JSValue.Bool(false)
@@ -8362,6 +8366,8 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, symbolCtorObj, "search", JSValue.Str("@@sym:Symbol.search:0"))
     objSet(st, symbolCtorObj, "split", JSValue.Str("@@sym:Symbol.split:0"))
     objSet(st, symbolCtorObj, "species", JSValue.Str(symSpeciesKey()))
+    objSet(st, symbolCtorObj, "isConcatSpreadable", JSValue.Str(symConcatSpreadableKey()))
+    objSet(st, symbolCtorObj, "unscopables", JSValue.Str("@@sym:Symbol.unscopables:0"))
     objSet(st, symbolCtorObj, "dispose", JSValue.Str("@@sym:Symbol.dispose:0"))
     objSet(st, symbolCtorObj, "asyncDispose", JSValue.Str("@@sym:Symbol.asyncDispose:0"))
     let dateCtorObj = getNativeProps(st, NATIVE_DATE)
@@ -11174,6 +11180,7 @@ fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JSValu
             arrPush(st, argsArr, cloneValue(argVals[ai]))
             ai = ai + 1
         }
+        st.objects[argsArr].isArguments = true
         scopeDefine(st, callScope, "arguments", JSValue.Obj(argsArr))
     }
     return callScope
@@ -11448,6 +11455,10 @@ fn symIteratorKey(): string {
 
 fn symSpeciesKey(): string {
     return "@@sym:Symbol.species:0"
+}
+
+fn symConcatSpreadableKey(): string {
+    return "@@sym:Symbol.isConcatSpreadable:0"
 }
 
 fn symToPrimitiveKey(): string {
@@ -14140,6 +14151,23 @@ fn cbThisArg(args: &Vec<JSValue>): JSValue {
     return JSValue.Undefined
 }
 
+// The callback's (value, index, array) triple. Takes a Prog because the value read
+// is a real [[Get]]: at a hole the element may come from the prototype chain, and
+// there it may be an ACCESSOR whose getter has to run. `Array.prototype[3]` defined
+// as a getter is visible to filter/map/forEach in node and was invisible here.
+fn makeCbArgsDyn(prog: &Prog, o: i64, i: i64, st: &mut Interp): Vec<JSValue> {
+    var v: Vec<JSValue> = Vec.new()
+    v.push(arrGetDyn(prog, o, i, st))
+    v.push(JSValue.Number(i as f64))
+    let orig = st.objExtras[st.objects[o].extra].arrayLikeOrig
+    if orig >= 0 {
+        v.push(JSValue.Obj(orig))
+    } else {
+        v.push(JSValue.Obj(o))
+    }
+    return v
+}
+
 fn makeCbArgs(st: &Interp, o: i64, i: i64): Vec<JSValue> {
     var v: Vec<JSValue> = Vec.new()
     v.push(arrGet(st, o, i))
@@ -15436,14 +15464,16 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         var found = -1
         var allTrue = true
         var anyTrue = false
-        while i < arrLen(st, o) && found < 0 {
+        // `n` was read before the loop and the spec keeps it: an index the
+        // callback APPENDS is not visited. Re-reading arrLen here visited it.
+        while i < n && found < 0 {
             // some/every are specified over PRESENT indices; find/findIndex are
             // not, and visit a hole as undefined
             if (name == "some" || name == "every") && !arrHasIndex(st, o, i) {
                 i = i + 1
                 continue
             }
-            let cbArgs = makeCbArgs(st, o, i)
+            let cbArgs = makeCbArgsDyn(prog, o, i, st)
             let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             let t = truthy(r)
             if t {
@@ -15654,7 +15684,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         var i = n - 1
         var found: i64 = -1
         while i >= 0 && found < 0 {
-            let cbArgs = makeCbArgs(st, o, i)
+            let cbArgs = makeCbArgsDyn(prog, o, i, st)
             let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             if truthy(r) || st.throwing {
                 found = i
@@ -16009,11 +16039,33 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
             let av = cloneValue(args[a])
             match av {
                 JSValue.Obj(other) => {
-                    if st.objects[other].isArray {
+                    // IsConcatSpreadable: `Symbol.isConcatSpreadable` decides when
+                    // present, and IsArray otherwise. The arguments object is
+                    // array-shaped here but is not an Array, so it must be appended
+                    // whole — `[].concat(arguments)` is one element, not three.
+                    var spread = st.objects[other].isArray && !st.objects[other].isArguments
+                    let flag = getMemberDyn(prog, other, symConcatSpreadableKey(), st)
+                    if st.throwing {
+                        popTemp(st)
+                        return JSValue.Undefined
+                    }
+                    if !isUndefinedValue(flag) {
+                        spread = truthy(flag)
+                    }
+                    if spread {
                         var k: i64 = 0
-                        let m = arrLen(st, other)
+                        // an array-like that is not an Array is spread by its own
+                        // `length`, which arrLen does not answer
+                        var m = arrLen(st, other)
+                        if !st.objects[other].isArray {
+                            m = toNum(getMemberDyn(prog, other, "length", st)) as i64
+                        }
                         while k < m {
-                            arrPushMaybeHole(st, joined, other, k)
+                            if st.objects[other].isArray {
+                                arrPushMaybeHole(st, joined, other, k)
+                            } else {
+                                arrPush(st, joined, getMemberDyn(prog, other, i64ToStr(k), st))
+                            }
                             k = k + 1
                         }
                     } else {
@@ -16052,14 +16104,15 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
         while i < n {
-            if arrIsHole(st, o, i) {
-                // the callback is not called for a hole, and the result stays
-                // sparse at that index
+            if !arrHasIndex(st, o, i) {
+                // the callback is not called for an ABSENT index, and the result
+                // stays sparse there. Absent is not the same as a hole: a hole
+                // over an inherited index (or an inherited getter) IS present.
                 arrPushMaybeHole(st, mapped, o, i)
                 i = i + 1
                 continue
             }
-            let cbArgs = makeCbArgs(st, o, i)
+            let cbArgs = makeCbArgsDyn(prog, o, i, st)
             let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             arrPush(st, mapped, r)
             i = i + 1
@@ -16083,12 +16136,12 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
         while i < n {
-            if arrIsHole(st, o, i) {
+            if !arrHasIndex(st, o, i) {
                 i = i + 1
                 continue
             }
-            let elem = arrGet(st, o, i)
-            let cbArgs = makeCbArgs(st, o, i)
+            let elem = arrGetDyn(prog, o, i, st)
+            let cbArgs = makeCbArgsDyn(prog, o, i, st)
             let keep = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             if truthy(keep) {
                 arrPush(st, kept, elem)
@@ -16108,11 +16161,11 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
         while i < n {
-            if arrIsHole(st, o, i) {
+            if !arrHasIndex(st, o, i) {
                 i = i + 1
                 continue
             }
-            let cbArgs = makeCbArgs(st, o, i)
+            let cbArgs = makeCbArgsDyn(prog, o, i, st)
             let _ = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             i = i + 1
         }
@@ -16202,12 +16255,13 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         let thisArg = cbThisArg(args)
         pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
-        while i < arrLen(st, o) && !st.throwing {
+        // cached length, as the spec has it: see the some/every loop
+        while i < n && !st.throwing {
             if arrIsHole(st, o, i) {
                 i = i + 1
                 continue
             }
-            let cbArgs = makeCbArgs(st, o, i)
+            let cbArgs = makeCbArgsDyn(prog, o, i, st)
             let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             // one level of flattening, and only for array results
             let rh = objHandle(r)

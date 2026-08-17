@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "ff0854291360bccca5caa370e27f0eac2f635a62",
+    "revision": "245765ede3fbb16fb9671ce3f5e788109f5abc16",
     "dirty": true
   },
   "engine": ".dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 996,
-    "fail": 474,
+    "pass": 999,
+    "fail": 471,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -50,8 +50,8 @@
     },
     {
       "area": "built-ins/Array",
-      "pass": 54,
-      "fail": 37,
+      "pass": 57,
+      "fail": 34,
       "total": 91
     },
     {
@@ -607,18 +607,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: testResult !== true",
-      "count": 6,
-      "cases": [
-        "built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-18.js",
-        "built-ins/Array/prototype/reduce/15.4.4.21-9-b-12.js",
-        "built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-16.js",
-        "built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-30.js",
-        "built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-29.js",
-        "built-ins/Array/prototype/reduceRight/15.4.4.22-9-b-10.js"
-      ]
-    },
-    {
       "reason": "Uncaught ReferenceError: with is not defined",
       "count": 5,
       "cases": [
@@ -649,6 +637,17 @@
         "built-ins/TypedArrayConstructors/ctors-bigint/buffer-arg/byteoffset-to-number-detachbuffer.js",
         "built-ins/TypedArray/prototype/map/BigInt/speciesctor-destination-resizable.js",
         "built-ins/TypedArray/prototype/slice/BigInt/return-abrupt-from-start-symbol.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: testResult !== true",
+      "count": 5,
+      "cases": [
+        "built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-18.js",
+        "built-ins/Array/prototype/reduce/15.4.4.21-9-b-12.js",
+        "built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-30.js",
+        "built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-29.js",
+        "built-ins/Array/prototype/reduceRight/15.4.4.22-9-b-10.js"
       ]
     },
     {
@@ -2221,13 +2220,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: newArr.length Expected SameValue(«N», «N») to be true",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/filter/15.4.4.20-9-c-i-16.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: newArr[N] Expected SameValue(«N», «N») to be true",
       "count": 1,
       "cases": [
@@ -2400,13 +2392,6 @@
       "count": 1,
       "cases": [
         "built-ins/Array/prototype/reduceRight/15.4.4.22-9-6.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: result !== true",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/forEach/15.4.4.18-1-15.js"
       ]
     },
     {
