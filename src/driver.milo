@@ -55,7 +55,7 @@ pub fn describeThrown(st: &Interp, v: &JSValue): string {
 pub fn makeInterp(gcStats: bool, gcThreshold: i64, gcGrowth: i64): Interp {
     return Interp {
         scopes: Vec.new(), freeList: Vec.new(), active: Vec.new(),
-        objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: arenaNew(), funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), hostRoots: Vec.new(), hostRootLive: Vec.new(),
+        strict: false, objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: arenaNew(), funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), hostRoots: Vec.new(), hostRootLive: Vec.new(),
         modPaths: Vec.new(), modBlocks: Vec.new(), modExports: Vec.new(), modState: Vec.new(), modDirStack: Vec.new(), modPathStack: Vec.new(), fnFileStack: Vec.new(),
         throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
         optShort: false, pendingLabel: "", callDepthLimit: 104,
@@ -131,6 +131,8 @@ fn runSource(src: &string, st: &mut Interp): i32 {
         toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: "<entry>", errored: false, eofError: false, quiet: false, strict: false
     }
     let top = parseProgram(p, prog)
+    // top-level code has no FuncDef to carry its strictness, so seed it here
+    st.strict = prog.progStrict
     hoistBlock(prog, top, st, 0)
     execBlock(prog, top, st, 0)
     // the script only schedules callbacks; without draining, every .then handler

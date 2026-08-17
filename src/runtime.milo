@@ -724,6 +724,11 @@ struct JSObj {
 }
 
 pub struct Interp {
+    // Strictness of the code currently executing. Strict code must throw a
+    // TypeError where sloppy code silently drops a failed property write, so the
+    // write path needs the mode; callFunction saves/sets/restores it around each
+    // activation from FuncDef.isStrict.
+    strict: bool,
     scopes: Vec<Scope>,
     // reusable dead-scope slots (indices stay stable — closures hold them by index)
     freeList: Vec<i64>,
@@ -980,7 +985,7 @@ pub struct Interp {
 // that main() overwrites with makeInterp().
 pub var gInterp: Interp = Interp {
     scopes: Vec.new(), freeList: Vec.new(), active: Vec.new(),
-    objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: Arena { id: 0, data: Vec.new(), gens: Vec.new(), freeList: Vec.new(), live: 0 }, funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), hostRoots: Vec.new(), hostRootLive: Vec.new(),
+    strict: false, objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: Arena { id: 0, data: Vec.new(), gens: Vec.new(), freeList: Vec.new(), live: 0 }, funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), hostRoots: Vec.new(), hostRootLive: Vec.new(),
     modPaths: Vec.new(), modBlocks: Vec.new(), modExports: Vec.new(), modState: Vec.new(), modDirStack: Vec.new(), modPathStack: Vec.new(), fnFileStack: Vec.new(),
     throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 104,

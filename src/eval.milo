@@ -3376,6 +3376,9 @@ fn setMemberDyn(prog: &Prog, o: i64, key: string, v: JSValue, st: &mut Interp) {
     // must not replace the accessor with a plain data property
     let own = objOwnIndex(st, o, key)
     if own >= 0 && propIsAccessor(st, o, own) {
+        if st.strict {
+            throwWriteFailure(st, "Cannot set property " + key.clone() + " of #<Object> which has only a getter")
+        }
         return
     }
     setMember(st, o, key, v)
@@ -3484,6 +3487,13 @@ pub fn getMember(st: &Interp, o: i64, key: &string): JSValue {
     return JSValue.Undefined
 }
 
+// A property write that cannot succeed. Sloppy code drops it; strict code must
+// throw, and every such site funnels through here so the two modes stay in step.
+fn throwWriteFailure(st: &mut Interp, msg: string) {
+    st.throwing = true
+    st.thrownValue = makeError(st, "TypeError", msg + currentModule(st))
+}
+
 fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
     if nativeBufferLen(st, o) >= 0 {
         let ni = asArrayIndex(key)
@@ -3503,15 +3513,24 @@ fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
     }
     // sloppy mode drops writes to a frozen object rather than throwing
     if st.objects[o].frozen {
+        if st.strict {
+            throwWriteFailure(st, "Cannot assign to read only property '" + key.clone() + "' of object")
+        }
         return
     }
     // non-extensible: existing properties stay writable, new ones are refused
     if st.objects[o].noExtend && objOwnIndex(st, o, key) < 0 && !st.objects[o].isArray {
+        if st.strict {
+            throwWriteFailure(st, "Cannot add property " + key.clone() + ", object is not extensible")
+        }
         return
     }
     // a non-writable data property silently ignores assignment in sloppy mode
     let own = objOwnIndex(st, o, key)
     if own >= 0 && !propIsAccessor(st, o, own) && !st.objects[o].props[own].writable {
+        if st.strict {
+            throwWriteFailure(st, "Cannot assign to read only property '" + key.clone() + "' of object")
+        }
         return
     }
     if st.objExtras[st.objects[o].extra].taBuf >= 0 && !st.objects[o].isDataView {
@@ -10872,7 +10891,14 @@ fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, this
     } else {
         st.fnFileStack.push("")
     }
+    // Strictness is a property of the function being entered, not of the caller:
+    // a sloppy function called from strict code is still sloppy, and vice versa.
+    let savedStrict = st.strict
+    if fIdx >= 0 && fIdx < prog.funcs.len() {
+        st.strict = prog.funcs[fIdx].isStrict
+    }
     let r = callFunctionBody(prog, fIdx, envIdx, argVals, thisVal, st)
+    st.strict = savedStrict
     let _popped = st.fnFileStack.pop()
     return r
 }

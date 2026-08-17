@@ -282,6 +282,10 @@ pub struct Prog {
     // program at each nesting level.
     srcNames: Vec<string>,
     srcTexts: Vec<string>,
+    // A "use strict" directive at the head of the ENTRY program. Function-level
+    // strictness lives on FuncDef.isStrict; top-level code has no FuncDef to
+    // hang it on, so it is recorded here and read once when the driver starts.
+    progStrict: bool,
 }
 
 // Create an empty program arena.
@@ -314,7 +318,7 @@ pub fn sourceOf(prog: &Prog, name: &string): string {
 
 pub fn newProg(): Prog {
     return Prog {
-        exprs: Vec.new(), stmts: Vec.new(), blocks: Vec.new(), argLists: Vec.new(), funcs: Vec.new(), objLits: Vec.new(), arrLits: Vec.new(), declLists: Vec.new(), classes: Vec.new(), switches: Vec.new(), srcNames: Vec.new(), srcTexts: Vec.new()
+        exprs: Vec.new(), stmts: Vec.new(), blocks: Vec.new(), argLists: Vec.new(), funcs: Vec.new(), objLits: Vec.new(), arrLits: Vec.new(), declLists: Vec.new(), classes: Vec.new(), switches: Vec.new(), srcNames: Vec.new(), srcTexts: Vec.new(), progStrict: false
     }
 }
 
@@ -324,7 +328,7 @@ pub fn newProg(): Prog {
 // initialization is not supported, so this is a zero literal that main()
 // overwrites once parsing is done.
 pub var gProg: Prog = Prog {
-    exprs: Vec.new(), stmts: Vec.new(), blocks: Vec.new(), argLists: Vec.new(), funcs: Vec.new(), objLits: Vec.new(), arrLits: Vec.new(), declLists: Vec.new(), classes: Vec.new(), switches: Vec.new(), srcNames: Vec.new(), srcTexts: Vec.new()
+    exprs: Vec.new(), stmts: Vec.new(), blocks: Vec.new(), argLists: Vec.new(), funcs: Vec.new(), objLits: Vec.new(), arrLits: Vec.new(), declLists: Vec.new(), classes: Vec.new(), switches: Vec.new(), srcNames: Vec.new(), srcTexts: Vec.new(), progStrict: false
 }
 
 fn cloneExpr(e: &Expr): Expr {

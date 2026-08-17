@@ -2752,7 +2752,10 @@ fn programIsStrict(p: &PState): bool {
 }
 
 pub fn parseProgram(p: &mut PState, prog: &mut Prog): BlockId {
-    if programIsStrict(p) {
+    // Assigned, not OR-ed: every module parse goes through here, and the LAST
+    // parse is the entry program whose strictness the driver reads.
+    prog.progStrict = programIsStrict(p)
+    if prog.progStrict {
         p.strict = true
     }
     var list: Vec<StmtId> = Vec.new()
