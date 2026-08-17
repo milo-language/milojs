@@ -15237,10 +15237,30 @@ fn arrayNeedsCallback(name: &string): bool {
 // `Array.prototype[1]`, a hole at index 1 read as undefined and indexOf could
 // never find its value.
 fn arrGetDyn(prog: &Prog, o: i64, idx: i64, st: &mut Interp): JSValue {
+    // A scratch array adapting an array-like receiver reads THROUGH to the
+    // original. The adapter copies once up front, and the spec's methods do a real
+    // [[Get]] per index — so a callback that mutates the receiver mid-loop
+    // (`Array.prototype.forEach.call(o, function(){ o[1] = 99 })`) must be
+    // observed, and reading the copy could never see it.
+    let orig = st.objExtras[st.objects[o].extra].arrayLikeOrig
+    if orig >= 0 {
+        return getMemberDyn(prog, orig, i64ToStr(idx), st)
+    }
     if !arrIsHole(st, o, idx) {
         return arrGet(st, o, idx)
     }
     return getMemberDyn(prog, o, i64ToStr(idx), st)
+}
+
+// HasProperty for the index a callback method is about to visit. Same
+// read-through as arrGetDyn: presence on the ORIGINAL is what decides whether the
+// callback runs, and the callback may have deleted the property.
+fn arrHasIndexDyn(prog: &Prog, o: i64, idx: i64, st: &mut Interp): bool {
+    let orig = st.objExtras[st.objects[o].extra].arrayLikeOrig
+    if orig >= 0 {
+        return truthy(evalInOperator(prog, i64ToStr(idx), JSValue.Obj(orig), st))
+    }
+    return arrHasIndex(st, o, idx)
 }
 
 // `new C(len)` for a species constructor. Mirrors the JSValue.Func arm of the
@@ -15942,7 +15962,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
             i = fi
         }
         while i < n {
-            if !arrHasIndex(st, o, i) {
+            if !arrHasIndexDyn(prog, o, i, st) {
                 // indexOf is specified over PRESENT indices, so a hole never
                 // matches — not even a search for undefined. includes() does
                 // look at holes, and stays as it is.
@@ -16104,7 +16124,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
         while i < n {
-            if !arrHasIndex(st, o, i) {
+            if !arrHasIndexDyn(prog, o, i, st) {
                 // the callback is not called for an ABSENT index, and the result
                 // stays sparse there. Absent is not the same as a hole: a hole
                 // over an inherited index (or an inherited getter) IS present.
@@ -16136,7 +16156,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
         while i < n {
-            if !arrHasIndex(st, o, i) {
+            if !arrHasIndexDyn(prog, o, i, st) {
                 i = i + 1
                 continue
             }
@@ -16161,7 +16181,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         pushTemp(st, cloneValue(thisArg))
         var i: i64 = 0
         while i < n {
-            if !arrHasIndex(st, o, i) {
+            if !arrHasIndexDyn(prog, o, i, st) {
                 i = i + 1
                 continue
             }
@@ -16182,11 +16202,11 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
             // no seed: the accumulator is the first PRESENT element, not
             // element 0 — a leading hole must not become the seed
             var f: i64 = 0
-            while f < n && arrIsHole(st, o, f) {
+            while f < n && !arrHasIndexDyn(prog, o, f, st) {
                 f = f + 1
             }
             if f < n {
-                acc = arrGet(st, o, f)
+                acc = arrGetDyn(prog, o, f, st)
                 start = f + 1
             } else {
                 start = n
@@ -16195,13 +16215,15 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         pushTemp(st, cloneValue(acc))
         var i = start
         while i < n {
-            if arrIsHole(st, o, i) {
+            // presence and the element are read live, per index, on the ORIGINAL
+            // receiver — a callback may add or delete one mid-reduce
+            if !arrHasIndexDyn(prog, o, i, st) {
                 i = i + 1
                 continue
             }
             var cbArgs: Vec<JSValue> = Vec.new()
             cbArgs.push(cloneValue(acc))
-            cbArgs.push(arrGet(st, o, i))
+            cbArgs.push(arrGetDyn(prog, o, i, st))
             cbArgs.push(JSValue.Number(i as f64))
             acc = callValue(prog, cb, cbArgs, JSValue.Undefined, st)
             i = i + 1
@@ -16217,11 +16239,11 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
             acc = cloneValue(args[1])
         } else {
             var f = n - 1
-            while f >= 0 && arrIsHole(st, o, f) {
+            while f >= 0 && !arrHasIndexDyn(prog, o, f, st) {
                 f = f - 1
             }
             if f >= 0 {
-                acc = arrGet(st, o, f)
+                acc = arrGetDyn(prog, o, f, st)
                 start = f - 1
             } else {
                 start = 0 - 1
@@ -16230,13 +16252,14 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         pushTemp(st, cloneValue(acc))
         var i = start
         while i >= 0 {
-            if arrIsHole(st, o, i) {
+            // live per-index reads, as in reduce
+            if !arrHasIndexDyn(prog, o, i, st) {
                 i = i - 1
                 continue
             }
             var cbArgs: Vec<JSValue> = Vec.new()
             cbArgs.push(cloneValue(acc))
-            cbArgs.push(arrGet(st, o, i))
+            cbArgs.push(arrGetDyn(prog, o, i, st))
             cbArgs.push(JSValue.Number(i as f64))
             acc = callValue(prog, cb, cbArgs, JSValue.Undefined, st)
             i = i - 1
