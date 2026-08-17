@@ -3256,6 +3256,54 @@ Corpus 919 to 925, test262 873 to 874.
 
 Locked by `tests/wrapperUnwrapping.js`.
 
+## Module code was not strict code, and every QuickJS test file is a module
+
+The spec makes module code strict with no directive needed. milojs ran every
+module sloppy, and four unrelated-looking behaviours all came from that one fact:
+
+- assigning to a non-extensible or frozen object silently did nothing where it
+  must throw;
+- a bare function call saw an object as `this` instead of undefined;
+- an assignment to an undeclared name created a global instead of raising a
+  ReferenceError (which was not implemented at all, in any mode);
+- `Object.setPrototypeOf(Object.prototype, {})` was a silent no-op.
+
+Strictness has to be decided at PARSE time, not just at run time: a function's
+strictness is baked into its FuncDef, so setting `st.strict` around the module
+body fixed the top level and left every function inside it sloppy. `PState.strict`
+now starts true for module code, and `parseProgram` ORs rather than assigns
+`progStrict` — it was overwriting the flag the caller had just set.
+
+`moduleIsStrict` nearly became a fourth duplicated idea in this repo: it started
+as a hand-rolled token scan for import/export before `hasEsmSyntax` turned up
+doing the same thing better (it skips a member named `import` and a dynamic
+`import(...)`, which the hand-rolled version did not). It delegates now.
+`tools/lint-symbols.sh` catches duplicate NAMES; it cannot catch a duplicated
+idea under a new name, and this is the second time that has happened here.
+
+Also fixed alongside: %Object.prototype% is an immutable prototype exotic object
+(null is the only prototype it accepts), and a non-extensible object's prototype
+cannot be replaced either.
+
+QuickJS 71.1% -> 71.3%, and `test_builtin.js:test` passes for the first time.
+test262 unmoved at 70.6% — it skips module tests in this sweep, so none of this
+shows up there. Packages 76%, apps 2/2, Temporal 119/119: nothing regressed from
+turning strictness on, which was the real risk.
+
+### What test_builtin.js still fails, measured per function
+
+Running each of its 29 test functions separately rather than letting the first
+failure mask the rest:
+
+- `test_string` / `test_rope`: lone surrogates normalise to U+FFFD
+  (`charCodeAt` gives 65533 where 55296 is expected). Architectural — strings are
+  UTF-8 here, and a lone surrogate has no UTF-8 encoding. Shared root cause with
+  a slice of test262's String area.
+- `test_typed_array`: Float16Array absent.
+- `test_date`: a parse returning NaN for -30610224000000.
+- `test_regexp`: `\c0` escape handling.
+- `test_eval`, `test_function`, `test_array`: one assertion each, undiagnosed.
+
 ## Temporal ISO strings: one parser instead of seven regexes
 
 Each Temporal type carried its own ISO regex, and not one of them knew about

@@ -6038,6 +6038,30 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             // router proto object, so the bag a function's properties live in is
             // what has to inherit
             let h = propertyBagOf(st, argVals[0])
+            // %Object.prototype% is an immutable prototype exotic object: its
+            // [[Prototype]] is already null and setting it to anything else is a
+            // TypeError, not a silent no-op. Nothing else in the language has
+            // this rule, which is why it is stated here rather than as a flag.
+            if h >= 0 && h == st.objectProtoObj {
+                let np = propertyBagOf(st, argVals[1])
+                if np >= 0 {
+                    st.throwing = true
+                    st.thrownValue = makeError(st, "TypeError", "Immutable prototype object '#<Object>' cannot have their prototype set" + currentModule(st))
+                    return JSValue.Undefined
+                }
+                return cloneValue(argVals[0])
+            }
+            // an object that has had preventExtensions/freeze/seal applied to it
+            // cannot have its prototype replaced either
+            if h >= 0 && st.objects[h].noExtend {
+                let ep = propertyBagOf(st, argVals[1])
+                let cur = st.objects[h].proto
+                if ep != cur {
+                    st.throwing = true
+                    st.thrownValue = makeError(st, "TypeError", "#<Object> is not extensible" + currentModule(st))
+                    return JSValue.Undefined
+                }
+            }
             if h >= 0 {
                 let p = propertyBagOf(st, argVals[1])
                 st.objects[h].proto = p
@@ -7602,10 +7626,20 @@ pub fn runModule(prog: &Prog, idx: i64, st: &mut Interp): JSValue {
     st.modDirStack.push(dir)
     st.modPathStack.push(st.modPaths[idx].clone())
     let blk = st.modBlocks[idx]
+    // Module code is STRICT code when the module is ESM or opts in, and the
+    // enclosing module's strictness must not leak into it either way — a sloppy
+    // CommonJS file required from an ESM one stays sloppy.
+    let savedStrict = st.strict
+    if idx < st.modStrict.len() {
+        st.strict = st.modStrict[idx]
+    } else {
+        st.strict = false
+    }
     // a module body is function-like: its vars and function declarations hoist
     // to the module scope
     hoistBlock(prog, blk, st, modScope)
     execBlock(prog, blk, st, modScope)
+    st.strict = savedStrict
     let _ = st.modDirStack.pop()
     let _p = st.modPathStack.pop()
     popActive(st)

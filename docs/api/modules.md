@@ -34,6 +34,30 @@ Does this token stream use ESM syntax? Only the `import`/`export` STATEMENT
 forms make a file a module; dynamic `import()` is an ordinary expression and
 is legal in a plain script.
 
+### `moduleIsStrict`
+
+```milo
+pub fn moduleIsStrict(toks: &Vec<Token>, path: &string): bool
+```
+
+Find every module this token stream loads: `require("literal")`, and the ESM
+forms the parser desugars onto require — static `import`, dynamic `import()`,
+and `export ... from`.
+
+Module discovery runs on tokens, BEFORE parsing, so it cannot see the
+desugared require() calls the parser will emit and has to recognise the ESM
+syntax itself.
+Is this module's body strict code? An ESM module always is — the spec makes
+module code strict with no directive needed — and any file may opt in with a
+"use strict" prologue. A plain CommonJS file is sloppy.
+
+This decided four separate behaviours that were all wrong in modules:
+assigning to a non-extensible or frozen object silently did nothing instead of
+throwing, a bare function call saw the global object as `this` instead of
+undefined, and an assignment to an undeclared name created a global instead of
+raising a ReferenceError. Every QuickJS test file is a module, so the whole
+suite ran sloppy.
+
 ### `preloadGraph`
 
 ```milo

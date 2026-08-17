@@ -6,7 +6,7 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "22c65be62d32875d4c338a5360028a65b1a0f623",
+    "revision": "0d9397e8069fd5edc145784e66717fbb25cd9a25",
     "dirty": true
   },
   "engine": "/tmp/milojs-engine",
@@ -25,10 +25,10 @@
     ]
   },
   "totals": {
-    "pass": 106,
+    "pass": 107,
     "fail": 43,
-    "total": 149,
-    "files": 58
+    "total": 150,
+    "files": 59
   },
   "failureBuckets": [
     {
@@ -130,10 +130,10 @@
       ]
     },
     {
-      "reason": "Uncaught Error: assertion failed: got |…|, expected |…| (extensible)",
+      "reason": "PASS test",
       "count": 1,
       "cases": [
-        "test_builtin.js:test"
+        "tbeach.js:<whole>"
       ]
     },
     {

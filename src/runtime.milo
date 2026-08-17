@@ -797,6 +797,8 @@ pub struct Interp {
     // run, its cached module.exports. modState: 0 unloaded, 1 loading, 2 loaded.
     modPaths: Vec<string>,
     modBlocks: Vec<BlockId>,
+    // per-module: is this body strict code? ESM always is, CommonJS is not.
+    modStrict: Vec<bool>,
     modExports: Vec<JSValue>,
     modState: Vec<i64>,
     // directory of the module currently executing, for relative resolution
@@ -1029,7 +1031,7 @@ pub struct Interp {
 pub var gInterp: Interp = Interp {
     scopes: Vec.new(), freeList: Vec.new(), active: Vec.new(),
     nonCtorFns: Vec.new(), strict: false, objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: Arena { id: 0, data: Vec.new(), gens: Vec.new(), freeList: Vec.new(), live: 0 }, funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), hostRoots: Vec.new(), hostRootLive: Vec.new(),
-    modPaths: Vec.new(), modBlocks: Vec.new(), modExports: Vec.new(), modState: Vec.new(), modDirStack: Vec.new(), modPathStack: Vec.new(), fnFileStack: Vec.new(),
+    modPaths: Vec.new(), modBlocks: Vec.new(), modStrict: Vec.new(), modExports: Vec.new(), modState: Vec.new(), modDirStack: Vec.new(), modPathStack: Vec.new(), fnFileStack: Vec.new(),
     throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 10000,
     rngState: 88172645463325252,
@@ -2703,6 +2705,14 @@ pub fn scopeAssign(st: &mut Interp, scope: i64, name: string, value: JSValue) {
             i = i - 1
         }
         s = st.scopes[s].parent
+    }
+    // Nothing declared this name anywhere. Sloppy code creates a global; STRICT
+    // code raises a ReferenceError instead, which is the single most useful
+    // thing strict mode does and the reason a typo'd assignment is caught at all.
+    if st.strict {
+        st.throwing = true
+        st.thrownValue = makeError(st, "ReferenceError", name.clone() + " is not defined")
+        return
     }
     st.scopes[0].vars.push(Binding {
         name: name, value: value

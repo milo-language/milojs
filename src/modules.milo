@@ -541,6 +541,29 @@ fn specAfterFrom(toks: &Vec<Token>, i: i64): string {
 // Module discovery runs on tokens, BEFORE parsing, so it cannot see the
 // desugared require() calls the parser will emit and has to recognise the ESM
 // syntax itself.
+// Is this module's body strict code? An ESM module always is — the spec makes
+// module code strict with no directive needed — and any file may opt in with a
+// "use strict" prologue. A plain CommonJS file is sloppy.
+//
+// This decided four separate behaviours that were all wrong in modules:
+// assigning to a non-extensible or frozen object silently did nothing instead of
+// throwing, a bare function call saw the global object as `this` instead of
+// undefined, and an assignment to an undeclared name created a global instead of
+// raising a ReferenceError. Every QuickJS test file is a module, so the whole
+// suite ran sloppy.
+pub fn moduleIsStrict(toks: &Vec<Token>, path: &string): bool {
+    if toks.len() > 0 && toks[0].kind == T_STR && toks[0].text == "use strict" {
+        return true
+    }
+    let n = path.len()
+    if n >= 4 && path[n - 4] == '.' && path[n - 3] == 'm' && path[n - 2] == 'j' && path[n - 1] == 's' {
+        return true
+    }
+    // hasEsmSyntax already distinguishes an import DECLARATION from a dynamic
+    // `import(...)` and from a member named `import`; do not re-derive it.
+    return hasEsmSyntax(toks)
+}
+
 fn scanRequires(toks: &Vec<Token>): Vec<string> {
     var out: Vec<string> = Vec.new()
     var i: i64 = 0
@@ -695,15 +718,18 @@ pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
             let src = builtinSource(builtinNameOf(path))
             registerSource(prog, path.clone(), src.clone())
             let toks = lex(src)
+            // computed before `toks` is moved into the PState below
+            let bStrict = moduleIsStrict(toks, path)
             // a builtin can require another builtin (http needs events), so its
             // own requires have to be queued like any other module's
             let bspecs = scanRequires(toks)
             var bp = PState {
-                toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: false
+                toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: bStrict
             }
             let btop = parseProgram(bp, prog)
             st.modPaths.push(path.clone())
             st.modBlocks.push(btop)
+            st.modStrict.push(bStrict)
             st.modExports.push(JSValue.Undefined)
             st.modState.push(0)
             var bs: i64 = 0
@@ -723,6 +749,7 @@ pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
             if hasAddonExt(path) {
                 st.modPaths.push(path.clone())
                 st.modBlocks.push(BlockId { index: 0 })
+                st.modStrict.push(false)
                 st.modExports.push(JSValue.Undefined)
                 st.modState.push(2)
             } else {
@@ -739,13 +766,16 @@ pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
                     // function's verbatim source back out of it
                     registerSource(prog, path.clone(), text.clone())
                     let toks = lex(text)
+                    // computed before `toks` is moved into the PState below
+                    let fStrict = moduleIsStrict(toks, path)
                     let specs = scanRequires(toks)
                     var p = PState {
-                        toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: false
+                        toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: fStrict
                     }
                     let top = parseProgram(p, prog)
                     st.modPaths.push(path.clone())
                     st.modBlocks.push(top)
+                    st.modStrict.push(fStrict)
                     st.modExports.push(JSValue.Undefined)
                     st.modState.push(0)
                     let dir = dirOf(path)

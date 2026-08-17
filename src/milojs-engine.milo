@@ -49,7 +49,7 @@ from "./ast" import {
     Prog, gProg, BlockId
 }
 from "./modules" import {
-    preloadGraph, dirOf, hasEsmSyntax
+    preloadGraph, dirOf, hasEsmSyntax, moduleIsStrict
 }
 from "./eval" import {
     runModule, runEventLoop, hoistBlock, execBlock, anyGenParked
@@ -152,8 +152,11 @@ fn main(): i32 {
                 // <dir>/x.json while the runtime looks up x.json.
                 gInterp.modDirStack.push(dirOf(path))
                 gInterp.modPathStack.push(path.clone())
+                // the entry is module code too when it is ESM, and module code
+                // is strict without a directive
+                let entryStrict = moduleIsStrict(toks, path)
                 var p = PState {
-                    toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: false
+                    toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: entryStrict
                 }
                 topBlock = parseProgram(p, gProg)
             } else {

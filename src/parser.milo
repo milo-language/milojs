@@ -2808,7 +2808,10 @@ fn programIsStrict(p: &PState): bool {
 pub fn parseProgram(p: &mut PState, prog: &mut Prog): BlockId {
     // Assigned, not OR-ed: every module parse goes through here, and the LAST
     // parse is the entry program whose strictness the driver reads.
-    prog.progStrict = programIsStrict(p)
+    // OR, not assign: a module body is strict code with no directive at all, and
+    // the caller has already set p.strict for one. Assigning here dropped it and
+    // every function in an ESM module parsed sloppy.
+    prog.progStrict = programIsStrict(p) || p.strict
     if prog.progStrict {
         p.strict = true
     }

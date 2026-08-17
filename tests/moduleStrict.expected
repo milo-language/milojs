@@ -1,0 +1,8 @@
+non-extensible write throws: true | y: undefined
+frozen write throws: true | p: 1
+bare call this: undefined
+undeclared assignment throws: true
+Object.prototype setProto: TypeError
+null is accepted: true
+non-extensible setProto: TypeError
+ordinary setProto still works: 7
