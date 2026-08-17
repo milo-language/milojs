@@ -1057,6 +1057,53 @@ fn nativeIsConstructor(id: i64): bool {
         || id == NATIVE_EVAL_ERROR || id == NATIVE_URI_ERROR
 }
 
+// Is `new v()` allowed? Callable and constructable are different: arrows,
+// methods, generators, async functions and every built-in that is a plain
+// method (Math.sqrt, Array.prototype.map) can be called but not constructed.
+// Mirrors the arms of the `new` evaluation below, which is what makes the two
+// agree.
+pub fn valueIsConstructor(prog: &Prog, st: &Interp, v: &JSValue): bool {
+    let n = nativeHandle(v)
+    if n >= 0 {
+        return nativeIsConstructor(n)
+    }
+    let f = funcHandle(v)
+    if f >= 0 {
+        if f >= prog.funcs.len() {
+            return false
+        }
+        return !prog.funcs[f].isArrow && !prog.funcs[f].isMethod && !prog.funcs[f].isGenerator && !prog.funcs[f].isAsync
+    }
+    let o = objHandle(v)
+    if o >= 0 {
+        if st.objects[o].isBound {
+            let ex = st.objects[o].extra
+            // a built-in method VALUE (String.prototype.trim, JSON.parse read
+            // off its namespace) is bound but carries a method name and no
+            // target: callable, never constructable
+            if st.objExtras[ex].boundMethod.len() > 0 {
+                return false
+            }
+            return valueIsConstructor(prog, st, st.objExtras[ex].boundTarget)
+        }
+        // a proxy is constructable exactly when its target is
+        if st.objects[o].isProxy {
+            return valueIsConstructor(prog, st, st.objExtras[st.objects[o].extra].proxyTarget)
+        }
+        // Function.prototype is callable (it is the empty function) but is NOT
+        // constructable, the one function-like object where the two differ
+        if o == st.functionProtoObj {
+            return false
+        }
+        // Array, Promise and a napi-defined class are constructor OBJECTS rather
+        // than natives; isFunctionLike is what marks them
+        if st.objects[o].isFunctionLike {
+            return true
+        }
+    }
+    return false
+}
+
 fn brandName(brand: i64): string {
     if brand == 2 {
         return "ArrayBuffer"
@@ -3997,6 +4044,11 @@ let NATIVE_SQLITE_FILENAME: i64 = 145
 // The engine's console.log renderer, exposed to JS so lib/util.js does not have
 // to keep a second, diverging copy of node's util.inspect.
 pub let NATIVE_INSPECT: i64 = 146
+// Exposed to the prelude as __isConstructor so Reflect.construct can validate
+// its target and newTarget. There is no JS-level way to ask this question
+// without side effects, and test262's isConstructor helper asks it of every
+// builtin (one not-a-constructor.js per method).
+let NATIVE_IS_CONSTRUCTOR: i64 = 154
 // ArrayBuffer.isView(x): true for a typed-array view or a DataView, and
 // crucially FALSE for an ArrayBuffer itself
 let NATIVE_ARRAYBUFFER_ISVIEW: i64 = 147
@@ -5489,6 +5541,13 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Bool(false)
         }
         return JSValue.Bool(st.objects[h].isDataView || st.objExtras[st.objects[h].extra].taBuf >= 0)
+    }
+    if id == NATIVE_IS_CONSTRUCTOR {
+        if argVals.len() == 0 {
+            return JSValue.Bool(false)
+        }
+        // this dispatcher has no Prog parameter; gProg is the one program
+        return JSValue.Bool(valueIsConstructor(gProg, st, argVals[0]))
     }
     if id == NATIVE_INSPECT {
         if argVals.len() == 0 {
@@ -8088,6 +8147,9 @@ pub fn setupGlobals(st: &mut Interp) {
     // call-bound stops.
     objDefineBuiltinAttr(st, promiseCtor, "length", JSValue.Number(1.0))
     objDefineBuiltinAttr(st, promiseCtor, "name", JSValue.Str("Promise"))
+    // Marked like arrayCtor: without it `typeof Promise` answered "object" and
+    // Promise did not report as a constructor.
+    st.objects[promiseCtor].isFunctionLike = true
     st.promiseCtorObj = promiseCtor
     objSet(st, promiseCtor, "resolve", JSValue.Native(NATIVE_PROMISE_RESOLVE))
     objSet(st, promiseCtor, "reject", JSValue.Native(NATIVE_PROMISE_REJECT))
@@ -8300,6 +8362,7 @@ pub fn setupGlobals(st: &mut Interp) {
     // not a JS global in node; lib/util.js reads it off globalThis so util.inspect
     // and console.log render identically
     scopeDefine(st, 0, "__inspect", JSValue.Native(NATIVE_INSPECT))
+    scopeDefine(st, 0, "__isConstructor", JSValue.Native(NATIVE_IS_CONSTRUCTOR))
     // The raw "wrap a value in a resolved promise" primitive, exposed under its
     // own name so the prelude can build the public Promise.resolve on top of it.
     // Capturing `Promise.resolve` from JS does not work: reading a method off a

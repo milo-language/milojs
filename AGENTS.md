@@ -34,7 +34,7 @@ Two binaries, both written in [Milo](https://github.com/milo-language/milo):
 - `milojs` — a Node-compatible **runtime** on top of it: module loader, event
   loop, fs/http, Node-API addons. Like node/deno/bun.
 
-~<!--fact:loc-milo-->38.2k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
+~<!--fact:loc-milo-->38.3k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
 own bigint. No V8, no JSC, no C engine underneath.
 
 ## Before you write any Milo

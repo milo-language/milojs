@@ -221,3 +221,15 @@ pub fn toStrProg(prog: &Prog, v: &JSValue, st: &mut Interp): string
 ToString for the paths that DO have a Prog, so a user-defined toString is
 honoured. `toStr` alone cannot call back into the interpreter and answers
 "[object Object]" for any plain object.
+
+### `valueIsConstructor`
+
+```milo
+pub fn valueIsConstructor(prog: &Prog, st: &Interp, v: &JSValue): bool
+```
+
+Is `new v()` allowed? Callable and constructable are different: arrows,
+methods, generators, async functions and every built-in that is a plain
+method (Math.sqrt, Array.prototype.map) can be called but not constructed.
+Mirrors the arms of the `new` evaluation below, which is what makes the two
+agree.
