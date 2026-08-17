@@ -3256,6 +3256,97 @@ Corpus 919 to 925, test262 873 to 874.
 
 Locked by `tests/wrapperUnwrapping.js`.
 
+## Temporal was the biggest single cluster in test262, and nobody had measured it
+
+`tools/check-temporal.sh` reported 119/119 and had done for weeks. Against
+test262 the same implementation scored **48.4%** (2229/4603). The local gate was
+not wrong, it was just far weaker than the suite, and its green number is why
+this area went unexamined: Temporal is 199 of 1274 failures in a uniform whole-
+suite sample, **16% of the entire remaining gap** and larger than any other
+single area.
+
+Brought to **56.5%** (+373 tests) in one sitting, which moved the whole-suite
+number 69.2% -> 70.3%. What it took was ordinary porting, in descending order of
+yield:
+
+- **Nine missing methods** (137 tests): `toZonedDateTime`, `withPlainTime`,
+  `withCalendar`, `toPlainDateTime`, `toPlainYearMonth`, `toPlainMonthDay`,
+  `startOfDay`, `getTimeZoneTransition`, `ZonedDateTime.prototype.with`, plus
+  `toLocaleString` on all eight types.
+- **Calendar units in until/since/round** (96 tests). PlainDateTime and
+  ZonedDateTime rejected year, month, week and day outright — "unsupported
+  unit: year" — which is most of what anyone actually asks those types for.
+  Needed DifferenceISODateTime, where the date and time halves can disagree in
+  sign: 2000-01-01T12:00 to 2000-01-02T06:00 is 18 hours, not "1 day and
+  -6 hours".
+- **`largestUnit: "auto"`** (50 tests) is the LARGER of the type's default and
+  smallestUnit, not the fixed default. `since(other, {smallestUnit: "year"})` is
+  legal and was rejected as "smaller than largestUnit".
+- **ToString vs String()** (47 tests). `ToString(symbol)` is a TypeError;
+  `String(symbol)` is not. Every unit, calendar and ISO-string entry point used
+  the latter, so a symbol argument reported RangeError ("not a Temporal unit")
+  after String() had already turned it into "Symbol(year)".
+- **era / eraYear / daysInWeek** getters, absent entirely. They answer undefined
+  and 7 under the ISO calendar, but the tests that noticed were reading the
+  property DESCRIPTOR, so being absent failed before the value mattered.
+- Accessor functions are named `get <prop>` in the spec; every one here was an
+  anonymous function with name `""`.
+
+### Two engine bugs the Temporal shape tests exposed
+
+Both general, neither Temporal-specific.
+
+- **`prototype` was not an own property of ANY function.**
+  `Object.getOwnPropertyNames(F)` gave `name,length` where node gives
+  `length,name,prototype`, and `F.hasOwnProperty("prototype")` was false for
+  every function and every class. Reads worked because `.prototype` was
+  intercepted ahead of the property bag and resolved through `st.funcProtos`,
+  which stays the single source of truth — it is now also materialised on the
+  bag so that describing a function agrees with reading it.
+
+  Which functions get one is itself observable, and getting that wrong cost a
+  measured **-74 tests** on the first attempt: a built-in that is not a
+  constructor has NO `prototype`, and test262 asserts exactly that on every
+  method. The condition is `valueIsConstructor` (not "every non-arrow"), with
+  generators as the one exception in the other direction — not constructors, but
+  they do have a prototype. `__markNotConstructor` also has to REMOVE a
+  materialised one, because the prelude's marking walk reads
+  getOwnPropertyNames first (materialising it) and marks second.
+
+- **`new` did not consult `valueIsConstructor`.** It tested `isArrow ||
+  isMethod` inline, so generators, async functions and everything
+  `__markNotConstructor` had recorded were constructable through `new` while
+  `Reflect.construct` correctly rejected them. Two spellings of one operation
+  that disagreed.
+
+The class case is knowingly left wrong in one attribute: FuncDef carries no
+class flag, so a class reports `prototype` as writable:true where the spec says
+false. lib/temporal.js redefines its own eight constructors explicitly. A real
+fix wants an `isClass` flag on FuncDef.
+
+### Still open in Temporal, by measured size
+
+2002 failures remain. The clusters, from the failure list:
+
+- ISO string parsing rigour, ~208: annotation handling (`argument-string-calendar-annotation`,
+  `-time-zone-annotation`, `-unknown-annotation`, critical flags), the U+2212
+  minus sign, time separators, UTC offsets in date strings, and range limits.
+- Observable operation order, ~106: `order-of-operations.js` and
+  `options-read-before-algorithmic-validation.js` check the exact sequence of
+  property gets. Reading largestUnit before smallestUnit is part of the
+  contract, and the auto-widening fix above got that order wrong on the first
+  pass.
+- Option validation, ~115: `options-wrong-type`, `overflow-wrong-type`,
+  `roundingmode-wrong-type`, `smallestunit-wrong-type`,
+  `overflow-invalid-string`.
+- smallestUnit of year/month/week for a date-time difference, 50: needs
+  RoundRelativeDuration, which is the one genuinely hard algorithm left here.
+- `leap-second.js`, 27: `:60` is accepted and clamped to 59.
+- `argument-number.js`, 26: a number argument is a TypeError, not coerced.
+
+None of these need new architecture. Temporal at 90% is reachable and worth
+about 4 points of the headline on its own.
+
 ## CLOSED: es-get-iterator overflowed because the recursion guard was 104 frames
 
 Five previous sittings tried to find which *value* triggered the overflow. There

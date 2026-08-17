@@ -1285,6 +1285,29 @@ pub fn objDefineBuiltinAttr(st: &mut Interp, obj: i64, key: string, value: JSVal
     )
 }
 
+// An ORDINARY function's `prototype`: { writable: true, enumerable: false,
+// configurable: false }. Distinct from objDefineProtoAttr below, which is the
+// non-writable form a built-in constructor and a class use. This engine keeps no
+// class flag on FuncDef, so a class reports writable:true here — wrong in one
+// attribute, against the property having been entirely absent before.
+pub fn objDefineFnProtoAttr(st: &mut Interp, obj: i64, key: string, value: JSValue) {
+    var i: i64 = 0
+    while i < st.objects[obj].props.len() {
+        if st.objects[obj].props[i].key == key {
+            st.objects[obj].props[i].value = value
+            st.objects[obj].props[i].writable = true
+            st.objects[obj].props[i].enumerable = false
+            st.objects[obj].props[i].configurable = false
+            return
+        }
+        i = i + 1
+    }
+    st.objects[obj].props.push(Prop {
+        key: key, value: value, acc: Option.None, writable: true, enumerable: false, configurable: false
+    }
+    )
+}
+
 // A built-in constructor's `prototype`: { writable: false, enumerable: false,
 // configurable: false }. test262 checks this per constructor with
 // verifyNotWritable / verifyNotConfigurable.

@@ -1,0 +1,14 @@
+fn length,name,prototype true
+arrow length,name false
+method length,name false
+gen length,name,prototype true
+async length,name false
+class length,name,prototype true
+fn desc: true false false
+same object as read: true
+after assign: true true
+fn new: ok construct: ok
+arrow new: TypeError construct: TypeError
+method new: TypeError construct: TypeError
+gen new: TypeError construct: TypeError
+async new: TypeError construct: TypeError

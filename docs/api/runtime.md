@@ -388,6 +388,18 @@ A built-in's own `name` / `length`: the spec gives both
 name.js and a length.js per method that check exactly that with
 verifyProperty — which also deletes the property to prove it is configurable.
 
+### `objDefineFnProtoAttr`
+
+```milo
+pub fn objDefineFnProtoAttr(st: &mut Interp, obj: i64, key: string, value: JSValue)
+```
+
+An ORDINARY function's `prototype`: { writable: true, enumerable: false,
+configurable: false }. Distinct from objDefineProtoAttr below, which is the
+non-writable form a built-in constructor and a class use. This engine keeps no
+class flag on FuncDef, so a class reports writable:true here — wrong in one
+attribute, against the property having been entirely absent before.
+
 ### `objDefineProtoAttr`
 
 ```milo

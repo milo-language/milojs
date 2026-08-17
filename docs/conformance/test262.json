@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "b9e855be3c2b486c612a43f1bb689613b0b0ba2b",
+    "revision": "3ff221764e4df94920934c611c5944cd487b7867",
     "dirty": true
   },
   "engine": "/tmp/mj-eng",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 1017,
-    "fail": 453,
+    "pass": 1034,
+    "fail": 436,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -38,14 +38,14 @@
     },
     {
       "area": "built-ins/Temporal",
-      "pass": 64,
-      "fail": 67,
+      "pass": 79,
+      "fail": 52,
       "total": 131
     },
     {
       "area": "built-ins/Object",
-      "pass": 84,
-      "fail": 43,
+      "pass": 85,
+      "fail": 42,
       "total": 127
     },
     {
@@ -116,8 +116,8 @@
     },
     {
       "area": "built-ins/Math",
-      "pass": 13,
-      "fail": 4,
+      "pass": 14,
+      "fail": 3,
       "total": 17
     },
     {
@@ -460,7 +460,7 @@
   "failureBuckets": [
     {
       "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all",
-      "count": 38,
+      "count": 36,
       "cases": [
         "built-ins/Symbol/prototype/toString/toString-default-attributes-strict.js",
         "built-ins/Error/prototype/toString/called-as-function.js",
@@ -480,9 +480,7 @@
         "language/statements/class/definition/invalid-extends.js",
         "built-ins/Promise/all/S25.4.4.1_A4.1_T1.js",
         "language/statements/generators/restricted-properties.js",
-        "built-ins/Object/fromEntries/not-a-constructor.js",
         "language/expressions/class/dstr/async-gen-meth-static-dflt-ary-init-iter-get-err-array-prototype.js",
-        "built-ins/Math/atanh/not-a-constructor.js",
         "built-ins/Function/prototype/bind/15.3.4.5-2-10.js",
         "language/expressions/assignment/dstr/array-elem-nested-obj-undefined-own.js",
         "language/statements/try/dstr/obj-init-undefined.js",
@@ -504,7 +502,7 @@
     },
     {
       "reason": "Uncaught TypeError: cannot read property '…' of undefined",
-      "count": 34,
+      "count": 33,
       "cases": [
         "built-ins/ThrowTypeError/extensible.js",
         "language/expressions/generators/eval-body-proto-realm.js",
@@ -515,7 +513,6 @@
         "built-ins/ShadowRealm/prototype/evaluate/wrapped-function-arguments-are-wrapped-into-the-inner-realm-extended.js",
         "built-ins/Set/Symbol.species/return-value.js",
         "built-ins/Array/prototype/filter/15.4.4.20-1-9.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-propertybag-timezone-string-leap-second.js",
         "built-ins/Object/freeze/proxy-with-defineProperty-handler.js",
         "built-ins/Proxy/construct/return-not-object-throws-undefined-realm.js",
         "built-ins/Array/prototype/map/create-proto-from-ctor-realm-non-array.js",
@@ -733,15 +730,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: name should be an own property",
-      "count": 3,
-      "cases": [
-        "built-ins/Temporal/PlainMonthDay/prototype/toLocaleString/name.js",
-        "built-ins/ArrayIteratorPrototype/next/name.js",
-        "built-ins/Temporal/PlainDateTime/prototype/withCalendar/name.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: testResult !== true",
       "count": 3,
       "cases": [
@@ -871,14 +859,6 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: withPlainTime is not a function (in /var/folders/zc/m2tbb4v542b9c11gk1",
-      "count": 2,
-      "cases": [
-        "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/argument-string-calendar-annotation.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/withPlainTime/argument-string-unknown-annotation.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined",
       "count": 2,
       "cases": [
@@ -903,14 +883,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected a RangeError but got a TypeError",
-      "count": 2,
-      "cases": [
-        "built-ins/Temporal/ZonedDateTime/prototype/withPlainTime/get-start-of-day-throws.js",
-        "built-ins/Iterator/prototype/includes/skipped-elements-negative-integral-rangeerror.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Expected a ReferenceError to be thrown but no exception was thrown at ",
       "count": 2,
       "cases": [
@@ -932,14 +904,6 @@
       "cases": [
         "language/expressions/class/private-getter-brand-check-multiple-evaluations-of-class-factory.js",
         "language/statements/class/elements/private-setter-brand-check-multiple-evaluations-of-class.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: isConstructor invoked with a non-function value",
-      "count": 2,
-      "cases": [
-        "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/not-a-constructor.js",
-        "built-ins/JSON/rawJSON/not-a-constructor.js"
       ]
     },
     {
@@ -972,14 +936,6 @@
       "cases": [
         "built-ins/ArrayBuffer/toindex-length.js",
         "built-ins/DataView/toindex-bytelength.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: reject minus zero as extended year Expected a RangeError but got a Typ",
-      "count": 2,
-      "cases": [
-        "built-ins/Temporal/PlainDate/prototype/toZonedDateTime/timezone-string-year-zero.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-propertybag-timezone-string-year-zero.js"
       ]
     },
     {
@@ -1132,6 +1088,20 @@
       ]
     },
     {
+      "reason": "Uncaught RangeError: invalid ISO time string: N:N:N.N[foo=bar]",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/ZonedDateTime/prototype/withPlainTime/argument-string-unknown-annotation.js"
+      ]
+    },
+    {
+      "reason": "Uncaught RangeError: invalid ISO time string: N:N:N.N[u-ca=iso8601]",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/argument-string-calendar-annotation.js"
+      ]
+    },
+    {
       "reason": "Uncaught RangeError: Maximum call stack size exceeded",
       "count": 1,
       "cases": [
@@ -1139,17 +1109,10 @@
       ]
     },
     {
-      "reason": "Uncaught RangeError: unsupported unit: month",
+      "reason": "Uncaught RangeError: unsupported time zone: N-N-31T23:N:N+N:N[UTC] (only UTC and fixed off",
       "count": 1,
       "cases": [
-        "built-ins/Temporal/ZonedDateTime/prototype/since/does-not-include-higher-units-than-necessary.js"
-      ]
-    },
-    {
-      "reason": "Uncaught RangeError: unsupported unit: year",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/ZonedDateTime/prototype/since/largestunit-plurals-accepted.js"
+        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-propertybag-timezone-string-leap-second.js"
       ]
     },
     {
@@ -1335,31 +1298,10 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: toZonedDateTime is not a function (in /var/folders/zc/m2tbb4v542b9c11g",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainDateTime/prototype/toZonedDateTime/options-object.js"
-      ]
-    },
-    {
       "reason": "Uncaught TypeError: undefined is not iterable (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh",
       "count": 1,
       "cases": [
         "built-ins/Set/prototype/symmetricDifference/combines-Map.js"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: with is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh000",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/ZonedDateTime/prototype/with/options-object.js"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: withCalendar is not a function (in /var/folders/zc/m2tbb4v542b9c11gk10",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainDateTime/prototype/withCalendar/calendar-temporal-object.js"
       ]
     },
     {
@@ -1601,6 +1543,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Actual [get largestUnit.toString, get largestUnit.toString, call large",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDateTime/prototype/since/largestunit-wrong-type.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Actual [get options.largestUnit, get options.largestUnit.toString, get",
       "count": 1,
       "cases": [
@@ -1720,13 +1669,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: bare date-time string is not a ZonedDateTime Expected a RangeError but",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/ZonedDateTime/prototype/since/zoneddatetime-string.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: bare date-time string is not an instant Expected a RangeError but got ",
       "count": 1,
       "cases": [
@@ -1734,24 +1676,10 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Built-in objects must be extensible. Expected SameValue(«false», «true",
+      "reason": "Uncaught undefined: date-time + IANA annotation preserves wall time in the time zone: hour",
       "count": 1,
       "cases": [
-        "built-ins/Temporal/Duration/prototype/toLocaleString/builtin.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Calling as constructor Expected a TypeError but got a RangeError",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/Duration/from/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Date-only string throws, does not implicitly convert to midnight Expec",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/ZonedDateTime/prototype/withPlainTime/argument-string-no-implicit-midnight.js"
+        "built-ins/Temporal/ZonedDateTime/prototype/since/zoneddatetime-string.js"
       ]
     },
     {
@@ -1811,13 +1739,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: empty string does not convert to a valid ISO string Expected a RangeEr",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-wrong-type.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: empty string is not a valid calendar ID (first argument) Expected a Ra",
       "count": 1,
       "cases": [
@@ -1843,6 +1764,13 @@
       "count": 1,
       "cases": [
         "built-ins/Atomics/wait/out-of-range-index-throws.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a RangeError but got a TypeError",
+      "count": 1,
+      "cases": [
+        "built-ins/Iterator/prototype/includes/skipped-elements-negative-integral-rangeerror.js"
       ]
     },
     {
@@ -2042,13 +1970,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Fractional minutes not allowed in time string Expected a RangeError bu",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/ZonedDateTime/prototype/since/no-fractional-minutes-hours.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: generator function proxy Expected SameValue(«\"[object Function]\"», «\"[",
       "count": 1,
       "cases": [
@@ -2091,6 +2012,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: isConstructor invoked with a non-function value",
+      "count": 1,
+      "cases": [
+        "built-ins/JSON/rawJSON/not-a-constructor.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: iteration occurred as expected Expected SameValue(«false», «true») to ",
       "count": 1,
       "cases": [
@@ -2123,6 +2051,13 @@
       "count": 1,
       "cases": [
         "built-ins/Temporal/PlainDateTime/from/month-code-wrong-type.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: months result: Expected SameValue(«N», «N») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/ZonedDateTime/prototype/since/does-not-include-higher-units-than-necessary.js"
       ]
     },
     {
@@ -2172,6 +2107,13 @@
       "count": 1,
       "cases": [
         "built-ins/Object/prototype/toString/name.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: name should be an own property",
+      "count": 1,
+      "cases": [
+        "built-ins/ArrayIteratorPrototype/next/name.js"
       ]
     },
     {
@@ -2284,13 +2226,6 @@
       "count": 1,
       "cases": [
         "built-ins/Object/defineProperty/15.2.3.6-4-333-7.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: prototype should be an own property",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainTime/prototype/prop-desc.js"
       ]
     },
     {
@@ -2420,13 +2355,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: symbol Expected a TypeError but got a RangeError",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainDateTime/prototype/since/largestunit-wrong-type.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Symbol should be an own property",
       "count": 1,
       "cases": [
@@ -2515,6 +2443,13 @@
       "count": 1,
       "cases": [
         "built-ins/Temporal/PlainDate/from/options-wrong-type.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: undefined does not convert to a valid ISO string Expected a TypeError ",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-wrong-type.js"
       ]
     },
     {

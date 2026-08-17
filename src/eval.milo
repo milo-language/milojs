@@ -5653,6 +5653,20 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             let mf = funcHandle(argVals[0])
             if mf >= 0 {
                 st.nonCtorFns.push(mf)
+                // A non-constructor has no `prototype` own property. The bag may
+                // already carry one: the prelude's marking walk reads
+                // getOwnPropertyNames first, which materialises it, and only
+                // then marks — so the property has to come back off here rather
+                // than merely be skipped when it is created.
+                let mbag = propertyBagOf(st, argVals[0])
+                if mbag >= 0 {
+                    // straight out of props: objDeleteKey honours
+                    // configurable:false, which a function's `prototype` is
+                    let pi = objOwnIndex(st, mbag, "prototype")
+                    if pi >= 0 {
+                        let _gone = st.objects[mbag].props.remove(pi)
+                    }
+                }
             }
         }
         return JSValue.Undefined
@@ -9790,6 +9804,15 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                                 st.funcProtos.push(-1)
                             }
                             st.funcProtos[sf] = newProto
+                            // the bag may already carry a materialised
+                            // `prototype` for descriptor queries; leaving it
+                            // behind would make getOwnPropertyDescriptor
+                            // disagree with a plain read
+                            let sbag = getFuncStatics(st, sf, senv)
+                            if objOwnIndex(st, sbag, "prototype") >= 0 {
+                                objSet(st, sbag, "prototype", JSValue.Obj(newProto))
+                                objSetNonEnumerable(st, sbag, "prototype")
+                            }
                         }
                     } else {
                         let statics = getFuncStatics(st, sf, senv)
@@ -10017,7 +10040,12 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     // arrows and methods are NOT constructors. `new` on one is a
                     // TypeError, and every one of them used to build an object
                     // and run the body against it instead.
-                    if prog.funcs[fIdx].isArrow || prog.funcs[fIdx].isMethod {
+                    // valueIsConstructor rather than the isArrow/isMethod pair
+                    // this used to test inline: generators, async functions and
+                    // anything __markNotConstructor recorded are equally not
+                    // constructors, and Reflect.construct already rejected all
+                    // of them while `new` on the same value quietly succeeded.
+                    if !valueIsConstructor(prog, st, JSValue.Func(fIdx, envIdx)) {
                         st.throwing = true
                         st.thrownValue = makeError(st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor" + currentModule(st))
                         return JSValue.Undefined
@@ -13302,11 +13330,31 @@ fn propertyBagOf(st: &mut Interp, v: &JSValue): i64 {
         // check would put it straight back on the next descriptor query
         if !st.objects[bag].fnStatInit {
             st.objects[bag].fnStatInit = true
+            // length before name: that is the order node reports them in from
+            // Object.getOwnPropertyNames, and test262 compares the whole list.
+            if objOwnIndex(st, bag, "length") < 0 {
+                objDefineBuiltinAttr(st, bag, "length", JSValue.Number(funcArity(gProg, f) as f64))
+            }
             if objOwnIndex(st, bag, "name") < 0 {
                 objDefineBuiltinAttr(st, bag, "name", JSValue.Str(gProg.funcs[f].name.clone()))
             }
-            if objOwnIndex(st, bag, "length") < 0 {
-                objDefineBuiltinAttr(st, bag, "length", JSValue.Number(funcArity(gProg, f) as f64))
+            // `prototype` is an OWN property too, and it was the one every
+            // descriptor query missed: hasOwnProperty(F, "prototype") was false
+            // and getOwnPropertyNames(F) omitted it, on ordinary functions and
+            // classes alike. Reads still resolve through st.funcProtos, which
+            // stays the single source of truth — this materialises the same
+            // object so that describing the function agrees with reading it.
+            // Only a CONSTRUCTOR carries one. A built-in function that is not
+            // a constructor has no `prototype` own property at all, and
+            // test262 asserts hasOwnProperty("prototype") === false on every
+            // one of them — so this cannot simply be "every non-arrow".
+            // A generator is the exception in the other direction: not a
+            // constructor, but it does have a prototype (the object its
+            // iterator inherits from).
+            if valueIsConstructor(gProg, st, v) || gProg.funcs[f].isGenerator {
+                if objOwnIndex(st, bag, "prototype") < 0 {
+                    objDefineFnProtoAttr(st, bag, "prototype", JSValue.Obj(getFuncProto(st, f)))
+                }
             }
         }
         return bag
