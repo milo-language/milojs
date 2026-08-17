@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "a8351958e80ca7ef4991df1cdd9973b6783a7004",
+    "revision": "1ded1107d1e126331b11ab890cc2f3b4b10876a7",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 921,
-    "fail": 549,
+    "pass": 935,
+    "fail": 535,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -38,20 +38,20 @@
     },
     {
       "area": "built-ins/Temporal",
-      "pass": 60,
-      "fail": 71,
+      "pass": 62,
+      "fail": 69,
       "total": 131
     },
     {
       "area": "built-ins/Object",
-      "pass": 82,
-      "fail": 45,
+      "pass": 83,
+      "fail": 44,
       "total": 127
     },
     {
       "area": "built-ins/Array",
-      "pass": 45,
-      "fail": 46,
+      "pass": 46,
+      "fail": 45,
       "total": 91
     },
     {
@@ -62,14 +62,14 @@
     },
     {
       "area": "built-ins/String",
-      "pass": 24,
-      "fail": 15,
+      "pass": 26,
+      "fail": 13,
       "total": 39
     },
     {
       "area": "built-ins/TypedArray",
-      "pass": 20,
-      "fail": 18,
+      "pass": 21,
+      "fail": 17,
       "total": 38
     },
     {
@@ -86,8 +86,8 @@
     },
     {
       "area": "built-ins/DataView",
-      "pass": 13,
-      "fail": 9,
+      "pass": 14,
+      "fail": 8,
       "total": 22
     },
     {
@@ -110,14 +110,14 @@
     },
     {
       "area": "built-ins/TypedArrayConstructors",
-      "pass": 9,
-      "fail": 10,
+      "pass": 10,
+      "fail": 9,
       "total": 19
     },
     {
       "area": "built-ins/Math",
-      "pass": 12,
-      "fail": 5,
+      "pass": 13,
+      "fail": 4,
       "total": 17
     },
     {
@@ -158,8 +158,8 @@
     },
     {
       "area": "annexB/built-ins",
-      "pass": 3,
-      "fail": 4,
+      "pass": 5,
+      "fail": 2,
       "total": 7
     },
     {
@@ -176,8 +176,8 @@
     },
     {
       "area": "built-ins/Map",
-      "pass": 3,
-      "fail": 3,
+      "pass": 4,
+      "fail": 2,
       "total": 6
     },
     {
@@ -356,8 +356,8 @@
     },
     {
       "area": "built-ins/isNaN",
-      "pass": 0,
-      "fail": 1,
+      "pass": 1,
+      "fail": 0,
       "total": 1
     },
     {
@@ -460,7 +460,7 @@
   "failureBuckets": [
     {
       "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all",
-      "count": 41,
+      "count": 43,
       "cases": [
         "built-ins/Symbol/prototype/toString/toString-default-attributes-strict.js",
         "built-ins/Error/prototype/toString/called-as-function.js",
@@ -480,11 +480,13 @@
         "language/statements/class/definition/invalid-extends.js",
         "built-ins/Promise/all/S25.4.4.1_A4.1_T1.js",
         "language/statements/generators/restricted-properties.js",
+        "built-ins/Object/fromEntries/not-a-constructor.js",
         "language/expressions/object/dstr/gen-meth-dflt-obj-ptrn-prop-obj-value-null.js",
         "language/expressions/class/dstr/async-gen-meth-ary-ptrn-elem-obj-val-null.js",
         "language/expressions/class/dstr/async-gen-meth-static-ary-ptrn-elem-ary-val-null.js",
         "language/statements/generators/dstr/ary-ptrn-elem-obj-val-undef.js",
         "language/expressions/class/dstr/async-gen-meth-static-dflt-ary-init-iter-get-err-array-prototype.js",
+        "built-ins/Math/atanh/not-a-constructor.js",
         "built-ins/Function/prototype/bind/15.3.4.5-2-10.js",
         "language/expressions/assignment/dstr/array-elem-nested-obj-undefined-own.js",
         "language/statements/try/dstr/obj-init-undefined.js",
@@ -550,9 +552,8 @@
     },
     {
       "reason": "Uncaught undefined: Expected a Test262Error to be thrown but no exception was thrown at al",
-      "count": 32,
+      "count": 31,
       "cases": [
-        "built-ins/TypedArrayConstructors/ctors/buffer-arg/custom-proto-access-throws.js",
         "built-ins/Promise/allSettled/ctx-ctor-throws.js",
         "built-ins/RegExp/prototype/Symbol.replace/arg-2-coerce-err.js",
         "language/expressions/class/dstr/gen-meth-static-ary-ptrn-elem-id-init-throws.js",
@@ -802,15 +803,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: isConstructor invoked with a non-function value",
-      "count": 3,
-      "cases": [
-        "built-ins/Math/atanh/not-a-constructor.js",
-        "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/not-a-constructor.js",
-        "built-ins/JSON/rawJSON/not-a-constructor.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: N value should be N",
       "count": 3,
       "cases": [
@@ -1018,6 +1010,14 @@
       "cases": [
         "language/expressions/class/private-getter-brand-check-multiple-evaluations-of-class-factory.js",
         "language/statements/class/elements/private-setter-brand-check-multiple-evaluations-of-class.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: isConstructor invoked with a non-function value",
+      "count": 2,
+      "cases": [
+        "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/not-a-constructor.js",
+        "built-ins/JSON/rawJSON/not-a-constructor.js"
       ]
     },
     {
@@ -2381,104 +2381,6 @@
       "count": 1,
       "cases": [
         "built-ins/Date/prototype/setFullYear/arg-date-to-number.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: isConstructor(Array.prototype.findLast) must return false Expected Sam",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/findLast/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: isConstructor(DataView.prototype.getInt8) must return false Expected S",
-      "count": 1,
-      "cases": [
-        "built-ins/DataView/prototype/getInt8/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: isConstructor(Date.prototype.toGMTString) must return false Expected S",
-      "count": 1,
-      "cases": [
-        "annexB/built-ins/Date/prototype/toGMTString/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: isConstructor(isNaN) must return false Expected SameValue(«true», «fal",
-      "count": 1,
-      "cases": [
-        "built-ins/isNaN/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: isConstructor(Map.prototype.forEach) must return false Expected SameVa",
-      "count": 1,
-      "cases": [
-        "built-ins/Map/prototype/forEach/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: isConstructor(Math.sqrt) must return false Expected SameValue(«true», ",
-      "count": 1,
-      "cases": [
-        "built-ins/Math/sqrt/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: isConstructor(Object.fromEntries) must return false Expected SameValue",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/fromEntries/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: isConstructor(Object.keys) must return false Expected SameValue(«true»",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/keys/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: isConstructor(String.prototype.fontcolor) must return false Expected S",
-      "count": 1,
-      "cases": [
-        "annexB/built-ins/String/prototype/fontcolor/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: isConstructor(String.prototype.substring) must return false Expected S",
-      "count": 1,
-      "cases": [
-        "built-ins/String/prototype/substring/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: isConstructor(String.prototype.toString) must return false Expected Sa",
-      "count": 1,
-      "cases": [
-        "built-ins/String/prototype/toString/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: isConstructor(Temporal.PlainDateTime.prototype.since) Expected SameVal",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainDateTime/prototype/since/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: isConstructor(Temporal.PlainDateTime.prototype.with) Expected SameValu",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainDateTime/prototype/with/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: isConstructor(TypedArray.prototype.filter) must return false Expected ",
-      "count": 1,
-      "cases": [
-        "built-ins/TypedArray/prototype/filter/not-a-constructor.js"
       ]
     },
     {
