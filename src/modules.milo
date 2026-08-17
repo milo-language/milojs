@@ -135,6 +135,59 @@ fn stripNodePrefix(spec: &string): string {
 }
 
 fn builtinSource(name: &string): string {
+    // ALIASES and SUBPATHS of modules that already exist. node exposes each of
+    // these as a separate specifier, and code probes for them by name — is-core-module
+    // requires every one. Mapping them to the module they are actually part of is
+    // honest; inventing a module we do not implement would turn a clean resolution
+    // failure into a confusing one at first use, so nothing here is fabricated.
+    if name == "path/posix" || name == "path/win32" {
+        return @embedFile("../lib/path.js")
+    }
+    if name == "assert/strict" {
+        return @embedFile("../lib/assert.js")
+    }
+    if name == "util/types" || name == "sys" {
+        return @embedFile("../lib/util.js")
+    }
+    if name == "stream/promises" || name == "stream/consumers"
+        || name == "_stream_duplex" || name == "_stream_passthrough"
+        || name == "_stream_readable" || name == "_stream_transform"
+        || name == "_stream_writable" {
+        return @embedFile("../lib/stream.js")
+    }
+    if name == "constants" {
+        return @embedFile("../lib/os.js")
+    }
+    if name == "console" {
+        return @embedFile("../lib/console.js")
+    }
+    if name == "process" {
+        return @embedFile("../lib/process.js")
+    }
+    // node's legacy internal module names for the http and tls machinery. They are
+    // aliases of the public module in node too, so pointing them at it is accurate.
+    if name == "_http_agent" || name == "_http_client" || name == "_http_common"
+        || name == "_http_incoming" || name == "_http_outgoing" || name == "_http_server" {
+        return @embedFile("../lib/http.js")
+    }
+    if name == "_tls_common" || name == "_tls_wrap" {
+        return @embedFile("../lib/tls.js")
+    }
+    if name == "_stream_wrap" {
+        return @embedFile("../lib/stream.js")
+    }
+    if name == "module" {
+        return @embedFile("../lib/module.js")
+    }
+    if name == "repl" {
+        return @embedFile("../lib/repl.js")
+    }
+    if name == "timers" || name == "timers/promises" {
+        return @embedFile("../lib/timers.js")
+    }
+    if name == "punycode" {
+        return @embedFile("../lib/punycode.js")
+    }
     if name == "path" {
         return @embedFile("../lib/path.js")
     }

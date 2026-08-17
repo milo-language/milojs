@@ -1369,6 +1369,47 @@ conservative estimate, it is a wrong one. The 2026-08-16 note had already worked
 out the right representation in its own second paragraph and then costed the first
 one.
 
+### Node builtin module NAMES, and what 650 missing assertions actually were — FIXED 2026-08-17
+
+`is-core-module` scored 68/718 in the package corpus — one package holding ~38% of
+every assertion the whole corpus was missing. The obvious read was "we are missing
+650 features". The real shape was different and worth recording.
+
+The suite has three sections. Section 1 requires every name in `core.json`.
+Sections 2 and 3 re-test the same list, obtained from `repl._builtinLibs` and
+`module.builtinModules`. We had neither module, so **both sections produced zero
+assertions** — the suite ran 166 of 718 and simply stopped. Two missing modules, not
+650 missing features.
+
+What shipped:
+
+- `module` with `builtinModules`, `createRequire`, `isBuiltin`; `repl` with
+  `_builtinLibs` derived from it. Sections 2 and 3 now run.
+- Aliases and subpaths of modules that ALREADY EXIST, which node exposes as separate
+  specifiers and the ecosystem probes by name: `path/posix`, `path/win32`,
+  `assert/strict`, `util/types`, `sys`, `stream/promises`, `stream/consumers`,
+  `constants`, `console`, `process`, and node's legacy internal names
+  (`_stream_*`, `_http_*`, `_tls_*`).
+- `timers` / `timers/promises`, and `punycode` implemented properly (RFC 3492)
+  rather than stubbed, because it is small enough to just do.
+
+**What was deliberately NOT added**, and the reason matters: `dns`, `http2`,
+`cluster`, `dgram`, `domain`, `inspector`, `perf_hooks`, `v8`, `vm`, `wasi`,
+`worker_threads`, `test`, `trace_events`, `stream/web`. Registering a name we cannot
+back turns a clean resolution failure into a confusing one at first USE, and breaks
+the `try { require(x) } catch { fallback }` probe the ecosystem relies on. Every
+name in `builtinModules` is one this runtime can actually load.
+
+`node:sqlite` still reports "not ok", and correctly: the test asserts it is
+UNAVAILABLE on the running node version, and we support it.
+
+Measured: is-core-module 68/718 → **354/718**; whole package corpus
+55% → **72%** (948 → 1234 assertions). Real-app gate still 2/2 byte-identical.
+
+**Lesson:** a package failing 650 assertions is more likely to be blocked than
+broken. Look at where its output STOPS before assuming the gap is feature-shaped —
+`tail` on the run answered in seconds what the failure count implied wrongly.
+
 ### The regex VM died silently on large inputs — FIXED 2026-08-17
 
     var s = "a".repeat(200000);
