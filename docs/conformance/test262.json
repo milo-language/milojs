@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "156bffeeb71e409ca11b0f4429f9c0d00cdfd678",
+    "revision": "1f522eef9e086ceb72c24c2b424eee0e7b30c0f8",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 939,
-    "fail": 531,
+    "pass": 945,
+    "fail": 525,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -26,14 +26,14 @@
   "areas": [
     {
       "area": "language/expressions",
-      "pass": 262,
-      "fail": 72,
+      "pass": 265,
+      "fail": 69,
       "total": 334
     },
     {
       "area": "language/statements",
-      "pass": 210,
-      "fail": 72,
+      "pass": 213,
+      "fail": 69,
       "total": 282
     },
     {
@@ -722,15 +722,6 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Symbol() should be an own property",
-      "count": 3,
-      "cases": [
-        "language/statements/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
-        "language/expressions/class/elements/same-line-async-method-computed-symbol-names.js",
-        "language/statements/class/elements/after-same-line-static-async-method-computed-symbol-names.js"
-      ]
-    },
-    {
       "reason": "Test262:AsyncTestFailure:TypeError: [object Object] is not iterable",
       "count": 3,
       "cases": [
@@ -906,14 +897,6 @@
       "cases": [
         "built-ins/Iterator/prototype/includes/exhaustion-does-not-call-return.js",
         "built-ins/Iterator/prototype/includes/basic-match-and-miss.js"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: N is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh0000gn",
-      "count": 2,
-      "cases": [
-        "language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-numeric-literal.js",
-        "language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-condition-expression-true.js"
       ]
     },
     {
@@ -2738,13 +2721,6 @@
       "count": 1,
       "cases": [
         "built-ins/Symbol/symbol.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Symbol() should be an own property",
-      "count": 1,
-      "cases": [
-        "language/expressions/class/elements/after-same-line-gen-computed-symbol-names.js"
       ]
     },
     {
