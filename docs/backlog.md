@@ -43,6 +43,69 @@ Denominators move between runs as cases start or stop being scored — compare
 the numerator and the fraction from the same table row, not across rows. The
 `96/166` and `473/1476` rows this replaced were 2026-07-24/30 measurements.
 
+### The whole-corpus sweep, and what it says to work on next — 2026-08-16
+
+The published headline is the 1500-case sample; the sweep also runs unfiltered
+(`bun scripts/test262-sweep.ts` with no `--sample`, ~48.7k cases, about 12
+minutes). Doing that once was worth more than any single fix this round, because
+the sample is too thin to rank causes. Grouping the whole corpus by failure
+REASON turned three vague symptom clusters into single defects:
+
+| bucket | cases | what it actually was |
+|---|---:|---|
+| `m`/`name`/`length` descriptor should be configurable | 726 | `delete` on a FUNCTION property was a silent no-op that still answered true, so the harness's `isConfigurable()` probe (delete, then check hasOwnProperty) failed on every class static method and every built-in |
+| `asyncTest called without async flag` | 262 | a top-level binding was not an own property of globalThis, so `hasOwnProperty(globalThis, "$DONE")` denied it and the async harness refused to run |
+| `Built-in objects must be extensible` | 128 | `Object.isExtensible` used `objHandle`, which answers -1 for a function, so every built-in reported itself non-extensible |
+
+Whole corpus over the round: **28511 → 29726 of 47896 (59.5% → 62.1%)**, no
+newly failing case at any step. Sample: 856 → 910 of 1470.
+
+Two lessons worth keeping:
+
+- **`-f` does not exist.** `scripts/test262-sweep.ts` parses `--sample`,
+  `--dir`, `--limit` and `--json` only; a stray `-f built-ins/Object` was
+  ignored and ran the whole corpus. That accident is what produced this table,
+  but `docs/conformance-reports.md` still advertises `-f` and should not.
+- Two of the four regressions this round were invisible to the sample and to
+  every gate; only diffing failure SETS between sweeps found them.
+
+### Ranked next, by measured case count (whole corpus, 2026-08-16)
+
+1. **Temporal is the largest single area**: 2671 failures, 35% passing. The
+   biggest pieces are plain missing methods, each with its own test directory:
+   `Duration.prototype.round` (77), `Duration.prototype.total` (52),
+   `toZonedDateTime` (41, across PlainDate/PlainDateTime), `withPlainTime` (34,
+   PlainDateTime/ZonedDateTime), plus `withCalendar`, `toPlainYearMonth`,
+   `toPlainMonthDay` and a `constructor` property on every Temporal prototype.
+   Node has no Temporal, so test262 is the only oracle here.
+2. **`with` is not implemented** — 222 cases fail with `with is not defined`.
+   Needs an object-backed scope in the identifier lookup path.
+3. **annexB String HTML methods** (`anchor`, `big`, `blink`, …) are absent —
+   ~45 cases, and cheap: they are one-line JS each.
+4. **`Function.prototype` has no own `name`/`length`** (it is `""`/`0` in node,
+   and `delete f.name` must fall through to it).
+5. Atomics/SharedArrayBuffer (380, 0%) and ShadowRealm (48) are host features,
+   not engine bugs; `built-ins/Iterator`'s remaining failures are mostly stage-2
+   proposals (`zip`, `zipKeyed`, `concat`, `chunks`, `windows`) that node does
+   not have either.
+
+### Duplicate declarations are now an early error — 2026-08-16
+
+`let x; let x;` and `let x; var x;` are SyntaxErrors before anything runs, as in
+node. `checkDupDecls` in the parser walks the statement list of a block (and of
+the program) and rejects a name declared twice when either declaration is
+lexical; a `var` or function declaration redeclared by itself is left alone,
+which is what keeps sloppy-mode `function f(){} function f(){}` legal. Only the
+statements at one level are examined, so two sibling `for (let i…)` loops do not
+collide.
+
+**It did not move the score, and that was measurable in advance**: test262's
+redeclaration tests are `negative: {phase: parse}` cases that call
+`$DONOTEVALUATE()`, and the sweep counts any throw as a pass for a parse-phase
+negative — so all 64 switch-scope cases and their siblings already "passed" by
+throwing a ReferenceError for the missing helper. Correctness gained, number
+unmoved. Locked by `tests/duplicateDeclarations.js`.
+
 ### The buffer family got real prototypes — 2026-08-15
 
 `Int8Array.prototype`, `ArrayBuffer.prototype` and `DataView.prototype` were all
@@ -401,10 +464,7 @@ Strongest: `language/block-scope` 100%, `literals` 77%, `identifiers` 75%.
   `language/statements/generators` did not move (48.9%), and is where the
   remaining generator work is. Locked by `tests/generatorCompletions.js`.
 
-- **No duplicate-declaration check.** `const x = 1; const x = 2;` in one scope is
-  accepted; node raises `SyntaxError: Identifier 'x' has already been declared`.
-  Found while assembling `tests/generatorCompletions.js`, whose groups had to be
-  braced to avoid relying on this.
+- **No duplicate-declaration check** — DONE 2026-08-16, see the section above.
 - **Async generators** — DONE 2026-08-15 (with one open limitation, below).
   `async function*` is now a generator first: `callFunction` builds the
   generator object BEFORE the activation-spawn branch, which used to swallow it

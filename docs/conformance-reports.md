@@ -85,5 +85,9 @@ Two rules are enforced rather than asked for:
   `gen-facts` prints how many commits the published score is behind HEAD. That is
   reported, not gated: an unrelated commit should not turn a score red.
 
-A partial or filtered run must not be published at all; `--dir` and `-f` exist for
-investigation, and their reports belong under a `--json` scratch path.
+A partial or filtered run must not be published at all; `--dir` and `--limit`
+exist for investigation, and their reports belong under a `--json` scratch path.
+There is no `-f`: unrecognised arguments are ignored, so a mistyped filter runs
+the WHOLE corpus rather than failing. An unfiltered run takes about 12 minutes
+and is the only way to rank failure causes — the 1500-case sample is too thin to
+tell a 700-case defect from a 30-case one.
