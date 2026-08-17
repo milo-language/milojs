@@ -16853,6 +16853,30 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
         }
         JSValue.Obj(o) => {
             pushTemp(st, JSValue.Obj(o))
+            // An OWN property the program put on the receiver wins over every
+            // builtin dispatcher below. Each exotic kind — regex, Date, Map, Set,
+            // ArrayBuffer, DataView, typed array — routes method calls straight to
+            // its own handler, and those know only their own method names, so a user
+            // property of any other name found nothing and quietly answered
+            // undefined. `d = new Date(); d.m = fn; d.m()` gave undefined, and so
+            // did `re[Symbol.iterator] = fn; re[Symbol.iterator]()`.
+            //
+            // Own only: an INHERITED name must still reach the builtin, or every
+            // `date.getTime()` would resolve to the prototype's bound method here
+            // and skip the fast path it exists for.
+            if objOwnIndex(st, o, name) >= 0 {
+                let ownFn = getMemberDyn(prog, o, name, st)
+                if isCallableIn(st, ownFn) {
+                    let ownArgs = evalArgs(prog, argsIdx, st, scope)
+                    if st.throwing {
+                        popTemp(st)
+                        return JSValue.Undefined
+                    }
+                    let ownR = callValue(prog, ownFn, ownArgs, JSValue.Obj(o), st)
+                    popTemp(st)
+                    return ownR
+                }
+            }
             // ArrayBuffer methods (resize/transfer/slice) live in
             // callBuiltinByName; route them there rather than duplicating
             if st.objects[o].isArrayBuffer {
@@ -16869,6 +16893,24 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                 return r
             }
             if st.objExtras[st.objects[o].extra].regexId >= 0 {
+                // A regex is still an ORDINARY object: a property the program put on
+                // it wins over the builtin dispatcher. Every method call on a regex
+                // used to go straight to regexMethod, which knows only the regex
+                // methods, so `re[Symbol.iterator] = fn; re[Symbol.iterator]()`
+                // found nothing and quietly answered undefined.
+                if objOwnIndex(st, o, name) >= 0 {
+                    let userFn = getMemberDyn(prog, o, name, st)
+                    if isCallableIn(st, userFn) {
+                        let uArgs = evalArgs(prog, argsIdx, st, scope)
+                        if st.throwing {
+                            popTemp(st)
+                            return JSValue.Undefined
+                        }
+                        let ur = callValue(prog, userFn, uArgs, JSValue.Obj(o), st)
+                        popTemp(st)
+                        return ur
+                    }
+                }
                 let argVals = evalArgs(prog, argsIdx, st, scope)
                 // An argument expression that threw ABORTS the call: without this the
                 // callee still ran with the arguments evaluated so far, so

@@ -6,8 +6,8 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "4651930f6a95880dfc1ac824f4fc42f1cd273860",
-    "dirty": false
+    "revision": "459f015614b4f8b93b55cf931290a6f025c1275b",
+    "dirty": true
   },
   "engine": ".dev/mj-engine",
   "selection": {
@@ -679,15 +679,6 @@
       ]
     },
     {
-      "reason": "no completion marker",
-      "count": 3,
-      "cases": [
-        "language/expressions/dynamic-import/catch/nested-async-function-import-source-specifier-tostring-abrupt-rejects.js",
-        "built-ins/Promise/allSettled/invoke-then-error-reject.js",
-        "language/expressions/dynamic-import/catch/nested-async-function-return-await-import-source-specifier-tostring-abrupt-rejects.js"
-      ]
-    },
-    {
       "reason": "Test262:AsyncTestFailure:TypeError: [object Object] is not iterable",
       "count": 3,
       "cases": [
@@ -765,6 +756,14 @@
       "cases": [
         "built-ins/DataView/prototype/setUint8/detached-buffer-after-number-value.js",
         "built-ins/DataView/prototype/setInt32/detached-buffer-after-number-value.js"
+      ]
+    },
+    {
+      "reason": "no completion marker",
+      "count": 2,
+      "cases": [
+        "language/expressions/dynamic-import/catch/nested-async-function-import-source-specifier-tostring-abrupt-rejects.js",
+        "language/expressions/dynamic-import/catch/nested-async-function-return-await-import-source-specifier-tostring-abrupt-rejects.js"
       ]
     },
     {
@@ -1067,6 +1066,13 @@
       "count": 1,
       "cases": [
         "language/expressions/async-generator/yield-star-getiter-async-null-sync-get-abrupt.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: The promise should be rejected",
+      "count": 1,
+      "cases": [
+        "built-ins/Promise/allSettled/invoke-then-error-reject.js"
       ]
     },
     {

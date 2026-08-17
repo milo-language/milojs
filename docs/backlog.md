@@ -1369,6 +1369,34 @@ conservative estimate, it is a wrong one. The 2026-08-16 note had already worked
 out the right representation in its own second paragraph and then costed the first
 one.
 
+### A user method on an exotic object was silently ignored — FIXED 2026-08-17
+
+    var d = new Date(); d.m = function () { return "d"; }; d.m()   // undefined
+    var m = new Map();  m.mm = function () { return "m"; }; m.mm() // undefined
+    var re = /a/g; re[Symbol.iterator] = fn; re[Symbol.iterator]() // undefined
+
+No error, no call — just `undefined`. Every exotic receiver (regex, Date, Map, Set,
+ArrayBuffer, DataView, typed array) routes method calls straight to its own builtin
+handler, and those handlers know only their own method names. Anything else fell off
+the end and returned undefined, so a property the program had explicitly put on the
+object was unreachable as a call.
+
+Fixed once rather than per type: an OWN callable property on the receiver is checked
+before the whole exotic dispatch chain. Deliberately OWN and not inherited — an
+inherited name has to keep reaching the builtin, or every `date.getTime()` would
+resolve to the prototype's bound method and skip the fast path that exists for it.
+
+Found while chasing `es-get-iterator`, whose test sets `Symbol.iterator` on a regex.
+That suite is still blocked at 73/140 by something else further along, so this cost
+more of a session than it returned in corpus points — but a silently ignored method
+call on `Date` is worth more than the points.
+
+**Method note:** the bug reproduced only after narrowing from "the suite recurses"
+to "which SECTION does the suite stop at", by diffing `grep '^#'` of our run against
+node's. The failure the suite reported (`Maximum call stack size exceeded`) named
+neither the receiver nor the operation, and every direct reproduction of the
+suspected cause passed.
+
 ### A builtin constructor did not inherit Function.prototype — FIXED 2026-08-17
 
 `Array.constructor` was `undefined`. So was `Object.constructor` and
