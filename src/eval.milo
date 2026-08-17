@@ -3073,8 +3073,12 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 // Object.prototype.toString.call(err) is unaffected: it arrives
                 // under the private @@objProtoToString name.
                 if st.objects[o].isError {
-                    let en = toStr(objGet(st, o, "name"))
-                    let em = toStr(objGet(st, o, "message"))
+                    // getMember, not objGet: `name` lives on the error's
+                    // prototype and `message` is an own property only when one
+                    // was passed, so an own-property read reported "undefined:
+                    // boom" for every error built without them
+                    let en = toStr(getMember(st, o, "name"))
+                    let em = toStr(getMember(st, o, "message"))
                     if em.len() > 0 {
                         return JSValue.Str(en + ": " + em)
                     }
@@ -4417,12 +4421,27 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         let o = newObject(st)
         st.objects[o].isError = true
         let ename = nativeErrorName(id)
-        objSet(st, o, "name", JSValue.Str(ename.clone()))
+        // NO own `name`: it lives on Error.prototype and each subtype's
+        // prototype, and an own copy is directly observable —
+        // Object.getOwnPropertyNames(new Error()) is ["stack"] in node and was
+        // ["name","message","stack"] here. `message` is own only when one was
+        // actually passed, which is the difference between `new Error()` and
+        // `new Error("")`.
         var msg = ""
+        var hasMsg = false
         if argVals.len() > 0 {
-            msg = toStr(argVals[0])
+            match cloneValue(argVals[0]) {
+                JSValue.Undefined => {
+                }
+                _ => {
+                    msg = toStr(argVals[0])
+                    hasMsg = true
+                }
+            }
         }
-        objSet(st, o, "message", JSValue.Str(msg.clone()))
+        if hasMsg {
+            objSet(st, o, "message", JSValue.Str(msg.clone()))
+        }
         // error.stack: no real backtrace here, but a string headed "Name: message"
         // so code that reads or logs e.stack (a typeof check, express's error
         // middleware) sees a string rather than undefined
@@ -7789,7 +7808,13 @@ fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
                     if id == NATIVE_ERROR {
                         return true
                     }
-                    let nm = objGet(st, o, "name")
+                    // getMember, not objGet: this read the OWN `name` property,
+                    // which stopped identifying anything the moment errors
+                    // stopped carrying one. node reports only `stack` (and
+                    // `message`, when passed) as own properties of an Error;
+                    // `name` lives on each subtype's prototype, so the lookup
+                    // has to walk the chain that already links them.
+                    let nm = getMember(st, o, "name")
                     return toStr(nm) == nativeErrorName(id)
                 }
                 JSValue.Obj(c) => {
@@ -11262,9 +11287,9 @@ fn inspectObj(st: &Interp, o: i64, depth: i64, indentLvl: i64): string {
     }
     // an Error prints as "Name: message [\n stack]", like node's console
     if st.objects[o].isError {
-        let ename = toStr(objGet(st, o, "name"))
-        let emsg = toStr(objGet(st, o, "message"))
-        let estack = objGet(st, o, "stack")
+        let ename = toStr(getMember(st, o, "name"))
+        let emsg = toStr(getMember(st, o, "message"))
+        let estack = getMember(st, o, "stack")
         var head = ename.clone()
         if emsg.len() > 0 {
             head = ename + ": " + emsg
@@ -11702,7 +11727,8 @@ fn proxyOwnEnumKeys(prog: &Prog, st: &mut Interp, o: i64): Vec<string> {
 pub fn makeError(st: &mut Interp, kind: string, msg: string): JSValue {
     let o = newObject(st)
     st.objects[o].isError = true
-    objSet(st, o, "name", JSValue.Str(kind.clone()))
+    // the prototype set below supplies `name`; an own one would show up in
+    // Object.getOwnPropertyNames, where node reports only stack and message
     objSet(st, o, "message", JSValue.Str(msg.clone()))
     // a string stack (headed "Name: message") so a caught runtime error's .stack
     // is a string, like a constructed Error's — no real backtrace available
@@ -11717,7 +11743,6 @@ pub fn makeError(st: &mut Interp, kind: string, msg: string): JSValue {
     if ep >= 0 {
         st.objects[o].proto = ep
     }
-    objSetNonEnumerable(st, o, "name")
     objSetNonEnumerable(st, o, "message")
     objSetNonEnumerable(st, o, "stack")
     return JSValue.Obj(o)
@@ -12848,7 +12873,7 @@ fn adoptPromise(st: &mut Interp, derived: i64, source: i64) {
 fn describeThrownValue(st: &Interp, v: &JSValue): string {
     let h = objHandle(v)
     if h >= 0 && st.objects[h].isError {
-        return toStr(objGet(st, h, "name")) + ": " + toStr(objGet(st, h, "message"))
+        return toStr(getMember(st, h, "name")) + ": " + toStr(getMember(st, h, "message"))
     }
     return toStr(v)
 }
@@ -17216,8 +17241,8 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             // Object.prototype.toString.call(x) still gives the type tag (it
             // reaches callBuiltinByName directly, a separate path).
             if name == "toString" && st.objects[o].isError {
-                let en = toStr(objGet(st, o, "name"))
-                let em = toStr(objGet(st, o, "message"))
+                let en = toStr(getMember(st, o, "name"))
+                let em = toStr(getMember(st, o, "message"))
                 popTemp(st)
                 if em.len() > 0 {
                     return JSValue.Str(en + ": " + em)
@@ -17888,12 +17913,26 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                     let selfObj = objHandle(thisVal)
                     if selfObj >= 0 {
                         st.objects[selfObj].isError = true
-                        objSet(st, selfObj, "name", JSValue.Str(nativeErrorName(baseNative)))
+                        // no own `name`, and `message` only when one was passed
+                        // — the same shape `new Error()` produces. A subclass
+                        // that means to override the name puts it on its own
+                        // prototype, and an own copy here would defeat that.
                         var msg = ""
+                        var hasMsg = false
                         if argVals.len() > 0 {
-                            msg = toStr(argVals[0])
+                            match cloneValue(argVals[0]) {
+                                JSValue.Undefined => {
+                                }
+                                _ => {
+                                    msg = toStr(argVals[0])
+                                    hasMsg = true
+                                }
+                            }
                         }
-                        objSet(st, selfObj, "message", JSValue.Str(msg.clone()))
+                        if hasMsg {
+                            objSet(st, selfObj, "message", JSValue.Str(msg.clone()))
+                            objSetNonEnumerable(st, selfObj, "message")
+                        }
                         // `class E extends Error {}` produced an instance with
                         // NO stack at all, so the one thing a caller reaches for
                         // when logging a custom error was undefined

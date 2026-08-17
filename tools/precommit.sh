@@ -35,6 +35,15 @@ if command -v node >/dev/null 2>&1 && ! node tools/check-arity.mjs; then
     status=1
 fi
 
+# The "known engine limits" list in docs/status.md is a set of claims about what
+# the engine cannot do. Six of its ten entries described gaps that had already
+# been closed, because closing a gap never touches the file claiming it is open.
+# Each bullet now carries a probe; this fails if one is stale. Needs a built
+# engine, so it is skipped when there is not one.
+if command -v node >/dev/null 2>&1 && [ -x .dev/mj-engine ] && ! node tools/check-gaps.mjs; then
+    status=1
+fi
+
 # src/unicase.milo is generated from node's ICU and says "do not edit by hand",
 # which was a request until this ran. 0.1s.
 if command -v node >/dev/null 2>&1 && ! node tools/gen-unicase.mjs --check; then

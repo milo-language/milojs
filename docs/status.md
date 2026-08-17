@@ -30,7 +30,7 @@ The project deliberately has two deliverables:
 Engine maturity comes first. Runtime compatibility cannot be credible while the
 language engine and embedding contract are unstable.
 
-About <!--fact:loc-total-->48.6k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
+About <!--fact:loc-total-->48.7k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
 program, with no V8, JavaScriptCore, or C JavaScript engine underneath.
 
 ## Evidence
@@ -218,28 +218,37 @@ before the AST phase is complete.
 
 ### Known engine limits
 
-- **`BigInt64Array` / `BigUint64Array` do not exist** — the largest single
-  bucket at 538 test262 cases. `taElem` returns `f64` and every typed-array
-  method is written against that, so this needs a parallel `JSValue`-returning
-  element path, not a new width. `NATIVE_TA_BASE` must also move off 79 first.
-- **No duplicate-declaration check** — `const x = 1; const x = 2;` in one scope
-  is accepted where node raises a `SyntaxError`.
-- **No direct `eval`** — limited to a bare identifier in scope.
-- **`Temporal`, `Atomics`, `Float16Array`** are absent.
-- **`await` of an already-settled promise resumes inline** rather than after a
-  microtask tick.
-- Property descriptors: `name`/`length` read correctly but are not own
-  properties on function values (~42 cases suite-wide), because JS functions and
-  natives have no own-property bag.
-- `Date` is UTC-only on purpose. The local getters used to decompose in the host
-  timezone while the setters used UTC, so `d.setHours(d.getHours())` shifted the
-  date. Everything is UTC now, which makes milojs behave as node under `TZ=UTC`;
-  a correct local setter family needs `mktime`, which std does not expose.
-  Anyone adding a timezone database must do getters and setters together.
+Every bullet here carries a marker comment naming its probe id, and is re-probed against the
+engine by `tools/check-gaps.mjs`, which runs in `tools/precommit.sh`. Closing a
+limit makes that gate FAIL until the bullet is deleted, and adding a bullet
+without a probe fails too. This list had rotted to six wrong entries out of ten
+before it was made executable — prose about what is missing rots faster than any
+other prose in a repo, because closing a gap never touches the file claiming it
+is open.
+
+- **`Atomics` is absent.** <!--gap:atomics-->
+- **`Float16Array` is absent.** <!--gap:float16-->
+- **`BigInt64Array` / `BigUint64Array` have no `from`/`of`.** <!--gap:bigint64-from-->
+  The types themselves exist and store and wrap 64-bit values correctly; it is
+  the two static constructors that are still missing.
+- `Date` is UTC-only on purpose. <!--gap:date-utc-only--> The local getters used
+  to decompose in the host timezone while the setters used UTC, so
+  `d.setHours(d.getHours())` shifted the date. Everything is UTC now, which
+  makes milojs behave as node under `TZ=UTC`; a correct local setter family
+  needs `mktime`, which std does not expose. Anyone adding a timezone database
+  must do getters and setters together.
 - `toLocale*` is en-US only and ignores its arguments; `Intl` is not modelled.
+  <!--gap:intl-->
 - `@@match`/`@@replace`/`@@split` delegate to the String methods, the reverse of
-  the spec's direction. Correct while nothing overrides them, wrong for a
-  subclass that redefines them.
+  the spec's direction. <!--gap:regexp-symbols--> Correct while nothing
+  overrides them, wrong for a subclass that redefines them.
+
+Closed since this list was last written by hand, and kept here only as a record
+of how far it had drifted: `BigInt64Array`/`BigUint64Array` existing at all,
+duplicate-declaration `SyntaxError`s, direct `eval` of arbitrary expressions,
+`Temporal` (now at 60.7% of its test262 suite), own `name`/`length`/`prototype`
+on function values, and `await` of a settled promise resuming after a microtask
+tick rather than inline.
 
 ### The one shape that can hang
 
@@ -375,8 +384,9 @@ slower than a production bytecode VM or JIT.
    over pinned corpora — this is the last item blocking Gate 1.
 3. Probe the 154-case `cannot read property of undefined` bucket. Two of the
    three largest wins so far were one missing object each, not a feature.
-4. `BigInt64Array` / `BigUint64Array` — the largest single addressable bucket at
-   538 cases.
+4. Temporal, the largest addressable bucket now that BigInt64Array exists: 60.7%
+   of 4603 cases, and the remaining clusters are sized in `docs/backlog.md`
+   (ISO-string edge cases, observable operation order, option validation).
 5. Make the async-generator body's runnability explicit, then retry the request
    queue. It is the only known hang.
 6. Implement the smallest complete C embedding vertical slice.

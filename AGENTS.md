@@ -292,6 +292,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/gen-unicase.mjs` | regenerates `src/unicase.milo` (case-mapping tables) from node's ICU |
 | `tools/gen-uniprops.mjs` | regenerates `src/uniprops.txt` (RegExp `\p{...}` property tables) from node's ICU. Needs `TEST262` to harvest the property spellings. `--check` gates. |
 | `tools/check-arity.mjs` | verifies the 389 built-in `length` values in `src/eval.milo` against node; `-v` shows every name it resolved |
+| `tools/check-gaps.mjs` | re-probes every "known engine limit" in `docs/status.md`; fails when one has been fixed and the bullet is still there |
 | `tools/check-docs-exec.mjs` | runs the `<!-- exec -->`-tagged examples in the docs and diffs them against the output the docs claim. Needs built binaries; part of `dev.sh`. |
 | `tools/check-docs.mjs` | doc-meta present, key-files real, AGENTS tables complete, and a staleness ratchet against each doc's key-files |
 | `tools/gen-facts.mjs` | compiles the numbers prose quotes (line counts, fixture counts, entry points) into `<!--fact:...-->` spans. `--check` gates, `--list` prints them all. |

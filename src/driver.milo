@@ -35,9 +35,12 @@ pub fn describeThrown(st: &Interp, v: &JSValue): string {
         // a real Error, or any error-shaped object (a thrown custom error like
         // test262's Test262Error carries name+message but is not flagged isError,
         // and toStr'ing it just gives the useless "[object Object]")
-        let msg = toStr(objGet(st, h, "message"))
+        // getMember, not objGet: an Error's `name` lives on its prototype and
+        // `message` is own only when one was passed, so own-property reads
+        // described every error as ": <msg>" or as nothing at all
+        let msg = toStr(getMember(st, h, "message"))
         if st.objects[h].isError || objOwnIndex(st, h, "message") >= 0 {
-            let name = toStr(objGet(st, h, "name"))
+            let name = toStr(getMember(st, h, "name"))
             if name.len() > 0 && msg.len() > 0 {
                 return name + ": " + msg
             }
