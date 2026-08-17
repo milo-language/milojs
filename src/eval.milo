@@ -9431,6 +9431,14 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                             nArgs.push(cloneValue(sendVal2))
                             let step = callValue(prog, stepFn, nArgs, cloneValue(iter), st)
                             let sh = objHandle(step)
+                            if !st.throwing && sh < 0 {
+                                // An iterator's next() MUST answer an object. A
+                                // primitive is a TypeError, not a quiet end of
+                                // iteration — `yield*` over `{ next() { return 5 } }`
+                                // stopped silently instead of throwing.
+                                st.throwing = true
+                                st.thrownValue = makeError(st, "TypeError", "iterator result " + toStr(step) + " is not an object" + currentModule(st))
+                            }
                             if st.throwing || sh < 0 {
                                 guard2 = 100000000
                             } else if truthy(getMemberDyn(prog, sh, "done", st)) {
@@ -12584,6 +12592,10 @@ pub fn awaitValue(prog: &Prog, va: &JSValue, st: &mut Interp): JSValue {
 // already-evaluated operand. Hands it out, parks the body, and on resume returns
 // the value the next() caller passed in.
 fn genYield(handed: JSValue, st: &mut Interp): JSValue {
+    return genYieldProg(gProg, handed, st)
+}
+
+fn genYieldProg(prog: &Prog, handed: JSValue, st: &mut Interp): JSValue {
     let me = schedulerCurrent()
     let gi = genIndexOfTask(st, me)
     if gi < 0 {
@@ -12591,7 +12603,21 @@ fn genYield(handed: JSValue, st: &mut Interp): JSValue {
         // which only emits it inside a function*, but fail soft rather than wedge
         return JSValue.Undefined
     }
-    st.genYielded[gi] = cloneValue(handed)
+    // AsyncGeneratorYield AWAITS the operand before handing it out. Yielding a
+    // rejected promise must therefore reject the promise the awaiting next()
+    // returned; handing the promise out raw resolved next() with it instead, and
+    // the rejection surfaced later as an unhandled rejection with no connection to
+    // the call that caused it.
+    var toHand = cloneValue(handed)
+    if st.genAsync[gi] {
+        toHand = awaitValue(prog, toHand, st)
+        if st.throwing {
+            // the await rejected: the generator body sees it as a throw at the
+            // yield, which is what propagates it to next()
+            return JSValue.Undefined
+        }
+    }
+    st.genYielded[gi] = cloneValue(toHand)
     st.genDone[gi] = false
     // root the gen object across the park, like genNext does
     pushTemp(st, JSValue.Obj(st.genObj[gi]))

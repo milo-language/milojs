@@ -1369,6 +1369,33 @@ conservative estimate, it is a wrong one. The 2026-08-16 note had already worked
 out the right representation in its own second paragraph and then costed the first
 one.
 
+### An async generator handed out a promise instead of awaiting it — FIXED 2026-08-17
+
+    async function* g() { yield Promise.reject(new Error("boom")); }
+    await g().next();     // resolved. The rejection surfaced later, unattributable
+
+AsyncGeneratorYield **awaits** its operand before handing it out, so yielding a
+rejected promise rejects the promise the awaiting `next()` returned. `genYield`
+handed the value out raw, so `next()` resolved WITH the rejected promise and the
+rejection turned up later as an unhandled rejection with nothing connecting it to
+the call that caused it. That is the "reject reason" cluster in
+`async-gen-private-method`, 24 tests.
+
+Fixed by awaiting in `genYield` when the generator is async. A rejection there is a
+throw AT the yield, which is exactly how it propagates outward.
+
+Alongside it: `yield*` over `{ next() { return 5 } }` stopped SILENTLY. An
+iterator's `next()` must answer an object; a primitive is a TypeError. The check
+went on the generic-iterator path — the first attempt put it on the generator path,
+where a primitive result cannot occur, so it compiled, read correctly and did
+nothing. Verified by the probe going from NO THROW to TypeError, not by inspection.
+
+Measured: `language/statements/class` 83.1% → **83.6%**, sample 69.1% → 69.2%.
+
+Worth recording that the class area was written off in earlier notes as "diffuse"
+without being measured. It was already at 83.1%, and its biggest cluster was one
+mechanism.
+
 ### A user method on an exotic object was silently ignored — FIXED 2026-08-17
 
     var d = new Date(); d.m = function () { return "d"; }; d.m()   // undefined

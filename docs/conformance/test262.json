@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "459f015614b4f8b93b55cf931290a6f025c1275b",
+    "revision": "06b71a47bc7aa84ab81fd5f72822f9d8b1fa10f2",
     "dirty": true
   },
   "engine": ".dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 1016,
-    "fail": 454,
+    "pass": 1017,
+    "fail": 453,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -26,8 +26,8 @@
   "areas": [
     {
       "area": "language/expressions",
-      "pass": 283,
-      "fail": 51,
+      "pass": 284,
+      "fail": 50,
       "total": 334
     },
     {
@@ -1052,13 +1052,6 @@
       "count": 1,
       "cases": [
         "built-ins/Array/fromAsync/mapfn-not-callable.js"
-      ]
-    },
-    {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Promise incorrectly resolved.",
-      "count": 1,
-      "cases": [
-        "language/expressions/class/async-gen-method/yield-promise-reject-next-yield-star-sync-iterator.js"
       ]
     },
     {
