@@ -1238,178 +1238,251 @@ fn reIsWordAt(s: &string, i: i64): bool {
 // Recursive backtracking. SAVE restores its slot on failure, so SPLIT needs no
 // snapshot. Returns true if the program matches starting at instruction `pc`,
 // input position `sp`.
-fn reRun(re: &Regex, pc: i64, s: &string, sp: i64, saves: &mut Vec<i64>): bool {
-    let inst = re.prog[pc]
-    let op = inst.op
-    if op == RE_MATCH {
-        return true
+// One pending alternative: where to resume, and how far to unwind the trail.
+struct ReFrame {
+    pc: i64,
+    sp: i64,
+    trailLen: i64,
+}
+
+// The matcher. ITERATIVE, with an explicit backtrack stack, because the recursive
+// version recursed once per VM step: `x+` over n characters recursed n deep, and
+// past roughly 100k characters the green task's 8MB stack was gone and the process
+// exited SILENTLY with status 0 — no error, no output, no result.
+//
+// Assertions (lookahead/lookbehind) still recurse. Their nesting is bounded by the
+// pattern, not by the subject, so it cannot run away.
+//
+// `trail` is the undo log. A SAVE records the slot's old value and a backtrack
+// unwinds to the frame's mark, which is what lets alternatives share one saves
+// vector instead of snapshotting it per branch.
+fn reRun(re: &Regex, pcStart: i64, s: &string, spStart: i64, saves: &mut Vec<i64>): bool {
+    var stack: Vec<ReFrame> = Vec.new()
+    // trailKind 0 = a saves slot, 1 = a loopSp entry
+    var trailKind: Vec<i64> = Vec.new()
+    var trailIdx: Vec<i64> = Vec.new()
+    var trailVal: Vec<i64> = Vec.new()
+    // Per-SPLIT record of the last position its loop body was entered at. A body
+    // that matches EMPTY brings us back to the same split at the same sp forever —
+    // `(a*)*`, `(a|)*` and `(?:)*` all hung the engine on a three-character input.
+    // Refusing a second entry at an unchanged position is the standard cure.
+    var loopSp: Vec<i64> = Vec.new()
+    var li: i64 = 0
+    while li < re.prog.len() {
+        loopSp.push(-1)
+        li = li + 1
     }
-    if op == RE_CHAR {
-        if sp < s.len() && reCharEq(s[sp], inst.a as u8, re.flagI) {
-            return reRun(re, pc + 1, s, sp + 1, saves)
+    var pc = pcStart
+    var sp = spStart
+    var running = true
+    while running {
+        var advanced = false
+        let inst = re.prog[pc]
+        let op = inst.op
+        if op == RE_MATCH {
+            return true
         }
-        return false
-    }
-    if op == RE_ANY {
-        if sp < s.len() && (re.flagS || s[sp] != 10 as u8) {
-            // `.` is one CHARACTER, not one byte. Advancing by 1 made
-            // /^a.b$/ fail on "aéb" and "aéb".match(/./gu).length answer 4,
-            // because a 2-byte é counted as two dots and left a stray
-            // continuation byte for the next instruction.
-            return reRun(re, pc + 1, s, sp + reCharLen(s, sp), saves)
+        if op == RE_CHAR {
+            if sp < s.len() && reCharEq(s[sp], inst.a as u8, re.flagI) {
+                pc = pc + 1
+                sp = sp + 1
+                advanced = true
+            }
+        } else if op == RE_ANY {
+            if sp < s.len() && (re.flagS || s[sp] != 10 as u8) {
+                // `.` is one CHARACTER, not one byte
+                sp = sp + reCharLen(s, sp)
+                pc = pc + 1
+                advanced = true
+            }
+        } else if op == RE_CLASS {
+            if sp < s.len() && reClassMatch(re.classes[inst.a], reCodePointAt(s, sp), re.flagI) {
+                sp = sp + reCharLen(s, sp)
+                pc = pc + 1
+                advanced = true
+            }
+        } else if op == RE_JMP {
+            pc = inst.a
+            advanced = true
+        } else if op == RE_SPLIT {
+            // inst.a is the preferred branch; inst.b is tried on backtrack
+            if loopSp[pc] == sp {
+                // Back at this loop head having consumed nothing, so the body just
+                // matched EMPTY. Fail the path rather than jumping to the exit:
+                // backtracking unwinds the empty iteration's captures, which is what
+                // keeps `(a*)*` on "aaa" capturing "aaa" instead of "". Skipping
+                // forward would leave the empty capture committed.
+                advanced = false
+            } else {
+                trailKind.push(1)
+                trailIdx.push(pc)
+                trailVal.push(loopSp[pc])
+                loopSp[pc] = sp
+                stack.push(ReFrame { pc: inst.b, sp: sp, trailLen: trailKind.len() })
+                pc = inst.a
+                advanced = true
+            }
+        } else if op == RE_SAVE {
+            trailKind.push(0)
+            trailIdx.push(inst.a)
+            trailVal.push(saves[inst.a])
+            saves[inst.a] = sp
+            pc = pc + 1
+            advanced = true
+        } else if op == RE_BOL {
+            if sp == 0 || (re.flagM && sp > 0 && s[sp - 1] == 10 as u8) {
+                pc = pc + 1
+                advanced = true
+            }
+        } else if op == RE_EOL {
+            if sp == s.len() || (re.flagM && s[sp] == 10 as u8) {
+                pc = pc + 1
+                advanced = true
+            }
+        } else if op == RE_WORDB {
+            if reIsWordAt(s, sp - 1) != reIsWordAt(s, sp) {
+                pc = pc + 1
+                advanced = true
+            }
+        } else if op == RE_NWORDB {
+            if reIsWordAt(s, sp - 1) == reIsWordAt(s, sp) {
+                pc = pc + 1
+                advanced = true
+            }
+        } else if op == RE_BACKREF {
+            let g = inst.a
+            let a = saves[2 * g]
+            let b = saves[2 * g + 1]
+            if a < 0 || b < 0 {
+                // an unmatched group backreferences as the empty string
+                pc = pc + 1
+                advanced = true
+            } else {
+                let n = b - a
+                if sp + n <= s.len() {
+                    var k: i64 = 0
+                    var same = true
+                    while k < n && same {
+                        if !reCharEq(s[sp + k], s[a + k], re.flagI) {
+                            same = false
+                        }
+                        k = k + 1
+                    }
+                    if same {
+                        sp = sp + n
+                        pc = pc + 1
+                        advanced = true
+                    }
+                }
+            }
+        } else if op == RE_LOOKEND {
+            // the inner program matched; unwind without consuming
+            return true
+        } else if op == RE_LOOKBEND {
+            return sp == saves[saves.len() - 1]
+        } else if op == RE_LOOK {
+            if reAssertLook(re, inst.a, inst.b, s, sp, saves) {
+                pc = pc + 1
+                advanced = true
+            }
+        } else if op == RE_LOOKBEHIND {
+            if reAssertLookBehind(re, inst.a, inst.b, s, sp, saves) {
+                pc = pc + 1
+                advanced = true
+            }
         }
-        return false
-    }
-    if op == RE_CLASS {
-        if sp < s.len() && reClassMatch(re.classes[inst.a], reCodePointAt(s, sp), re.flagI) {
-            return reRun(re, pc + 1, s, sp + reCharLen(s, sp), saves)
-        }
-        return false
-    }
-    if op == RE_JMP {
-        return reRun(re, inst.a, s, sp, saves)
-    }
-    if op == RE_BACKREF {
-        let g = inst.a
-        let a = saves[2 * g]
-        let b = saves[2 * g + 1]
-        // an unmatched group backreferences as the empty string, per spec
-        if a < 0 || b < 0 {
-            return reRun(re, pc + 1, s, sp, saves)
-        }
-        let n = b - a
-        if sp + n > s.len() {
-            return false
-        }
-        var k: i64 = 0
-        while k < n {
-            if !reCharEq(s[sp + k], s[a + k], re.flagI) {
+        if !advanced {
+            // backtrack to the newest pending alternative, undoing everything the
+            // failed path wrote
+            if stack.len() == 0 {
                 return false
             }
-            k = k + 1
-        }
-        return reRun(re, pc + 1, s, sp + n, saves)
-    }
-    if op == RE_LOOKBEND {
-        // the scratch slot (appended past the capture slots) holds the position
-        // the lookbehind body must finish at
-        return sp == saves[saves.len() - 1]
-    }
-    if op == RE_LOOKBEHIND {
-        var snapshot: Vec<i64> = Vec.new()
-        var si: i64 = 0
-        while si < saves.len() {
-            snapshot.push(saves[si])
-            si = si + 1
-        }
-        // no way to know how wide the body is, so try every earlier start and
-        // require the body to end exactly here
-        let target = saves.len() - 1
-        saves[target] = sp
-        var j = sp
-        var hit = false
-        while j >= 0 && !hit {
-            if reRun(re, inst.a, s, j, saves) {
-                hit = true
-            } else {
-                j = j - 1
+            let f = stack.pop()!
+            while trailKind.len() > f.trailLen {
+                let kind = trailKind.pop()!
+                let idx = trailIdx.pop()!
+                let val = trailVal.pop()!
+                if kind == 0 {
+                    saves[idx] = val
+                } else {
+                    loopSp[idx] = val
+                }
             }
+            pc = f.pc
+            sp = f.sp
         }
-        let wantMiss = inst.b == 1
-        if hit == wantMiss {
-            var r: i64 = 0
-            while r < snapshot.len() {
-                saves[r] = snapshot[r]
-                r = r + 1
-            }
-            return false
-        }
-        if wantMiss {
-            var r2: i64 = 0
-            while r2 < snapshot.len() {
-                saves[r2] = snapshot[r2]
-                r2 = r2 + 1
-            }
-        }
-        saves[target] = snapshot[target]
-        return reRun(re, pc + 1, s, sp, saves)
-    }
-    if op == RE_LOOKEND {
-        // the inner program matched; unwind without consuming
-        return true
-    }
-    if op == RE_LOOK {
-        // captures set inside a failed (or negative) lookahead must not leak out
-        var snapshot: Vec<i64> = Vec.new()
-        var si: i64 = 0
-        while si < saves.len() {
-            snapshot.push(saves[si])
-            si = si + 1
-        }
-        let hit = reRun(re, inst.a, s, sp, saves)
-        let wantMiss = inst.b == 1
-        if hit == wantMiss {
-            var r: i64 = 0
-            while r < snapshot.len() {
-                saves[r] = snapshot[r]
-                r = r + 1
-            }
-            return false
-        }
-        if wantMiss {
-            var r2: i64 = 0
-            while r2 < snapshot.len() {
-                saves[r2] = snapshot[r2]
-                r2 = r2 + 1
-            }
-        }
-        return reRun(re, pc + 1, s, sp, saves)
-    }
-    if op == RE_SPLIT {
-        if reRun(re, inst.a, s, sp, saves) {
-            return true
-        }
-        return reRun(re, inst.b, s, sp, saves)
-    }
-    if op == RE_SAVE {
-        let slot = inst.a
-        let old = saves[slot]
-        saves[slot] = sp
-        if reRun(re, pc + 1, s, sp, saves) {
-            return true
-        }
-        saves[slot] = old
-        return false
-    }
-    if op == RE_BOL {
-        if sp == 0 || (re.flagM && sp > 0 && s[sp - 1] == 10 as u8) {
-            return reRun(re, pc + 1, s, sp, saves)
-        }
-        return false
-    }
-    if op == RE_EOL {
-        if sp == s.len() || (re.flagM && s[sp] == 10 as u8) {
-            return reRun(re, pc + 1, s, sp, saves)
-        }
-        return false
-    }
-    if op == RE_WORDB {
-        let before = reIsWordAt(s, sp - 1)
-        let after = reIsWordAt(s, sp)
-        if before != after {
-            return reRun(re, pc + 1, s, sp, saves)
-        }
-        return false
-    }
-    if op == RE_NWORDB {
-        let before = reIsWordAt(s, sp - 1)
-        let after = reIsWordAt(s, sp)
-        if before == after {
-            return reRun(re, pc + 1, s, sp, saves)
-        }
-        return false
     }
     return false
+}
+
+// Lookahead: run the sub-program at `body` from here without consuming. Captures a
+// failed or negative assertion made must not leak, so they are snapshotted.
+fn reAssertLook(re: &Regex, body: i64, negated: i64, s: &string, sp: i64, saves: &mut Vec<i64>): bool {
+    var snapshot: Vec<i64> = Vec.new()
+    var si: i64 = 0
+    while si < saves.len() {
+        snapshot.push(saves[si])
+        si = si + 1
+    }
+    let hit = reRun(re, body, s, sp, saves)
+    let wantMiss = negated == 1
+    if hit == wantMiss {
+        var r: i64 = 0
+        while r < snapshot.len() {
+            saves[r] = snapshot[r]
+            r = r + 1
+        }
+        return false
+    }
+    if wantMiss {
+        var r2: i64 = 0
+        while r2 < snapshot.len() {
+            saves[r2] = snapshot[r2]
+            r2 = r2 + 1
+        }
+    }
+    return true
+}
+
+// Lookbehind: there is no way to know how wide the body is, so try every earlier
+// start and require the body to finish exactly here. The scratch slot past the
+// capture slots carries that target.
+fn reAssertLookBehind(re: &Regex, body: i64, negated: i64, s: &string, sp: i64, saves: &mut Vec<i64>): bool {
+    var snapshot: Vec<i64> = Vec.new()
+    var si: i64 = 0
+    while si < saves.len() {
+        snapshot.push(saves[si])
+        si = si + 1
+    }
+    let target = saves.len() - 1
+    saves[target] = sp
+    var j = sp
+    var hit = false
+    while j >= 0 && !hit {
+        if reRun(re, body, s, j, saves) {
+            hit = true
+        } else {
+            j = j - 1
+        }
+    }
+    let wantMiss = negated == 1
+    if hit == wantMiss {
+        var r: i64 = 0
+        while r < snapshot.len() {
+            saves[r] = snapshot[r]
+            r = r + 1
+        }
+        return false
+    }
+    if wantMiss {
+        var r2: i64 = 0
+        while r2 < snapshot.len() {
+            saves[r2] = snapshot[r2]
+            r2 = r2 + 1
+        }
+    }
+    saves[target] = snapshot[target]
+    return true
 }
 
 // Try to match anywhere at or after `startPos`. Returns a saves vector; saves[0] < 0

@@ -1369,47 +1369,52 @@ conservative estimate, it is a wrong one. The 2026-08-16 note had already worked
 out the right representation in its own second paragraph and then costed the first
 one.
 
-### The regex VM dies silently on a large input — OPEN, and it is the top priority
+### The regex VM died silently on large inputs — FIXED 2026-08-17
 
-    print("start");
     var s = "a".repeat(200000);
-    print("built " + s.length);          // prints
-    print(/^[a-z]+$/.test(s));           // never returns; process exits 0
+    print(/^[a-z]+$/.test(s));    // never returned; process exited 0
 
-No error, no output, **exit status 0**. For an embedder that is the worst possible
-failure: not a crash to catch, not a wrong answer to notice — nothing. The
-threshold is somewhere between 50k and 200k characters for a simple quantifier.
+No error, no output, **exit status 0**: not a crash to catch, not a wrong answer to
+notice, nothing. `reRun` recursed once per VM STEP, so `x+` over n characters
+recursed n deep and past roughly 100k the green task's 8MB stack was gone.
 
-Cause: `reRun` in `src/regex.milo` recurses once per VM STEP. Matching `x+` against
-n characters therefore recurses n deep, and at roughly 100k the green task's 8MB
-stack is gone. The overflow is not reported.
+A second bug shared the same cause and needed no size at all — **any quantifier
+whose body can match empty killed the engine on a three-character input**:
+`(a*)*`, `(a|)*`, `(a*)+`, `(?:)*` all hung and exited 0.
 
-**How it was found, and what it says about the numbers.** It surfaced as 362
-`crash(...)` entries in `built-ins/RegExp/property-escapes`, whose harness builds
-strings covering the whole code space (~1.1M code points). That directory measured
-**86.0%** when property escapes were implemented and **27.1%** after the
-engine-agnostic failure detection landed the same day. Nothing regressed between
-those two runs: the old harness only counted a failure when the output matched
-`Uncaught …`, and a silent death produces no output at all, so **362 crashes were
-being scored as passes**. This is the single largest instance of the measurement
-bug already recorded in `docs/conformance-reports.md`.
+**Now iterative.** `reRun` keeps an explicit backtrack stack of `(pc, sp, trailLen)`
+plus a trail of undo records, so alternatives share one `saves` vector instead of
+snapshotting it per branch. Lookahead and lookbehind still recurse — their nesting
+is bounded by the PATTERN, not by the subject, so it cannot run away.
 
-**An attempt was made and reverted.** Threading a depth budget through the VM and
-raising a catchable RangeError needs somewhere to record "budget exhausted"; a
-mutable module-level `var` in Milo compiled without error and broke every regex
-(each match died silently), so the work was reverted rather than debugged. Any
-retry needs the flag carried in a parameter or in `Interp`, not a global.
+The empty-body cure is a per-SPLIT record of the position its loop body was last
+entered at. Arriving at the same split with the same `sp` means the body matched
+empty, and the path is FAILED rather than skipped forward: backtracking unwinds the
+empty iteration's captures, which is what makes `(a*)*` on `"aaa"` capture `"aaa"`
+and not `""`. Skipping forward leaves the empty capture committed, which was the
+only difference from node in the first working draft.
 
-**The real fix is an explicit backtrack stack.** Move the VM's saved states to a
-heap `Vec` and drive it with a loop, so depth is bounded by memory rather than by
-the native stack. That removes the ceiling entirely instead of relocating it, and it
-is the same shape as the fix every production regex engine uses. Until then the
-guard is worth landing on its own — a catchable error beats a silent exit 0 — but
-only with the flag plumbed properly.
+Measured:
 
-This is now the top item in this file: it is a correctness-and-safety bug reachable
-from ordinary JS, it silently inflated a published conformance figure by ~59 points
-in one directory, and it blocks 362 tests.
+| | before | after |
+|---|---|---|
+| `/^[a-z]+$/` on 200k chars | silent exit 0 | true |
+| the same on **1M** chars | silent exit 0 | true |
+| `(a*)*` on `"aaa"` | silent exit 0 | `["aaa","aaa"]` |
+| `(x+x+)+y` on 20 x's | (catastrophic) | false, promptly |
+| `built-ins/RegExp/property-escapes` | 27.1% | **85.8%** (+360) |
+| whole-suite sample | 67.5% | **69.0%** |
+
+**The method mattered more than the code.** The previous attempt at this broke every
+regex and was reverted. This one started by building a 60-case differential harness
+(`exec` + `test` + `replace` + `split` + `match`, capture groups, lookaround,
+backrefs, flags, astral, property escapes) and capturing node's output FIRST. That
+harness caught the empty-capture discrepancy immediately and reduced the rewrite to
+"make this diff empty" — which it now is, 65 of 65 lines identical to node.
+
+**Known cost:** ~20x slower than node on a small-pattern loop (41ms vs 2ms for 20k
+matches). The trail and stack are `Vec` pushes per step; a production engine would
+reuse buffers across `exec` calls. Worth revisiting, but not before correctness.
 
 ### reduce passed three arguments where the spec says four — FIXED 2026-08-17
 

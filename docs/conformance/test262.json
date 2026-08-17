@@ -6,8 +6,8 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "2a2994603ea4d0741c4fd0c6da7981efcb587ee9",
-    "dirty": false
+    "revision": "7fea1abb5a51e12b31961a542eb213563d8ef03e",
+    "dirty": true
   },
   "engine": ".dev/mj-engine",
   "selection": {
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 992,
-    "fail": 478,
+    "pass": 1015,
+    "fail": 455,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -56,8 +56,8 @@
     },
     {
       "area": "built-ins/RegExp",
-      "pass": 25,
-      "fail": 48,
+      "pass": 48,
+      "fail": 25,
       "total": 73
     },
     {
@@ -540,35 +540,6 @@
         "built-ins/Atomics/waitAsync/undefined-index-defaults-to-zero-agent.js",
         "built-ins/AsyncGeneratorPrototype/next/length.js",
         "built-ins/Set/Symbol.species/symbol-species.js"
-      ]
-    },
-    {
-      "reason": "crash(SIGUSR1)",
-      "count": 23,
-      "cases": [
-        "built-ins/RegExp/property-escapes/generated/ASCII_Hex_Digit.js",
-        "built-ins/RegExp/S15.10.2.9_A1_T5.js",
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Bengali.js",
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Osmanya.js",
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Meroitic_Cursive.js",
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Phoenician.js",
-        "built-ins/RegExp/property-escapes/generated/Script_-_Old_South_Arabian.js",
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Medefaidrin.js",
-        "built-ins/RegExp/property-escapes/generated/Script_-_Osage.js",
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Hiragana.js",
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Yi.js",
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Inscriptional_Pahlavi.js",
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Rejang.js",
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Osage.js",
-        "built-ins/RegExp/property-escapes/generated/Hex_Digit.js",
-        "built-ins/RegExp/property-escapes/generated/Noncharacter_Code_Point.js",
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Bhaiksuki.js",
-        "built-ins/RegExp/property-escapes/generated/Script_-_Cherokee.js",
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Gurung_Khema.js",
-        "built-ins/RegExp/property-escapes/generated/Script_-_Pahawh_Hmong.js",
-        "built-ins/RegExp/property-escapes/generated/Pattern_Syntax.js",
-        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Coptic.js",
-        "built-ins/RegExp/property-escapes/generated/Bidi_Mirrored.js"
       ]
     },
     {
