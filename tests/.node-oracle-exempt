@@ -16,6 +16,7 @@
 # --- NOT-RUNNABLE ---
 
 tests/temporalIsoStrings.js    node 25 does not implement Temporal at all, so it cannot be the oracle here; the expectations are test262's, and tools/check-temporal.sh plus the built-ins/Temporal sweep are what actually check them
+tests/temporalOptions.js       same: node 25 has no Temporal, so GetOption behaviour is checked against test262 and the built-ins/Temporal sweep rather than against node
 tests/binaryLength.js    calls __byteLength, a milojs engine intrinsic with no node equivalent
 tests/membench.js        peak-RSS benchmark; the headline number is /usr/bin/time -l, not stdout
 

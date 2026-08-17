@@ -41,7 +41,13 @@ const arg = (name: string) => { const i = process.argv.indexOf(name); return i >
 const sampleN = arg("--sample") ? parseInt(arg("--sample")!) : null;
 const subDir = arg("--dir") ?? "";
 const limit = arg("--limit") ? parseInt(arg("--limit")!) : Infinity;
-const jsonPath = arg("--json") ?? "docs/conformance/test262.json";
+// A --dir or --limit run is a DIAGNOSTIC, not the published number, and writing
+// it to the committed report silently republished "built-ins/Date, 60.8%" as the
+// whole-suite figure the README cites. Only a full or sampled whole-suite run
+// may claim that path; anything narrower goes to .dev/ unless --json says
+// otherwise.
+const isCanonical = !subDir && limit === Infinity;
+const jsonPath = arg("--json") ?? (isCanonical ? "docs/conformance/test262.json" : ".dev/test262-partial.json");
 // Every failing case with its reason, one JSON object per line. The bucket
 // listing above truncates at 8 examples per bucket, which is enough to name a
 // cluster and not enough to work one; this is the full set.

@@ -1,0 +1,15 @@
+roundingMode: null=RangeError true=RangeError string=RangeError number=RangeError bigint=RangeError object=RangeError symbol=TypeError
+smallestUnit: null=RangeError true=RangeError string=RangeError number=RangeError bigint=RangeError object=RangeError symbol=TypeError
+overflow    : null=RangeError true=RangeError string=RangeError number=RangeError bigint=RangeError object=RangeError symbol=TypeError
+options bag : null=TypeError true=TypeError string=TypeError number=TypeError bigint=TypeError object=NONE symbol=TypeError
+overflow bogus: RangeError
+roundingMode bogus: RangeError
+PlainDate.from.length: 1
+PlainTime.from.length: 1
+PlainDateTime.from.length: 1
+PlainYearMonth.from.length: 1
+PlainMonthDay.from.length: 1
+ZonedDateTime.from.length: 1
+bad string: RangeError
+options read while parsing failed: []
+coercion order: get @@toPrimitive,get toString,call toString

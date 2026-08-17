@@ -4404,13 +4404,16 @@ pub fn callNativeProg(prog: &Prog, id: i64, argVals: &Vec<JSValue>, st: &mut Int
     if id == NATIVE_STRING && argVals.len() > 0 {
         let h = objHandle(argVals[0])
         if h >= 0 {
-            // only take over when the object really has a toString to run, so
-            // callNative's prog-free array and error answers stay authoritative
-            // for everything that does not
-            let tf = getMemberDyn(prog, h, "toString", st)
-            if isCallableIn(st, tf) {
-                return JSValue.Str(toStrProg(gProg, argVals[0], st))
-            }
+            // Straight to toStrProg for any object. This used to first READ
+            // `toString` to decide whether to take over, and toStrProg then read
+            // it again as part of ToPrimitive — so `String(obj)` triggered an
+            // accessor-defined toString getter twice, and did it before
+            // @@toPrimitive rather than after. The coercion is observable and
+            // test262 watches it with an observer object.
+            // toStrProg falls back to Object.prototype.toString for an object
+            // with no own or inherited toString, which is what the probe was
+            // guarding against.
+            return JSValue.Str(toStrProg(gProg, argVals[0], st))
         }
     }
     return callNative(id, argVals, st)

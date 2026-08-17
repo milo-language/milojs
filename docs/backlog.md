@@ -3256,6 +3256,53 @@ Corpus 919 to 925, test262 873 to 874.
 
 Locked by `tests/wrapperUnwrapping.js`.
 
+## Temporal option validation, and a published number that was quietly wrong
+
+Temporal 60.7% -> 62.2% (+69). The whole family of option tests came from one
+missing abstraction: nothing in lib/temporal.js implemented **GetOption**. Every
+option was read as a bare property and coerced with `String()`, which is wrong
+three ways at once — `String(symbol)` does not throw where ToString must, an
+invalid value was accepted rather than rejected, and an object's `toString` was
+reached by a path that read it twice.
+
+- `overflow` was **never read at all**: `{ overflow: "bogus" }` and
+  `{ overflow: null }` were both silently fine. It is now validated in every
+  `from`, `with`, `add` and `subtract`.
+- The options bag's TYPE was unchecked on `with`, `add`, `subtract`, `toString`,
+  `until` and `since` across every type — 19 methods, found by probing rather
+  than by reading the spec method by method.
+- Ordering matters and is observable: `GetOptionsObject` reads no properties, so
+  checking the bag's type early is fine, but reading `overflow` must not happen
+  until the item itself has parsed. `PlainMonthDay.from("13-34", observer)` has
+  to throw RangeError without ever touching the bag.
+
+Two regressions I caused and caught by measuring rather than by inspection: the
+first version declared `options` as a second parameter, which moved `from.length`
+from 1 to 2 (+6 failures), and read `overflow` before parsing (+5). Options come
+off `arguments` now.
+
+### An engine bug underneath it
+
+`String(obj)` read `toString` twice, and read it BEFORE `@@toPrimitive` instead
+of after. The NATIVE_STRING path probed for a callable `toString` to decide
+whether to take over, and the coercion it then delegated to read the property
+again. Every other spelling — a template hole, `obj + ""`, `[obj].join("")` —
+was already correct, so this only showed up through `String()`.
+
+### The published conformance number was measured on built-ins/Date
+
+`docs/conformance/test262.json` is what the README and status.md cite, and every
+`--dir` sweep in this session had been overwriting it. The committed report said
+361/594 = 60.8% — the score for `built-ins/Date` alone — while the prose around
+it read as the whole-suite figure.
+
+The sweep now writes the canonical path only for a full or sampled WHOLE-SUITE
+run; `--dir` and `--limit` go to `.dev/test262-partial.json` unless `--json` says
+otherwise. A diagnostic cannot republish itself as the headline any more. This is
+the third measurement-integrity bug this session, after the engine-missing
+"1347 crashes" and the QuickJS failure detection — all three the same shape: the
+harness reporting confidently on something it had not actually measured.
+
 ## Capture reset in quantifiers, and a silent opcode collision
 
 Three regex/Date fixes, measured directly rather than through the whole-suite
