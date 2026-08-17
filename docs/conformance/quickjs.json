@@ -6,8 +6,8 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "87b37ed1ade91888b9fa788f778c8daff528934c",
-    "dirty": false
+    "revision": "44141dfcc2e6ad746ffa714b271b1b057c275113",
+    "dirty": true
   },
   "engine": ".dev/mj-engine",
   "selection": {
@@ -25,15 +25,15 @@
     ]
   },
   "totals": {
-    "pass": 100,
-    "fail": 49,
+    "pass": 101,
+    "fail": 48,
     "total": 149,
     "files": 58
   },
   "failureBuckets": [
     {
       "reason": "Uncaught Error: assertion failed: got |…|, expected |…|",
-      "count": 21,
+      "count": 22,
       "cases": [
         "bug1301.js:<whole>",
         "bug1302.js:<whole>",
@@ -51,6 +51,7 @@
         "test_builtin.js:test_rope",
         "test_builtin.js:test_eval",
         "test_builtin.js:test_date",
+        "test_builtin.js:test_regexp",
         "test_builtin.js:test_exception_source_pos",
         "test_builtin.js:test_function_source_pos",
         "test_builtin.js:test_exception_prepare_stack",
@@ -66,6 +67,15 @@
         "test_builtin.js:test_function",
         "test_builtin.js:test_exception_capture_stack_trace",
         "test_builtin.js:test_cur_pc"
+      ]
+    },
+    {
+      "reason": "timeout/crash (SIGTERM)",
+      "count": 3,
+      "cases": [
+        "bug1355.js:<whole>",
+        "bug1571.js:<whole>",
+        "test_builtin.js:test_proxy_is_array"
       ]
     },
     {
@@ -95,14 +105,6 @@
       ]
     },
     {
-      "reason": "timeout/crash (SIGTERM)",
-      "count": 2,
-      "cases": [
-        "bug1355.js:<whole>",
-        "test_builtin.js:test_proxy_is_array"
-      ]
-    },
-    {
       "reason": "expected uncaught SyntaxError, nothing thrown",
       "count": 1,
       "cases": [
@@ -114,20 +116,6 @@
       "count": 1,
       "cases": [
         "bug1564.js:<whole>"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: escape is not a function (in /case.js)",
-      "count": 1,
-      "cases": [
-        "bug1571.js:<whole>"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: map is not a function (in /case.js)",
-      "count": 1,
-      "cases": [
-        "bug493.js:<whole>"
       ]
     },
     {
@@ -184,13 +172,6 @@
       "count": 1,
       "cases": [
         "test_builtin.js:test_typed_array"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: cannot read property '…' of null",
-      "count": 1,
-      "cases": [
-        "test_builtin.js:test_regexp"
       ]
     },
     {

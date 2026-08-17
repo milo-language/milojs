@@ -344,6 +344,129 @@ fn reShorthandClass(p: &mut ReParse, kind: u8, negated: bool): i64 {
     return reAddNode(p, ReNode.ClassRef(ci))
 }
 
+fn reHexVal(c: u8): i64 {
+    if c >= '0' && c <= '9' {
+        return (c - '0') as i64
+    }
+    if c >= 'a' && c <= 'f' {
+        return 10 + (c - 'a') as i64
+    }
+    if c >= 'A' && c <= 'F' {
+        return 10 + (c - 'A') as i64
+    }
+    return -1
+}
+
+// `\xHH`, `\uHHHH`, `\u{H...}` and `\cX` — the escapes that name a code point by
+// NUMBER. None of them existed: `/\x41/` was the literal letter x followed by 41,
+// so it did not match "A", and anything that generates patterns mechanically
+// (RegExp.escape among them) produced patterns this engine could not read back.
+//
+// Returns a two-element vector [codePoint, bytesConsumedIncludingBackslash], or an
+// EMPTY vector when the escape at `at` is not one of these.
+fn reNumericEscape(p: &ReParse, at: i64): Vec<i64> {
+    var none: Vec<i64> = Vec.new()
+    if at + 1 >= p.pat.len() {
+        return none
+    }
+    let e = p.pat[at + 1]
+    if e == 'x' {
+        if at + 3 >= p.pat.len() {
+            return none
+        }
+        let h1 = reHexVal(p.pat[at + 2])
+        let h2 = reHexVal(p.pat[at + 3])
+        if h1 < 0 || h2 < 0 {
+            return none
+        }
+        var out: Vec<i64> = Vec.new()
+        out.push(h1 * 16 + h2)
+        out.push(4)
+        return out
+    }
+    if e == 'u' {
+        // `\u{...}` — any number of hex digits, up to the last code point
+        if at + 2 < p.pat.len() && p.pat[at + 2] == '{' {
+            var v: i64 = 0
+            var k = at + 3
+            var any = false
+            while k < p.pat.len() && p.pat[k] != '}' {
+                let h = reHexVal(p.pat[k])
+                if h < 0 {
+                    return none
+                }
+                v = v * 16 + h
+                any = true
+                k = k + 1
+            }
+            if !any || k >= p.pat.len() || v > 0x10FFFF {
+                return none
+            }
+            var out: Vec<i64> = Vec.new()
+            out.push(v)
+            out.push(k + 1 - at)
+            return out
+        }
+        if at + 5 >= p.pat.len() {
+            return none
+        }
+        var v: i64 = 0
+        var j = at + 2
+        while j <= at + 5 {
+            let h = reHexVal(p.pat[j])
+            if h < 0 {
+                return none
+            }
+            v = v * 16 + h
+            j = j + 1
+        }
+        var out: Vec<i64> = Vec.new()
+        out.push(v)
+        out.push(6)
+        return out
+    }
+    if e == 'c' {
+        // a control escape: the letter's low 5 bits
+        if at + 2 >= p.pat.len() {
+            return none
+        }
+        let l = p.pat[at + 2]
+        if (l >= 'a' && l <= 'z') || (l >= 'A' && l <= 'Z') {
+            var out: Vec<i64> = Vec.new()
+            out.push((l as i64) % 32)
+            out.push(3)
+            return out
+        }
+        return none
+    }
+    return none
+}
+
+// Append the UTF-8 encoding of a code point as one Char node per byte. RE_CHAR
+// compares a single byte, so a code point above ASCII is a byte SEQUENCE — the
+// same shape a literal multibyte character in the pattern already compiles to.
+fn reUtf8Bytes(cp: i64, out: &mut Vec<u8>) {
+    if cp < 0x80 {
+        out.push(cp as u8)
+        return
+    }
+    if cp < 0x800 {
+        out.push((0xC0 | (cp >> 6)) as u8)
+        out.push((0x80 | (cp & 0x3F)) as u8)
+        return
+    }
+    if cp < 0x10000 {
+        out.push((0xE0 | (cp >> 12)) as u8)
+        out.push((0x80 | ((cp >> 6) & 0x3F)) as u8)
+        out.push((0x80 | (cp & 0x3F)) as u8)
+        return
+    }
+    out.push((0xF0 | (cp >> 18)) as u8)
+    out.push((0x80 | ((cp >> 12) & 0x3F)) as u8)
+    out.push((0x80 | ((cp >> 6) & 0x3F)) as u8)
+    out.push((0x80 | (cp & 0x3F)) as u8)
+}
+
 fn reEscapedChar(e: u8): u8 {
     if e == 'n' {
         return 10 as u8
@@ -404,10 +527,38 @@ fn reParseClass(p: &mut ReParse): i64 {
                     reAddShorthandNeg(cls, e + 32 as u8)
                     p.pos = p.pos + 2
                 } else {
-                    let ch = reEscapedChar(e) as i32
+                    // A numeric escape is a MEMBER, and may be a range endpoint:
+                    // `[\x41-\x5A]` is A-Z, not {A, '-', Z}. The literal branch
+                    // below already handles ranges; this mirrors it for escapes.
+                    var ch: i32 = 0
+                    let num = reNumericEscape(p, p.pos)
+                    if num.len() == 2 {
+                        ch = num[0] as i32
+                        p.pos = p.pos + num[1]
+                    } else {
+                        ch = reEscapedChar(e) as i32
+                        p.pos = p.pos + 2
+                    }
+                    var hiCp = ch
+                    if p.pos + 1 < p.pat.len() && p.pat[p.pos] == '-' && p.pat[p.pos + 1] != ']' {
+                        let after = p.pos + 1
+                        if p.pat[after] == 92 as u8 {
+                            let unum = reNumericEscape(p, after)
+                            if unum.len() == 2 {
+                                hiCp = unum[0] as i32
+                                p.pos = after + unum[1]
+                            } else if after + 1 < p.pat.len() {
+                                hiCp = reEscapedChar(p.pat[after + 1]) as i32
+                                p.pos = after + 2
+                            }
+                        } else {
+                            let hiLen = reCharLenBytes(p.pat, after)
+                            hiCp = reCodePointAtBytes(p.pat, after)
+                            p.pos = after + hiLen
+                        }
+                    }
                     cls.lo.push(ch)
-                    cls.hi.push(ch)
-                    p.pos = p.pos + 2
+                    cls.hi.push(hiCp)
                 }
             } else {
                 // Members are CODE POINTS: `[à-ÿ]` is one range, not four bytes
@@ -556,6 +707,25 @@ fn reParseAtom(p: &mut ReParse): i64 {
         if e == 'B' {
             p.pos = p.pos + 2
             return reAddNode(p, ReNode.NWordB)
+        }
+        let num = reNumericEscape(p, p.pos)
+        if num.len() == 2 {
+            p.pos = p.pos + num[1]
+            var bytes: Vec<u8> = Vec.new()
+            reUtf8Bytes(num[0], bytes)
+            if bytes.len() == 1 {
+                return reAddNode(p, ReNode.Char(bytes[0]))
+            }
+            // grouped so a following quantifier binds to the whole character
+            var ids: Vec<i64> = Vec.new()
+            var nb: i64 = 0
+            while nb < bytes.len() {
+                ids.push(reAddNode(p, ReNode.Char(bytes[nb])))
+                nb = nb + 1
+            }
+            p.lists.push(ids)
+            let seq = reAddNode(p, ReNode.Concat(p.lists.len() - 1))
+            return reAddNode(p, ReNode.Group(seq, -1))
         }
         p.pos = p.pos + 2
         return reAddNode(p, ReNode.Char(reEscapedChar(e)))

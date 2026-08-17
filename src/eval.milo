@@ -9737,11 +9737,25 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             let ah = objHandle(calleeVal)
             if ah >= 0 && st.arrayCtorObj >= 0 && ah == st.arrayCtorObj {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 return makeArrayFromCtor(st, argVals)
             }
             let ph = objHandle(calleeVal)
             if ph >= 0 && isPromiseCtor(st, ph) {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 let pr = newPromise(st, 0, JSValue.Undefined)
                 pushTemp(st, JSValue.Obj(pr))
                 if argVals.len() > 0 {
@@ -9774,6 +9788,13 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     }
                     pushTemp(st, JSValue.Func(fIdx, envIdx))
                     let argVals = evalArgs(prog, argsIdx, st, scope)
+                    // An argument expression that threw ABORTS the call: without this the
+                    // callee still ran with the arguments evaluated so far, so
+                    // `arr.push(boom())` pushed a value and a Promise executor's
+                    // `resolve(boom())` settled the promise with undefined.
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
                     let obj = newObject(st)
                     // record the constructor (for instanceof) and link the
                     // instance to the constructor's prototype (for shared methods)
@@ -9809,6 +9830,13 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                         return JSValue.Undefined
                     }
                     let argVals = evalArgs(prog, argsIdx, st, scope)
+                    // An argument expression that threw ABORTS the call: without this the
+                    // callee still ran with the arguments evaluated so far, so
+                    // `arr.push(boom())` pushed a value and a Promise executor's
+                    // `resolve(boom())` settled the promise with undefined.
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
                     // Called as a function these three coerce; called with `new`
                     // they BOX. Ignoring `new` made `new Boolean(false)` falsy
                     // and `typeof new String("")` report "string".
@@ -9826,6 +9854,13 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                         let trap = proxyTrap(st, co, "construct")
                         let target = cloneValue(st.objExtras[st.objects[co].extra].proxyTarget)
                         let argVals = evalArgs(prog, argsIdx, st, scope)
+                        // An argument expression that threw ABORTS the call: without this the
+                        // callee still ran with the arguments evaluated so far, so
+                        // `arr.push(boom())` pushed a value and a Promise executor's
+                        // `resolve(boom())` settled the promise with undefined.
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                         if isCallableIn(st, trap) {
                             // construct(target, argsArray, newTarget)
                             let arr = newArray(st)
@@ -9885,6 +9920,13 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                         let bex = st.objects[co].extra
                         let btarget = cloneValue(st.objExtras[bex].boundTarget)
                         let callArgs = evalArgs(prog, argsIdx, st, scope)
+                        // An argument expression that threw ABORTS the call: without this the
+                        // callee still ran with the arguments evaluated so far, so
+                        // `arr.push(boom())` pushed a value and a Promise executor's
+                        // `resolve(boom())` settled the promise with undefined.
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                         var nargs: Vec<JSValue> = Vec.new()
                         var bj: i64 = 0
                         while bj < st.objExtras[bex].boundArgs.len() {
@@ -9927,6 +9969,13 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     }
                     if st.objExtras[st.objects[co].extra].napiFn >= 0 {
                         let argVals = evalArgs(prog, argsIdx, st, scope)
+                        // An argument expression that threw ABORTS the call: without this the
+                        // callee still ran with the arguments evaluated so far, so
+                        // `arr.push(boom())` pushed a value and a Promise executor's
+                        // `resolve(boom())` settled the promise with undefined.
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                         let inst = newObject(st)
                         match objGet(st, co, "prototype") {
                             JSValue.Obj(pr) => {
@@ -10078,6 +10127,13 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             }
             pushTemp(st, cloneValue(calleeVal))
             let argVals = evalArgs(prog, argsIdx, st, scope)
+            // An argument expression that threw ABORTS the call: without this the
+            // callee still ran with the arguments evaluated so far, so
+            // `arr.push(boom())` pushed a value and a Promise executor's
+            // `resolve(boom())` settled the promise with undefined.
+            if st.throwing {
+                return JSValue.Undefined
+            }
             popTemp(st)
             return callValue(prog, calleeVal, argVals, JSValue.Undefined, st)
         }
@@ -11813,10 +11869,47 @@ fn genFinish(st: &mut Interp, gi: i64, r: JSValue) {
 
 // Create a generator object for a `function*` call. Does NOT run the body — that
 // starts on the first next(). Registers the gen* record and returns the object.
+// %GeneratorPrototype%, created on first use. It holds nothing but the
+// @@toStringTag: `next`/`throw`/`return` are synthesised per generator object and
+// resolved before any chain walk. Its own proto is %IteratorPrototype%, which is
+// what puts the iterator helpers on every generator.
+//
+// It exists as a separate level rather than linking straight to
+// %IteratorPrototype% because that one tags itself "Iterator", and a generator
+// must report "Generator" — util.types.isGeneratorObject reads exactly that.
+fn generatorProtoHandle(st: &mut Interp): i64 {
+    if st.genProtoObj >= 0 {
+        return st.genProtoObj
+    }
+    let gp = newObject(st)
+    // published before the objSet below, which can allocate and collect: until
+    // this assignment nothing reaches gp, and collect() marks the field
+    st.genProtoObj = gp
+    if st.iterProtoObj >= 0 {
+        st.objects[gp].proto = st.iterProtoObj
+    }
+    objSet(st, gp, symToStringTagKey(), JSValue.Str("Generator"))
+    objSetNonEnumerable(st, gp, symToStringTagKey())
+    return gp
+}
+
 fn makeGenerator(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, isAsync: bool, st: &mut Interp): JSValue {
     let g = newObject(st)
     st.objects[g].isGenerator = true
     st.objects[g].isAsyncGenerator = isAsync
+    // A generator object inherits from its function's `.prototype`, which in turn
+    // inherits from %IteratorPrototype% — where the iterator helpers (map, filter,
+    // take, drop, flatMap, reduce, toArray, forEach, some, every, find) live.
+    // Without the link a generator object had no prototype at all, so
+    // `gen().map(f)` was undefined while `[].values().map(f)` worked: every other
+    // iterator in the engine already reaches that prototype.
+    let gproto = getFuncProto(st, fIdx)
+    if gproto >= 0 {
+        if st.objects[gproto].proto < 0 {
+            st.objects[gproto].proto = generatorProtoHandle(st)
+        }
+        st.objects[g].proto = gproto
+    }
     var rootedArgs: Vec<JSValue> = Vec.new()
     var ri: i64 = 0
     while ri < argVals.len() {
@@ -16098,12 +16191,26 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
         }
         if useDirectPrimitive {
             let argVals = evalArgs(prog, argsIdx, st, scope)
+            // An argument expression that threw ABORTS the call: without this the
+            // callee still ran with the arguments evaluated so far, so
+            // `arr.push(boom())` pushed a value and a Promise executor's
+            // `resolve(boom())` settled the promise with undefined.
+            if st.throwing {
+                return JSValue.Undefined
+            }
             return primitiveMethod(name, recv, argVals)
         }
     }
     match recv {
         JSValue.Str(s) => {
             let argVals = evalArgs(prog, argsIdx, st, scope)
+            // An argument expression that threw ABORTS the call: without this the
+            // callee still ran with the arguments evaluated so far, so
+            // `arr.push(boom())` pushed a value and a Promise executor's
+            // `resolve(boom())` settled the promise with undefined.
+            if st.throwing {
+                return JSValue.Undefined
+            }
             if !st.stringProtoPristine {
                 let method = getMember(st, st.stringProtoObj, name)
                 if isCallableIn(st, method) {
@@ -16142,12 +16249,26 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             // callBuiltinByName; route them there rather than duplicating
             if st.objects[o].isArrayBuffer {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 let r = callBuiltinByName(prog, JSValue.Obj(o), name, argVals, st)
                 popTemp(st)
                 return r
             }
             if st.objExtras[st.objects[o].extra].regexId >= 0 {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 let r = regexMethod(st, o, name, argVals)
                 popTemp(st)
                 return r
@@ -16164,6 +16285,13 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             }
             if st.objects[o].isBound && (name == "call" || name == "apply" || name == "bind") {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 var newThis = JSValue.Undefined
                 if argVals.len() > 0 {
                     newThis = cloneValue(argVals[0])
@@ -16285,6 +16413,13 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             }
             if name == "hasOwnProperty" || name == "isPrototypeOf" || name == "propertyIsEnumerable" {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 let r = callBuiltinByName(prog, JSValue.Obj(o), name, argVals, st)
                 popTemp(st)
                 return r
@@ -16303,18 +16438,39 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             }
             if st.objects[o].isDate {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 let r = dateMethod(st, o, name, argVals)
                 popTemp(st)
                 return r
             }
             if st.objects[o].isMap || st.objects[o].isSet {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 let r = mapMethod(prog, o, name, argVals, st)
                 popTemp(st)
                 return r
             }
             if isPromise(st, o) && (name == "then" || name == "catch" || name == "finally") {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 let r = promiseMethod(o, name, argVals, st)
                 popTemp(st)
                 return r
@@ -16328,6 +16484,13 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             // tight arr.indexOf() loop ran ~30% slower.
             if st.arrayProtoPristine && st.objects[o].isArray && st.objects[o].proto == st.arrayProtoObj && isArrayMethod(name) && objOwnIndex(st, o, name) < 0 {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 let r = arrayMethod(prog, o, name, argVals, st)
                 popTemp(st)
                 return r
@@ -16358,6 +16521,13 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                         return boxedPrimitive(st, o)
                     }
                     let argVals = evalArgs(prog, argsIdx, st, scope)
+                    // An argument expression that threw ABORTS the call: without this the
+                    // callee still ran with the arguments evaluated so far, so
+                    // `arr.push(boom())` pushed a value and a Promise executor's
+                    // `resolve(boom())` settled the promise with undefined.
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
                     let r = callBuiltinByName(prog, boxedPrimitive(st, o), name, argVals, st)
                     popTemp(st)
                     return r
@@ -16369,12 +16539,26 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             match m {
                 JSValue.Func(fIdx, envIdx) => {
                     let argVals = evalArgs(prog, argsIdx, st, scope)
+                    // An argument expression that threw ABORTS the call: without this the
+                    // callee still ran with the arguments evaluated so far, so
+                    // `arr.push(boom())` pushed a value and a Promise executor's
+                    // `resolve(boom())` settled the promise with undefined.
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
                     let r = callFunction(prog, fIdx, envIdx, argVals, JSValue.Obj(o), st)
                     popTemp(st)
                     return r
                 }
                 JSValue.Native(id) => {
                     let argVals = evalArgs(prog, argsIdx, st, scope)
+                    // An argument expression that threw ABORTS the call: without this the
+                    // callee still ran with the arguments evaluated so far, so
+                    // `arr.push(boom())` pushed a value and a Promise executor's
+                    // `resolve(boom())` settled the promise with undefined.
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
                     let r = callNativeProg(prog, id, argVals, st)
                     popTemp(st)
                     return r
@@ -16384,6 +16568,13 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                     // callable (typeof reports "function") but is not a Func/Native
                     if st.objects[fo].isBound || st.objExtras[st.objects[fo].extra].napiFn >= 0 || st.objects[fo].isProxy {
                         let argVals = evalArgs(prog, argsIdx, st, scope)
+                        // An argument expression that threw ABORTS the call: without this the
+                        // callee still ran with the arguments evaluated so far, so
+                        // `arr.push(boom())` pushed a value and a Promise executor's
+                        // `resolve(boom())` settled the promise with undefined.
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                         let r = callValue(prog, JSValue.Obj(fo), argVals, JSValue.Obj(o), st)
                         popTemp(st)
                         return r
@@ -16398,6 +16589,13 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                     // methods (toString/valueOf) fall through to here
                     if name == "toString" || name == "valueOf" {
                         let argVals = evalArgs(prog, argsIdx, st, scope)
+                        // An argument expression that threw ABORTS the call: without this the
+                        // callee still ran with the arguments evaluated so far, so
+                        // `arr.push(boom())` pushed a value and a Promise executor's
+                        // `resolve(boom())` settled the promise with undefined.
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                         let r = callBuiltinByName(prog, JSValue.Obj(o), name, argVals, st)
                         popTemp(st)
                         return r
@@ -16420,6 +16618,13 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             // (Math.max.apply(null, arr) etc.) — dispatch through callBuiltinByName
             if name == "apply" || name == "call" || name == "bind" {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 return callBuiltinByName(prog, JSValue.Native(nid), name, argVals, st)
             }
             // statics hanging off a native constructor, e.g. String.fromCharCode
@@ -16427,12 +16632,26 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             let assigned = getMember(st, bag, name)
             if isCallable(assigned) {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 return callValue(prog, assigned, argVals, JSValue.Native(nid), st)
             }
             if nid == NATIVE_DATE && st.dateCtorProps >= 0 {
                 let m = getMember(st, st.dateCtorProps, name)
                 if isCallable(m) {
                     let argVals = evalArgs(prog, argsIdx, st, scope)
+                    // An argument expression that threw ABORTS the call: without this the
+                    // callee still ran with the arguments evaluated so far, so
+                    // `arr.push(boom())` pushed a value and a Promise executor's
+                    // `resolve(boom())` settled the promise with undefined.
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
                     return callValue(prog, m, argVals, JSValue.Undefined, st)
                 }
             }
@@ -16440,6 +16659,13 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                 let m = getMember(st, st.stringCtorProps, name)
                 if isCallable(m) {
                     let argVals = evalArgs(prog, argsIdx, st, scope)
+                    // An argument expression that threw ABORTS the call: without this the
+                    // callee still ran with the arguments evaluated so far, so
+                    // `arr.push(boom())` pushed a value and a Promise executor's
+                    // `resolve(boom())` settled the promise with undefined.
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
                     return callValue(prog, m, argVals, JSValue.Undefined, st)
                 }
             }
@@ -16460,12 +16686,26 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                     let own = getMemberDyn(prog, ownStatics, name, st)
                     if isCallableIn(st, own) {
                         let argVals = evalArgs(prog, argsIdx, st, scope)
+                        // An argument expression that threw ABORTS the call: without this the
+                        // callee still ran with the arguments evaluated so far, so
+                        // `arr.push(boom())` pushed a value and a Promise executor's
+                        // `resolve(boom())` settled the promise with undefined.
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                         return callValue(prog, own, argVals, JSValue.Func(bf, benv), st)
                     }
                 }
             }
             if name == "bind" {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 var extra: Vec<JSValue> = Vec.new()
                 var bi: i64 = 1
                 while bi < argVals.len() {
@@ -16486,6 +16726,13 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             }
             if name == "call" || name == "apply" {
                 var argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 var thisArg = JSValue.Undefined
                 var rest: Vec<JSValue> = Vec.new()
                 if argVals.len() > 0 {
@@ -16530,12 +16777,26 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             let mf = funcHandle(m)
             if mf >= 0 {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 return callValue(prog, m, argVals, JSValue.Func(bf, benv), st)
             }
             // a static whose value is a callable object (a bound method, or a
             // generator returned by an accessor) is still callable
             if isCallableIn(st, m) {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 return callValue(prog, m, argVals, JSValue.Func(bf, benv), st)
             }
             st.throwing = true
@@ -16802,6 +17063,13 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                 let baseVal = scopeLookup(st, scope, fname)
                 let thisVal = scopeLookup(st, scope, "this")
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 // A native base constructor (class X extends Error) would build
                 // and return its own object, discarding `this`. Initialise the
                 // instance in place instead, so this.message is set and the
@@ -16839,6 +17107,13 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
             // the REPL's global one.
             if fname == "eval" && !scopeHasBelowGlobal(st, scope, "eval") {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 if argVals.len() == 0 {
                     return JSValue.Undefined
                 }
@@ -16854,6 +17129,13 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
             }
             if fname == "require" {
                 let argVals = evalArgs(prog, argsIdx, st, scope)
+                // An argument expression that threw ABORTS the call: without this the
+                // callee still ran with the arguments evaluated so far, so
+                // `arr.push(boom())` pushed a value and a Promise executor's
+                // `resolve(boom())` settled the promise with undefined.
+                if st.throwing {
+                    return JSValue.Undefined
+                }
                 var spec = ""
                 if argVals.len() > 0 {
                     spec = toStr(argVals[0])
@@ -16872,6 +17154,13 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                     // test harnesses and output capture all work.
                     if objName == "console" && (name == "log" || name == "error" || name == "warn" || name == "info" || name == "debug" || name == "trace" || name == "dir") && consoleMethodIsPristine(st, scope, name) {
                         let argVals = evalArgs(prog, argsIdx, st, scope)
+                        // An argument expression that threw ABORTS the call: without this the
+                        // callee still ran with the arguments evaluated so far, so
+                        // `arr.push(boom())` pushed a value and a Promise executor's
+                        // `resolve(boom())` settled the promise with undefined.
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                         // an argument that threw must not still be printed
                         if st.throwing {
                             return JSValue.Undefined
@@ -16922,6 +17211,13 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                             let m = getMember(st, baseProto, name)
                             let thisVal = scopeLookup(st, scope, "this")
                             let argVals = evalArgs(prog, argsIdx, st, scope)
+                            // An argument expression that threw ABORTS the call: without this the
+                            // callee still ran with the arguments evaluated so far, so
+                            // `arr.push(boom())` pushed a value and a Promise executor's
+                            // `resolve(boom())` settled the promise with undefined.
+                            if st.throwing {
+                                return JSValue.Undefined
+                            }
                             return callValue(prog, m, argVals, thisVal, st)
                         }
                     }
@@ -16996,12 +17292,26 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                 JSValue.Func(fIdx, envIdx) => {
                     pushTemp(st, JSValue.Func(fIdx, envIdx))
                     let argVals = evalArgs(prog, argsIdx, st, scope)
+                    // An argument expression that threw ABORTS the call: without this the
+                    // callee still ran with the arguments evaluated so far, so
+                    // `arr.push(boom())` pushed a value and a Promise executor's
+                    // `resolve(boom())` settled the promise with undefined.
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
                     let r = callFunction(prog, fIdx, envIdx, argVals, JSValue.Undefined, st)
                     popTemp(st)
                     return r
                 }
                 JSValue.Native(id) => {
                     let argVals = evalArgs(prog, argsIdx, st, scope)
+                    // An argument expression that threw ABORTS the call: without this the
+                    // callee still ran with the arguments evaluated so far, so
+                    // `arr.push(boom())` pushed a value and a Promise executor's
+                    // `resolve(boom())` settled the promise with undefined.
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
                     return callNativeProg(prog, id, argVals, st)
                 }
                 JSValue.Obj(bo) => {
@@ -17009,11 +17319,25 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                     // objects rather than Func/Native values
                     if st.objects[bo].isBound || st.objects[bo].isProxy || st.objExtras[st.objects[bo].extra].napiFn >= 0 {
                         let argVals = evalArgs(prog, argsIdx, st, scope)
+                        // An argument expression that threw ABORTS the call: without this the
+                        // callee still ran with the arguments evaluated so far, so
+                        // `arr.push(boom())` pushed a value and a Promise executor's
+                        // `resolve(boom())` settled the promise with undefined.
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                         return callValue(prog, JSValue.Obj(bo), argVals, JSValue.Undefined, st)
                     }
                     // Array(n) without `new` behaves identically to new Array(n)
                     if st.arrayCtorObj >= 0 && bo == st.arrayCtorObj {
                         let argVals = evalArgs(prog, argsIdx, st, scope)
+                        // An argument expression that threw ABORTS the call: without this the
+                        // callee still ran with the arguments evaluated so far, so
+                        // `arr.push(boom())` pushed a value and a Promise executor's
+                        // `resolve(boom())` settled the promise with undefined.
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                         return makeArrayFromCtor(st, argVals)
                     }
                     st.throwing = true

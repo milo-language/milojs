@@ -6,8 +6,8 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "87b37ed1ade91888b9fa788f778c8daff528934c",
-    "dirty": false
+    "revision": "44141dfcc2e6ad746ffa714b271b1b057c275113",
+    "dirty": true
   },
   "engine": ".dev/mj-engine",
   "selection": {
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 969,
-    "fail": 501,
+    "pass": 971,
+    "fail": 499,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -56,8 +56,8 @@
     },
     {
       "area": "built-ins/RegExp",
-      "pass": 47,
-      "fail": 26,
+      "pass": 48,
+      "fail": 25,
       "total": 73
     },
     {
@@ -80,8 +80,8 @@
     },
     {
       "area": "built-ins/Iterator",
-      "pass": 9,
-      "fail": 15,
+      "pass": 10,
+      "fail": 14,
       "total": 24
     },
     {
@@ -948,6 +948,14 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Expected a RangeError to be thrown but no exception was thrown at all",
+      "count": 2,
+      "cases": [
+        "built-ins/Temporal/Duration/prototype/round/invalid-increments.js",
+        "built-ins/Iterator/prototype/drop/limit-rangeerror.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Expected a ReferenceError to be thrown but no exception was thrown at ",
       "count": 2,
       "cases": [
@@ -1321,27 +1329,6 @@
       "count": 1,
       "cases": [
         "language/eval-code/direct/gen-meth-a-preceding-parameter-is-named-arguments-declare-arguments-and-assign.js"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: drop is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh000",
-      "count": 1,
-      "cases": [
-        "built-ins/Iterator/prototype/drop/limit-rangeerror.js"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: escape is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh0",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/escape/escaped-control-characters.js"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: every is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh00",
-      "count": 1,
-      "cases": [
-        "built-ins/Iterator/prototype/every/predicate-this.js"
       ]
     },
     {
@@ -1944,13 +1931,6 @@
       "count": 1,
       "cases": [
         "built-ins/Atomics/wait/out-of-range-index-throws.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Expected a RangeError to be thrown but no exception was thrown at all",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/Duration/prototype/round/invalid-increments.js"
       ]
     },
     {
