@@ -89,10 +89,7 @@ _Undocumented._
 pub fn hoistBlock(prog: &Prog, blockId: BlockId, st: &mut Interp, scope: i64)
 ```
 
-Bind `var` declarations and function declarations for a whole function body
-before it runs. JS hoists both to the function scope through arbitrary
-nesting, so this walks into blocks, loops, if/else, switch and try — unlike
-let/const, which stay in the block they are written in.
+_Undocumented._
 
 ### `inspectTop`
 

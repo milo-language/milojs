@@ -18469,6 +18469,20 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
         }
         Stmt.FuncDecl(f) => {
             let name = prog.funcs[f].name.clone()
+            // Annex B B.3.3: a function declared inside a BLOCK also writes its
+            // value to the var-scoped binding the hoist created for it, which is
+            // what keeps it visible after the block. Only a scope that RECORDED the
+            // name is written: a `let` of the same name is left alone, and there is
+            // no global fallback, because absence means the hoist declined.
+            var s = st.scopes[scope].parent
+            while s >= 0 {
+                if nameInList(st.scopes[s].annexBFns, name) {
+                    scopeDefine(st, s, name.clone(), JSValue.Func(f, scope))
+                    s = -1
+                } else {
+                    s = st.scopes[s].parent
+                }
+            }
             scopeDefine(st, scope, name, JSValue.Func(f, scope))
             return Flow.Normal
         }
@@ -18508,21 +18522,111 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
 // before it runs. JS hoists both to the function scope through arbitrary
 // nesting, so this walks into blocks, loops, if/else, switch and try — unlike
 // let/const, which stay in the block they are written in.
-pub fn hoistBlock(prog: &Prog, blockId: BlockId, st: &mut Interp, scope: i64) {
+// Names lexically declared DIRECTLY in this block (`let`, `const`, `class`).
+// Annex B B.3.3 refuses to hoist a block-level function declaration past one of
+// these: `let q = 1; { function q(){} }` leaves `q` as 1, while
+// `var v = 1; { function v(){} }` sets `v` to the function.
+fn collectLexicalNames(prog: &Prog, blockId: BlockId, out: &mut Vec<string>) {
     var i: i64 = 0
-    let n = prog.blocks[blockId.index].len()
-    while i < n {
-        hoistStmt(prog, prog.blocks[blockId.index][i], st, scope)
+    while i < prog.blocks[blockId.index].len() {
+        match prog.stmts[prog.blocks[blockId.index][i].index] {
+            Stmt.MultiDecl(listIdx) => {
+                var d: i64 = 0
+                while d < prog.declLists[listIdx.index].len() {
+                    if !prog.declLists[listIdx.index][d].isVar {
+                        let nm = prog.declLists[listIdx.index][d].name.clone()
+                        if nm.len() > 0 {
+                            out.push(nm)
+                        }
+                    }
+                    d = d + 1
+                }
+            }
+            Stmt.ClassDecl(c) => {
+                let cn = prog.classes[c].name.clone()
+                if cn.len() > 0 {
+                    out.push(cn)
+                }
+            }
+            _ => {
+            }
+        }
         i = i + 1
     }
 }
 
-fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64) {
+fn nameInList(list: &Vec<string>, name: &string): bool {
+    var i: i64 = 0
+    while i < list.len() {
+        if list[i] == name.clone() {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+fn cloneNameList(list: &Vec<string>): Vec<string> {
+    var out: Vec<string> = Vec.new()
+    var i: i64 = 0
+    while i < list.len() {
+        out.push(list[i].clone())
+        i = i + 1
+    }
+    return out
+}
+
+// The scope holds a var binding created on a block-level function's behalf.
+fn recordAnnexB(st: &mut Interp, scope: i64, name: &string) {
+    if !nameInList(st.scopes[scope].annexBFns, name) {
+        st.scopes[scope].annexBFns.push(name.clone())
+    }
+}
+
+pub fn hoistBlock(prog: &Prog, blockId: BlockId, st: &mut Interp, scope: i64) {
+    // Depth 0 is a function BODY (or program) level: a function declared here is
+    // initialized before the body runs, so it hoists with its value. Anything
+    // deeper takes the Annex B path in hoistStmt.
+    var shadow: Vec<string> = Vec.new()
+    collectLexicalNames(prog, blockId, shadow)
+    hoistBlockInner(prog, blockId, st, scope, false, shadow)
+}
+
+fn hoistBlockInner(prog: &Prog, blockId: BlockId, st: &mut Interp, scope: i64, nested: bool, shadow: &Vec<string>) {
+    var i: i64 = 0
+    let n = prog.blocks[blockId.index].len()
+    while i < n {
+        hoistStmt(prog, prog.blocks[blockId.index][i], st, scope, nested, shadow)
+        i = i + 1
+    }
+}
+
+// Descend into a nested block, carrying the lexical names seen so far plus its own.
+fn hoistNestedBlock(prog: &Prog, blockId: BlockId, st: &mut Interp, scope: i64, shadow: &Vec<string>) {
+    var inner = cloneNameList(shadow)
+    collectLexicalNames(prog, blockId, inner)
+    hoistBlockInner(prog, blockId, st, scope, true, inner)
+}
+
+fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64, nested: bool, shadow: &Vec<string>) {
     match prog.stmts[id.index] {
         Stmt.FuncDecl(fIdx) => {
             let fname = prog.funcs[fIdx].name.clone()
             if fname.len() > 0 {
-                scopeDefine(st, scope, fname, JSValue.Func(fIdx, scope))
+                if !nested {
+                    scopeDefine(st, scope, fname, JSValue.Func(fIdx, scope))
+                } else if !nameInList(shadow, fname) {
+                    // Annex B B.3.3: the hoist creates the var-scoped binding but
+                    // leaves it UNDEFINED. The function value is written when the
+                    // declaration is evaluated, which is why `typeof f` before
+                    // `if (true) function f(){}` is "undefined" and why
+                    // `if (false) function h(){}` leaves h undefined rather than a
+                    // function that never ran.
+                    if !scopeHasOwn(st, scope, fname) {
+                        scopeDefine(st, scope, fname.clone(), JSValue.Undefined)
+                    }
+                    recordAnnexB(st, scope, fname)
+                }
             }
         }
         Stmt.MultiDecl(listIdx) => {
@@ -18538,52 +18642,52 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64) {
             }
         }
         Stmt.Block(b) => {
-            hoistBlock(prog, b, st, scope)
+            hoistNestedBlock(prog, b, st, scope, shadow)
         }
         Stmt.If(_c, thenS, elseS) => {
-            hoistStmt(prog, thenS, st, scope)
+            hoistStmt(prog, thenS, st, scope, true, shadow)
             match elseS {
                 Option.Some(elseStmt) => {
-                    hoistStmt(prog, elseStmt, st, scope)
+                    hoistStmt(prog, elseStmt, st, scope, true, shadow)
                 }
                 Option.None => {
                 }
             }
         }
         Stmt.While(_c, body) => {
-            hoistStmt(prog, body, st, scope)
+            hoistStmt(prog, body, st, scope, true, shadow)
         }
         Stmt.DoWhile(body, _c) => {
-            hoistStmt(prog, body, st, scope)
+            hoistStmt(prog, body, st, scope, true, shadow)
         }
         Stmt.For(init, _c, _u, body) => {
             match init {
                 Option.Some(initStmt) => {
-                    hoistStmt(prog, initStmt, st, scope)
+                    hoistStmt(prog, initStmt, st, scope, nested, shadow)
                 }
                 Option.None => {
                 }
             }
-            hoistStmt(prog, body, st, scope)
+            hoistStmt(prog, body, st, scope, true, shadow)
         }
         Stmt.ForIn(_nm, _o, body) => {
-            hoistStmt(prog, body, st, scope)
+            hoistStmt(prog, body, st, scope, true, shadow)
         }
         Stmt.ForOf(_nm, _o, body, _aw) => {
-            hoistStmt(prog, body, st, scope)
+            hoistStmt(prog, body, st, scope, true, shadow)
         }
         Stmt.Try(tryB, _p, catchB, finallyB) => {
-            hoistBlock(prog, tryB, st, scope)
+            hoistNestedBlock(prog, tryB, st, scope, shadow)
             match catchB {
                 Option.Some(catchBlock) => {
-                    hoistBlock(prog, catchBlock, st, scope)
+                    hoistNestedBlock(prog, catchBlock, st, scope, shadow)
                 }
                 Option.None => {
                 }
             }
             match finallyB {
                 Option.Some(finallyBlock) => {
-                    hoistBlock(prog, finallyBlock, st, scope)
+                    hoistNestedBlock(prog, finallyBlock, st, scope, shadow)
                 }
                 Option.None => {
                 }
@@ -18592,7 +18696,7 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64) {
         Stmt.Switch(_d, casesIdx) => {
             var c: i64 = 0
             while c < prog.switches[casesIdx.index].len() {
-                hoistBlock(prog, prog.switches[casesIdx.index][c].body, st, scope)
+                hoistNestedBlock(prog, prog.switches[casesIdx.index][c].body, st, scope, shadow)
                 c = c + 1
             }
         }

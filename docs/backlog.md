@@ -1369,45 +1369,42 @@ conservative estimate, it is a wrong one. The 2026-08-16 note had already worked
 out the right representation in its own second paragraph and then costed the first
 one.
 
-### Annex B block-level function hoisting — SCOPED, not started
+### Annex B block-level function hoisting — DONE 2026-08-17
 
-Worth ~20 sampled test262 cases (`annexB/language/eval-code/*`,
-`annexB/language/{global,function}-code/*`, and the "An initialized binding is not
-created prior to eval" bucket). Deliberately NOT started half-way, because the
-half that is easy is the half that breaks working code.
+Was scoped earlier the same day as "not started, wants a whole session", with the
+blocker identified as needing var-vs-lexical tracking. Both halves turned out
+cheaper than the note predicted, and the note's own proposed design was more work
+than what shipped.
 
-What we do now: `hoistStmt` recurses into nested blocks and `if` bodies and defines
-the function VALUE in the enclosing var scope. So `typeof f` BEFORE
-`if (true) function f(){}` answers `"function"`, and `if (false) function h(){}`
-leaves `h` a function that was never evaluated.
+The old behaviour hoisted the function VALUE out of nested blocks, so `typeof f`
+BEFORE `if (true) function f(){}` answered `"function"` and
+`if (false) function h(){}` left `h` a function that had never been evaluated.
+B.3.3 creates the var-scoped binding as **undefined** and assigns the value when
+the declaration is EVALUATED.
 
-What B.3.3 says: the hoist creates a var-scoped binding initialized to
-**undefined**; the function value is assigned when the declaration is EVALUATED.
-So `typeof f` before is `"undefined"`, `h` after a false branch is `undefined`, and
-the name is still visible after the block.
-
-The blocker is the conflict rule, and it is why this is not a one-liner:
+The conflict rule is the part that needed care, because the two cases are
+indistinguishable from a `Binding`:
 
     (function(){ let q = 1; { function q(){} } return q; })()   // node: 1
-    (function(){ var v = 1; { function v(){} } return v; })()   // node: function
+    (function(){ var v = 1; { function v(){} } return typeof v; })()  // node: function
 
-B.3.3 skips the hoist and the assignment when a LEXICAL declaration of the name is
-in scope, and performs both when a `var` is. This engine's `Binding` is
-`{name, value}` with no var-vs-lexical distinction, so at runtime the two cases are
-indistinguishable. Every cheap proxy fails one of them: "assign only if currently
-undefined" breaks the `var v = 1` case, "assign only if we created the placeholder"
-breaks it too, and "always assign" overwrites the `let`.
+**What shipped, and why it is smaller than the plan.** The scoped note proposed
+recording lexical names per block in the PARSER. Not needed: `hoistStmt` already
+walks the statements it needs, so `collectLexicalNames` computes the shadow set
+during the hoist and `hoistStmt` carries it down (plus a `nested: bool` it did not
+have). And rather than teach `Binding` about var-vs-lexical, `Scope` grew an
+`annexBFns` list of the names the hoist created a placeholder for. Exec-time
+write-back walks up to the first scope that RECORDED the name — so a `let` is never
+touched, a `var` is, and there is no global fallback, because absence means the
+hoist declined. Three files, no parser change.
 
-**The design to build:** compute it statically. The parser already tracks lexical
-declarations per block — that is what makes `let x; var x;` an early SyntaxError —
-so have it record, per block, the set of lexically-declared names, and have
-`hoistStmt` (which needs a `nested: bool` it does not have yet) skip any name
-lexically declared in an enclosing block up to the function body. Then the
-block-exec assignment is unconditional and correct, because the conflicting cases
-never got a binding to assign.
+Measured: whole-suite sample 68.2% to **68.6%**.
 
-Order it after the cheaper Array/Iterator work; it is a parser + hoist + exec
-change across three files and wants a whole session, not the tail of one.
+**Lesson:** the estimate was right that a partial version would trade passes for
+regressions, and wrong about what "complete" cost. Both of this file's two
+size estimates today (this and `\p{...}`) were pessimistic for the same reason —
+they priced a design sketched in the same paragraph rather than the cheapest design
+that satisfies the requirement. Sketch the alternative before quoting the number.
 
 ### A throwing argument did not abort its call — DONE 2026-08-17
 

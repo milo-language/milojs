@@ -359,6 +359,13 @@ struct Scope {
     // recycled env index can never surface a dead closure's statics.
     fnStatKeys: Vec<i64>,
     fnStatVals: Vec<i64>,
+    // Annex B B.3.3: names for which the hoist created a var-scoped placeholder on
+    // behalf of a function declared inside a nested BLOCK. When that declaration is
+    // evaluated, the value is written back here as well as into the block scope, so
+    // the function stays visible after the block. Recorded rather than inferred: a
+    // Binding does not say whether it is var or lexical, and the spec assigns
+    // through a `var` while leaving a `let` alone.
+    annexBFns: Vec<string>,
 }
 
 // A heap object: an ordered list of string-keyed properties. `free` marks a
@@ -1965,7 +1972,7 @@ pub fn newScope(st: &mut Interp, parent: i64): i64 {
     st.allocSinceGc = st.allocSinceGc + 1
     let sc = Scope {
         parent: parent, vars: Vec.new(), mark: false,
-        fnStatKeys: Vec.new(), fnStatVals: Vec.new()
+        fnStatKeys: Vec.new(), fnStatVals: Vec.new(), annexBFns: Vec.new()
     }
     if st.freeList.len() > 0 {
         let idx = st.freeList.pop()!
