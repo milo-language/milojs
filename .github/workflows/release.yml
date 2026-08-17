@@ -70,8 +70,10 @@ jobs:
 
       # Stamp build identity into the binary. `.version` is embedded via embedFile(),
       # so this must happen before the build; the committed value is "dev".
+      # Only the BUILD half — src/version.milo supplies the semver and wraps this
+      # in parens, so the binary reports `milojs 0.1.0 (<sha> <date>)`.
       - name: stamp version
-        run: printf '%s (%s)' "$(git rev-parse --short HEAD)" "$(date -u +%Y-%m-%d)" > .version
+        run: printf '%s %s' "$(git rev-parse --short HEAD)" "$(date -u +%Y-%m-%d)" > .version
 
       - name: build engine and runtime
         run: |

@@ -92,6 +92,16 @@ build_one() {
 ENGINE_ERR="$DEV_DIR/.engine-build.err"
 RUNTIME_ERR="$DEV_DIR/.runtime-build.err"
 
+# Stamp the commit into .version so a locally built binary identifies itself the
+# way a released one does (`milojs-engine 0.1.0 (dev <sha>)`). Committed as bare
+# "dev" and restored on exit — including on interrupt — so the working tree stays
+# clean and the conformance sweeps, which refuse a dirty checkout, are unaffected.
+restore_version() { printf 'dev' > .version; }
+if git rev-parse --short HEAD >/dev/null 2>&1; then
+  trap restore_version EXIT INT TERM
+  printf 'dev %s' "$(git rev-parse --short HEAD)" > .version
+fi
+
 build_one src/milojs-engine.milo "$ENGINE_BIN" "$ENGINE_ERR" &
 engine_pid=$!
 build_one src/milojs.milo "$RUNTIME_BIN" "$RUNTIME_ERR" &
