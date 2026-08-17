@@ -6,8 +6,8 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "d06f55e32a4bd4b23cf144087d762947f200032e",
-    "dirty": false
+    "revision": "ff0854291360bccca5caa370e27f0eac2f635a62",
+    "dirty": true
   },
   "engine": ".dev/mj-engine",
   "selection": {
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 994,
-    "fail": 476,
+    "pass": 996,
+    "fail": 474,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -50,8 +50,8 @@
     },
     {
       "area": "built-ins/Array",
-      "pass": 52,
-      "fail": 39,
+      "pass": 54,
+      "fail": 37,
       "total": 91
     },
     {
@@ -1675,13 +1675,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: arr.flatMap(mapperFn) throws a TypeError exception Expected a TypeErro",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/flatMap/this-value-ctor-object-species-bad-throws.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: arr.hasOwnProperty(\"N\") must return true Expected SameValue(«false», «",
       "count": 1,
       "cases": [
@@ -2554,13 +2547,6 @@
       "count": 1,
       "cases": [
         "built-ins/String/prototype/split/instance-is-math.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: The value of called is expected to be N Expected SameValue(«N», «N») t",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/flatMap/this-value-ctor-object-species.js"
       ]
     },
     {

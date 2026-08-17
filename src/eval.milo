@@ -15775,6 +15775,10 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         if start + delCount > n {
             delCount = n - start
         }
+        let spliceSpecies = arraySpeciesCreate(prog, o, 0, st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
         let removed = newArray(st)
         pushTemp(st, JSValue.Obj(removed))
         var kept: Vec<JSValue> = Vec.new()
@@ -15803,6 +15807,9 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         }
         st.objects[o].elems = kept
         popTemp(st)
+        if spliceSpecies >= 0 {
+            return transferToSpecies(prog, removed, spliceSpecies, st)
+        }
         return JSValue.Obj(removed)
     }
     if name == "sort" {
@@ -16186,6 +16193,10 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         return acc
     }
     if name == "flatMap" {
+        let flatMapSpecies = arraySpeciesCreate(prog, o, 0, st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
         let out = newArray(st)
         pushTemp(st, JSValue.Obj(out))
         let thisArg = cbThisArg(args)
@@ -16214,6 +16225,9 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         popTemp(st)
         popTemp(st)
         popTemp(st)
+        if flatMapSpecies >= 0 {
+            return transferToSpecies(prog, out, flatMapSpecies, st)
+        }
         return JSValue.Obj(out)
     }
     if name == "flat" {
@@ -16229,11 +16243,18 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
                 depth = dn as i64
             }
         }
+        let flatSpecies = arraySpeciesCreate(prog, o, 0, st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
         let out = newArray(st)
         pushTemp(st, JSValue.Obj(out))
         flattenInto(st, out, o, depth)
         popTemp(st)
         popTemp(st)
+        if flatSpecies >= 0 {
+            return transferToSpecies(prog, out, flatSpecies, st)
+        }
         return JSValue.Obj(out)
     }
     popTemp(st)
@@ -17131,8 +17152,17 @@ pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
     // makes `eval("var q = 6")` visible afterwards), but `let`, `const` and
     // `class` are scoped to the eval itself and must not leak. Hoisting into the
     // caller and executing in a child of it gives both.
-    hoistBlock(gProg, top, st, scope)
+    //
+    // STRICT eval is the exception: it gets its own variable environment, so even
+    // `var` stays inside. That is the whole reason strict eval is safe to use —
+    // `"use strict"; eval("var x = 1")` must not introduce `x` — and hoisting into
+    // the caller made every strict eval leak.
     let evalScope = newScope(st, scope)
+    var hoistTarget = scope
+    if st.strict {
+        hoistTarget = evalScope
+    }
+    hoistBlock(gProg, top, st, hoistTarget)
     var result = JSValue.Undefined
     let n = gProg.blocks[top.index].len()
     var i: i64 = 0
