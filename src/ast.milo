@@ -256,6 +256,10 @@ pub struct ClassDef {
     // here: they are injected as `this.name = init` statements into the ctor.
     staticFieldNames: Vec<string>,
     staticFieldInits: Vec<ExprId>,
+    // `static [expr] = init`: the key expression, evaluated in the class scope.
+    // None for an ordinary named field and for a `static { }` block, which is
+    // the one member that legitimately has an empty name.
+    staticFieldKeys: Vec<Option<ExprId>>,
 }
 
 // One `case v:` / `default:` arm. `test` is -1 for default. Bodies are separate

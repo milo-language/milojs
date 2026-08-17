@@ -2179,7 +2179,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     // the slot is reserved before the body is parsed so the class has a unique
     // index to key its super binding on while `super(...)` is being rewritten
     prog.classes.push(ClassDef {
-        name: "", superKey: "", superName: "", ctorFn: -1, defaultCtor: -1, members: Vec.new(), staticFieldNames: Vec.new(), staticFieldInits: Vec.new()
+        name: "", superKey: "", superName: "", ctorFn: -1, defaultCtor: -1, members: Vec.new(), staticFieldNames: Vec.new(), staticFieldInits: Vec.new(), staticFieldKeys: Vec.new()
     }
     )
     let classIdx = prog.classes.len() - 1
@@ -2207,6 +2207,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     // and static-field (name, init) pairs collected while scanning the body
     var fieldStmts: Vec<StmtId> = Vec.new()
     var staticFieldNames: Vec<string> = Vec.new()
+    var staticFieldKeys: Vec<Option<ExprId>> = Vec.new()
     var staticFieldInits: Vec<ExprId> = Vec.new()
     while peekKind(p) != T_RBRACE && peekKind(p) != T_EOF {
         if peekKind(p) == T_SEMI {
@@ -2242,6 +2243,8 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                 p.strict = sbSaved
                 staticFieldNames.push("")
                 staticFieldInits.push(addExpr(prog, Expr.FuncExpr(prog.funcs.len() - 1)))
+                // the three vectors are parallel; a static block has no key
+                staticFieldKeys.push(Option.None)
                 continue
             }
             if peekKind(p) == T_ASYNC && p.pos + 1 < p.toks.len() && p.toks[p.pos + 1].kind != T_LPAREN {
@@ -2334,9 +2337,25 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                 if isStatic {
                     staticFieldNames.push(mname.clone())
                     staticFieldInits.push(initE)
+                    staticFieldKeys.push(mkeyExpr)
                 } else {
                     let thisE = addExpr(prog, Expr.Ident("this"))
-                    let keyE = addExpr(prog, Expr.StrLit(mname.clone()))
+                    // `[expr] = init` — the computed key was parsed but then
+                    // thrown away here, so every computed field was installed
+                    // under the empty string and read back as undefined.
+                    //
+                    // Known divergence: the spec evaluates a computed key ONCE,
+                    // when the class is defined. This re-evaluates it per
+                    // construction, which is only observable for a key
+                    // expression with side effects.
+                    var keyE = addExpr(prog, Expr.StrLit(mname.clone()))
+                    match mkeyExpr {
+                        Option.Some(ke) => {
+                            keyE = ke
+                        }
+                        Option.None => {
+                        }
+                    }
                     let setE = addExpr(prog, Expr.SetMember(thisE, keyE, initE))
                     fieldStmts.push(addStmt(prog, Stmt.ExprStmt(setE)))
                 }
@@ -2403,7 +2422,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     }
     p.strict = classSaved
     prog.classes[classIdx] = ClassDef {
-        name: name, superKey: superKey, superName: superName, ctorFn: ctorFn, defaultCtor: defaultCtor, members: members, staticFieldNames: staticFieldNames, staticFieldInits: staticFieldInits
+        name: name, superKey: superKey, superName: superName, ctorFn: ctorFn, defaultCtor: defaultCtor, members: members, staticFieldNames: staticFieldNames, staticFieldInits: staticFieldInits, staticFieldKeys: staticFieldKeys
     }
     return classIdx
 }

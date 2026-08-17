@@ -13812,7 +13812,17 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
     // the class binding and static methods) and set on the constructor object
     var sf: i64 = 0
     while sf < prog.classes[classIdx].staticFieldNames.len() {
-        let sfName = prog.classes[classIdx].staticFieldNames[sf].clone()
+        var sfName = prog.classes[classIdx].staticFieldNames[sf].clone()
+        // `static [expr] = init`: the key is evaluated first, and in the class
+        // scope, so it can see the class binding
+        match prog.classes[classIdx].staticFieldKeys[sf] {
+            Option.Some(keyExpr) => {
+                let kv = evalExpr(prog, keyExpr, st, classScope)
+                sfName = toStrProg(prog, kv, st)
+            }
+            Option.None => {
+            }
+        }
         let sfInit = prog.classes[classIdx].staticFieldInits[sf]
         let statics = getFuncStatics(st, ctorFn, classScope)
         let sfVal = evalExpr(prog, sfInit, st, classScope)
