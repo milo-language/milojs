@@ -1,0 +1,14 @@
+const t=(l,src)=>{ try { (0,eval)(src); console.log(l,"accepted"); } catch(e){ console.log(l, e.constructor.name); } };
+t("let/let", "let a1=1; let a1=2;");
+t("const/const", "const a2=1; const a2=2;");
+t("let/var", "let a3=1; var a3=2;");
+t("var/let", "var a4=1; let a4=2;");
+t("class/let", "class a5{}; let a5;");
+t("let/function", "let a6=1; function a6(){}");
+t("var/var ok", "var a7=1; var a7=2;");
+t("fn/fn ok", "function a8(){}; function a8(){}");
+t("nested block ok", "let a9=1; { let a9=2; }");
+t("sibling for ok", "for (let i=0;i<1;i++){} for (let i=0;i<1;i++){}");
+t("destructure dup", "let {b1}=({b1:1}); let b1=2;");
+t("destructure ok", "let [c1,c2]=[1,2]; let [c3]=[3];");
+t("param shadow ok", "function f(x){ let y=x; return y } f(1)");

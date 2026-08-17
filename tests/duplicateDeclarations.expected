@@ -1,0 +1,13 @@
+let/let SyntaxError
+const/const SyntaxError
+let/var SyntaxError
+var/let SyntaxError
+class/let SyntaxError
+let/function SyntaxError
+var/var ok accepted
+fn/fn ok accepted
+nested block ok accepted
+sibling for ok accepted
+destructure dup SyntaxError
+destructure ok accepted
+param shadow ok accepted
