@@ -6,8 +6,8 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "dcdb897c7fd1ca776940dd0c71806ca5f549c3c0",
-    "dirty": false
+    "revision": "2cb5e04f36a82ea39254263fcb4f75fbdf5a654a",
+    "dirty": true
   },
   "engine": ".dev/mj-engine",
   "selection": {
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 982,
-    "fail": 488,
+    "pass": 987,
+    "fail": 483,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -44,14 +44,14 @@
     },
     {
       "area": "built-ins/Object",
-      "pass": 83,
-      "fail": 44,
+      "pass": 84,
+      "fail": 43,
       "total": 127
     },
     {
       "area": "built-ins/Array",
-      "pass": 58,
-      "fail": 33,
+      "pass": 59,
+      "fail": 32,
       "total": 91
     },
     {
@@ -86,8 +86,8 @@
     },
     {
       "area": "built-ins/DataView",
-      "pass": 9,
-      "fail": 13,
+      "pass": 12,
+      "fail": 10,
       "total": 22
     },
     {
@@ -460,11 +460,12 @@
   "failureBuckets": [
     {
       "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all",
-      "count": 36,
+      "count": 38,
       "cases": [
         "built-ins/Symbol/prototype/toString/toString-default-attributes-strict.js",
         "built-ins/Error/prototype/toString/called-as-function.js",
         "built-ins/Object/assign/target-set-not-writable.js",
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-186.js",
         "language/statements/class/elements/privatefieldset-typeerror-5.js",
         "language/statements/variable/dstr/ary-init-iter-get-err-array-prototype.js",
         "built-ins/Proxy/deleteProperty/targetdesc-is-configurable-target-is-not-extensible.js",
@@ -475,6 +476,7 @@
         "built-ins/MapIteratorPrototype/next/does-not-have-mapiterator-internal-slots-map.js",
         "built-ins/TypedArrayConstructors/Int8Array/prototype/not-typedarray-object.js",
         "language/statements/const/dstr/ary-init-iter-get-err-array-prototype.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-192.js",
         "language/statements/class/definition/invalid-extends.js",
         "built-ins/Promise/all/S25.4.4.1_A4.1_T1.js",
         "language/statements/generators/restricted-properties.js",
@@ -658,6 +660,17 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Expected TypeError, got Test262Error: Expected an exception.",
+      "count": 5,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-87.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-305.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-218.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-307.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-246.js"
+      ]
+    },
+    {
       "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«N», «N») to be tr",
       "count": 4,
       "cases": [
@@ -704,15 +717,6 @@
         "language/expressions/dynamic-import/catch/nested-async-function-import-source-specifier-tostring-abrupt-rejects.js",
         "built-ins/Promise/allSettled/invoke-then-error-reject.js",
         "language/expressions/dynamic-import/catch/nested-async-function-return-await-import-source-specifier-tostring-abrupt-rejects.js"
-      ]
-    },
-    {
-      "reason": "runtime error: integer overflow at src/eval.milo:N",
-      "count": 3,
-      "cases": [
-        "built-ins/DataView/prototype/getInt32/detached-buffer-after-toindex-byteoffset.js",
-        "built-ins/DataView/prototype/setFloat64/index-is-out-of-range.js",
-        "built-ins/DataView/prototype/getFloat64/index-is-out-of-range.js"
       ]
     },
     {
@@ -767,24 +771,6 @@
         "built-ins/DataView/prototype/setInt16/return-abrupt-from-tonumber-byteoffset-symbol.js",
         "built-ins/DataView/prototype/setFloat32/return-abrupt-from-tonumber-byteoffset-symbol.js",
         "built-ins/Temporal/PlainMonthDay/from/options-invalid.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Expected TypeError, got Test262Error: Expected an exception.",
-      "count": 3,
-      "cases": [
-        "built-ins/Object/defineProperty/15.2.3.6-4-87.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-218.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-246.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: N value should be N",
-      "count": 3,
-      "cases": [
-        "built-ins/Object/defineProperties/15.2.3.7-6-a-200.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-305.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-307.js"
       ]
     },
     {
@@ -995,6 +981,22 @@
       "cases": [
         "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/not-a-constructor.js",
         "built-ins/JSON/rawJSON/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: length should be an own property",
+      "count": 2,
+      "cases": [
+        "built-ins/Promise/reject/length.js",
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-120.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: N descriptor should not be enumerable; N descriptor should not be writ",
+      "count": 2,
+      "cases": [
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-200.js",
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-225.js"
       ]
     },
     {
@@ -1668,13 +1670,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Actual [N, N, N] and expected [N, N, N, undefined, undefined, undefine",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/concat/Array.prototype.concat_strict-arguments.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Actual [N, N, N] and expected [N, undefined, N] should have the same c",
       "count": 1,
       "cases": [
@@ -1710,20 +1705,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: arr.length Expected SameValue(«N», «N») to be true",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/defineProperties/15.2.3.7-6-a-127.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: arr[N] Expected SameValue(«undefined», «\"ownDataProperty\"») to be true",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/defineProperties/15.2.3.7-6-a-186.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Array.from.call(poisonedPrototypeLength, items) throws a Test262Error ",
       "count": 1,
       "cases": [
@@ -1756,20 +1737,6 @@
       "count": 1,
       "cases": [
         "built-ins/Array/prototype/some/15.4.4.17-1-7.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: arrObj.length Expected SameValue(«N», «N») to be true",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/defineProperty/15.2.3.6-4-154.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: arrObj[N] Expected SameValue(«N», «N») to be true",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/defineProperty/15.2.3.6-4-192.js"
       ]
     },
     {
@@ -2172,20 +2139,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: length descriptor value should be N",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/defineProperties/15.2.3.7-6-a-120.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: length should be an own property",
-      "count": 1,
-      "cases": [
-        "built-ins/Promise/reject/length.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: loopAccessed Expected SameValue(«true», «false») to be true",
       "count": 1,
       "cases": [
@@ -2211,6 +2164,13 @@
       "count": 1,
       "cases": [
         "built-ins/Temporal/PlainDateTime/from/month-code-wrong-type.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: N descriptor should be enumerable; N descriptor should not be writable",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-199.js"
       ]
     },
     {
@@ -2638,13 +2598,6 @@
       "count": 1,
       "cases": [
         "built-ins/TypedArray/prototype/set/BigInt/array-arg-return-abrupt-from-src-length.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: verifyValue !== true",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/defineProperty/15.2.3.6-4-333-11.js"
       ]
     },
     {

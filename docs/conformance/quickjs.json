@@ -6,8 +6,8 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "dcdb897c7fd1ca776940dd0c71806ca5f549c3c0",
-    "dirty": false
+    "revision": "2cb5e04f36a82ea39254263fcb4f75fbdf5a654a",
+    "dirty": true
   },
   "engine": ".dev/mj-engine",
   "selection": {
@@ -90,11 +90,10 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: cannot read property '…' of undefined",
-      "count": 2,
+      "reason": "Uncaught TypeError: value is not iterable",
+      "count": 1,
       "cases": [
-        "array-fromasync-enumerable.js:<whole>",
-        "callsite-isconstructor.js:<whole>"
+        "array-fromasync-enumerable.js:<whole>"
       ]
     },
     {
@@ -116,6 +115,13 @@
       "count": 1,
       "cases": [
         "bug988.js:<whole>"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: cannot read property '…' of undefined",
+      "count": 1,
+      "cases": [
+        "callsite-isconstructor.js:<whole>"
       ]
     },
     {

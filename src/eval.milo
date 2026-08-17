@@ -3608,6 +3608,19 @@ fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
         }
         return
     }
+    // A sealed or non-extensible ARRAY refuses a NEW index too. Arrays were exempted
+    // wholesale here because their elements are not Prop entries, so objOwnIndex
+    // never finds one — but "past the current length" is exactly the same question,
+    // and without it `Object.seal([1,2]); a[2] = 3` grew the array.
+    if st.objects[o].noExtend && st.objects[o].isArray {
+        let newIdx = asArrayIndex(key)
+        if newIdx >= arrLen(st, o) {
+            if st.strict {
+                throwWriteFailure(st, "Cannot add property " + key.clone() + ", object is not extensible")
+            }
+            return
+        }
+    }
     // non-extensible: existing properties stay writable, new ones are refused
     if st.objects[o].noExtend && objOwnIndex(st, o, key) < 0 && !st.objects[o].isArray {
         if st.strict {
@@ -5949,6 +5962,10 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Undefined
         }
         let key = toStr(argVals[1])
+        let ad = arrayOwnDescriptor(st, h, key)
+        if ad >= 0 {
+            return JSValue.Obj(ad)
+        }
         let idx = objOwnIndex(st, h, key)
         if idx < 0 {
             // a top-level binding is a property of the global object even though
@@ -6706,7 +6723,137 @@ fn makeRegex(st: &mut Interp, pattern: string, flags: string): JSValue {
 // false/undefined. Treating omission as "false" overwrote the value with
 // undefined on `defineProperty(o, "x", { enumerable: false })`, so narrowing one
 // attribute silently destroyed the property's contents.
+// An ARRAY's own index and `length` properties are not Prop entries: the elements
+// live in `elems`/`logicalLen` and `length` is derived. So every descriptor
+// operation used to miss them entirely — `getOwnPropertyDescriptor([7], "0")` threw,
+// `defineProperty([], "0", …)` wrote a property the array never showed, and
+// `defineProperty(a, "length", …)` did nothing at all.
+//
+// Returns the descriptor object, or -1 when the key is not an own array key.
+fn arrayOwnDescriptor(st: &mut Interp, o: i64, key: &string): i64 {
+    if !st.objects[o].isArray {
+        return -1
+    }
+    if key.clone() == "length" {
+        let d = newObject(st)
+        pushTemp(st, JSValue.Obj(d))
+        objSet(st, d, "value", JSValue.Number(arrLen(st, o) as f64))
+        objSet(st, d, "writable", JSValue.Bool(!st.objects[o].lengthNonWritable))
+        // length is never enumerable and never configurable
+        objSet(st, d, "enumerable", JSValue.Bool(false))
+        objSet(st, d, "configurable", JSValue.Bool(false))
+        popTemp(st)
+        return d
+    }
+    let ai = asArrayIndex(key)
+    if ai < 0 || ai >= arrLen(st, o) || arrIsHole(st, o, ai) {
+        return -1
+    }
+    // An index that has a real Prop entry — an accessor, or a sparse far element —
+    // keeps its own attributes, so the ordinary descriptor path answers for it.
+    // Building a data descriptor from arrGet here silently converted a getter into
+    // its (undefined) slot value.
+    if objOwnIndex(st, o, key) >= 0 {
+        return -1
+    }
+    let d = newObject(st)
+    pushTemp(st, JSValue.Obj(d))
+    objSet(st, d, "value", arrGet(st, o, ai))
+    // a frozen array's elements are read-only; a sealed one keeps them writable
+    objSet(st, d, "writable", JSValue.Bool(!st.objects[o].frozen))
+    objSet(st, d, "enumerable", JSValue.Bool(true))
+    objSet(st, d, "configurable", JSValue.Bool(!st.objects[o].frozen && !st.objects[o].sealed))
+    popTemp(st)
+    return d
+}
+
+// defineProperty for an array's `length` or an index. Answers false when the
+// definition must be rejected (the caller raises the TypeError), true when handled,
+// and leaves `handled` false when the key is not an array key at all.
+struct ArrayDefineResult {
+    handled: bool,
+    ok: bool,
+}
+
+fn arrayDefineOwn(prog: &Prog, st: &mut Interp, o: i64, key: &string, d: i64): ArrayDefineResult {
+    let notMine = ArrayDefineResult { handled: false, ok: true }
+    if !st.objects[o].isArray {
+        return notMine
+    }
+    if key.clone() == "length" {
+        if objHasInChain(st, d, "get") || objHasInChain(st, d, "set") {
+            // length cannot become an accessor
+            return ArrayDefineResult { handled: true, ok: false }
+        }
+        if objHasInChain(st, d, "enumerable") && truthy(getMember(st, d, "enumerable")) {
+            return ArrayDefineResult { handled: true, ok: false }
+        }
+        if objHasInChain(st, d, "configurable") && truthy(getMember(st, d, "configurable")) {
+            return ArrayDefineResult { handled: true, ok: false }
+        }
+        if objHasInChain(st, d, "value") {
+            let raw = toNumProg(prog, getMember(st, d, "value"), st)
+            let want = raw as i64
+            // an array length must be an exact non-negative uint32
+            if raw != raw || raw < 0.0 || raw > 4294967295.0 || (want as f64) != raw {
+                st.throwing = true
+                st.thrownValue = makeError(st, "RangeError", "Invalid array length" + currentModule(st))
+                return ArrayDefineResult { handled: true, ok: true }
+            }
+            if st.objects[o].lengthNonWritable && want != arrLen(st, o) {
+                return ArrayDefineResult { handled: true, ok: false }
+            }
+            setArrayLength(st, o, want)
+        }
+        if objHasInChain(st, d, "writable") && !truthy(getMember(st, d, "writable")) {
+            st.objects[o].lengthNonWritable = true
+        }
+        return ArrayDefineResult { handled: true, ok: true }
+    }
+    let ai = asArrayIndex(key)
+    if ai < 0 {
+        return notMine
+    }
+    // An ACCESSOR at an index cannot live in the element vector. Let it fall through
+    // to the ordinary property path, but grow `length` the way the spec does — the
+    // index becomes an own property either way.
+    if objHasInChain(st, d, "get") || objHasInChain(st, d, "set") {
+        if ai >= arrLen(st, o) {
+            if st.objects[o].lengthNonWritable {
+                return ArrayDefineResult { handled: true, ok: false }
+            }
+            setArrayLength(st, o, ai + 1)
+        }
+        return notMine
+    }
+    if ai >= arrLen(st, o) {
+        if st.objects[o].lengthNonWritable || st.objects[o].noExtend || st.objects[o].sealed || st.objects[o].frozen {
+            return ArrayDefineResult { handled: true, ok: false }
+        }
+        setArrayLength(st, o, ai + 1)
+    } else if st.objects[o].frozen {
+        return ArrayDefineResult { handled: true, ok: false }
+    }
+    if objHasInChain(st, d, "value") {
+        arrSet(st, o, ai, getMember(st, d, "value"))
+    } else if arrIsHole(st, o, ai) {
+        arrSet(st, o, ai, JSValue.Undefined)
+    }
+    return ArrayDefineResult { handled: true, ok: true }
+}
+
 fn applyDescriptor(st: &mut Interp, o: i64, key: &string, d: i64) {
+    // An array's indices and `length` are not Prop entries — arrayDefineOwn owns
+    // them. It reports `handled: false` for any other key so the ordinary path
+    // below still runs, and `ok: false` when the definition must be rejected.
+    let ar = arrayDefineOwn(gProg, st, o, key, d)
+    if ar.handled {
+        if !ar.ok && !st.throwing {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
+        }
+        return
+    }
     let existed = objOwnIndex(st, o, key) >= 0
     // objSet/objDefineAccessor write through the ordinary property path, which
     // resets the attributes to a plain data property's defaults. Redefining an

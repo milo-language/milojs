@@ -1369,6 +1369,50 @@ conservative estimate, it is a wrong one. The 2026-08-16 note had already worked
 out the right representation in its own second paragraph and then costed the first
 one.
 
+### defineProperty did not know arrays existed — FIXED 2026-08-17
+
+Found by the QuickJS-parity worklist, which is the first list this project has had
+that says what to fix rather than what is broken.
+
+An array's indices live in `elems`/`logicalLen` and its `length` is derived, so
+none of them are `Prop` entries. Every descriptor operation therefore missed them
+completely, and the failures were not subtle — twelve probes, twelve wrong answers:
+
+| | before | node |
+|---|---|---|
+| `defineProperty([], "0", {value:1,…})` | length 0, element invisible | length 1, `a[0] === 1` |
+| `getOwnPropertyDescriptor([7], "0")` | **threw TypeError** | `{value:7,…}` |
+| `defineProperty(a, "length", {value:1})` | ignored | truncates |
+| `defineProperty(a, "length", {value:-1})` | ignored | RangeError |
+| `defineProperty(a,"length",{writable:false})` then add an index | silently grew | TypeError |
+| `Object.seal([1,2]); a[2] = 3` | grew to 3 | stays 2 |
+
+Two helpers now own those keys — `arrayOwnDescriptor` builds the descriptor and
+`arrayDefineOwn` performs the definition — hooked into `applyDescriptor` (so all
+three of its callers benefit) and into `getOwnPropertyDescriptor`. `length`'s one
+variable attribute needed somewhere to live, since it has no Prop entry:
+`JSObj.lengthNonWritable`.
+
+Two subtleties that cost a fixture each:
+
+- An **accessor** at an index cannot live in the element vector, so it falls through
+  to the ordinary property path — which means `arrayOwnDescriptor` has to DEFER to
+  `buildPropDescriptor` whenever the index has a real Prop entry. Building a data
+  descriptor from `arrGet` turned a getter into its empty slot.
+- `setMember` exempted arrays from the non-extensible check wholesale, because
+  `objOwnIndex` never finds an element. The equivalent question for an array is
+  "is this index past the current length", which is what `Object.seal` needs.
+
+Measured: `Object/defineProperty` 72.3%→76.0%, `defineProperties` 65.7%→71.2%,
+`getOwnPropertyDescriptor` 79.0%→79.4% — **+77 tests** across 2073. Real-package
+corpus 946→948 assertions and 38→39 complete suites.
+
+**Still wrong, and honestly out of reach here:** per-element writability.
+`defineProperty(a,"0",{value:5,writable:false})` then `a[0]=9` still writes, because
+the element vector has no per-index attribute storage. It needs the same thing
+`length` just got, but per element, which is a representation change rather than a
+patch.
+
 ### A JS argument could kill the process: unchecked f64→i64 casts — FIXED 2026-08-17
 
 `dv.getFloat64(1e308)` did not throw a RangeError. It **terminated the process**
