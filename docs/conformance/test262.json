@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "8961248a2c826544b64012d75ab733a32f4b83ec",
+    "revision": "a8351958e80ca7ef4991df1cdd9973b6783a7004",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 915,
-    "fail": 555,
+    "pass": 921,
+    "fail": 549,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -44,8 +44,8 @@
     },
     {
       "area": "built-ins/Object",
-      "pass": 81,
-      "fail": 46,
+      "pass": 82,
+      "fail": 45,
       "total": 127
     },
     {
@@ -62,8 +62,8 @@
     },
     {
       "area": "built-ins/String",
-      "pass": 23,
-      "fail": 16,
+      "pass": 24,
+      "fail": 15,
       "total": 39
     },
     {
@@ -110,14 +110,14 @@
     },
     {
       "area": "built-ins/TypedArrayConstructors",
-      "pass": 8,
-      "fail": 11,
+      "pass": 9,
+      "fail": 10,
       "total": 19
     },
     {
       "area": "built-ins/Math",
-      "pass": 10,
-      "fail": 7,
+      "pass": 12,
+      "fail": 5,
       "total": 17
     },
     {
@@ -200,8 +200,8 @@
     },
     {
       "area": "built-ins/Symbol",
-      "pass": 2,
-      "fail": 3,
+      "pass": 3,
+      "fail": 2,
       "total": 5
     },
     {
@@ -603,20 +603,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: name should be an own property",
-      "count": 8,
-      "cases": [
-        "built-ins/TypedArrayConstructors/Uint8ClampedArray/name.js",
-        "built-ins/Temporal/PlainMonthDay/prototype/toLocaleString/name.js",
-        "built-ins/ArrayIteratorPrototype/next/name.js",
-        "built-ins/Math/cos/name.js",
-        "built-ins/String/fromCodePoint/name.js",
-        "built-ins/Temporal/PlainDateTime/prototype/withCalendar/name.js",
-        "built-ins/Math/exp/name.js",
-        "built-ins/Object/getOwnPropertyDescriptor/name.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Expected a SyntaxError to be thrown but no exception was thrown at all",
       "count": 6,
       "cases": [
@@ -834,6 +820,15 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: name should be an own property",
+      "count": 3,
+      "cases": [
+        "built-ins/Temporal/PlainMonthDay/prototype/toLocaleString/name.js",
+        "built-ins/ArrayIteratorPrototype/next/name.js",
+        "built-ins/Temporal/PlainDateTime/prototype/withCalendar/name.js"
+      ]
+    },
+    {
       "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: TypeError Expected SameValue(«functio",
       "count": 2,
       "cases": [
@@ -1026,14 +1021,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: length should be an own property",
-      "count": 2,
-      "cases": [
-        "built-ins/Promise/reject/length.js",
-        "built-ins/Symbol/length.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: name descriptor value should be [test262]; name value should be [test2",
       "count": 2,
       "cases": [
@@ -1047,14 +1034,6 @@
       "cases": [
         "built-ins/ArrayBuffer/toindex-length.js",
         "built-ins/DataView/toindex-bytelength.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: prototype should be an own property",
-      "count": 2,
-      "cases": [
-        "built-ins/TypedArrayConstructors/BigInt64Array/prototype.js",
-        "built-ins/Temporal/PlainTime/prototype/prop-desc.js"
       ]
     },
     {
@@ -2013,7 +1992,7 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: assign should be an own property",
+      "reason": "Uncaught undefined: assign descriptor should not be enumerable",
       "count": 1,
       "cases": [
         "built-ins/Object/assign/assign-descriptor.js"
@@ -2517,6 +2496,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: length should be an own property",
+      "count": 1,
+      "cases": [
+        "built-ins/Promise/reject/length.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: loopAccessed Expected SameValue(«true», «false») to be true",
       "count": 1,
       "cases": [
@@ -2563,6 +2549,13 @@
       "count": 1,
       "cases": [
         "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/key-is-not-integer.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: name descriptor should not be writable",
+      "count": 1,
+      "cases": [
+        "built-ins/TypedArrayConstructors/Uint8ClampedArray/name.js"
       ]
     },
     {
@@ -2703,6 +2696,13 @@
       "count": 1,
       "cases": [
         "built-ins/Object/defineProperty/15.2.3.6-4-333-7.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: prototype should be an own property",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainTime/prototype/prop-desc.js"
       ]
     },
     {

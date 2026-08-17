@@ -30,7 +30,7 @@ run by hand rather than in CI:
 
 | sweep | score | measured |
 |---|---:|---|
-| test262, <!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample | <!--fact:t262-pass-->915<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = **<!--fact:t262-pct-->62.2%<!--/fact-->** | 2026-08-15 |
+| test262, <!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample | <!--fact:t262-pass-->921<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = **<!--fact:t262-pct-->62.7%<!--/fact-->** | 2026-08-15 |
 | QuickJS `tests/` at `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->` | <!--fact:qjs-pass-->100<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = **<!--fact:qjs-pct-->67.1%<!--/fact-->** | 2026-08-15 |
 
 Movement on 2026-08-15: the engine now runs the program on a green task, so
