@@ -1369,6 +1369,46 @@ conservative estimate, it is a wrong one. The 2026-08-16 note had already worked
 out the right representation in its own second paragraph and then costed the first
 one.
 
+### Annex B block-level function hoisting — SCOPED, not started
+
+Worth ~20 sampled test262 cases (`annexB/language/eval-code/*`,
+`annexB/language/{global,function}-code/*`, and the "An initialized binding is not
+created prior to eval" bucket). Deliberately NOT started half-way, because the
+half that is easy is the half that breaks working code.
+
+What we do now: `hoistStmt` recurses into nested blocks and `if` bodies and defines
+the function VALUE in the enclosing var scope. So `typeof f` BEFORE
+`if (true) function f(){}` answers `"function"`, and `if (false) function h(){}`
+leaves `h` a function that was never evaluated.
+
+What B.3.3 says: the hoist creates a var-scoped binding initialized to
+**undefined**; the function value is assigned when the declaration is EVALUATED.
+So `typeof f` before is `"undefined"`, `h` after a false branch is `undefined`, and
+the name is still visible after the block.
+
+The blocker is the conflict rule, and it is why this is not a one-liner:
+
+    (function(){ let q = 1; { function q(){} } return q; })()   // node: 1
+    (function(){ var v = 1; { function v(){} } return v; })()   // node: function
+
+B.3.3 skips the hoist and the assignment when a LEXICAL declaration of the name is
+in scope, and performs both when a `var` is. This engine's `Binding` is
+`{name, value}` with no var-vs-lexical distinction, so at runtime the two cases are
+indistinguishable. Every cheap proxy fails one of them: "assign only if currently
+undefined" breaks the `var v = 1` case, "assign only if we created the placeholder"
+breaks it too, and "always assign" overwrites the `let`.
+
+**The design to build:** compute it statically. The parser already tracks lexical
+declarations per block — that is what makes `let x; var x;` an early SyntaxError —
+so have it record, per block, the set of lexically-declared names, and have
+`hoistStmt` (which needs a `nested: bool` it does not have yet) skip any name
+lexically declared in an enclosing block up to the function body. Then the
+block-exec assignment is unconditional and correct, because the conflicting cases
+never got a binding to assign.
+
+Order it after the cheaper Array/Iterator work; it is a parser + hoist + exec
+change across three files and wants a whole session, not the tail of one.
+
 ### A throwing argument did not abort its call — DONE 2026-08-17
 
 `arr.push(boom())` pushed a value. `Math.abs(boom())` and `JSON.stringify(boom())`

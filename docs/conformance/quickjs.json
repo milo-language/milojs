@@ -6,7 +6,7 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "65dea12dc32b025838cb4b5c98a6ca306dfc38ec",
+    "revision": "6ad2ab463fe96d7c4b75708cd0c5172c1ad58f04",
     "dirty": true
   },
   "engine": ".dev/mj-engine",
