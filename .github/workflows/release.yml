@@ -101,15 +101,22 @@ jobs:
       # under ASan there, so the only place it can be diagnosed is the runner
       # that shows it. Rebuilding with the sanitizer on failure turns the abort
       # into a stack trace naming the write, at no cost to a passing build.
-      - name: diagnose smoke failure under AddressSanitizer
+      - name: diagnose smoke failure
         if: failure() && runner.os == 'Linux'
         run: |
-          milo build src/milojs-engine.milo -o milojs-engine-asan --sanitize -g
-          echo '--- engine under ASan ---'
+          # A sanitizer build of BOTH binaries already runs this file cleanly on
+          # this runner, so the fault is not in the code the sanitizer can see —
+          # it is in what --release and/or --static-deps change. Bisect the two
+          # flags: exactly one combination should reproduce, and that names the
+          # culprit without another round trip.
+          for flags in "" "--release" "--static-deps" "--release --static-deps"; do
+            echo "--- engine built with: ${flags:-(none)} ---"
+            milo build src/milojs-engine.milo -o mj-probe $flags >/dev/null 2>&1 || { echo "build failed"; continue; }
+            ./mj-probe /tmp/smoke.js || echo "^ exited $?"
+          done
+          echo '--- engine under ASan (for a trace, if it reproduces there) ---'
+          milo build src/milojs-engine.milo -o milojs-engine-asan --sanitize -g >/dev/null 2>&1
           ASAN_OPTIONS=detect_leaks=0 ./milojs-engine-asan /tmp/smoke.js || true
-          milo build src/milojs.milo -o milojs-asan --sanitize -g
-          echo '--- runtime under ASan ---'
-          ASAN_OPTIONS=detect_leaks=0 ./milojs-asan /tmp/smoke.js || true
 
       # Wrap in a directory: a flat tarball drops both binaries and a README into
       # whatever directory the user happened to extract from.
