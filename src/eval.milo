@@ -6646,6 +6646,15 @@ fn strIndexOfMj(hay: &string, needle: &string): i64 {
 
 fn makeRegex(st: &mut Interp, pattern: string, flags: string): JSValue {
     let re = regexCompile(pattern.clone(), flags.clone())
+    // An unknown `\p{...}` property is an EARLY error: the spec rejects the
+    // pattern at compile time rather than letting it match nothing. This is the
+    // only thing that reads Regex.valid, and until property escapes existed
+    // nothing could set it false.
+    if !re.valid {
+        st.throwing = true
+        st.thrownValue = makeError(st, "SyntaxError", "Invalid regular expression: /" + pattern.clone() + "/: Invalid property name" + currentModule(st))
+        return JSValue.Undefined
+    }
     let isGlobal = re.flagG
     st.regexes.push(re)
     let id = st.regexes.len() - 1

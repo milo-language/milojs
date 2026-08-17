@@ -41,6 +41,14 @@ if command -v node >/dev/null 2>&1 && ! node tools/gen-unicase.mjs --check; then
     status=1
 fi
 
+# src/uniprops.txt is the Unicode property tables for RegExp \p{...}, generated
+# from the same ICU. Needs TEST262 to harvest the property SPELLINGS, so it is
+# checked only where the corpus is present — CI does the same.
+if command -v node >/dev/null 2>&1 && [ -n "${TEST262:-}" ] && [ -d "${TEST262:-}/test" ] \
+    && ! node tools/gen-uniprops.mjs --check; then
+    status=1
+fi
+
 # doc-meta present, key-files real, AGENTS tables complete, staleness ratchet.
 # All filesystem + git-log reads, so it costs nothing.
 if command -v node >/dev/null 2>&1 && ! node tools/check-docs.mjs; then

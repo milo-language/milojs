@@ -15,6 +15,10 @@
 // That check rides in a scratch save slot appended past the capture slots, which
 // is why regexExec allocates 2*(nGroups+1)+1 of them.
 
+from "./uniprops" import {
+    uniPropExists, uniPropRanges
+}
+
 from "./value" import {
     JSValue
 }
@@ -114,6 +118,13 @@ struct ReParse {
     ngroup: i64,
     groupNames: Vec<string>,
     groupNums: Vec<i64>,
+    // `\p{...}` is a property escape only under the u/v flag; without it Annex B
+    // says the backslash is dropped and `p` is a literal. So the flags have to be
+    // known BEFORE the pattern is parsed.
+    unicode: bool,
+    // an unknown property name is an early SyntaxError, not a pattern that
+    // matches nothing — recorded here and reported by regexCompile
+    badProp: bool,
 }
 
 // Same as reCharLen, over the pattern's byte vector.
@@ -230,6 +241,98 @@ fn reAddShorthandNeg(cls: &mut ReClass, kind: u8) {
     }
 }
 
+// `\p{Name}` / `\p{Name=Value}` and their negations. The name is resolved to real
+// code point ranges HERE, at compile time, so matching a property costs the same
+// as matching `[a-z]` — see src/uniprops.milo. An unrecognised name sets badProp;
+// the spec makes it an early error rather than an empty class.
+//
+// Returns -1 when the escape is not a property escape after all, which lets the
+// caller fall back to treating `\p` as a literal (the non-unicode Annex B rule).
+// Resolve the `\p{...}` name at p.pos (which sits ON the backslash) and advance
+// past the closing brace. "" means "not usable": badProp is set when the name was
+// syntactically a property escape but not one the tables know, and left clear when
+// this was not a `\p{` at all, which is how the caller decides between an early
+// error and falling back to a literal.
+fn reReadPropName(p: &mut ReParse): string {
+    if p.pos + 2 >= p.pat.len() || p.pat[p.pos + 2] != '{' {
+        return ""
+    }
+    var name = ""
+    var k = p.pos + 3
+    while k < p.pat.len() && p.pat[k] != '}' {
+        name.push(p.pat[k])
+        k = k + 1
+    }
+    if k >= p.pat.len() {
+        // unterminated `\p{`
+        p.badProp = true
+        return ""
+    }
+    // A bare name is either a binary property or a General_Category value: the
+    // spec allows `\p{Lu}` as shorthand for `\p{General_Category=Lu}`, so try the
+    // qualified spelling before giving up.
+    var resolved = name.clone()
+    if !uniPropExists(resolved) {
+        resolved = "General_Category=" + name.clone()
+        if !uniPropExists(resolved) {
+            p.badProp = true
+            return ""
+        }
+    }
+    p.pos = k + 1
+    return resolved
+}
+
+// Append a property's code point ranges to a class. `negated` materialises the
+// COMPLEMENT rather than setting ReClass.negated, because inside `[...]` a `\P`
+// contributes members to a union — negating the whole class instead would make
+// `[\P{L}0-9]` mean "not (non-letter or digit)".
+fn reAddPropTo(cls: &mut ReClass, resolved: &string, negated: bool) {
+    let ranges = uniPropRanges(resolved)
+    if !negated {
+        var i: i64 = 0
+        while i + 1 < ranges.len() {
+            cls.lo.push(ranges[i])
+            cls.hi.push(ranges[i + 1])
+            i = i + 2
+        }
+        return
+    }
+    var prev: i64 = 0
+    var i: i64 = 0
+    while i + 1 < ranges.len() {
+        let lo = ranges[i] as i64
+        if lo > prev {
+            cls.lo.push(prev as i32)
+            cls.hi.push((lo - 1) as i32)
+        }
+        prev = (ranges[i + 1] as i64) + 1
+        i = i + 2
+    }
+    if prev <= 0x10FFFF {
+        cls.lo.push(prev as i32)
+        cls.hi.push(0x10FFFF as i32)
+    }
+}
+
+// `\p{Name}` / `\p{Name=Value}` and their negations, OUTSIDE a character class.
+// The name is resolved to real code point ranges HERE, at compile time, so
+// matching a property costs the same as matching `[a-z]` and nothing decodes per
+// character. Returns -1 when this is not a property escape after all, which lets
+// the caller treat `\p` as a literal (the non-unicode Annex B rule).
+fn reParsePropEscape(p: &mut ReParse, negated: bool): i64 {
+    let resolved = reReadPropName(p)
+    if resolved.len() == 0 {
+        return -1
+    }
+    var cls = ReClass {
+        negated: negated, lo: Vec.new(), hi: Vec.new()
+    }
+    reAddPropTo(cls, resolved, false)
+    p.classes.push(cls)
+    return reAddNode(p, ReNode.ClassRef(p.classes.len() - 1))
+}
+
 // Build a single-shorthand class node (\d \w \s and negations \D \W \S).
 fn reShorthandClass(p: &mut ReParse, kind: u8, negated: bool): i64 {
     var cls = ReClass {
@@ -281,7 +384,20 @@ fn reParseClass(p: &mut ReParse): i64 {
             var c = p.pat[p.pos]
             if c == 92 as u8 && p.pos + 1 < p.pat.len() {
                 let e = p.pat[p.pos + 1]
-                if e == 'd' || e == 'w' || e == 's' {
+                if (e == 'p' || e == 'P') && p.unicode {
+                    let saved = p.pos
+                    let resolved = reReadPropName(p)
+                    if resolved.len() > 0 {
+                        reAddPropTo(cls, resolved, e == 'P')
+                    } else {
+                        // not a property escape: back up and take it literally
+                        p.pos = saved
+                        let ch = reEscapedChar(e) as i32
+                        cls.lo.push(ch)
+                        cls.hi.push(ch)
+                        p.pos = p.pos + 2
+                    }
+                } else if e == 'd' || e == 'w' || e == 's' {
                     reAddShorthand(cls, e)
                     p.pos = p.pos + 2
                 } else if e == 'D' || e == 'W' || e == 'S' {
@@ -402,6 +518,12 @@ fn reParseAtom(p: &mut ReParse): i64 {
         if e >= '1' && e <= '9' {
             p.pos = p.pos + 2
             return reAddNode(p, ReNode.Backref((e - '0') as i64))
+        }
+        if (e == 'p' || e == 'P') && p.unicode {
+            let node = reParsePropEscape(p, e == 'P')
+            if node >= 0 {
+                return node
+            }
         }
         if e == 'd' {
             p.pos = p.pos + 2
@@ -814,19 +936,13 @@ pub fn regexCompile(source: string, flags: string): Regex {
         patBytes.push(source[i])
         i = i + 1
     }
-    var p = ReParse {
-        pat: patBytes, pos: 0, nodes: Vec.new(), lists: Vec.new(), classes: Vec.new(), ngroup: 0, groupNames: Vec.new(), groupNums: Vec.new()
-    }
-    let root = reParseAlt(p)
-    var prog: Vec<ReInst> = Vec.new()
-    reEmit(prog, RE_SAVE, 0, 0)
-    reCompileNode(p, root, prog)
-    reEmit(prog, RE_SAVE, 1, 0)
-    reEmit(prog, RE_MATCH, 0, 0)
+    // Flags first: `\p{...}` means different things with and without u/v, so the
+    // parser needs to know before it reads the pattern.
     var fi = false
     var fg = false
     var fm = false
     var fs_ = false
+    var fu = false
     var fj: i64 = 0
     while fj < flags.len() {
         let fc = flags[fj]
@@ -838,11 +954,22 @@ pub fn regexCompile(source: string, flags: string): Regex {
             fm = true
         } else if fc == 's' {
             fs_ = true
+        } else if fc == 'u' || fc == 'v' {
+            fu = true
         }
         fj = fj + 1
     }
+    var p = ReParse {
+        pat: patBytes, pos: 0, nodes: Vec.new(), lists: Vec.new(), classes: Vec.new(), ngroup: 0, groupNames: Vec.new(), groupNums: Vec.new(), unicode: fu, badProp: false
+    }
+    let root = reParseAlt(p)
+    var prog: Vec<ReInst> = Vec.new()
+    reEmit(prog, RE_SAVE, 0, 0)
+    reCompileNode(p, root, prog)
+    reEmit(prog, RE_SAVE, 1, 0)
+    reEmit(prog, RE_MATCH, 0, 0)
     return Regex {
-        prog: prog, classes: p.classes, nGroups: p.ngroup, flagI: fi, flagG: fg, flagM: fm, flagS: fs_, source: source, flags: flags, valid: true, groupNames: p.groupNames, groupNums: p.groupNums
+        prog: prog, classes: p.classes, nGroups: p.ngroup, flagI: fi, flagG: fg, flagM: fm, flagS: fs_, source: source, flags: flags, valid: !p.badProp, groupNames: p.groupNames, groupNums: p.groupNums
     }
 }
 
