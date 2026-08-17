@@ -11104,56 +11104,24 @@ fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, this
     return r
 }
 
-fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
-    // R1: an async call runs its body on its own activation and returns at that
-    // body's first await. Cleared immediately so a nested async call spawns.
-    let alreadyOnActivation = st.suppressAsyncSpawn
-    st.suppressAsyncSpawn = false
-    // An `async function*` is a generator first: calling it returns an async
-    // generator OBJECT, not a promise. Its body still awaits — that works
-    // because the body runs on its own green task, which is all parkOnPromise
-    // needs. Checked before the activation spawn, which would otherwise swallow
-    // it and hand back a promise with no next().
-    if prog.funcs[fIdx].isAsync && prog.funcs[fIdx].isGenerator && !st.suppressGenSpawn {
-        st.suppressAsyncSpawn = false
-        return makeGenerator(fIdx, envIdx, argVals, thisVal, true, st)
-    }
-    if prog.funcs[fIdx].isAsync && !alreadyOnActivation {
-        let caller = schedulerCurrent()
-        if caller as i64 != 0 {
-            return spawnActivation(fIdx, envIdx, argVals, thisVal, st, caller)
-        }
-    }
-    // Without this, runaway recursion exhausts the native stack and the process
-    // dies with no JS-level error — express's error middleware expects a
-    // catchable RangeError instead.
-    // The safe limit tracks the stack the interpreter runs on. After splitting
-    // the hot evaluator dispatcher, the engine's normal process stack supports
-    // a 104-frame guard; the runtime uses 500 on its separately sized green task.
-    // Keep the guard below the native ceiling so constructing the RangeError and
-    // unwinding it remain reliable rather than ending in a process crash.
-    if st.callDepth >= st.callDepthLimit {
-        st.throwing = true
-        st.thrownValue = makeError(st, "RangeError", "Maximum call stack size exceeded")
-        return JSValue.Undefined
-    }
-    let genBody = st.suppressGenSpawn
-    st.suppressGenSpawn = false
-    if prog.funcs[fIdx].isGenerator && !genBody {
-        return makeGenerator(fIdx, envIdx, argVals, thisVal, false, st)
-    }
-    st.callDepth = st.callDepth + 1
+// One activation's scope: `this`, `new.target`, the self-name of a named function
+// expression, the declared parameters, and `arguments`. Split out of
+// callFunctionBody because makeGenerator needs exactly the same bindings — the
+// spec performs FunctionDeclarationInstantiation when a generator is CALLED, not
+// at its first next() — and two copies of this would drift.
+//
+// Does NOT pushActive: the caller decides how the scope is rooted. A plain call
+// roots it on the dynamic stack; a generator roots it through Interp.genScope,
+// because the scope outlives the call that created it.
+fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JSValue>, thisVal: &JSValue, st: &mut Interp): i64 {
     let callScope = newScope(st, envIdx)
-    // root the frame across the whole call so a GC inside the body (or a nested
-    // call) can't reclaim it
-    pushActive(st, callScope)
     // arrows have no own `this` — it stays lexical (resolved up the scope chain)
     if !prog.funcs[fIdx].isArrow {
         // A non-strict function called with no receiver gets globalThis, not
         // undefined. That is OrdinaryCallBindThis, and it is what
         // `Function("return this")()` — the standard global probe, and the core
         // of every UMD wrapper — depends on.
-        var boundThisVal = thisVal
+        var boundThisVal = cloneValue(thisVal)
         if !prog.funcs[fIdx].isStrict && isNullish(boundThisVal) {
             // sloppy mode substitutes globalThis for BOTH undefined and null:
             // `f.call(null)` and `f()` bind the same receiver
@@ -11205,6 +11173,52 @@ fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
         }
         scopeDefine(st, callScope, "arguments", JSValue.Obj(argsArr))
     }
+    return callScope
+}
+
+fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
+    // R1: an async call runs its body on its own activation and returns at that
+    // body's first await. Cleared immediately so a nested async call spawns.
+    let alreadyOnActivation = st.suppressAsyncSpawn
+    st.suppressAsyncSpawn = false
+    // An `async function*` is a generator first: calling it returns an async
+    // generator OBJECT, not a promise. Its body still awaits — that works
+    // because the body runs on its own green task, which is all parkOnPromise
+    // needs. Checked before the activation spawn, which would otherwise swallow
+    // it and hand back a promise with no next().
+    if prog.funcs[fIdx].isAsync && prog.funcs[fIdx].isGenerator && !st.suppressGenSpawn {
+        st.suppressAsyncSpawn = false
+        return makeGenerator(fIdx, envIdx, argVals, thisVal, true, st)
+    }
+    if prog.funcs[fIdx].isAsync && !alreadyOnActivation {
+        let caller = schedulerCurrent()
+        if caller as i64 != 0 {
+            return spawnActivation(fIdx, envIdx, argVals, thisVal, st, caller)
+        }
+    }
+    // Without this, runaway recursion exhausts the native stack and the process
+    // dies with no JS-level error — express's error middleware expects a
+    // catchable RangeError instead.
+    // The safe limit tracks the stack the interpreter runs on. After splitting
+    // the hot evaluator dispatcher, the engine's normal process stack supports
+    // a 104-frame guard; the runtime uses 500 on its separately sized green task.
+    // Keep the guard below the native ceiling so constructing the RangeError and
+    // unwinding it remain reliable rather than ending in a process crash.
+    if st.callDepth >= st.callDepthLimit {
+        st.throwing = true
+        st.thrownValue = makeError(st, "RangeError", "Maximum call stack size exceeded")
+        return JSValue.Undefined
+    }
+    let genBody = st.suppressGenSpawn
+    st.suppressGenSpawn = false
+    if prog.funcs[fIdx].isGenerator && !genBody {
+        return makeGenerator(fIdx, envIdx, argVals, thisVal, false, st)
+    }
+    st.callDepth = st.callDepth + 1
+    let callScope = bindActivationScope(prog, fIdx, envIdx, argVals, thisVal, st)
+    // root the frame across the whole call so a GC inside the body (or a nested
+    // call) can't reclaim it
+    pushActive(st, callScope)
     let body = prog.funcs[fIdx].body
     // `var`s and nested function declarations belong to the whole call frame
     hoistBlock(prog, body, st, callScope)
@@ -11791,6 +11805,7 @@ fn removeGen(st: &mut Interp, gi: i64) {
     st.genFn.remove(gi)
     st.genTask.remove(gi)
     st.genEnv.remove(gi)
+    st.genScope.remove(gi)
     st.genArgs.remove(gi)
     st.genThis.remove(gi)
     st.genYielded.remove(gi)
@@ -11920,6 +11935,11 @@ fn makeGenerator(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue
     st.genFn.push(fIdx)
     st.genTask.push(0 as *u8)
     st.genEnv.push(envIdx)
+    // -1 for now, filled in below. Every parallel array has to be complete before
+    // any user code runs: binding the parameters can evaluate a default that
+    // creates ANOTHER generator, and that one appends its own entries. Pushing the
+    // scope after that call would interleave the two generators' rows.
+    st.genScope.push(-1)
     st.genArgs.push(rootedArgs)
     st.genThis.push(cloneValue(thisVal))
     st.genYielded.push(JSValue.Undefined)
@@ -11931,7 +11951,63 @@ fn makeGenerator(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue
     st.genErr.push(JSValue.Undefined)
     st.genCaller.push(0 as *u8)
     st.genStarted.push(false)
+    let gi = st.genObj.len() - 1
+    // Bind parameters NOW. The spec's FunctionDeclarationInstantiation runs when a
+    // generator is CALLED, so a destructuring failure
+    // (`function* f([[x]] = [null]) {}` then `f()`) throws at `f()`, and a
+    // parameter default's side effects happen there too — not at the first next(),
+    // which is where desugaring them into a body prologue put both.
+    //
+    // The generator object is rooted across this: a default expression runs user
+    // code, which can allocate and collect, and nothing else refers to `g` yet.
+    pushTemp(st, JSValue.Obj(g))
+    let gscope = bindActivationScope(gProg, fIdx, envIdx, argVals, thisVal, st)
+    st.genScope[gi] = gscope
+    match gProg.funcs[fIdx].paramPrelude {
+        Option.Some(unpack) => {
+            pushActive(st, gscope)
+            let _f = execStmt(gProg, unpack, st, gscope)
+            popActive(st)
+        }
+        Option.None => {
+        }
+    }
+    popTemp(st)
     return JSValue.Obj(g)
+}
+
+// Run a generator's BODY in the activation scope makeGenerator already built.
+// callFunction cannot serve here: it would create a SECOND scope and re-bind the
+// declared parameters, and for a generator the prelude that unpacks the
+// destructured ones is no longer in the body — it ran at the call. The body would
+// see those names unbound.
+fn runGeneratorBody(prog: &Prog, fIdx: i64, scope: i64, st: &mut Interp): JSValue {
+    // The spawner sets these so the body does not spawn a second generator or a
+    // second activation for itself. callFunctionBody used to clear them on entry;
+    // running the body directly has to do it here, or the flags stay set and the
+    // NEXT `gen()` anywhere runs its body inline and returns undefined instead of
+    // a generator object.
+    st.suppressGenSpawn = false
+    st.suppressAsyncSpawn = false
+    st.fnFileStack.push(prog.funcs[fIdx].file.clone())
+    let savedStrict = st.strict
+    st.strict = prog.funcs[fIdx].isStrict
+    pushActive(st, scope)
+    let bodyBlock = prog.funcs[fIdx].body
+    hoistBlock(prog, bodyBlock, st, scope)
+    let flow = execBlock(prog, bodyBlock, st, scope)
+    popActive(st)
+    st.strict = savedStrict
+    let _popped = st.fnFileStack.pop()
+    var result = JSValue.Undefined
+    match flow {
+        Flow.Ret(v) => {
+            result = v
+        }
+        _ => {
+        }
+    }
+    return result
 }
 
 // gen.next(v): drive the generator one step. Spawns the body task on the first
@@ -12022,14 +12098,7 @@ fn genResume(o: i64, args: Vec<JSValue>, mode: i64, st: &mut Interp): JSValue {
         st.genStarted[gi] = true
         justSpawned = true
         let fIdx = st.genFn[gi]
-        let envIdx = st.genEnv[gi]
-        var bodyArgs: Vec<JSValue> = Vec.new()
-        var ai: i64 = 0
-        while ai < st.genArgs[gi].len() {
-            bodyArgs.push(cloneValue(st.genArgs[gi][ai]))
-            ai = ai + 1
-        }
-        let bodyThis = cloneValue(st.genThis[gi])
+        let bodyScope = st.genScope[gi]
         let genObjIdx = o
         let body = Task.spawnWithStack(move(): void => {
             // gProg/gInterp: a task body cannot borrow from the spawning frame.
@@ -12038,7 +12107,7 @@ fn genResume(o: i64, args: Vec<JSValue>, mode: i64, st: &mut Interp): JSValue {
             // an async generator's body is already ON a task; without this the
             // isAsync branch would spawn an activation and hand back a promise
             gInterp.suppressAsyncSpawn = true
-            let r = callFunction(gProg, fIdx, envIdx, bodyArgs, bodyThis, gInterp)
+            let r = runGeneratorBody(gProg, fIdx, bodyScope, gInterp)
             let fgi = genIndexOf(gInterp, genObjIdx)
             if fgi >= 0 {
                 genFinish(gInterp, fgi, r)

@@ -183,6 +183,13 @@ pub struct FuncDef {
     name: string,
     params: Vec<string>,
     body: BlockId,
+    // Destructured and defaulted parameters are desugared into one MultiDecl that
+    // normally becomes the body's first statement. A GENERATOR cannot do that: the
+    // spec binds parameters when the generator is CALLED, not at the first next(),
+    // so `function* f([[x]] = [null]) {}` must throw at `f()`. For a generator the
+    // statement is recorded here INSTEAD of being prepended, and makeGenerator runs
+    // it. None for every other function, which keeps their path byte-identical.
+    paramPrelude: Option<StmtId>,
     // arrows don't bind their own `this` (it stays lexical)
     isArrow: bool,
     // async functions wrap their return value in a resolved promise

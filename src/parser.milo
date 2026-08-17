@@ -284,7 +284,7 @@ fn makeArrow(p: &mut PState, prog: &mut Prog, params: Vec<string>, isAsync: bool
         prependStmt(prog, body!, unpack)
     }
     prog.funcs.push(FuncDef {
-        name: "", params: params, body: body!, isArrow: true, isAsync: isAsync, restFrom: mkRestFrom, isGenerator: false, isStrict: p.strict, isMethod: false, srcStart: startAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
+        name: "", params: params, body: body!, paramPrelude: Option.None, isArrow: true, isAsync: isAsync, restFrom: mkRestFrom, isGenerator: false, isStrict: p.strict, isMethod: false, srcStart: startAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
     }
     )
     p.strict = aSaved
@@ -1028,12 +1028,17 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
                     p.strict = true
                 }
                 let mbody = parseBraceBlock(p, prog)
+                var mParamPrelude: Option<StmtId> = Option.None
                 if mprelude.len() > 0 {
                     let munpack = declsToStmt(prog, mprelude)
-                    prependStmt(prog, mbody, munpack)
+                    if isMethodGen {
+                        mParamPrelude = Option.Some(munpack)
+                    } else {
+                        prependStmt(prog, mbody, munpack)
+                    }
                 }
                 prog.funcs.push(FuncDef {
-                    name: key.clone(), params: mparams, body: mbody, isArrow: false, isAsync: isMethodAsync, restFrom: mrest, isGenerator: isMethodGen, isStrict: p.strict, isMethod: true, srcStart: methodStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
+                    name: key.clone(), params: mparams, body: mbody, paramPrelude: mParamPrelude, isArrow: false, isAsync: isMethodAsync, restFrom: mrest, isGenerator: isMethodGen, isStrict: p.strict, isMethod: true, srcStart: methodStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
                 }
                 )
                 p.strict = mSaved
@@ -1655,12 +1660,19 @@ fn parseFunction(p: &mut PState, prog: &mut Prog, isAsync: bool): i64 {
         p.strict = true
     }
     let body = parseBraceBlock(p, prog)
+    // A generator binds its parameters when CALLED. Recording the unpack instead
+    // of prepending it is what lets makeGenerator run it there; see FuncDef.
+    var paramPrelude: Option<StmtId> = Option.None
     if prelude.len() > 0 {
         let unpack = declsToStmt(prog, prelude)
-        prependStmt(prog, body, unpack)
+        if isGenerator {
+            paramPrelude = Option.Some(unpack)
+        } else {
+            prependStmt(prog, body, unpack)
+        }
     }
     prog.funcs.push(FuncDef {
-        name: name, params: params, body: body, isArrow: false, isAsync: isAsync, restFrom: restFrom, isGenerator: isGenerator, isStrict: p.strict, isMethod: false, srcStart: fnStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
+        name: name, params: params, body: body, paramPrelude: paramPrelude, isArrow: false, isAsync: isAsync, restFrom: restFrom, isGenerator: isGenerator, isStrict: p.strict, isMethod: false, srcStart: fnStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
     }
     )
     p.strict = fSaved
@@ -2237,7 +2249,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                 }
                 let sbBody = parseBraceBlock(p, prog)
                 prog.funcs.push(FuncDef {
-                    name: "", params: sbParams, body: sbBody, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false, isStrict: p.strict, isMethod: false, srcStart: sbStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
+                    name: "", params: sbParams, body: sbBody, paramPrelude: Option.None, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false, isStrict: p.strict, isMethod: false, srcStart: sbStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
                 }
                 )
                 p.strict = sbSaved
@@ -2301,12 +2313,17 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                     p.strict = true
                 }
                 let mbody = parseBraceBlock(p, prog)
+                var cmParamPrelude: Option<StmtId> = Option.None
                 if mprelude.len() > 0 {
                     let munpack = declsToStmt(prog, mprelude)
-                    prependStmt(prog, mbody, munpack)
+                    if isStarM {
+                        cmParamPrelude = Option.Some(munpack)
+                    } else {
+                        prependStmt(prog, mbody, munpack)
+                    }
                 }
                 prog.funcs.push(FuncDef {
-                    name: mname.clone(), params: mparams, body: mbody, isArrow: false, isAsync: isAsyncM, restFrom: mrest, isGenerator: isStarM, isStrict: p.strict, isMethod: true, srcStart: cmStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
+                    name: mname.clone(), params: mparams, body: mbody, paramPrelude: cmParamPrelude, isArrow: false, isAsync: isAsyncM, restFrom: mrest, isGenerator: isStarM, isStrict: p.strict, isMethod: true, srcStart: cmStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
                 }
                 )
                 p.strict = mSaved
@@ -2409,7 +2426,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     let defaultBlock = addBlock(prog, defaultBody)
     var noParams: Vec<string> = Vec.new()
     prog.funcs.push(FuncDef {
-        name: name.clone(), params: noParams, body: defaultBlock, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false, isStrict: p.strict, isMethod: false, srcStart: 0, srcEnd: 0, file: p.file.clone()
+        name: name.clone(), params: noParams, body: defaultBlock, paramPrelude: Option.None, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false, isStrict: p.strict, isMethod: false, srcStart: 0, srcEnd: 0, file: p.file.clone()
     }
     )
     let defaultCtor = prog.funcs.len() - 1
