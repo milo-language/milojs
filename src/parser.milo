@@ -2098,6 +2098,24 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
         }
         return addStmt(prog, Stmt.Throw(e))
     }
+    if k == T_WITH {
+        advance(p)
+        // strict code forbids it outright, and the tests check that it is an EARLY
+        // error rather than a runtime one
+        if p.strict {
+            if !p.errored {
+                p.errored = true
+                if !p.quiet {
+                    eprint("milojs: " + p.file + ": Strict mode code may not include a with statement\n")
+                }
+            }
+        }
+        expect(p, T_LPAREN)
+        let withObjE = parseExpr(p, prog)
+        expect(p, T_RPAREN)
+        let withBody = parseStmt(p, prog)
+        return addStmt(prog, Stmt.With(withObjE, withBody))
+    }
     if k == T_TRY {
         advance(p)
         let tryB = parseBraceBlock(p, prog)

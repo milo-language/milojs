@@ -122,6 +122,11 @@ pub let T_NULLISHEQ: i32 = 101
 // so no precision is lost before the parser turns them into a JSValue.BigInt
 pub let T_BIGINT: i32 = 102
 
+// `with` — Annex B. Kept a keyword so the parser can produce a Stmt.With rather
+// than reading it as an identifier followed by a parenthesised expression, which
+// is how it used to fail: the whole FILE stopped parsing.
+pub let T_WITH: i32 = 103
+
 pub struct Token {
     kind: i32,
     num: f64,
@@ -363,6 +368,9 @@ fn keywordKind(s: &string): i32 {
     }
     if s == "try" {
         return T_TRY
+    }
+    if s == "with" {
+        return T_WITH
     }
     if s == "catch" {
         return T_CATCH

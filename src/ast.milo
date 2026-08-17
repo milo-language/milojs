@@ -177,6 +177,9 @@ pub enum Stmt {
     // try block, catch-param name ("" if none), catch block idx (-1 if none),
     // finally block links are absent when the corresponding clause is omitted.
     Try(BlockId, string, Option<BlockId>, Option<BlockId>),
+    // with (objExpr) body — Annex B, and a SyntaxError in strict code. The body
+    // runs in a scope whose identifier lookups consult the object first.
+    With(ExprId, StmtId),
 }
 
 pub struct FuncDef {
@@ -462,6 +465,9 @@ fn cloneStmt(s: &Stmt): Stmt {
         }
         Stmt.Ret(e) => {
             return Stmt.Ret(e)
+        }
+        Stmt.With(o, b) => {
+            return Stmt.With(o, b)
         }
         Stmt.Block(b) => {
             return Stmt.Block(b)

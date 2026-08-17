@@ -6,8 +6,8 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "7e61f55544dfb9aceedcea9d47b26d695f73fa37",
-    "dirty": false
+    "revision": "083de9c0add94860249967f74a5a04e389c0a187",
+    "dirty": true
   },
   "engine": ".dev/mj-engine",
   "selection": {
@@ -25,15 +25,15 @@
     ]
   },
   "totals": {
-    "pass": 101,
-    "fail": 48,
+    "pass": 102,
+    "fail": 47,
     "total": 149,
     "files": 58
   },
   "failureBuckets": [
     {
       "reason": "Uncaught Error: assertion failed: got |…|, expected |…|",
-      "count": 22,
+      "count": 23,
       "cases": [
         "bug1301.js:<whole>",
         "bug1302.js:<whole>",
@@ -56,6 +56,7 @@
         "test_builtin.js:test_function_source_pos",
         "test_builtin.js:test_exception_prepare_stack",
         "test_builtin.js:test_exception_stack_size_limit",
+        "test_closure.js:test_eval_const",
         "test_domexception.js:test_properties"
       ]
     },
@@ -85,15 +86,6 @@
         "bug1368.js:test_symbol_iterator_reentry",
         "bug1368.js:test_next_getter_reentry",
         "bug1368.js:test_value_getter_reentry"
-      ]
-    },
-    {
-      "reason": "milojs: /case.js: unexpected '…' after declaration",
-      "count": 3,
-      "cases": [
-        "test_closure.js:test_arrow_function",
-        "test_closure.js:test_with",
-        "test_closure.js:test_eval_const"
       ]
     },
     {
@@ -172,6 +164,13 @@
       "count": 1,
       "cases": [
         "test_builtin.js:test_typed_array"
+      ]
+    },
+    {
+      "reason": "Uncaught ReferenceError: __super$ is not defined",
+      "count": 1,
+      "cases": [
+        "test_closure.js:test_arrow_function"
       ]
     },
     {

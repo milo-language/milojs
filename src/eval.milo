@@ -18467,6 +18467,25 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             popActive(st)
             return flow
         }
+        Stmt.With(objE, body) => {
+            let ov = evalExpr(prog, objE, st, scope)
+            if st.throwing {
+                return Flow.Normal
+            }
+            // ToObject: `with (null)` and `with (undefined)` are TypeErrors
+            let oh = propertyBagOf(st, ov)
+            if oh < 0 {
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", "Cannot convert " + toStr(ov) + " to object" + currentModule(st))
+                return Flow.Normal
+            }
+            let child = newScope(st, scope)
+            st.scopes[child].withObj = oh
+            pushActive(st, child)
+            let flow = execStmt(prog, body, st, child)
+            popActive(st)
+            return flow
+        }
         Stmt.FuncDecl(f) => {
             let name = prog.funcs[f].name.clone()
             // Annex B B.3.3: a function declared inside a BLOCK also writes its
@@ -18643,6 +18662,9 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64, nested: bool,
         }
         Stmt.Block(b) => {
             hoistNestedBlock(prog, b, st, scope, shadow)
+        }
+        Stmt.With(_o, body) => {
+            hoistStmt(prog, body, st, scope, true, shadow)
         }
         Stmt.If(_c, thenS, elseS) => {
             hoistStmt(prog, thenS, st, scope, true, shadow)

@@ -366,6 +366,10 @@ struct Scope {
     // Binding does not say whether it is var or lexical, and the spec assigns
     // through a `var` while leaving a `let` alone.
     annexBFns: Vec<string>,
+    // `with (obj)` — the object whose properties shadow this scope's bindings, or
+    // -1 for an ordinary scope. Identifier lookup, existence and assignment all
+    // consult it before the scope's own vars.
+    withObj: i64,
 }
 
 // A heap object: an ordered list of string-keyed properties. `free` marks a
@@ -1972,7 +1976,7 @@ pub fn newScope(st: &mut Interp, parent: i64): i64 {
     st.allocSinceGc = st.allocSinceGc + 1
     let sc = Scope {
         parent: parent, vars: Vec.new(), mark: false,
-        fnStatKeys: Vec.new(), fnStatVals: Vec.new(), annexBFns: Vec.new()
+        fnStatKeys: Vec.new(), fnStatVals: Vec.new(), annexBFns: Vec.new(), withObj: -1
     }
     if st.freeList.len() > 0 {
         let idx = st.freeList.pop()!
@@ -2212,6 +2216,10 @@ fn markScope(st: &mut Interp, i: i64) {
         return
     }
     st.scopes[i].mark = true
+    // a `with` object is reachable only from its scope
+    if st.scopes[i].withObj >= 0 {
+        markObject(st, st.scopes[i].withObj)
+    }
     let parent = st.scopes[i].parent
     // handles, not cloned values — see markObject
     var objs: Vec<i64> = Vec.new()
@@ -2522,9 +2530,43 @@ pub fn scopeDefine(st: &mut Interp, scope: i64, name: string, value: JSValue) {
     )
 }
 
+// `with (obj)` puts an object in the identifier chain. A name the object has —
+// its own or inherited — shadows every binding further out, which is the whole
+// point of the statement.
+//
+// Limitation, deliberate: these consult the object with objHas/objGet, so an
+// ACCESSOR property on a with-object is read as its raw slot rather than by
+// running the getter. The lookup helpers have no Prog and so cannot re-enter the
+// interpreter; `with` over a getter is rare enough not to justify threading one
+// through the identifier hot path.
+fn withHas(st: &Interp, obj: i64, name: &string): bool {
+    var cur = obj
+    while cur >= 0 {
+        if objHas(st, cur, name) {
+            return true
+        }
+        cur = st.objects[cur].proto
+    }
+    return false
+}
+
+fn withGet(st: &Interp, obj: i64, name: &string): JSValue {
+    var cur = obj
+    while cur >= 0 {
+        if objHas(st, cur, name) {
+            return objGet(st, cur, name)
+        }
+        cur = st.objects[cur].proto
+    }
+    return JSValue.Undefined
+}
+
 pub fn scopeLookup(st: &Interp, scope: i64, name: &string): JSValue {
     var s = scope
     while s >= 0 {
+        if st.scopes[s].withObj >= 0 && withHas(st, st.scopes[s].withObj, name) {
+            return withGet(st, st.scopes[s].withObj, name)
+        }
         var i = st.scopes[s].vars.len() - 1
         while i >= 0 {
             if st.scopes[s].vars[i].name == name {
@@ -2542,6 +2584,9 @@ pub fn scopeLookup(st: &Interp, scope: i64, name: &string): JSValue {
 pub fn scopeTryLookup(st: &Interp, scope: i64, name: &string): Option<JSValue> {
     var s = scope
     while s >= 0 {
+        if st.scopes[s].withObj >= 0 && withHas(st, st.scopes[s].withObj, name) {
+            return Option.Some(withGet(st, st.scopes[s].withObj, name))
+        }
         var i = st.scopes[s].vars.len() - 1
         while i >= 0 {
             if st.scopes[s].vars[i].name == name {
@@ -2579,6 +2624,9 @@ pub fn scopeHasBelowGlobal(st: &Interp, scope: i64, name: &string): bool {
 pub fn scopeHas(st: &Interp, scope: i64, name: &string): bool {
     var s = scope
     while s >= 0 {
+        if st.scopes[s].withObj >= 0 && withHas(st, st.scopes[s].withObj, name) {
+            return true
+        }
         var i = st.scopes[s].vars.len() - 1
         while i >= 0 {
             if st.scopes[s].vars[i].name == name {
@@ -2608,6 +2656,10 @@ pub fn scopeHasOwn(st: &Interp, scope: i64, name: &string): bool {
 pub fn scopeAssign(st: &mut Interp, scope: i64, name: string, value: JSValue) {
     var s = scope
     while s >= 0 {
+        if st.scopes[s].withObj >= 0 && withHas(st, st.scopes[s].withObj, name) {
+            objSet(st, st.scopes[s].withObj, name, value)
+            return
+        }
         var i = st.scopes[s].vars.len() - 1
         while i >= 0 {
             if st.scopes[s].vars[i].name == name {
