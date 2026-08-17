@@ -1369,6 +1369,48 @@ conservative estimate, it is a wrong one. The 2026-08-16 note had already worked
 out the right representation in its own second paragraph and then costed the first
 one.
 
+### The regex VM dies silently on a large input — OPEN, and it is the top priority
+
+    print("start");
+    var s = "a".repeat(200000);
+    print("built " + s.length);          // prints
+    print(/^[a-z]+$/.test(s));           // never returns; process exits 0
+
+No error, no output, **exit status 0**. For an embedder that is the worst possible
+failure: not a crash to catch, not a wrong answer to notice — nothing. The
+threshold is somewhere between 50k and 200k characters for a simple quantifier.
+
+Cause: `reRun` in `src/regex.milo` recurses once per VM STEP. Matching `x+` against
+n characters therefore recurses n deep, and at roughly 100k the green task's 8MB
+stack is gone. The overflow is not reported.
+
+**How it was found, and what it says about the numbers.** It surfaced as 362
+`crash(...)` entries in `built-ins/RegExp/property-escapes`, whose harness builds
+strings covering the whole code space (~1.1M code points). That directory measured
+**86.0%** when property escapes were implemented and **27.1%** after the
+engine-agnostic failure detection landed the same day. Nothing regressed between
+those two runs: the old harness only counted a failure when the output matched
+`Uncaught …`, and a silent death produces no output at all, so **362 crashes were
+being scored as passes**. This is the single largest instance of the measurement
+bug already recorded in `docs/conformance-reports.md`.
+
+**An attempt was made and reverted.** Threading a depth budget through the VM and
+raising a catchable RangeError needs somewhere to record "budget exhausted"; a
+mutable module-level `var` in Milo compiled without error and broke every regex
+(each match died silently), so the work was reverted rather than debugged. Any
+retry needs the flag carried in a parameter or in `Interp`, not a global.
+
+**The real fix is an explicit backtrack stack.** Move the VM's saved states to a
+heap `Vec` and drive it with a loop, so depth is bounded by memory rather than by
+the native stack. That removes the ceiling entirely instead of relocating it, and it
+is the same shape as the fix every production regex engine uses. Until then the
+guard is worth landing on its own — a catchable error beats a silent exit 0 — but
+only with the flag plumbed properly.
+
+This is now the top item in this file: it is a correctness-and-safety bug reachable
+from ordinary JS, it silently inflated a published conformance figure by ~59 points
+in one directory, and it blocks 362 tests.
+
 ### reduce passed three arguments where the spec says four — FIXED 2026-08-17
 
 `Array.prototype.reduce` and `reduceRight` built their callback arguments by hand
