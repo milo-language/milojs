@@ -6,8 +6,8 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "1ded1107d1e126331b11ab890cc2f3b4b10876a7",
-    "dirty": false
+    "revision": "becb9db8940cd54dc313e2fc14c6b9c3832e88b3",
+    "dirty": true
   },
   "engine": ".dev/mj-engine",
   "selection": {
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 935,
-    "fail": 535,
+    "pass": 939,
+    "fail": 531,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -50,8 +50,8 @@
     },
     {
       "area": "built-ins/Array",
-      "pass": 46,
-      "fail": 45,
+      "pass": 50,
+      "fail": 41,
       "total": 91
     },
     {
@@ -1467,24 +1467,10 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: [, , , ].lastIndexOf(N) Expected SameValue(«-N», «N») to be true",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-b-i-15.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: [[Get]] operation of an accessor without getter Expected a TypeError t",
       "count": 1,
       "cases": [
         "language/statements/class/elements/private-getter-shadowed-by-setter-on-nested-class.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: [N, true].lastIndexOf(true, child) Expected SameValue(«-N», «N») to be",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-25.js"
       ]
     },
     {
@@ -1534,13 +1520,6 @@
       "count": 1,
       "cases": [
         "built-ins/Array/prototype/sort/bug_596_1.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: #N: Array.prototype[N] = N; x = [N]; x.length = N; x.reverse(); x[N] =",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/reverse/S15.4.4.8_A4_T1.js"
       ]
     },
     {
@@ -1922,10 +1901,10 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: arr.indexOf(targetObj, fromIndex) Expected SameValue(«-N», «N») to be ",
+      "reason": "Uncaught undefined: arr.hasOwnProperty(\"N\") must return true Expected SameValue(«false», «",
       "count": 1,
       "cases": [
-        "built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js"
+        "built-ins/Array/prototype/concat/S15.4.4.4_A3_T1.js"
       ]
     },
     {
@@ -1985,7 +1964,7 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: arrObj[N] Expected SameValue(«undefined», «N») to be true",
+      "reason": "Uncaught undefined: arrObj[N] Expected SameValue(«N», «N») to be true",
       "count": 1,
       "cases": [
         "built-ins/Object/defineProperty/15.2.3.6-4-192.js"
@@ -2808,13 +2787,6 @@
       "count": 1,
       "cases": [
         "built-ins/String/prototype/split/instance-is-math.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: The value of arr[N] is expected to be N Expected SameValue(«undefined»",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/concat/S15.4.4.4_A3_T1.js"
       ]
     },
     {
