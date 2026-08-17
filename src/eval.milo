@@ -4482,10 +4482,35 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         var pat = ""
         var flags = ""
         if argVals.len() > 0 {
-            pat = toStr(argVals[0])
+            // RegExp(re) copies re's pattern and flags rather than stringifying
+            // it. ToString would have produced "[object Object]" here, so
+            // `new RegExp(/x/g)` built a regex matching that literal text.
+            let ph = objHandle(argVals[0])
+            var copied = false
+            if ph >= 0 && st.objects[ph].extra >= 0 && st.objExtras[st.objects[ph].extra].regexId >= 0 {
+                pat = toStr(getMember(st, ph, "source"))
+                flags = toStr(getMember(st, ph, "flags"))
+                copied = true
+            }
+            if !copied {
+                match cloneValue(argVals[0]) {
+                    JSValue.Undefined => {
+                    }
+                    _ => {
+                        pat = toStr(argVals[0])
+                    }
+                }
+            }
         }
+        // an explicit second argument overrides the copied flags, including ""
         if argVals.len() > 1 {
-            flags = toStr(argVals[1])
+            match cloneValue(argVals[1]) {
+                JSValue.Undefined => {
+                }
+                _ => {
+                    flags = toStr(argVals[1])
+                }
+            }
         }
         return makeRegex(st, pat, flags)
     }
@@ -11411,12 +11436,13 @@ fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
     // Without this, runaway recursion exhausts the native stack and the process
     // dies with no JS-level error — express's error middleware expects a
     // catchable RangeError instead.
-    // The safe limit tracks the stack the interpreter runs on. After splitting
-    // the hot evaluator dispatcher, the engine's normal process stack supports
-    // a 104-frame guard; the runtime uses 500 on its separately sized green task.
-    // Keep the guard below the native ceiling so constructing the RangeError and
-    // unwinding it remain reliable rather than ending in a process crash.
-    if st.callDepth >= st.callDepthLimit {
+    // stackHeadroom() is the guard that actually protects the stack: it measures
+    // the task we are standing on, so it is right on the 256 MB interpreter task
+    // and on an 8 MB generator body alike. callDepthLimit is a backstop set to
+    // node's observable ceiling (~10k frames) so scripts that probe recursion
+    // depth see a comparable number; whichever fires first wins.
+    let head = stackHeadroom()
+    if st.callDepth >= st.callDepthLimit || (head >= 0 && head < stackReserveBytes()) {
         st.throwing = true
         st.thrownValue = makeError(st, "RangeError", "Maximum call stack size exceeded")
         return JSValue.Undefined
@@ -11483,6 +11509,32 @@ fn callFunctionViaMethod(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSVal
 // its prototype, statics on its own property bag. `extends` chains the prototype
 // so instances inherit the base's methods, and records the base constructor
 // under __super$<Name> so super(...) can find it.
+// Native-stack headroom in bytes on the green task this call is running on, or
+// -1 off-task. The recursion guard used to be a fixed frame count, which cannot
+// be right for both stacks the engine uses at once: the main interpreter task
+// carries a 256 MB stack (~25k JS frames) while every generator and async body
+// gets 8 MB (~1.5k). A single number was either a spurious RangeError at 104
+// frames on the big stack or a silent overflow crash on a small one. Measuring
+// the stack we are actually standing on is right on either.
+fn stackHeadroom(): i64 {
+    let me = schedulerCurrent()
+    if me as i64 == 0 {
+        return -1
+    }
+    unsafe {
+        var probe: i64 = 0
+        let sp = probe.addrOf() as *u8 as i64
+        let base = rtReadI64(me, tStack())
+        return sp - (base + guardPageSize())
+    }
+}
+
+// Slack left below the guard so that raising the RangeError and unwinding out of
+// the recursion do not themselves run off the end of the stack.
+fn stackReserveBytes(): i64 {
+    return 524288
+}
+
 // Best-effort name for a callee expression, so "is not a function" says which
 // one. Diagnostics only.
 fn describeCallee(prog: &Prog, calleeId: ExprId): string {
@@ -11498,6 +11550,18 @@ fn describeCallee(prog: &Prog, calleeId: ExprId): string {
         }
         Expr.OptIndex(_o, _k) => {
             return "?.[]"
+        }
+        Expr.RegexLit(pat, flags) => {
+            return "/" + pat.clone() + "/" + flags.clone()
+        }
+        Expr.ObjLit(_l) => {
+            return "{}"
+        }
+        Expr.ArrLit(_l) => {
+            return "[]"
+        }
+        Expr.Num(n) => {
+            return numToStr(n)
         }
         _ => {
             return "value"
@@ -18491,7 +18555,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 popTemp(st)
                 popTemp(st)
                 st.throwing = true
-                st.thrownValue = JSValue.Str("TypeError: value is not iterable")
+                st.thrownValue = makeError(st, "TypeError", describeCallee(prog, objExpr) + " is not iterable" + currentModule(st))
                 return Flow.Normal
             }
             let loopScope = newScope(st, scope)

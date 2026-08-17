@@ -15,7 +15,7 @@
 //
 // The report is COMMITTED evidence. After a sweep, run `node tools/gen-facts.mjs`
 // so the numbers in status.md/README are recompiled from it, and commit both.
-import { readdirSync, readFileSync, writeFileSync, statSync, mkdtempSync, mkdirSync } from "fs";
+import { readdirSync, readFileSync, writeFileSync, statSync, mkdtempSync, mkdirSync, existsSync } from "fs";
 import { execFileSync } from "child_process";
 import { join } from "path";
 import { homedir } from "node:os";
@@ -29,6 +29,13 @@ import { tmpdir } from "os";
 const T262 = process.env.TEST262 ?? "/tmp/test262";
 const HARNESS = join(T262, "harness");
 const ENGINE = process.env.MILOJS_ENGINE ?? "/tmp/mj-eng";
+// A missing engine makes every single case "crash", which reads as a catastrophic
+// conformance regression instead of as a setup mistake. Say what actually happened.
+if (!existsSync(ENGINE)) {
+  console.error(`test262-sweep: engine not found at ${ENGINE}\n` +
+    `  build it first (tools/dev.sh) and copy .dev/mj-engine there, or set MILOJS_ENGINE.`);
+  process.exit(2);
+}
 const verbose = process.argv.includes("-v");
 const arg = (name: string) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : null; };
 const sampleN = arg("--sample") ? parseInt(arg("--sample")!) : null;

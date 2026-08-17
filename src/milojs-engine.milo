@@ -197,7 +197,16 @@ fn main(): i32 {
                     exit(0)
                 }
             }
-            , 8388608)
+            // 16 MB, not the 8 MB a green task would otherwise get. Native stack,
+            // not JS depth, is what limits recursion here: a JS frame costs ~6.9 KB
+            // of tree-walker native stack, so 8 MB stopped at ~1.2k frames against
+            // node's ~10.4k and tape's nested-subtest chain died mid-suite. 16 MB
+            // buys ~2.4k frames for ~15 MB of RSS (still under node's baseline
+            // footprint); 256 MB was measured to buy ~39k frames but cost 288 MB of
+            // RSS for `console.log(1+1)` and scored no better on the package corpus.
+            // Closing the rest of the gap to node means shrinking the per-frame cost,
+            // not buying more stack.
+            , 16777216)
             interpTask.join()
             if gInterp.throwing {
                 eprint("Uncaught " + describeThrown(gInterp, gInterp.thrownValue))

@@ -1,0 +1,7 @@
+caught: true Maximum call stack size exceeded
+past 1000 frames: true
+second overflow also caught: true
+still running: 2,4,6
+for-of: true TypeError /a/g is not iterable
+for-of obj: true {} is not iterable
+fromEntries: true

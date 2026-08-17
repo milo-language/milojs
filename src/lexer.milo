@@ -518,9 +518,45 @@ fn prevAllowsRegex(toks: &Vec<Token>): bool {
     }
     let k = toks[toks.len() - 1].kind
     if k == T_IDENT || k == T_NUM || k == T_BIGINT || k == T_STR || k == T_RPAREN || k == T_RBRACKET || k == T_TEMPLATE_END {
+        // Reserved words reach here as T_IDENT too, but every one of them except
+        // `of` is a keyword the lexer can trust: `return /a/` is a regex and
+        // nothing else. `of` is contextual — it is a perfectly good variable
+        // name, so `of / 2 / 1` really is two divisions. Only the `of` of a
+        // for-of introduces an expression, and telling them apart needs the
+        // bracket context the parser has and the lexer does not, so reconstruct
+        // just that much of it.
+        if k == T_IDENT && toks[toks.len() - 1].text == "of" {
+            return inForHead(toks, toks.len() - 1)
+        }
         return false
     }
     return true
+}
+
+// Is toks[at] sitting directly inside a `for (` head? Scans left from `at`,
+// tracking bracket depth, and reports whether the paren that encloses it is
+// preceded by `for`. Bounded by the enclosing paren, not by the file.
+fn inForHead(toks: &Vec<Token>, at: i64): bool {
+    var depth: i64 = 0
+    var i: i64 = at - 1
+    while i >= 0 {
+        let k = toks[i].kind
+        if k == T_RPAREN || k == T_RBRACKET || k == T_RBRACE {
+            depth = depth + 1
+        } else if k == T_LBRACKET || k == T_LBRACE {
+            if depth == 0 {
+                return false
+            }
+            depth = depth - 1
+        } else if k == T_LPAREN {
+            if depth == 0 {
+                return i > 0 && toks[i - 1].kind == T_FOR
+            }
+            depth = depth - 1
+        }
+        i = i - 1
+    }
+    return false
 }
 
 // Scan a /pattern/flags literal starting at the opening slash. Returns the new

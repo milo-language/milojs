@@ -6,10 +6,10 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "06b71a47bc7aa84ab81fd5f72822f9d8b1fa10f2",
+    "revision": "b9e855be3c2b486c612a43f1bb689613b0b0ba2b",
     "dirty": true
   },
-  "engine": ".dev/mj-engine",
+  "engine": "/tmp/mj-eng",
   "selection": {
     "directory": null,
     "sample": 1500,

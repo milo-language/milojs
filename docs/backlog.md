@@ -3256,7 +3256,81 @@ Corpus 919 to 925, test262 873 to 874.
 
 Locked by `tests/wrapperUnwrapping.js`.
 
-## OPEN: es-get-iterator overflows in tape's nested-test machinery
+## CLOSED: es-get-iterator overflowed because the recursion guard was 104 frames
+
+Five previous sittings tried to find which *value* triggered the overflow. There
+was no such value. The engine's `callDepthLimit` was **104** while node's is about
+10,400, and tape's deferred sub-test chain recurses past 104 all on its own — the
+failure moved with total accumulated depth, not with any particular input, which
+is exactly why bisecting the value list kept subtracting hypotheses without ever
+converging.
+
+Two things had gone wrong at once:
+
+- **The limit was stale.** Its comment describes the engine's "normal process
+  stack", but the engine had since moved its program onto an 8 MB green task,
+  same as the runtime. Nobody re-measured; 104 had been correct for a stack the
+  engine no longer used.
+- **A frame count cannot describe two stacks.** The main interpreter task and
+  every generator/async body have different stack sizes, so no single number is
+  right for both — one that is safe on 8 MB wastes 97% of a 256 MB stack, and one
+  sized for the big stack is a silent overflow crash on the small one.
+
+The guard now measures the native stack it is actually standing on
+(`stackHeadroom()` in eval.milo, reading the current task's mapped stack base),
+and raises a catchable RangeError with 512 KB to spare. It is correct on any task
+whatever size it was spawned with, and it was verified by pushing the frame
+backstop to 200,000 and watching the engine stop cleanly at ~39k frames instead
+of dying.
+
+Stack sizing was then chosen by measurement rather than by preference. A JS frame
+costs ~6.9 KB of tree-walker native stack:
+
+| task stack | frames | RSS for `console.log(1+1)` | package corpus |
+|---|---|---|---|
+| 8 MB (old) | ~1,200 | 21 MB | 73% |
+| 16 MB | ~2,400 | 36 MB | **76%** |
+| 32 MB | ~4,800 | 53 MB | 76% |
+| 256 MB | ~39,000 | 288 MB | 76% |
+
+16 MB takes the entire measurable win at a sixteenth of the memory of the largest
+option, and keeps the engine's footprint under node's. The remaining distance to
+node's ~10.4k frames is not buyable with more stack — it needs the ~6.9 KB
+per-frame cost brought down, which means splitting the big `match` arms on the
+eval → callValue → callFunction → execBlock recursion so a frame holds only the
+live arm's locals. That is the next real lever here, and it is worth roughly a 4x
+depth increase for free.
+
+es-get-iterator went 76 → 130 of 140 assertions; the package corpus went 73% →
+76% (1246 → 1297 assertions). test262 and the QuickJS suite did not move at all,
+which is the honest shape of this fix: almost nothing in a conformance suite
+recurses 100 frames deep, and almost every real library does.
+
+### Three bugs found on the way
+
+- **`for...of` over a non-iterable threw a bare JS string**, not a TypeError, so
+  `e instanceof TypeError` was false and `e.message` undefined. Every
+  `assert.throws(TypeError, ...)` wrapped around a for-of was failing for the
+  wrong reason, as were the prelude's `WeakSet`/`Object.fromEntries`, which route
+  their iteration through the same statement.
+- **A regex literal could not follow `of`.** `for (const x of /a/g)` was a parse
+  error. Every other keyword is lexed with its own token kind, so `return /a/`
+  was fine; `of` is contextual, arrives as a plain identifier, and `of / 2 / 1`
+  really is two divisions. `inForHead()` in lexer.milo reconstructs just enough
+  bracket context to tell the two apart.
+- **`new RegExp(/x/g)` stringified its argument** into `[object Object]` and
+  compiled a regex matching that literal text, instead of copying source and
+  flags.
+
+### Harness fix: a missing engine binary reported as 1347 crashes
+
+The sweep read a nonexistent `/tmp/mj-eng` and reported every case as
+`crash(undefined)` — indistinguishable from a catastrophic regression, and it
+cost a real detour before the cause was spotted. It now exits 2 and says the
+binary is missing. Same class of defect as the QuickJS failure-detection bug:
+the harness answering confidently about something it could not observe.
+
+## OPEN (superseded): es-get-iterator overflows in tape's nested-test machinery
 
 Still stops after 76 assertions with RangeError, at the same point before and
 after the valueOf fix. What the fix DID rule out, by direct measurement rather
