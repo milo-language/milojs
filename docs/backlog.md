@@ -3256,6 +3256,66 @@ Corpus 919 to 925, test262 873 to 874.
 
 Locked by `tests/wrapperUnwrapping.js`.
 
+## Temporal ISO strings: one parser instead of seven regexes
+
+Each Temporal type carried its own ISO regex, and not one of them knew about
+ANNOTATIONS — the bracketed suffixes carrying the time zone and the calendar that
+every Temporal string in the wild ends with. `Temporal.PlainDate.from("2000-05-02[u-ca=iso8601]")`
+was a RangeError. That grammar alone was 208 test262 cases.
+
+Replaced with a single hand-written scanner, `parseTemporalISO`, used by all six
+`from` methods. Temporal **56.5% -> 60.7%** (+192), whole suite 70.3% -> 70.7%.
+
+The annotation rules need real validation, not a character class:
+
+- an unknown annotation is IGNORED (`2000-05-02[foo=bar]` is a valid PlainDate);
+- the same annotation marked critical with `!` is a RangeError, which is the
+  entire point of the flag: a consumer that does not understand it must refuse
+  the string rather than silently drop it;
+- a repeated `u-ca` is tolerated and the first wins, UNLESS one of them is
+  critical, which makes the ambiguity fatal;
+- a time zone annotation has no `=`, must come first, and only one is allowed.
+
+Three more rules fell out of the same rewrite, each its own test262 file per type:
+
+- **U+2212 MINUS SIGN is not a minus.** `1976-11-18T15:23:30.12−02:00` reads as
+  valid to a human and is a RangeError; only ASCII `-` counts.
+- **An offset needs a time to be an offset from.** `2022-09-15Z` and
+  `2022-09-15+00:00` are RangeErrors, where `2000-05-02T00+00` is fine.
+- **`:60` is a leap second on the wire** and clamps to `:59`; it never denotes a
+  61st second.
+
+`tests/temporalIsoStrings.js` locks the grammar down. node 25 has no Temporal, so
+it cannot be the oracle — the fixture is in `.node-oracle-exempt` with test262 as
+the authority instead.
+
+## QuickJS has been coasting, and this is the first tick that looked at it
+
+test262 went 61.9% -> 70.7% across this session while the QuickJS suite moved
+67.1% -> 69.8% and has been FLAT for three ticks. Every tick picked the largest
+test262 cluster and QuickJS moved only as a side effect. Measured properly for
+the first time, 45 of 149 cases fail, and they are diffuse — mostly one test
+function each rather than one mechanism:
+
+- `test_builtin.js` alone holds 12: test_array, test_rope, test_eval, test_date,
+  test_regexp, test_function, test_exception_source_pos,
+  test_function_source_pos, test_exception_prepare_stack,
+  test_exception_stack_size_limit, test_exception_capture_stack_trace,
+  test_cur_pc.
+- `bug492.js` holds 4, all resizable ArrayBuffer: resize_shrink, resize_grow,
+  resize_zero, detach.
+- Single files: `test_base64.js` (Uint8Array base64), `test_domexception.js`,
+  `Float16Array` (absent entirely), `for-await-normal-close.js`,
+  `test_bigint.js` asintn and bigint2, `parse-error-column.js`, `bug1301`,
+  `bug1302`, `bug1498`, `bug652`, `bug858`, `test_closure.js` eval_const.
+- 4 are timeout/crash under SIGTERM and have not been diagnosed.
+
+Roughly 8-10 of the 45 are QuickJS-specific diagnostics — exception source
+positions, `cur_pc`, `prepare_stack` — which test engine-internal introspection
+rather than portable semantics. 90% here means 134/149, so 30 of the 45 have to
+go, and those 8-10 are the expensive ones. The cheap coherent wins are resizable
+ArrayBuffers (4), Float16Array, DOMException and base64.
+
 ## Temporal was the biggest single cluster in test262, and nobody had measured it
 
 `tools/check-temporal.sh` reported 119/119 and had done for weeks. Against

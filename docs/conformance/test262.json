@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "3ff221764e4df94920934c611c5944cd487b7867",
+    "revision": "2562ca945230d1b01b7d58799b2ebc3c8e308181",
     "dirty": true
   },
   "engine": "/tmp/mj-eng",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 1034,
-    "fail": 436,
+    "pass": 1039,
+    "fail": 431,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -38,8 +38,8 @@
     },
     {
       "area": "built-ins/Temporal",
-      "pass": 79,
-      "fail": 52,
+      "pass": 84,
+      "fail": 47,
       "total": 131
     },
     {
@@ -1067,45 +1067,17 @@
       ]
     },
     {
-      "reason": "Uncaught RangeError: invalid ISO date string: N",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/Duration/prototype/round/relativeto-string.js"
-      ]
-    },
-    {
-      "reason": "Uncaught RangeError: invalid ISO date string: N-N-N[foo=bar]",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainDate/prototype/equals/argument-string-unknown-annotation.js"
-      ]
-    },
-    {
-      "reason": "Uncaught RangeError: invalid ISO month-day string: N-N-N[u-ca=iso8601]",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainMonthDay/from/argument-string-calendar-annotation.js"
-      ]
-    },
-    {
-      "reason": "Uncaught RangeError: invalid ISO time string: N:N:N.N[foo=bar]",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/ZonedDateTime/prototype/withPlainTime/argument-string-unknown-annotation.js"
-      ]
-    },
-    {
-      "reason": "Uncaught RangeError: invalid ISO time string: N:N:N.N[u-ca=iso8601]",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/argument-string-calendar-annotation.js"
-      ]
-    },
-    {
       "reason": "Uncaught RangeError: Maximum call stack size exceeded",
       "count": 1,
       "cases": [
         "language/expressions/logical-or/tco-right.js"
+      ]
+    },
+    {
+      "reason": "Uncaught RangeError: unsupported calendar in PlainTime string: hebrew",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/argument-string-calendar-annotation.js"
       ]
     },
     {
@@ -1676,6 +1648,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: calendar annotation (without time or time zone): referenceISOYear resu",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainMonthDay/from/argument-string-calendar-annotation.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: date-time + IANA annotation preserves wall time in the time zone: hour",
       "count": 1,
       "cases": [
@@ -2131,13 +2110,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: no more than N decimal places are allowed Expected a RangeError to be ",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainMonthDay/from/argument-string-too-many-decimals.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: null does not convert to a valid ISO string Expected a TypeError to be",
       "count": 1,
       "cases": [
@@ -2268,13 +2240,6 @@
       "count": 1,
       "cases": [
         "built-ins/Temporal/Duration/compare/relativeto-propertybag-timezone-string-year-zero.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: reject more than one calendar annotation if any critical: N-N-01T00:N[",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainDate/prototype/since/argument-string-multiple-calendar.js"
       ]
     },
     {
