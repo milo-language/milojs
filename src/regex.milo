@@ -92,6 +92,12 @@ let RE_MATCH: i32 = 3
 let RE_JMP: i32 = 4
 let RE_SPLIT: i32 = 5
 let RE_SAVE: i32 = 6
+// Clear capture slots a..=b. The spec's RepeatMatcher clears every capture
+// INSIDE a quantified body at the start of each iteration, so a group that does
+// not participate in the last pass reads undefined rather than keeping what an
+// earlier pass put there: /(z)((a+)?(b+)?(c))*/ on "zaacbbbcac" leaves group 4
+// undefined, and without this it kept "bbb" from the first iteration.
+let RE_RESET: i32 = 16
 let RE_BOL: i32 = 7
 let RE_EOL: i32 = 8
 let RE_WORDB: i32 = 9
@@ -727,6 +733,15 @@ fn reParseAtom(p: &mut ReParse): i64 {
             let seq = reAddNode(p, ReNode.Concat(p.lists.len() - 1))
             return reAddNode(p, ReNode.Group(seq, -1))
         }
+        // Annex B: `\c` NOT followed by an ASCII letter is not a control escape
+        // at all — it is a literal backslash, and the `c` is an ordinary
+        // character after it. `/\c0/` matches the three characters `\c0`.
+        // Falling through to the line below dropped the backslash and matched
+        // "c0" instead.
+        if e == 'c' {
+            p.pos = p.pos + 1
+            return reAddNode(p, ReNode.Char('\\' as u8))
+        }
         p.pos = p.pos + 2
         return reAddNode(p, ReNode.Char(reEscapedChar(e)))
     }
@@ -853,6 +868,34 @@ fn reParseAlt(p: &mut ReParse): i64 {
 
 // ── compile node tree → instruction program ──
 
+// Patch the RE_RESET placeholder at `at` to cover every capture slot the body
+// compiled between `from` and the current end writes. A body with no captures
+// leaves an empty range, which the VM skips.
+fn rePatchReset(prog: &mut Vec<ReInst>, at: i64, from: i64) {
+    var lo: i64 = -1
+    var hi: i64 = -1
+    var i = from
+    while i < prog.len() {
+        if prog[i].op == RE_SAVE {
+            let k = prog[i].a
+            if lo < 0 || k < lo {
+                lo = k
+            }
+            if hi < 0 || k > hi {
+                hi = k
+            }
+        }
+        i = i + 1
+    }
+    if lo < 0 {
+        prog[at].a = 0
+        prog[at].b = -1
+    } else {
+        prog[at].a = lo
+        prog[at].b = hi
+    }
+}
+
 fn reEmit(prog: &mut Vec<ReInst>, op: i32, a: i64, b: i64): i64 {
     prog.push(ReInst {
         op: op, a: a, b: b
@@ -921,7 +964,10 @@ fn reCompileNode(p: &ReParse, idx: i64, prog: &mut Vec<ReInst>) {
         }
         ReNode.Star(child, greedy) => {
             let sp = reEmit(prog, RE_SPLIT, 0, 0)
+            let rs = reEmit(prog, RE_RESET, 0, -1)
+            let bodyFrom = prog.len()
             reCompileNode(p, child, prog)
+            rePatchReset(prog, rs, bodyFrom)
             reEmit(prog, RE_JMP, sp, 0)
             let after = prog.len()
             if greedy {
@@ -934,7 +980,10 @@ fn reCompileNode(p: &ReParse, idx: i64, prog: &mut Vec<ReInst>) {
         }
         ReNode.Plus(child, greedy) => {
             let l1 = prog.len()
+            let rs = reEmit(prog, RE_RESET, 0, -1)
+            let bodyFrom = prog.len()
             reCompileNode(p, child, prog)
+            rePatchReset(prog, rs, bodyFrom)
             let sp = reEmit(prog, RE_SPLIT, 0, 0)
             let after = prog.len()
             if greedy {
@@ -965,7 +1014,10 @@ fn reCompileNode(p: &ReParse, idx: i64, prog: &mut Vec<ReInst>) {
             }
             if maxV < 0 {
                 let sp = reEmit(prog, RE_SPLIT, 0, 0)
+                let rs = reEmit(prog, RE_RESET, 0, -1)
+                let bodyFrom = prog.len()
                 reCompileNode(p, child, prog)
+                rePatchReset(prog, rs, bodyFrom)
                 reEmit(prog, RE_JMP, sp, 0)
                 let after = prog.len()
                 if greedy {
@@ -981,7 +1033,10 @@ fn reCompileNode(p: &ReParse, idx: i64, prog: &mut Vec<ReInst>) {
                 while j < maxV {
                     let sp = reEmit(prog, RE_SPLIT, 0, 0)
                     splits.push(sp)
+                    let rs = reEmit(prog, RE_RESET, 0, -1)
+                    let bodyFrom = prog.len()
                     reCompileNode(p, child, prog)
+                    rePatchReset(prog, rs, bodyFrom)
                     j = j + 1
                 }
                 let after = prog.len()
@@ -1327,6 +1382,19 @@ fn reRun(re: &Regex, pcStart: i64, s: &string, spStart: i64, saves: &mut Vec<i64
             trailIdx.push(inst.a)
             trailVal.push(saves[inst.a])
             saves[inst.a] = sp
+            pc = pc + 1
+            advanced = true
+        } else if op == RE_RESET {
+            var rk = inst.a
+            while rk <= inst.b {
+                if rk < saves.len() && saves[rk] >= 0 {
+                    trailKind.push(0)
+                    trailIdx.push(rk)
+                    trailVal.push(saves[rk])
+                    saves[rk] = -1
+                }
+                rk = rk + 1
+            }
             pc = pc + 1
             advanced = true
         } else if op == RE_BOL {

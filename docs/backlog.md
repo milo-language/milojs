@@ -3256,6 +3256,42 @@ Corpus 919 to 925, test262 873 to 874.
 
 Locked by `tests/wrapperUnwrapping.js`.
 
+## Capture reset in quantifiers, and a silent opcode collision
+
+Three regex/Date fixes, measured directly rather than through the whole-suite
+sample, which is too coarse to see them: `built-ins/RegExp` 1153 -> 1155,
+`built-ins/Date` 360 -> 361.
+
+- **Captures inside a quantified body reset each iteration.** The spec's
+  RepeatMatcher clears every capture inside the body at the start of every
+  repetition, so a group that does not participate in the LAST pass reads
+  undefined. milojs kept the stale value: `/(z)((a+)?(b+)?(c))*/` on
+  "zaacbbbcac" reported "bbb" for group 4 where node reports undefined.
+  Implemented as an `RE_RESET` opcode emitted at the top of each quantifier
+  body, with the slot range derived by scanning the compiled body for RE_SAVE,
+  and trailed like a save so backtracking restores it.
+- **`\c` followed by a non-letter is a literal backslash**, not a control
+  escape (Annex B). `/\c0/` matches the three characters `\c0`; the fallthrough
+  dropped the backslash and matched "c0".
+- **`Date.parse` accepts the short ISO date forms.** `YYYY` and `YYYY-MM` are
+  valid and were NaN, because the parser required ten characters.
+
+### The opcode collision, and the gate that now catches it
+
+`RE_RESET` was first written as `12`. `RE_LOOKEND` was already 12. Nothing
+warned — two distinct NAMES holding the same number is invisible to
+`lint-symbols.sh`'s duplicate-name check — and the VM silently treated every
+lookahead-end as a capture reset, so `a(?=b)` stopped matching entirely. The only
+thing that caught it was `tests/regexDifferential.js` comparing 60 patterns
+against node, which is precisely why that fixture exists.
+
+`lint-symbols.sh` now checks the three hand-numbered tag families (`RE_`, `T_`,
+`NATIVE_`) for two members sharing a value. Restricted to those three on
+purpose: other prefixes legitimately repeat a number — src/repl.milo has a
+sprite whose width and row count are both 18, which is the false positive the
+first version of the check produced. Verified by re-introducing the collision
+and watching the gate name both lines.
+
 ## Module code was not strict code, and every QuickJS test file is a module
 
 The spec makes module code strict with no directive needed. milojs ran every

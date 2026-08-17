@@ -1,0 +1,14 @@
+/(z)((a+)?(b+)?(c))*/ on "zaacbbbcac" => zaacbbbcac,z,ac,a,,c
+/(?:(a)|(b))+/ on "ab" => ab,,b
+/((a)|(b))*/ on "ab" => ab,b,,b
+/(?:(a)(b)?)+/ on "aab" => aab,a,b
+/(?:(a)(b)?){2,3}/ on "aab" => aab,a,b
+/(a)|(b)/ on "b" => b,,b
+/(a*)*/ on "aaa" => aaa,aaa
+/(a*)+/ on "aaa" => aaa,aaa
+backslash-c-zero: "\\c0"
+control escape still works: 1
+parse 1000 -> -30610224000000
+parse 2000 -> 946684800000
+parse 2000-01 -> 946684800000
+parse 2000-01-02 -> 946771200000

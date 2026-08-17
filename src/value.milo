@@ -894,6 +894,25 @@ pub fn pad3(n: i64): string {
 // Parse the ISO-8601 forms JS accepts from a string: YYYY-MM-DD with an optional
 // THH:MM:SS(.mmm)(Z). Anything else is NaN, matching Invalid Date.
 pub fn parseIsoDate(s: &string): f64 {
+    // The date-only ISO forms are YYYY, YYYY-MM and YYYY-MM-DD, all read as UTC.
+    // Requiring ten characters rejected the first two, so Date.parse("2000") and
+    // Date.parse("2000-01") were NaN where node gives the start of that year and
+    // month.
+    if s.len() == 4 {
+        let y4 = isoNum(s, 0, 4)
+        if y4 < 0 {
+            return jsNan()
+        }
+        return (daysFromCivil(y4, 1, 1) * 86400000) as f64
+    }
+    if s.len() == 7 && s[4] == '-' {
+        let y7 = isoNum(s, 0, 4)
+        let m7 = isoNum(s, 5, 7)
+        if y7 < 0 || m7 < 1 || m7 > 12 {
+            return jsNan()
+        }
+        return (daysFromCivil(y7, m7, 1) * 86400000) as f64
+    }
     if s.len() < 10 {
         return jsNan()
     }

@@ -61,7 +61,30 @@ else
     done
 fi
 
+# 3. Colliding values in the three hand-numbered tag families.
+#
+# `let RE_RESET: i32 = 16` was first written as 12, next to a block of
+# sequentially numbered opcodes, and 12 was already RE_LOOKEND. Nothing warned:
+# two distinct NAMES holding the same number is invisible to the duplicate-name
+# check above, and the VM silently treated every lookahead-end as a capture
+# reset. Only tests/regexDifferential.js caught it, by comparing 60 patterns
+# against node.
+#
+# Restricted to RE_ (regex opcodes), T_ (token kinds) and NATIVE_ (builtin ids):
+# these are enumerations where two members sharing a value is always a bug.
+# Other prefixes legitimately repeat a number — src/repl.milo has a sprite whose
+# width and row count are both 18.
+for prefix in RE T NATIVE; do
+    dupvals=$(grep -hoE "^let ${prefix}_[A-Z0-9_]*: i[0-9]+ = -?[0-9]+" src/*.milo \
+        | sed -E 's/.*= (-?[0-9]+)$/\1/' | sort -n | uniq -d)
+    for value in $dupvals; do
+        status=1
+        echo "duplicate ${prefix}_* constant value: $value"
+        grep -nE "^let ${prefix}_[A-Z0-9_]*: i[0-9]+ = ${value}\$" src/*.milo | sed 's/^/    /'
+    done
+done
+
 if [ "$status" -eq 0 ] && [ "$quiet" -eq 0 ]; then
-    echo "lint-symbols: no duplicate or std-shadowing definitions"
+    echo "lint-symbols: no duplicate or std-shadowing definitions, no colliding constants"
 fi
 exit "$status"
