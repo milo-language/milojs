@@ -2959,7 +2959,7 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 if args.len() > 0 {
                     key = toStr(args[0])
                 }
-                return JSValue.Bool(objOwnIndex(st, o, key) >= 0 || (st.objects[o].isArray && asArrayIndex(key) >= 0 && asArrayIndex(key) < arrLen(st, o) && !arrIsHole(st, o, asArrayIndex(key))))
+                return JSValue.Bool(objHas(st, o, key) || (st.objects[o].isArray && asArrayIndex(key) >= 0 && asArrayIndex(key) < arrLen(st, o) && !arrIsHole(st, o, asArrayIndex(key))))
             }
             if name == "toString" {
                 // a Symbol WRAPPER prints its description, not the object tag:
@@ -5788,6 +5788,19 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         let key = toStr(argVals[1])
         let idx = objOwnIndex(st, h, key)
         if idx < 0 {
+            // a top-level binding is a property of the global object even though
+            // it lives in scope 0; it is writable and enumerable but, like a
+            // `var` declaration, not configurable
+            if st.objects[h].isGlobal && scopeHasOwn(st, 0, key) {
+                let gd = newObject(st)
+                pushTemp(st, JSValue.Obj(gd))
+                objSet(st, gd, "value", scopeLookup(st, 0, key))
+                objSet(st, gd, "writable", JSValue.Bool(true))
+                objSet(st, gd, "enumerable", JSValue.Bool(true))
+                objSet(st, gd, "configurable", JSValue.Bool(false))
+                popTemp(st)
+                return JSValue.Obj(gd)
+            }
             return JSValue.Undefined
         }
         return JSValue.Obj(buildPropDescriptor(st, h, idx))

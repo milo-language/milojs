@@ -1752,6 +1752,14 @@ pub fn arrSet(st: &mut Interp, obj: i64, idx: i64, value: JSValue) {
 }
 
 pub fn objHas(st: &Interp, o: i64, key: &string): bool {
+    // The global object holds no properties of its own: a top-level `var` or
+    // function declaration is a binding in scope 0, and globalThis mirrors it on
+    // read and write. Own-key QUERIES have to mirror it too, or
+    // `hasOwnProperty(globalThis, "$DONE")` denies a global that is plainly
+    // there (test262's async harness refuses to run on that answer).
+    if st.objects[o].isGlobal && scopeHasOwn(st, 0, key) {
+        return true
+    }
     var i: i64 = 0
     let n = st.objects[o].props.len()
     while i < n {
