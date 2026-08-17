@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "ee156b29d1694ca8f1019748c3bd2078ac4ede09",
+    "revision": "92371531157638f0999156c620d4dfa4cfe70e46",
     "dirty": true
   },
   "engine": ".dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 992,
-    "fail": 478,
+    "pass": 994,
+    "fail": 476,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -50,8 +50,8 @@
     },
     {
       "area": "built-ins/Array",
-      "pass": 50,
-      "fail": 41,
+      "pass": 52,
+      "fail": 39,
       "total": 91
     },
     {
@@ -1584,13 +1584,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: a.concat() throws a TypeError exception Expected a TypeError to be thr",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/concat/create-ctor-non-object.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Actual [] and expected [method] should have the same contents. ",
       "count": 1,
       "cases": [
@@ -2277,13 +2270,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: null value Expected a TypeError to be thrown but no exception was thro",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/slice/create-ctor-non-object.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Number.prototype.toFixed must throw a TypeError if _fractionDigits_ is",
       "count": 1,
       "cases": [
@@ -2522,6 +2508,13 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Symbol(Symbol.dispose) should be an own property",
+      "count": 1,
+      "cases": [
+        "built-ins/Iterator/prototype/Symbol.dispose/prop-desc.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: testResult2 !== true",
       "count": 1,
       "cases": [
@@ -2610,13 +2603,6 @@
       "count": 1,
       "cases": [
         "built-ins/Temporal/PlainDate/from/options-wrong-type.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: undefined should be an own property",
-      "count": 1,
-      "cases": [
-        "built-ins/Iterator/prototype/Symbol.dispose/prop-desc.js"
       ]
     },
     {

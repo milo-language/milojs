@@ -8361,6 +8361,9 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, symbolCtorObj, "replace", JSValue.Str("@@sym:Symbol.replace:0"))
     objSet(st, symbolCtorObj, "search", JSValue.Str("@@sym:Symbol.search:0"))
     objSet(st, symbolCtorObj, "split", JSValue.Str("@@sym:Symbol.split:0"))
+    objSet(st, symbolCtorObj, "species", JSValue.Str(symSpeciesKey()))
+    objSet(st, symbolCtorObj, "dispose", JSValue.Str("@@sym:Symbol.dispose:0"))
+    objSet(st, symbolCtorObj, "asyncDispose", JSValue.Str("@@sym:Symbol.asyncDispose:0"))
     let dateCtorObj = getNativeProps(st, NATIVE_DATE)
     objSet(st, dateCtorObj, "now", JSValue.Native(NATIVE_DATE_NOW))
     objSet(st, dateCtorObj, "UTC", JSValue.Native(NATIVE_DATE_UTC))
@@ -11441,6 +11444,10 @@ fn symAsyncIteratorKey(): string {
 
 fn symIteratorKey(): string {
     return "@@sym:Symbol.iterator:0"
+}
+
+fn symSpeciesKey(): string {
+    return "@@sym:Symbol.species:0"
 }
 
 fn symToPrimitiveKey(): string {
@@ -15208,6 +15215,124 @@ fn arrGetDyn(prog: &Prog, o: i64, idx: i64, st: &mut Interp): JSValue {
     return getMemberDyn(prog, o, i64ToStr(idx), st)
 }
 
+// `new C(len)` for a species constructor. Mirrors the JSValue.Func arm of the
+// `new` evaluation: a fresh object linked to C.prototype, C run against it as
+// `this`, and an object C returns replacing the instance.
+fn constructWithLength(prog: &Prog, ctor: &JSValue, len: i64, st: &mut Interp): JSValue {
+    var cargs: Vec<JSValue> = Vec.new()
+    cargs.push(JSValue.Number(len as f64))
+    let f = funcHandle(ctor)
+    if f < 0 {
+        // a native constructor (Array among them) already builds its own result
+        let savedTarget = cloneValue(st.newTarget)
+        st.newTarget = cloneValue(ctor)
+        let r = callValue(prog, ctor, cargs, JSValue.Undefined, st)
+        st.newTarget = savedTarget
+        return r
+    }
+    let inst = newObject(st)
+    st.objects[inst].ctor = f
+    let proto = getFuncProto(st, f)
+    linkProtoConstructor(st, proto, f, funcEnv(ctor))
+    st.objects[inst].proto = proto
+    pushTemp(st, JSValue.Obj(inst))
+    let savedTarget = cloneValue(st.newTarget)
+    st.newTarget = cloneValue(ctor)
+    let result = callFunction(prog, f, funcEnv(ctor), cargs, JSValue.Obj(inst), st)
+    st.newTarget = savedTarget
+    popTemp(st)
+    match result {
+        JSValue.Obj(r) => {
+            return JSValue.Obj(r)
+        }
+        _ => {
+            return JSValue.Obj(inst)
+        }
+    }
+}
+
+// ArraySpeciesCreate: the result of map/filter/slice/splice/concat is built through
+// the receiver's `constructor[Symbol.species]`, not always as a plain Array. None
+// of this existed — every method built a plain array — so a subclass's methods
+// returned Array, a custom species was ignored, and the two error cases the spec
+// requires (a species that is not a constructor, a `constructor` getter that
+// throws) could not happen.
+//
+// Returns -1 when the caller should build a plain array, or when it has already
+// thrown (check st.throwing).
+fn arraySpeciesCreate(prog: &Prog, o: i64, len: i64, st: &mut Interp): i64 {
+    if !st.objects[o].isArray {
+        return -1
+    }
+    // reading `constructor` can run a getter, and that getter may throw
+    let ctor = getMemberDyn(prog, o, "constructor", st)
+    if st.throwing {
+        return -1
+    }
+    if isUndefinedValue(ctor) {
+        return -1
+    }
+    var species = cloneValue(ctor)
+    let ch = objHandle(ctor)
+    if ch >= 0 {
+        species = getMemberDyn(prog, ch, symSpeciesKey(), st)
+        if st.throwing {
+            return -1
+        }
+        // the spec maps null to undefined here, which means "plain Array"
+        match species {
+            JSValue.Null => {
+                return -1
+            }
+            _ => {
+            }
+        }
+        if isUndefinedValue(species) {
+            return -1
+        }
+    }
+    // The default Array constructor: build a plain array rather than routing
+    // through a native call that would answer the same thing more slowly.
+    let sh = objHandle(species)
+    if sh >= 0 && sh == st.arrayCtorObj {
+        return -1
+    }
+    if !valueIsConstructor(prog, st, species) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "object.constructor[Symbol.species] is not a constructor" + currentModule(st))
+        return -1
+    }
+    let made = constructWithLength(prog, species, len, st)
+    if st.throwing {
+        return -1
+    }
+    let mh = objHandle(made)
+    return mh
+}
+
+// Move a plain result array into a species-created object. The species object is
+// not necessarily an Array — `Symbol.species` may name any constructor — so index
+// writes go through setMemberDyn rather than arrPush, and a non-array target gets
+// an explicit `length`.
+fn transferToSpecies(prog: &Prog, from: i64, to: i64, st: &mut Interp): JSValue {
+    let n = arrLen(st, from)
+    var i: i64 = 0
+    while i < n {
+        if !arrIsHole(st, from, i) {
+            let v = arrGet(st, from, i)
+            setMemberDyn(prog, to, i64ToStr(i), v, st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+        }
+        i = i + 1
+    }
+    if !st.objects[to].isArray {
+        setMemberDyn(prog, to, "length", JSValue.Number(n as f64), st)
+    }
+    return JSValue.Obj(to)
+}
+
 fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     let n = arrLen(st, o)
     if arrayNeedsCallback(name) {
@@ -15828,11 +15953,22 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         if b > n {
             b = n
         }
+        var count = b - a
+        if count < 0 {
+            count = 0
+        }
+        let sliceSpecies = arraySpeciesCreate(prog, o, count, st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
         let sliced = newArray(st)
         var i = a
         while i < b {
             arrPushMaybeHole(st, sliced, o, i)
             i = i + 1
+        }
+        if sliceSpecies >= 0 {
+            return transferToSpecies(prog, sliced, sliceSpecies, st)
         }
         return JSValue.Obj(sliced)
     }
@@ -15850,6 +15986,10 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         return JSValue.Obj(o)
     }
     if name == "concat" {
+        let concatSpecies = arraySpeciesCreate(prog, o, 0, st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
         let joined = newArray(st)
         pushTemp(st, JSValue.Obj(joined))
         var i: i64 = 0
@@ -15880,6 +16020,9 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
             a = a + 1
         }
         popTemp(st)
+        if concatSpecies >= 0 {
+            return transferToSpecies(prog, joined, concatSpecies, st)
+        }
         return JSValue.Obj(joined)
     }
     // callback methods: root the callback across the loop
@@ -15889,6 +16032,13 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
     }
     pushTemp(st, cloneValue(cb))
     if name == "map" {
+        // ArraySpeciesCreate runs BEFORE the callback loop: the spec orders the
+        // `constructor` read first, so a getter that throws wins over any element
+        // work — and a species that is not a constructor is a TypeError here.
+        let mapSpecies = arraySpeciesCreate(prog, o, n, st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
         let mapped = newArray(st)
         pushTemp(st, JSValue.Obj(mapped))
         let thisArg = cbThisArg(args)
@@ -15910,9 +16060,16 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         popTemp(st)
         popTemp(st)
         popTemp(st)
+        if mapSpecies >= 0 {
+            return transferToSpecies(prog, mapped, mapSpecies, st)
+        }
         return JSValue.Obj(mapped)
     }
     if name == "filter" {
+        let filterSpecies = arraySpeciesCreate(prog, o, 0, st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
         let kept = newArray(st)
         pushTemp(st, JSValue.Obj(kept))
         let thisArg = cbThisArg(args)
@@ -15934,6 +16091,9 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         popTemp(st)
         popTemp(st)
         popTemp(st)
+        if filterSpecies >= 0 {
+            return transferToSpecies(prog, kept, filterSpecies, st)
+        }
         return JSValue.Obj(kept)
     }
     if name == "forEach" {
