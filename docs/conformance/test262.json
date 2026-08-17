@@ -6,8 +6,8 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "8198c0db58befbfb97aee75023d34bfb6a9bac08",
-    "dirty": true
+    "revision": "dcdb897c7fd1ca776940dd0c71806ca5f549c3c0",
+    "dirty": false
   },
   "engine": ".dev/mj-engine",
   "selection": {
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 1011,
-    "fail": 459,
+    "pass": 982,
+    "fail": 488,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -38,8 +38,8 @@
     },
     {
       "area": "built-ins/Temporal",
-      "pass": 62,
-      "fail": 69,
+      "pass": 64,
+      "fail": 67,
       "total": 131
     },
     {
@@ -50,14 +50,14 @@
     },
     {
       "area": "built-ins/Array",
-      "pass": 60,
-      "fail": 31,
+      "pass": 58,
+      "fail": 33,
       "total": 91
     },
     {
       "area": "built-ins/RegExp",
-      "pass": 48,
-      "fail": 25,
+      "pass": 25,
+      "fail": 48,
       "total": 73
     },
     {
@@ -86,8 +86,8 @@
     },
     {
       "area": "built-ins/DataView",
-      "pass": 14,
-      "fail": 8,
+      "pass": 9,
+      "fail": 13,
       "total": 22
     },
     {
@@ -176,8 +176,8 @@
     },
     {
       "area": "built-ins/Map",
-      "pass": 4,
-      "fail": 2,
+      "pass": 3,
+      "fail": 3,
       "total": 6
     },
     {
@@ -542,6 +542,37 @@
       ]
     },
     {
+      "reason": "crash(SIGUSR1)",
+      "count": 25,
+      "cases": [
+        "built-ins/RegExp/property-escapes/generated/ASCII_Hex_Digit.js",
+        "built-ins/RegExp/S15.10.2.9_A1_T5.js",
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Bengali.js",
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Osmanya.js",
+        "built-ins/Array/prototype/shift/S15.4.4.9_A2_T3.js",
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Meroitic_Cursive.js",
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Phoenician.js",
+        "built-ins/RegExp/property-escapes/generated/Script_-_Old_South_Arabian.js",
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Medefaidrin.js",
+        "built-ins/RegExp/property-escapes/generated/Script_-_Osage.js",
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Hiragana.js",
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Yi.js",
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Inscriptional_Pahlavi.js",
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Rejang.js",
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Osage.js",
+        "built-ins/RegExp/property-escapes/generated/Hex_Digit.js",
+        "built-ins/RegExp/property-escapes/generated/Noncharacter_Code_Point.js",
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Bhaiksuki.js",
+        "built-ins/Array/prototype/reverse/S15.4.4.8_A4_T1.js",
+        "built-ins/RegExp/property-escapes/generated/Script_-_Cherokee.js",
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Gurung_Khema.js",
+        "built-ins/RegExp/property-escapes/generated/Script_-_Pahawh_Hmong.js",
+        "built-ins/RegExp/property-escapes/generated/Pattern_Syntax.js",
+        "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Coptic.js",
+        "built-ins/RegExp/property-escapes/generated/Bidi_Mirrored.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Expected a Test262Error to be thrown but no exception was thrown at al",
       "count": 17,
       "cases": [
@@ -676,6 +707,15 @@
       ]
     },
     {
+      "reason": "runtime error: integer overflow at src/eval.milo:N",
+      "count": 3,
+      "cases": [
+        "built-ins/DataView/prototype/getInt32/detached-buffer-after-toindex-byteoffset.js",
+        "built-ins/DataView/prototype/setFloat64/index-is-out-of-range.js",
+        "built-ins/DataView/prototype/getFloat64/index-is-out-of-range.js"
+      ]
+    },
+    {
       "reason": "Test262:AsyncTestFailure:TypeError: [object Object] is not iterable",
       "count": 3,
       "cases": [
@@ -763,6 +803,14 @@
         "built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-18.js",
         "built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-30.js",
         "built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-29.js"
+      ]
+    },
+    {
+      "reason": "milo: array index out of bounds: N/N at src/eval.milo:N",
+      "count": 2,
+      "cases": [
+        "built-ins/DataView/prototype/setUint8/detached-buffer-after-number-value.js",
+        "built-ins/DataView/prototype/setInt32/detached-buffer-after-number-value.js"
       ]
     },
     {
@@ -987,6 +1035,13 @@
       "cases": [
         "annexB/language/eval-code/direct/func-if-decl-else-decl-b-eval-func-skip-early-err.js",
         "annexB/language/eval-code/indirect/global-if-decl-else-decl-b-eval-global-skip-early-err.js"
+      ]
+    },
+    {
+      "reason": "crash(SIGTERM)",
+      "count": 1,
+      "cases": [
+        "built-ins/Map/iterator-item-first-entry-returns-abrupt.js"
       ]
     },
     {
@@ -1767,24 +1822,10 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: calendar ID is capital dotted I is not lowercased (first argument) Exp",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainYearMonth/compare/argument-propertybag-calendar-case-insensitive.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Calling as constructor Expected a TypeError but got a RangeError",
       "count": 1,
       "cases": [
         "built-ins/Temporal/Duration/from/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Cannot use minus zero as extended year (first argument) Expected a Ran",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainDateTime/compare/year-zero.js"
       ]
     },
     {
