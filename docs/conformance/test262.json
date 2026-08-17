@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "73ed0d657cff4a614c8b60324360d2c733bc063f",
+    "revision": "93fd94e268145bba8a8316392478f01100d84d3a",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 856,
-    "fail": 614,
+    "pass": 910,
+    "fail": 560,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -26,26 +26,26 @@
   "areas": [
     {
       "area": "language/expressions",
-      "pass": 251,
-      "fail": 83,
+      "pass": 262,
+      "fail": 72,
       "total": 334
     },
     {
       "area": "language/statements",
-      "pass": 190,
-      "fail": 92,
+      "pass": 210,
+      "fail": 72,
       "total": 282
     },
     {
       "area": "built-ins/Temporal",
-      "pass": 48,
-      "fail": 83,
+      "pass": 57,
+      "fail": 74,
       "total": 131
     },
     {
       "area": "built-ins/Object",
-      "pass": 73,
-      "fail": 54,
+      "pass": 81,
+      "fail": 46,
       "total": 127
     },
     {
@@ -74,14 +74,14 @@
     },
     {
       "area": "built-ins/Promise",
-      "pass": 12,
-      "fail": 13,
+      "pass": 13,
+      "fail": 12,
       "total": 25
     },
     {
       "area": "built-ins/Iterator",
-      "pass": 8,
-      "fail": 16,
+      "pass": 9,
+      "fail": 15,
       "total": 24
     },
     {
@@ -116,8 +116,8 @@
     },
     {
       "area": "built-ins/Math",
-      "pass": 9,
-      "fail": 8,
+      "pass": 10,
+      "fail": 7,
       "total": 17
     },
     {
@@ -326,8 +326,8 @@
     },
     {
       "area": "built-ins/Boolean",
-      "pass": 0,
-      "fail": 1,
+      "pass": 1,
+      "fail": 0,
       "total": 1
     },
     {
@@ -338,8 +338,8 @@
     },
     {
       "area": "built-ins/GeneratorFunction",
-      "pass": 0,
-      "fail": 1,
+      "pass": 1,
+      "fail": 0,
       "total": 1
     },
     {
@@ -410,8 +410,8 @@
     },
     {
       "area": "harness/asyncHelpers-throwsAsync-custom-typeerror.js",
-      "pass": 0,
-      "fail": 1,
+      "pass": 1,
+      "fail": 0,
       "total": 1
     },
     {
@@ -460,7 +460,7 @@
   "failureBuckets": [
     {
       "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all",
-      "count": 42,
+      "count": 41,
       "cases": [
         "built-ins/Symbol/prototype/toString/toString-default-attributes-strict.js",
         "built-ins/Error/prototype/toString/called-as-function.js",
@@ -474,12 +474,12 @@
         "built-ins/Array/prototype/shift/set-length-array-length-is-non-writable.js",
         "language/statements/async-generator/dstr/dflt-ary-init-iter-get-err-array-prototype.js",
         "built-ins/MapIteratorPrototype/next/does-not-have-mapiterator-internal-slots-map.js",
-        "built-ins/Array/prototype/reduceRight/15.4.4.22-4-15.js",
         "built-ins/TypedArrayConstructors/Int8Array/prototype/not-typedarray-object.js",
         "language/statements/const/dstr/ary-init-iter-get-err-array-prototype.js",
         "language/expressions/async-generator/dstr/obj-ptrn-prop-ary-value-null.js",
         "language/statements/class/definition/invalid-extends.js",
         "built-ins/Promise/all/S25.4.4.1_A4.1_T1.js",
+        "language/statements/generators/restricted-properties.js",
         "language/expressions/object/dstr/gen-meth-dflt-obj-ptrn-prop-obj-value-null.js",
         "language/expressions/class/dstr/async-gen-meth-ary-ptrn-elem-obj-val-null.js",
         "language/expressions/class/dstr/async-gen-meth-static-ary-ptrn-elem-ary-val-null.js",
@@ -501,14 +501,13 @@
         "built-ins/TypedArray/prototype/filter/resizable-buffer.js",
         "language/statements/class/dstr/gen-meth-obj-init-null.js",
         "language/statements/class/dstr/meth-dflt-ary-init-iter-get-err-array-prototype.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-527.js",
         "built-ins/isFinite/return-abrupt-from-tonumber-number-symbol.js",
         "built-ins/Promise/prototype/then/ctor-null.js"
       ]
     },
     {
       "reason": "Uncaught TypeError: cannot read property '…' of undefined",
-      "count": 38,
+      "count": 37,
       "cases": [
         "built-ins/ThrowTypeError/extensible.js",
         "language/expressions/generators/eval-body-proto-realm.js",
@@ -541,7 +540,6 @@
         "built-ins/Temporal/ZonedDateTime/prototype/weekOfYear/branding.js",
         "language/expressions/class/private-static-setter-multiple-evaluations-of-class-realm.js",
         "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-47.js",
-        "language/statements/for-of/dstr/array-elem-iter-rtrn-close-err.js",
         "built-ins/Object/S15.2_A1.js",
         "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-178.js",
         "built-ins/DisposableStack/prototype/dispose/prop-desc.js",
@@ -552,7 +550,7 @@
     },
     {
       "reason": "Uncaught undefined: Expected a Test262Error to be thrown but no exception was thrown at al",
-      "count": 36,
+      "count": 32,
       "cases": [
         "built-ins/TypedArrayConstructors/ctors/buffer-arg/custom-proto-access-throws.js",
         "built-ins/Promise/allSettled/ctx-ctor-throws.js",
@@ -560,17 +558,14 @@
         "language/expressions/class/dstr/gen-meth-static-ary-ptrn-elem-id-init-throws.js",
         "language/expressions/class/dstr/async-gen-meth-obj-ptrn-prop-eval-err.js",
         "built-ins/Promise/reject/ctx-ctor-throws.js",
-        "language/expressions/object/dstr/meth-ary-ptrn-elem-id-iter-step-err.js",
         "language/expressions/class/dstr/gen-meth-static-obj-ptrn-list-err.js",
         "language/expressions/async-generator/dstr/obj-ptrn-prop-eval-err.js",
         "built-ins/Proxy/getPrototypeOf/return-is-abrupt.js",
         "language/expressions/class/dstr/gen-meth-static-obj-ptrn-prop-id-get-value-err.js",
         "language/expressions/class/dstr/gen-meth-static-dflt-ary-init-iter-get-err.js",
-        "language/statements/class/dstr/meth-static-ary-init-iter-get-err.js",
         "language/statements/class/dstr/async-gen-meth-dflt-obj-ptrn-id-init-throws.js",
         "language/expressions/async-generator/dstr/named-obj-ptrn-id-init-throws.js",
         "built-ins/TypedArray/prototype/toLocaleString/return-abrupt-from-firstelement-valueof.js",
-        "built-ins/Array/prototype/reduce/15.4.4.21-8-c-8.js",
         "language/expressions/object/dstr/gen-meth-obj-ptrn-prop-id-get-value-err.js",
         "language/statements/async-generator/dstr/obj-ptrn-id-get-value-err.js",
         "language/expressions/object/dstr/async-gen-meth-ary-ptrn-elem-id-iter-step-err.js",
@@ -587,45 +582,24 @@
         "language/statements/for/dstr/let-obj-ptrn-id-get-value-err.js",
         "built-ins/Proxy/setPrototypeOf/return-abrupt-from-get-trap.js",
         "language/expressions/class/async-gen-method-static/dflt-params-abrupt.js",
-        "language/statements/class/dstr/meth-ary-ptrn-elision-step-err.js",
         "built-ins/Date/prototype/setMilliseconds/arg-to-number-err.js",
         "built-ins/TypedArray/prototype/subarray/speciesctor-get-species-abrupt.js"
       ]
     },
     {
       "reason": "Uncaught undefined: Expected SameValue(«N», «N») to be true",
-      "count": 15,
+      "count": 10,
       "cases": [
         "language/statements/class/dstr/meth-static-ary-ptrn-rest-obj-id.js",
         "built-ins/TypedArray/prototype/slice/coerced-start-end-grow.js",
         "language/statements/for/dstr/let-ary-ptrn-rest-ary-elision.js",
         "built-ins/Iterator/prototype/forEach/fn-throws.js",
-        "language/expressions/object/dstr/meth-dflt-ary-ptrn-elision.js",
         "language/statements/variable/dstr/ary-ptrn-rest-obj-id.js",
-        "language/statements/for-of/dstr/array-elem-trlg-iter-list-rtrn-close-err.js",
         "language/statements/for-of/uint32array-mutate.js",
-        "language/statements/class/dstr/private-gen-meth-static-dflt-ary-ptrn-elem-ary-elision-init.js",
         "language/statements/try/dstr/ary-ptrn-elem-obj-prop-id.js",
         "built-ins/RegExp/prototype/Symbol.match/exec-invocation.js",
         "built-ins/String/prototype/replaceAll/replaceValue-call-matching-empty.js",
-        "built-ins/String/prototype/replaceAll/replaceValue-call-each-match-position.js",
-        "language/statements/class/dstr/gen-meth-static-ary-ptrn-elision.js",
-        "language/expressions/function/dstr/ary-ptrn-elem-ary-elision-init.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: name descriptor should be configurable",
-      "count": 9,
-      "cases": [
-        "language/statements/const/fn-name-class.js",
-        "built-ins/Temporal/PlainDate/from/name.js",
-        "built-ins/Math/cosh/name.js",
-        "language/expressions/object/fn-name-arrow.js",
-        "language/expressions/assignment/dstr/obj-prop-elem-init-fn-name-fn.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/until/name.js",
-        "language/statements/const/fn-name-gen.js",
-        "language/expressions/object/fn-name-fn.js",
-        "built-ins/Temporal/PlainYearMonth/name.js"
+        "built-ins/String/prototype/replaceAll/replaceValue-call-each-match-position.js"
       ]
     },
     {
@@ -644,54 +618,15 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: asyncTest called without async flag",
-      "count": 7,
-      "cases": [
-        "built-ins/AsyncDisposableStack/prototype/use/Symbol.asyncDispose-getter.js",
-        "built-ins/Promise/allSettledKeyed/getownproperty-not-enumerable.js",
-        "built-ins/Promise/allKeyed/symbol-keys.js",
-        "built-ins/Array/fromAsync/mapfn-not-callable.js",
-        "harness/asyncHelpers-asyncTest-return-not-thenable.js",
-        "built-ins/Promise/allSettledKeyed/get-value-throws-reject.js",
-        "harness/asyncHelpers-throwsAsync-custom-typeerror.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Expected a SyntaxError to be thrown but no exception was thrown at all",
-      "count": 7,
+      "count": 6,
       "cases": [
         "language/eval-code/direct/async-gen-func-decl-fn-body-cntns-arguments-lex-bind-declare-arguments.js",
         "language/eval-code/indirect/parse-failure-3.js",
         "language/eval-code/direct/async-gen-func-decl-no-pre-existing-arguments-bindings-are-present-declare-arguments.js",
         "language/expressions/object/method-definition/async-gen-meth-eval-var-scope-syntax-err.js",
         "language/statements/function/13.0-16-s.js",
-        "language/statements/class/elements/privatename-not-valid-eval-earlyerr-3.js",
         "language/expressions/async-generator/named-eval-var-scope-syntax-err.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: m descriptor should be configurable",
-      "count": 7,
-      "cases": [
-        "language/expressions/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt.js",
-        "language/statements/class/elements/after-same-line-static-async-method-rs-static-generator-method-privatename-identifier-alt.js",
-        "language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt-by-classname.js",
-        "language/expressions/class/elements/after-same-line-static-method-rs-static-async-method-privatename-identifier-alt.js",
-        "language/statements/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
-        "language/statements/class/elements/after-same-line-static-async-method-static-private-methods.js",
-        "language/statements/class/elements/after-same-line-static-async-method-computed-symbol-names.js"
-      ]
-    },
-    {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«N», «N») to be tr",
-      "count": 6,
-      "cases": [
-        "built-ins/Promise/all/S25.4.4.1_A7.2_T1.js",
-        "language/statements/async-generator/dstr/ary-ptrn-elision.js",
-        "language/statements/class/dstr/async-private-gen-meth-dflt-ary-ptrn-elem-id-iter-val-array-prototype.js",
-        "language/expressions/async-generator/dstr/dflt-ary-ptrn-rest-obj-id.js",
-        "built-ins/Promise/any/invoke-resolve-get-once-multiple-calls.js",
-        "language/expressions/object/dstr/async-gen-meth-dflt-ary-ptrn-elision.js"
       ]
     },
     {
@@ -752,24 +687,13 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected TypeError, got Test262Error: Expected an exception.",
-      "count": 5,
-      "cases": [
-        "built-ins/Object/defineProperty/15.2.3.6-4-319.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-87.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-218.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-307.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-246.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Built-in objects must be extensible. Expected SameValue(«false», «true",
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«N», «N») to be tr",
       "count": 4,
       "cases": [
-        "built-ins/Temporal/ZonedDateTime/prototype/toJSON/builtin.js",
-        "built-ins/Temporal/PlainYearMonth/prototype/with/builtin.js",
-        "built-ins/Temporal/Duration/prototype/toLocaleString/builtin.js",
-        "built-ins/Temporal/PlainDateTime/prototype/toPlainDate/builtin.js"
+        "built-ins/Promise/all/S25.4.4.1_A7.2_T1.js",
+        "language/statements/class/dstr/async-private-gen-meth-dflt-ary-ptrn-elem-id-iter-val-array-prototype.js",
+        "language/expressions/async-generator/dstr/dflt-ary-ptrn-rest-obj-id.js",
+        "built-ins/Promise/any/invoke-resolve-get-once-multiple-calls.js"
       ]
     },
     {
@@ -790,16 +714,6 @@
         "built-ins/Math/atanh/not-a-constructor.js",
         "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/not-a-constructor.js",
         "built-ins/JSON/rawJSON/not-a-constructor.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: length descriptor should be configurable",
-      "count": 4,
-      "cases": [
-        "built-ins/Iterator/prototype/toArray/length.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/toPlainTime/length.js",
-        "built-ins/Temporal/ZonedDateTime/compare/length.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/toPlainDateTime/length.js"
       ]
     },
     {
@@ -832,6 +746,24 @@
       ]
     },
     {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Symbol() should be an own property",
+      "count": 3,
+      "cases": [
+        "language/statements/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
+        "language/expressions/class/elements/same-line-async-method-computed-symbol-names.js",
+        "language/statements/class/elements/after-same-line-static-async-method-computed-symbol-names.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:TypeError: [object Object] is not iterable",
+      "count": 3,
+      "cases": [
+        "language/statements/class/elements/async-gen-private-method/yield-star-next-then-non-callable-null-fulfillpromise.js",
+        "language/statements/async-generator/yield-star-next-then-non-callable-number-fulfillpromise.js",
+        "language/statements/async-generator/yield-star-next-then-non-callable-object-fulfillpromise.js"
+      ]
+    },
+    {
       "reason": "Uncaught SyntaxError: Unexpected token in eval",
       "count": 3,
       "cases": [
@@ -850,30 +782,12 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: hasOwnProperty is not a function (in /var/folders/zc/m2tbb4v542b9c11gk",
-      "count": 3,
-      "cases": [
-        "language/statements/generators/restricted-properties.js",
-        "language/statements/class/elements/syntax/valid/grammar-static-ctor-accessor-meth-valid.js",
-        "language/expressions/class/method-static/forbidden-ext/b2/cls-expr-meth-static-forbidden-ext-indirect-access-prop-caller.js"
-      ]
-    },
-    {
       "reason": "Uncaught TypeError: round is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh00",
       "count": 3,
       "cases": [
         "built-ins/Temporal/Duration/prototype/round/end-of-month-round-up.js",
         "built-ins/Temporal/Duration/prototype/round/relativeto-string.js",
         "built-ins/Temporal/Duration/prototype/round/roundingmode-undefined.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: #gen does not appear as an own property on C prototype",
-      "count": 3,
-      "cases": [
-        "language/statements/class/elements/async-gen-private-method/yield-star-next-then-non-callable-null-fulfillpromise.js",
-        "language/statements/class/elements/async-gen-private-method/yield-star-getiter-sync-not-callable-object-throw.js",
-        "language/statements/class/elements/async-gen-private-method/yield-star-getiter-async-not-callable-boolean-throw.js"
       ]
     },
     {
@@ -904,12 +818,30 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Expected a SyntaxError but got a TypeError",
+      "count": 3,
+      "cases": [
+        "language/statements/class/elements/nested-derived-cls-indirect-eval-contains-superproperty-1.js",
+        "language/statements/class/elements/private-derived-cls-indirect-eval-contains-superproperty-1.js",
+        "language/statements/class/elements/privatename-not-valid-eval-earlyerr-3.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Expected a TypeError but got a RangeError",
       "count": 3,
       "cases": [
         "built-ins/DataView/prototype/setInt16/return-abrupt-from-tonumber-byteoffset-symbol.js",
         "built-ins/DataView/prototype/setFloat32/return-abrupt-from-tonumber-byteoffset-symbol.js",
         "built-ins/Temporal/PlainMonthDay/from/options-invalid.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected TypeError, got Test262Error: Expected an exception.",
+      "count": 3,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-87.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-218.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-246.js"
       ]
     },
     {
@@ -922,11 +854,12 @@
       ]
     },
     {
-      "reason": "milojs: /case.js: unexpected '…' after declaration",
-      "count": 2,
+      "reason": "Uncaught undefined: N value should be N",
+      "count": 3,
       "cases": [
-        "language/statements/await-using/function-local-use-before-initialization-in-declaration-statement.js",
-        "language/statements/await-using/throws-if-initializer-Symbol.dispose-property-is-null.js"
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-200.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-305.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-307.js"
       ]
     },
     {
@@ -938,11 +871,11 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:TypeError: [object Object] is not iterable",
+      "reason": "Test262:AsyncTestFailure:TypeError: allSettledKeyed is not a function (in /case.js)",
       "count": 2,
       "cases": [
-        "language/statements/async-generator/yield-star-next-then-non-callable-number-fulfillpromise.js",
-        "language/statements/async-generator/yield-star-next-then-non-callable-object-fulfillpromise.js"
+        "built-ins/Promise/allSettledKeyed/getownproperty-not-enumerable.js",
+        "built-ins/Promise/allSettledKeyed/get-value-throws-reject.js"
       ]
     },
     {
@@ -994,6 +927,14 @@
       ]
     },
     {
+      "reason": "Uncaught TypeError: Cannot read private member #m from an object whose class did not decla",
+      "count": 2,
+      "cases": [
+        "language/statements/class/elements/grammar-private-field-optional-chaining.js",
+        "language/statements/class/elements/private-getter-visible-to-direct-eval.js"
+      ]
+    },
+    {
       "reason": "Uncaught TypeError: concat is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh0",
       "count": 2,
       "cases": [
@@ -1034,6 +975,14 @@
       ]
     },
     {
+      "reason": "Uncaught undefined",
+      "count": 2,
+      "cases": [
+        "language/statements/for-of/dstr/array-elem-trlg-iter-list-rtrn-close-err.js",
+        "language/statements/class/elements/public-class-field-initialization-on-super-class-with-setter.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: arr.some(callbackfn) !== true",
       "count": 2,
       "cases": [
@@ -1066,19 +1015,11 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected a SyntaxError but got a TypeError",
-      "count": 2,
-      "cases": [
-        "language/statements/class/elements/nested-derived-cls-indirect-eval-contains-superproperty-1.js",
-        "language/statements/class/elements/private-derived-cls-indirect-eval-contains-superproperty-1.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Expected a Test262Error but got a TypeError",
       "count": 2,
       "cases": [
-        "language/statements/for-of/dstr/const-ary-ptrn-rest-id-elision-next-err.js",
-        "built-ins/Date/prototype/toJSON/to-primitive-abrupt.js"
+        "built-ins/Date/prototype/toJSON/to-primitive-abrupt.js",
+        "built-ins/Array/prototype/reduce/15.4.4.21-8-c-8.js"
       ]
     },
     {
@@ -1098,14 +1039,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected true but got false",
-      "count": 2,
-      "cases": [
-        "built-ins/Promise/resolve-function-extensible.js",
-        "built-ins/String/prototype/search/invoke-builtin-search-searcher-undef.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Initialized binding created prior to evaluation Expected SameValue(«fu",
       "count": 2,
       "cases": [
@@ -1122,19 +1055,11 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: iteration occurred as expected Expected SameValue(«false», «true») to ",
+      "reason": "Uncaught undefined: name descriptor value should be [test262]; name value should be [test2",
       "count": 2,
       "cases": [
-        "language/statements/for-of/dstr/const-ary-ptrn-elision-iter-close.js",
-        "language/statements/for/dstr/let-ary-ptrn-elision-iter-close.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: N value should be N",
-      "count": 2,
-      "cases": [
-        "built-ins/Object/defineProperties/15.2.3.7-6-a-200.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-305.js"
+        "language/expressions/object/fn-name-arrow.js",
+        "language/expressions/object/fn-name-fn.js"
       ]
     },
     {
@@ -1170,19 +1095,25 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: test N",
-      "count": 2,
-      "cases": [
-        "language/statements/class/elements/regular-definitions-private-names.js",
-        "language/expressions/class/elements/new-sc-line-method-private-names.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: value is not updated following evaluation Expected SameValue(«function",
       "count": 2,
       "cases": [
         "annexB/language/eval-code/direct/func-if-decl-else-decl-b-eval-func-skip-early-err.js",
         "annexB/language/eval-code/indirect/global-if-decl-else-decl-b-eval-global-skip-early-err.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:ReferenceError: AsyncDisposableStack is not defined",
+      "count": 1,
+      "cases": [
+        "built-ins/AsyncDisposableStack/prototype/use/Symbol.asyncDispose-getter.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected a TypeError to be thrown asy",
+      "count": 1,
+      "cases": [
+        "language/statements/await-using/throws-if-initializer-Symbol.dispose-property-is-null.js"
       ]
     },
     {
@@ -1200,17 +1131,17 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«function TypeErro",
-      "count": 1,
-      "cases": [
-        "language/statements/for-await-of/async-func-dstr-let-ary-ptrn-rest-id-iter-val-err.js"
-      ]
-    },
-    {
       "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: log.length Expected SameValue(«N», «N",
       "count": 1,
       "cases": [
         "language/expressions/async-generator/named-yield-star-sync-throw.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: null mapfn Expected a TypeError to be",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/fromAsync/mapfn-not-callable.js"
       ]
     },
     {
@@ -1228,17 +1159,10 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Symbol() should be an own property",
+      "reason": "Test262:AsyncTestFailure:TypeError: allKeyed is not a function (in /case.js)",
       "count": 1,
       "cases": [
-        "language/expressions/class/elements/same-line-async-method-computed-symbol-names.js"
-      ]
-    },
-    {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: test N",
-      "count": 1,
-      "cases": [
-        "language/expressions/class/elements/same-line-async-method-static-private-methods.js"
+        "built-ins/Promise/allKeyed/symbol-keys.js"
       ]
     },
     {
@@ -1246,13 +1170,6 @@
       "count": 1,
       "cases": [
         "language/expressions/dynamic-import/namespace/promise-then-ns-prevent-extensions-reflect.js"
-      ]
-    },
-    {
-      "reason": "Test262:AsyncTestFailure:TypeError: slice is not a function",
-      "count": 1,
-      "cases": [
-        "language/statements/class/dstr/async-gen-meth-static-ary-ptrn-rest-ary-empty.js"
       ]
     },
     {
@@ -1403,7 +1320,7 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: cannot read property '…' of a non-object",
+      "reason": "Uncaught TypeError: Cannot destructure '…' as it is undefined.",
       "count": 1,
       "cases": [
         "language/expressions/object/dstr/gen-meth-dflt-ary-ptrn-rest-ary-rest.js"
@@ -1466,10 +1383,10 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: hasOwnProperty is not a function",
+      "reason": "Uncaught TypeError: iterator.next is not a function",
       "count": 1,
       "cases": [
-        "language/statements/class/gen-method-static/forbidden-ext/b1/cls-decl-gen-meth-static-forbidden-ext-direct-access-prop-caller.js"
+        "language/statements/for-of/dstr/array-elem-iter-rtrn-close-err.js"
       ]
     },
     {
@@ -1550,13 +1467,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined",
-      "count": 1,
-      "cases": [
-        "language/statements/class/elements/public-class-field-initialization-on-super-class-with-setter.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: -N:N:N.N is not a valid time zone string Expected a RangeError to be t",
       "count": 1,
       "cases": [
@@ -1631,13 +1541,6 @@
       "count": 1,
       "cases": [
         "built-ins/decodeURI/S15.1.3.1_A1.9_T1.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: #gen does not appear as an own property on C constructor",
-      "count": 1,
-      "cases": [
-        "language/expressions/class/elements/async-gen-private-method-static/yield-star-getiter-sync-not-callable-symbol-throw.js"
       ]
     },
     {
@@ -1956,20 +1859,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: accessed private field from an arbritary object Expected a TypeError t",
-      "count": 1,
-      "cases": [
-        "language/statements/class/elements/private-static-field-shadowed-by-field-on-nested-class.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: accessed private field from an ordinary object Expected a TypeError to",
-      "count": 1,
-      "cases": [
-        "language/statements/class/elements/grammar-private-field-optional-chaining.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Actual [] and expected [method] should have the same contents. ",
       "count": 1,
       "cases": [
@@ -2044,6 +1933,13 @@
       "count": 1,
       "cases": [
         "built-ins/TypedArray/prototype/reduceRight/callbackfn-resize.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Actual [true, true, true, true, true] and expected [true, true, true, ",
+      "count": 1,
+      "cases": [
+        "harness/asyncHelpers-asyncTest-return-not-thenable.js"
       ]
     },
     {
@@ -2180,10 +2076,10 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Boolean.prototype.valueOf() must return false Expected SameValue(«fals",
+      "reason": "Uncaught undefined: Built-in objects must be extensible. Expected SameValue(«false», «true",
       "count": 1,
       "cases": [
-        "built-ins/Boolean/prototype/valueOf/S15.6.4.3_A1_T1.js"
+        "built-ins/Temporal/Duration/prototype/toLocaleString/builtin.js"
       ]
     },
     {
@@ -2240,13 +2136,6 @@
       "count": 1,
       "cases": [
         "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-25.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: desc1.hasOwnProperty(\"get\") !== true",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/defineProperty/15.2.3.6-4-448.js"
       ]
     },
     {
@@ -2310,13 +2199,6 @@
       "count": 1,
       "cases": [
         "built-ins/Object/defineProperties/15.2.3.7-6-a-91.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Expected obj[length] to be configurable, but was not.",
-      "count": 1,
-      "cases": [
-        "built-ins/GeneratorFunction/instance-length.js"
       ]
     },
     {
@@ -2425,10 +2307,24 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Expected SameValue(«undefined», «\"Test262\"») to be true",
+      "count": 1,
+      "cases": [
+        "language/statements/class/elements/private-static-setter-visible-to-direct-eval.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Expected SameValue(«undefined», «null») to be true",
       "count": 1,
       "cases": [
         "language/statements/try/dstr/ary-ptrn-elem-id-init-skipped.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected true but got false",
+      "count": 1,
+      "cases": [
+        "built-ins/String/prototype/search/invoke-builtin-search-searcher-undef.js"
       ]
     },
     {
@@ -2446,31 +2342,10 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: foo descriptor should be enumerable; foo descriptor should be writable",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/defineProperty/15.2.3.6-4-102.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: foo descriptor value should be N; foo value should be N; foo descripto",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/defineProperties/15.2.3.7-6-a-38.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: foo should be an own property",
       "count": 1,
       "cases": [
         "built-ins/Object/seal/object-seal-p-is-own-property-of-a-date-object-that-uses-object-s-get-own-property.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: fooDescrip.configurable Expected SameValue(«false», «true») to be true",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/defineProperty/8.12.9-9-b-i_2.js"
       ]
     },
     {
@@ -2520,13 +2395,6 @@
       "count": 1,
       "cases": [
         "built-ins/Temporal/PlainYearMonth/subclass.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: invalid access to a private getter Expected a TypeError but got a Test",
-      "count": 1,
-      "cases": [
-        "language/statements/class/elements/private-getter-visible-to-direct-eval.js"
       ]
     },
     {
@@ -2628,10 +2496,24 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: iteration occurred as expected Expected SameValue(«false», «true») to ",
+      "count": 1,
+      "cases": [
+        "language/statements/for/dstr/let-ary-ptrn-elision-iter-close.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: length descriptor value should be N",
       "count": 1,
       "cases": [
         "built-ins/Object/defineProperties/15.2.3.7-6-a-120.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: loopAccessed Expected SameValue(«true», «false») to be true",
+      "count": 1,
+      "cases": [
+        "built-ins/Array/prototype/reduceRight/15.4.4.22-4-15.js"
       ]
     },
     {
@@ -2726,7 +2608,7 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: null on an array Expected a TypeError to be thrown but no exception wa",
+      "reason": "Uncaught undefined: null on an object whose '…' throws Expected a TypeError but got a Test",
       "count": 1,
       "cases": [
         "built-ins/Array/prototype/toSorted/comparefn-not-a-function.js"
@@ -2810,24 +2692,10 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: prop descriptor should be enumerable; prop descriptor should be config",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/defineProperty/15.2.3.6-4-538.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: prop descriptor should be writable",
+      "reason": "Uncaught undefined: prop descriptor should not be configurable",
       "count": 1,
       "cases": [
         "built-ins/Object/defineProperty/15.2.3.6-4-333-7.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: property descriptor should be configurable",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/defineProperty/15.2.3.6-4-354-1.js"
       ]
     },
     {
