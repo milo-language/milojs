@@ -42,8 +42,8 @@ reproducible release artifact.
 
 | measure | result | corpus |
 |---|---:|---|
-| deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->1016<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->69.1%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
-| QuickJS `tests/` | **<!--fact:qjs-pass-->104<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = <!--fact:qjs-pct-->69.8%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
+| deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->1039<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->70.7%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
+| QuickJS `tests/` | **<!--fact:qjs-pass-->107<!--/fact-->/<!--fact:qjs-total-->150<!--/fact--> = <!--fact:qjs-pct-->71.3%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
 | locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->220<!--/fact--> | byte-exact differential output vs node |
 | locked runtime fixtures (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->35<!--/fact--> | module, async, fetch, HTTP, sqlite, host behavior |
 | Milo invariant fixtures (`tests/milo/`, `tests/milo-errors/`) | <!--fact:fixtures-milo-->3<!--/fact--> + <!--fact:fixtures-milo-errors-->8<!--/fact--> | scheduler/context and GC-root invariants |
@@ -88,7 +88,7 @@ Not every remaining difference is milojs's: `/api/v2/roads` hangs under node too
 (it needs a live upstream), and `analytics/middleware` keeps both runtimes alive
 because it installs a `setInterval` at module scope.
 
-**test262 moved 34.6% to <!--fact:t262-pct-->69.1%<!--/fact--> over 2026-08-15**, from one structural finding
+**test262 moved 34.6% to <!--fact:t262-pct-->70.7%<!--/fact--> over 2026-08-15**, from one structural finding
 repeated across the whole builtin surface: constructors that had no `prototype`
 object at all. See the backlog for the per-change attribution, including the two
 places where the harness rather than the engine was at fault, and the one area
