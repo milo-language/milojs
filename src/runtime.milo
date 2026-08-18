@@ -370,6 +370,14 @@ struct Scope {
     // -1 for an ordinary scope. Identifier lookup, existence and assignment all
     // consult it before the scope's own vars.
     withObj: i64,
+    // `using x = expr` resources declared in this scope, oldest first. The dispose
+    // METHOD is snapshotted at declaration (the spec reads it exactly once, so a
+    // later delete or reassignment cannot change what runs) and kept beside its
+    // receiver. Disposed in reverse order when the scope exits by any route.
+    // Empty for every scope that declares no resource, so the common path costs
+    // one length check.
+    dispRecv: Vec<JSValue>,
+    dispFn: Vec<JSValue>,
 }
 
 // A heap object: an ordered list of string-keyed properties. `free` marks a
@@ -2110,7 +2118,8 @@ pub fn newScope(st: &mut Interp, parent: i64): i64 {
     st.allocSinceGc = st.allocSinceGc + 1
     let sc = Scope {
         parent: parent, vars: Vec.new(), mark: false,
-        fnStatKeys: Vec.new(), fnStatVals: Vec.new(), annexBFns: Vec.new(), withObj: -1
+        fnStatKeys: Vec.new(), fnStatVals: Vec.new(), annexBFns: Vec.new(), withObj: -1,
+        dispRecv: Vec.new(), dispFn: Vec.new()
     }
     if st.freeList.len() > 0 {
         let idx = st.freeList.pop()!
@@ -2366,6 +2375,17 @@ fn markScope(st: &mut Interp, i: i64) {
     while k < n {
         pushMarkTargets(st.scopes[i].vars[k].value, objs, scopes)
         k = k + 1
+    }
+    // A `using` resource and its snapshotted dispose method are reachable ONLY
+    // from here once the binding is shadowed or the value reassigned, so they are
+    // roots in their own right; without this a resource could be collected before
+    // its disposer ran.
+    var dk: i64 = 0
+    let dn = st.scopes[i].dispRecv.len()
+    while dk < dn {
+        pushMarkTargets(st.scopes[i].dispRecv[dk], objs, scopes)
+        pushMarkTargets(st.scopes[i].dispFn[dk], objs, scopes)
+        dk = dk + 1
     }
     // this scope's per-instance function statics are roots for anything they hold
     var fsvals: Vec<i64> = Vec.new()

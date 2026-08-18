@@ -1851,7 +1851,9 @@ fn parseBraceBlock(p: &mut PState, prog: &mut Prog): BlockId {
 }
 
 fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
-    let k = peekKind(p)
+    // `var`, not `let`: the `await using` case below re-reads the kind after
+    // consuming the `await`.
+    var k = peekKind(p)
     if k == T_SEMI {
         advance(p)
         return addStmt(prog, Stmt.Empty)
@@ -1865,6 +1867,46 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
         advance(p)
         let body = parseStmt(p, prog)
         return addStmt(prog, Stmt.Labeled(lname, body))
+    }
+    // `await using x = expr`: the async form. Parsed here so the whole construct
+    // reaches the same declaration path; the ASYNC part of disposal is handled at
+    // dispose time by awaiting a thenable result, which needs no marker on the AST.
+    if k == T_AWAIT && p.pos + 2 < p.toks.len() && p.toks[p.pos + 1].kind == T_IDENT
+        && p.toks[p.pos + 1].text == "using" && p.toks[p.pos + 2].kind == T_IDENT {
+        advance(p)
+        k = peekKind(p)
+    }
+    // `using x = expr` (ES2026 explicit resource management). CONTEXTUAL: this is a
+    // declaration only when a plain identifier follows on the SAME line, so `using`
+    // stays usable as an ordinary variable name and `using\n x` remains two
+    // statements under ASI. Binding patterns are not permitted by the grammar, and
+    // an initializer is required.
+    if k == T_IDENT && p.toks[p.pos].text == "using" && p.pos + 1 < p.toks.len()
+        && p.toks[p.pos + 1].kind == T_IDENT && !p.toks[p.pos + 1].nlBefore {
+        advance(p)
+        var uItems: Vec<DeclItem> = Vec.new()
+        var uMore = true
+        while uMore && !p.errored {
+            let uName = p.toks[p.pos].text.clone()
+            expect(p, T_IDENT)
+            expect(p, T_EQ)
+            let uInit = parseExpr(p, prog)
+            uItems.push(DeclItem {
+                name: uName, init: uInit, isVar: false
+            }
+            )
+            if peekKind(p) == T_COMMA {
+                advance(p)
+            } else {
+                uMore = false
+            }
+        }
+        expectStatementEnd(p)
+        if peekKind(p) == T_SEMI {
+            advance(p)
+        }
+        let uList = addDeclList(prog, uItems)
+        return addStmt(prog, Stmt.UsingDecl(uList))
     }
     if k == T_LET || k == T_VAR || k == T_CONST {
         let declaredVar = k == T_VAR
@@ -2071,7 +2113,16 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
         // existing variable), 1 `var`, 2 `let`/`const`. See Stmt.ForIn.
         var sawVarKw = false
         var bindKind: i64 = 0
-        if peekKind(p) == T_VAR || peekKind(p) == T_LET || peekKind(p) == T_CONST {
+        // `for (using x of it)`: binds per iteration like `let` AND disposes at the
+        // end of each pass, which is kind 3. Guarded against `for (using of xs)`,
+        // where `using` is the loop variable and `of` the keyword: that needs the
+        // name after `using` to be something other than `of`.
+        if peekKind(p) == T_IDENT && p.toks[p.pos].text == "using" && p.pos + 1 < p.toks.len()
+            && p.toks[p.pos + 1].kind == T_IDENT && p.toks[p.pos + 1].text != "of" {
+            bindKind = 3
+            advance(p)
+        }
+        if bindKind == 0 && (peekKind(p) == T_VAR || peekKind(p) == T_LET || peekKind(p) == T_CONST) {
             sawVarKw = peekKind(p) == T_VAR
             if sawVarKw {
                 bindKind = 1

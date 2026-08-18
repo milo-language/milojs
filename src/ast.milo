@@ -157,6 +157,11 @@ pub enum Stmt {
     Throw(ExprId),
     // let/var/const with one or more declarators: index into prog.declLists
     MultiDecl(DeclListId),
+    // `using x = expr` (ES2026 explicit resource management). A separate variant
+    // rather than a flag on DeclItem: it binds like `const` but ALSO registers the
+    // value's [Symbol.dispose] on the enclosing scope, to be called in reverse
+    // order when that scope exits by any route.
+    UsingDecl(DeclListId),
     // for (name in objExpr) body. The last field is how `name` BINDS, which the
     // AST used to drop: 0 bare (assign an existing/global variable), 1 `var`
     // (one function-scoped binding, hoisted, surviving the loop), 2 `let`/`const`
@@ -494,6 +499,9 @@ fn cloneStmt(s: &Stmt): Stmt {
         }
         Stmt.MultiDecl(listIdx) => {
             return Stmt.MultiDecl(listIdx)
+        }
+        Stmt.UsingDecl(listIdx) => {
+            return Stmt.UsingDecl(listIdx)
         }
         Stmt.ForIn(name, objExpr, body, bindKind) => {
             return Stmt.ForIn(name.clone(), objExpr, body, bindKind)

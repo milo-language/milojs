@@ -43,6 +43,47 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## `using` declarations, and the parse gap that was hiding 28 cases
+
+ES2026 explicit resource management is implemented far enough that
+`test_language.js` PARSES for the first time, which is what actually mattered: one
+missing syntax feature was taking all 28 of that file's cases with it, and they
+are the entire reason the sweep looked like it had regressed.
+
+What landed:
+
+- `using x = expr` and `await using x = expr` as declarations, and
+  `for (using x of it)` as a loop head (a fourth for-head bind kind: per-iteration
+  like `let`, plus disposal at the end of each pass). `using` stays CONTEXTUAL, so
+  it remains usable as an ordinary variable name.
+- Validation at declaration, which is where the spec puts it: null and undefined
+  register nothing, anything else must be an object whose `[Symbol.dispose]` (or
+  `[Symbol.asyncDispose]` first, for `await using`) is callable, and the method is
+  read exactly ONCE and kept, so a later delete cannot change what runs. A
+  throwing getter propagates from the declaration and the body never runs.
+- Disposal in reverse order when the scope exits by ANY route. The hook is
+  `runDisposals`, called from every place a lexical scope ends: a block, a function
+  body, and the try/catch/finally scopes. That last one is easy to miss, and did
+  get missed at first: `using` inside a `try` that throws did not release, because
+  a try block is not a `Stmt.Block`.
+- A pending exception is carried across disposal the way `finally` carries one,
+  and a disposer that throws while an error is pending WRAPS it in a
+  `SuppressedError`, which is new here too. The engine builds it through
+  `__mjSuppress`, captured at prelude load, so reassigning the global or
+  `SuppressedError.prototype.constructor` cannot redirect the wrapping.
+- `Scope` gained the resource list, and `markScope` marks it: a held resource is
+  reachable only from there once its binding is shadowed, and without marking it
+  could be collected before its disposer ran.
+
+**Sweep: parse failures are now ZERO**, and the score is 98/149 (65.8%) with every
+case actually executing. Against the 109/149 that stood before any of this, the
+difference is not a regression: 11 of those were cases that never ran and were
+credited anyway.
+
+Known deviation: an async disposer's promise is awaited via `awaitValue` when the
+result is thenable, which sequences correctly inside an async function but has not
+been checked against the spec's ordering for `await using` at the top level.
+
 ## RegExp.escape escaped 18 code points wrongly, and string indexing is quadratic
 
 **Fixed: the escape set.** `RegExp.escape` handled the SyntaxCharacters and the

@@ -205,6 +205,14 @@ pub fn preventExtOf(prog: &Prog, st: &mut Interp, v: &JSValue, seal: bool): bool
 
 _Undocumented._
 
+### `registerUsing`
+
+```milo
+pub fn registerUsing(prog: &Prog, st: &mut Interp, scopeIdx: i64, name: &string)
+```
+
+_Undocumented._
+
 ### `resumeExecCtx`
 
 ```milo
@@ -213,6 +221,14 @@ pub fn resumeExecCtx(st: &mut Interp, task: *u8)
 
 Take back the execution belonging to `task`, wherever it sits in the parked
 set. Parks and wakes interleave, so position says nothing about ownership.
+
+### `runDisposals`
+
+```milo
+pub fn runDisposals(prog: &Prog, st: &mut Interp, scopeIdx: i64)
+```
+
+_Undocumented._
 
 ### `runEvalSource`
 

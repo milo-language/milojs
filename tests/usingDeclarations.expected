@@ -1,0 +1,11 @@
+lifo: body,b,a
+no-dispose: [false,"TypeError"]
+non-object: [false,"TypeError"]
+non-callable: [false,"TypeError"]
+getter-throws: [false,"Error","getter"]
+nullish-ok: 1
+snapshot-once: 1 1
+throw-still-disposes: d,c
+suppressed: true a b
+for-of: iter,a,iter,b
+contextual: 6

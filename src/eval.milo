@@ -12804,6 +12804,8 @@ fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
     // `var`s and nested function declarations belong to the whole call frame
     hoistBlock(prog, body, st, callScope)
     let flow = execBlock(prog, body, st, callScope)
+    // a function BODY is a lexical scope too: `using` in it releases here
+    runDisposals(prog, st, callScope)
     popActive(st)
     st.callDepth = st.callDepth - 1
     var result = JSValue.Undefined
@@ -14879,6 +14881,7 @@ fn runGeneratorBody(prog: &Prog, fIdx: i64, scope: i64, st: &mut Interp): JSValu
     let bodyBlock = prog.funcs[fIdx].body
     hoistBlock(prog, bodyBlock, st, scope)
     let flow = execBlock(prog, bodyBlock, st, scope)
+    runDisposals(prog, st, scope)
     popActive(st)
     st.strict = savedStrict
     let _popped = st.fnFileStack.pop()
@@ -21187,6 +21190,8 @@ fn execTryBody(prog: &Prog, tryB: BlockId, param: &string, catchB: Option<BlockI
     let tryScope = newScope(st, scope)
     pushActive(st, tryScope)
     var flow = execBlock(prog, tryB, st, tryScope)
+    // a try BLOCK is a lexical scope: `using` in it releases before the catch runs
+    runDisposals(prog, st, tryScope)
     popActive(st)
 
     // `st.genReturning` deliberately skips catch: a gen.return(v) unwind runs
@@ -21203,6 +21208,7 @@ fn execTryBody(prog: &Prog, tryB: BlockId, param: &string, catchB: Option<BlockI
                     scopeDefine(st, catchScope, param.clone(), caught)
                 }
                 flow = execBlock(prog, catchBlock, st, catchScope)
+                runDisposals(prog, st, catchScope)
                 popActive(st)
             }
             Option.None => {
@@ -21262,6 +21268,7 @@ fn execTry(prog: &Prog, tryB: BlockId, param: &string, catchB: Option<BlockId>, 
     let finScope = newScope(st, scope)
     pushActive(st, finScope)
     let finFlow = execBlock(prog, finallyBlock, st, finScope)
+    runDisposals(prog, st, finScope)
     popActive(st)
     savedRet = st.tempRoots.pop()!
     savedThrow = st.tempRoots.pop()!
@@ -21300,6 +21307,131 @@ fn execTry(prog: &Prog, tryB: BlockId, param: &string, catchB: Option<BlockId>, 
         return Flow.Continue(savedLabel)
     }
     return Flow.Normal
+}
+
+// Run a scope's `using` disposers, newest first, on EVERY exit path so a throw or
+// a break still releases what the scope acquired. The list is drained before any
+// disposer runs: a disposer that re-enters this scope must not see the resources
+// again, which is also what stops one running twice.
+//
+// A pending exception is carried across, the way `finally` carries one. If a
+// disposer throws while an error is already pending, the new error WRAPS the old
+// in a SuppressedError, which the prelude builds.
+// Validate a `using` resource and record its disposer on `scopeIdx`. Shared by the
+// `using x = e` statement and the `for (using x of it)` head so both enforce the
+// same rules at the same moment: null and undefined register nothing, anything
+// else must be an object carrying a CALLABLE [Symbol.dispose], and that method is
+// read exactly ONCE here so a later delete cannot change what runs. Sets
+// st.throwing and returns on any violation, which is what keeps the body from
+// running.
+// Whether a value is a promise or a thenable, used to decide if a disposer's
+// result has to be awaited.
+fn isThenableValue(st: &Interp, v: &JSValue): bool {
+    let h = objHandle(v)
+    if h < 0 {
+        return false
+    }
+    if st.objects[h].promiseState >= -1 && st.objects[h].promiseState != -1 {
+        return true
+    }
+    return objHasInChain(st, h, "then")
+}
+
+pub fn registerUsing(prog: &Prog, st: &mut Interp, scopeIdx: i64, name: &string) {
+    let uv = scopeLookup(st, scopeIdx, name)
+    match uv {
+        JSValue.Undefined => {
+            return
+        }
+        JSValue.Null => {
+            return
+        }
+        _ => {
+        }
+    }
+    let uh = objHandle(uv)
+    if uh < 0 {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "using declaration requires an object or null/undefined")
+        return
+    }
+    // `await using` looks for [Symbol.asyncDispose] first and falls back to the
+    // sync one; a plain `using` finds no asyncDispose and takes the same path, so
+    // the two forms need no marker to tell apart here.
+    var ud = getMemberDyn(prog, uh, "@@sym:Symbol.asyncDispose:0", st)
+    if st.throwing {
+        return
+    }
+    if !isCallable(ud) {
+        ud = getMemberDyn(prog, uh, "@@sym:Symbol.dispose:0", st)
+    }
+    if st.throwing {
+        return
+    }
+    if !isCallable(ud) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "using declaration value has no callable [Symbol.dispose]")
+        return
+    }
+    st.scopes[scopeIdx].dispRecv.push(uv)
+    st.scopes[scopeIdx].dispFn.push(ud)
+}
+
+pub fn runDisposals(prog: &Prog, st: &mut Interp, scopeIdx: i64) {
+    if st.scopes[scopeIdx].dispRecv.len() == 0 {
+        return
+    }
+    var recvs: Vec<JSValue> = Vec.new()
+    var fns: Vec<JSValue> = Vec.new()
+    while st.scopes[scopeIdx].dispRecv.len() > 0 {
+        recvs.push(st.scopes[scopeIdx].dispRecv.pop()!)
+        fns.push(st.scopes[scopeIdx].dispFn.pop()!)
+    }
+    var i: i64 = 0
+    while i < fns.len() {
+        let hadThrow = st.throwing
+        var savedThrow = cloneValue(st.thrownValue)
+        st.throwing = false
+        st.thrownValue = JSValue.Undefined
+        pushTemp(st, savedThrow)
+        var args: Vec<JSValue> = Vec.new()
+        let dres = callValue(prog, cloneValue(fns[i]), args, cloneValue(recvs[i]), st)
+        // An async disposer returns a promise. Awaiting it here is what makes
+        // `await using` sequence correctly; a sync disposer returns undefined and
+        // never reaches this.
+        if !st.throwing && isThenableValue(st, dres) {
+            let _a = awaitValue(prog, dres, st)
+        }
+        savedThrow = st.tempRoots.pop()!
+        if st.throwing {
+            if hadThrow {
+                let fresh = cloneValue(st.thrownValue)
+                st.throwing = false
+                st.thrownValue = JSValue.Undefined
+                let wrapped = makeSuppressed(prog, st, fresh, savedThrow)
+                st.thrownValue = wrapped
+                st.throwing = true
+            }
+        } else if hadThrow {
+            st.throwing = true
+            st.thrownValue = savedThrow
+        }
+        i = i + 1
+    }
+}
+
+// Wrap `err` around `suppressed` using the prelude's SuppressedError. Falls back
+// to the newer error alone when the helper is missing, because a disposal failure
+// must not itself become a crash.
+fn makeSuppressed(prog: &Prog, st: &mut Interp, err: JSValue, suppressed: JSValue): JSValue {
+    let ctor = scopeLookup(st, 0, "__mjSuppress")
+    if !isCallable(ctor) {
+        return err
+    }
+    var args: Vec<JSValue> = Vec.new()
+    args.push(err)
+    args.push(suppressed)
+    return callValue(prog, ctor, args, JSValue.Undefined, st)
 }
 
 pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
@@ -21528,12 +21660,18 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                                 // binds the resolved values
                                 bound = awaitValue(prog, cloneValue(bound), st)
                             }
-                            if bindKind == 2 {
+                            if bindKind >= 2 {
                                 scopeDefine(st, iterScope, name.clone(), bound)
+                                if bindKind == 3 {
+                                    registerUsing(prog, st, iterScope, name)
+                                }
                             } else {
                                 scopeAssign(st, scope, name, bound)
                             }
                             let flow = execStmt(prog, body, st, iterScope)
+                            // `for (using x of it)` disposes at the END of each
+                            // pass, not once at the end of the loop
+                            runDisposals(prog, st, iterScope)
                             popActive(st)
                             popTemp(st)
                             match flow {
@@ -21674,12 +21812,16 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                     // binds the resolved values, not the promises
                     eagerBound = awaitValue(prog, cloneValue(eagerBound), st)
                 }
-                if bindKind == 2 {
+                if bindKind >= 2 {
                     scopeDefine(st, iterScope, name.clone(), eagerBound)
+                    if bindKind == 3 {
+                        registerUsing(prog, st, iterScope, name)
+                    }
                 } else {
                     scopeAssign(st, scope, name, eagerBound)
                 }
                 let flow = execStmt(prog, body, st, iterScope)
+                runDisposals(prog, st, iterScope)
                 popActive(st)
                 match flow {
                     Flow.Ret(v) => {
@@ -21793,6 +21935,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                     scopeAssign(st, scope, name, JSValue.Str(keys[i].clone()))
                 }
                 let flow = execStmt(prog, body, st, iterScope)
+                runDisposals(prog, st, iterScope)
                 popActive(st)
                 match flow {
                     Flow.Ret(v) => {
@@ -21821,6 +21964,38 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 i = i + 1
             }
             popActive(st)
+            return Flow.Normal
+        }
+        Stmt.UsingDecl(listIdx) => {
+            var ui: i64 = 0
+            let un = prog.declLists[listIdx.index].len()
+            while ui < un {
+                let uname = prog.declLists[listIdx.index][ui].name.clone()
+                let uv = evalExpr(prog, prog.declLists[listIdx.index][ui].init, st, scope)
+                if st.throwing {
+                    return Flow.Normal
+                }
+                // null and undefined are explicitly permitted and register nothing
+                var nullish = false
+                match uv {
+                    JSValue.Undefined => {
+                        nullish = true
+                    }
+                    JSValue.Null => {
+                        nullish = true
+                    }
+                    _ => {
+                    }
+                }
+                scopeDefine(st, scope, uname.clone(), cloneValue(uv))
+                if !nullish {
+                    registerUsing(prog, st, scope, uname)
+                    if st.throwing {
+                        return Flow.Normal
+                    }
+                }
+                ui = ui + 1
+            }
             return Flow.Normal
         }
         Stmt.MultiDecl(listIdx) => {
@@ -22026,6 +22201,9 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             let child = newScope(st, scope)
             pushActive(st, child)
             let flow = execBlock(prog, b, st, child)
+            // after the body, on every exit path, so `using` releases on a throw
+            // or a break as well as on falling off the end
+            runDisposals(prog, st, child)
             popActive(st)
             return flow
         }
