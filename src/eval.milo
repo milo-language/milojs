@@ -8579,7 +8579,16 @@ fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>, st
         }
         var repl = ""
         if args.len() > 1 {
-            repl = toStr(args[1])
+            // toStrProg, not toStr: the replacement is ToString'd, which runs a
+            // user toString and can throw. toStr answered "[object Object]"
+            // without consulting one, so a poisoned replacement substituted that
+            // text instead of propagating. The non-regex spelling of replace
+            // already coerced through coercedStringArgs; this branch is the one
+            // that runs when the pattern is a regex.
+            repl = toStrProg(prog, cloneValue(args[1]), st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
         }
         return regexReplace(st, s, rid, repl)
     }
