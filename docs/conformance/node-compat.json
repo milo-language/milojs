@@ -6,8 +6,8 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "285c47cbcc8e208ad125ca7092149c7bc186c4df",
-    "dirty": true
+    "revision": "1fc1c03bc6a03f0d5b6c4d91d5b9bb79da5ec086",
+    "dirty": false
   },
   "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
   "selection": {
@@ -18,8 +18,8 @@
     "excludedNodeInternal": 606
   },
   "totals": {
-    "pass": 1513,
-    "fail": 1860,
+    "pass": 1531,
+    "fail": 1842,
     "total": 3373
   },
   "areas": [
@@ -31,8 +31,8 @@
     },
     {
       "area": "fs",
-      "pass": 62,
-      "fail": 165,
+      "pass": 78,
+      "fail": 149,
       "total": 227
     },
     {
@@ -55,8 +55,8 @@
     },
     {
       "area": "repl",
-      "pass": 23,
-      "fail": 67,
+      "pass": 25,
+      "fail": 65,
       "total": 90
     },
     {

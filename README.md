@@ -28,7 +28,7 @@ Experimental, not yet a drop-in replacement for either.
 
 | suite | score |
 |---|---|
-| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) (all <!--fact:node-available-->3373<!--/fact--> externally runnable tests, <!--fact:node-excluded-->606<!--/fact--> node-internal excluded) | <!--fact:node-pct-->44.9%<!--/fact--> (<!--fact:node-pass-->1513<!--/fact-->/<!--fact:node-total-->3373<!--/fact-->) |
+| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) (all <!--fact:node-available-->3373<!--/fact--> externally runnable tests, <!--fact:node-excluded-->606<!--/fact--> node-internal excluded) | <!--fact:node-pct-->45.4%<!--/fact--> (<!--fact:node-pass-->1531<!--/fact-->/<!--fact:node-total-->3373<!--/fact-->) |
 
 Node's own tests, unmodified, through Node's `test/common` harness, each invoked
 as a plain `<binary> test.js`. The same harness scores any node-compatible
