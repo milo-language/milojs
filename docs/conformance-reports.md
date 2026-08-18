@@ -1,9 +1,9 @@
 <!-- doc-meta
 system: conformance-reports
-purpose: reproducible procedure and format for checked-in test262 and QuickJS sweep evidence
-key-files: scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, docs/status.md
+purpose: reproducible procedure and format for the checked-in test262, QuickJS and Node sweep evidence
+key-files: scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, scripts/node-compat-sweep.ts, docs/status.md
 update-when: report flags, schema, corpus policy, or score publication policy changes
-last-verified: 2026-08-17 (engine-agnostic failure detection, which corrected both a bogus 100% for QuickJS and milojs's own figure; `--fails` and `--dir`)
+last-verified: 2026-08-18 (node-compat sweep added: measures the RUNTIME, excludes the 606 node-internal tests no third party can run, and scores peer runtimes through the same harness)
 -->
 
 # conformance reports
@@ -94,10 +94,40 @@ disagree. Publishing a new score is therefore three steps and no typing:
 # 1. measure — from a CLEAN checkout, on an unfiltered run
 TEST262=~/git/test262 MILOJS_ENGINE=.dev/mj-engine bun scripts/test262-sweep.ts --sample 1500
 QUICKJS_TESTS=~/git/quickjs/tests MILOJS_ENGINE=.dev/mj-engine bun scripts/quickjs-sweep.ts
+NODE_TESTS=~/git/node/test MILOJS_RUNTIME=.dev/mj-runtime bun scripts/node-compat-sweep.ts --sample 400
 # 2. compile the prose from the evidence
 node tools/gen-facts.mjs
 # 3. commit the report and the docs together
 ```
+
+## The Node sweep measures a different binary
+
+The first two sweeps measure `milojs-engine` — the language. `node-compat-sweep`
+measures `milojs`, the runtime: modules, event loop, host bindings. A score on
+one says nothing about the other, and the README labels each row with the binary
+it tests for that reason.
+
+It runs Node's own `test/parallel` through Node's own `test/common`, so the
+oracle is Node's tests rather than anything written here, and it invokes each
+case as a plain `<binary> test.js`. Two consequences worth knowing before
+quoting the number:
+
+- **606 of Node's 3979 parallel tests are excluded** as not externally runnable:
+  they declare `// Flags: --expose-internals` (Node's runner re-execs with those
+  flags) or `require("internal/...")`, Node's private module tree. Neither is
+  implementable by a third party, so counting them scores every other runtime
+  against a denominator it cannot reach. `--all` keeps them, which is what you
+  want when measuring Node against itself.
+- **Node's own score is the ceiling, not 100%.** The remainder need build flags
+  or Node's official runner.
+
+Because it takes a binary rather than a build of this repo, a peer number is
+measured rather than quoted: `MILOJS_RUNTIME=$(which bun)`. Read a peer's score
+as "passes Node's unmodified tests launched as a plain script", which is
+narrower than that project's own compatibility claim — Bun, for instance,
+reports 94-100% per module against vendored copies run under `bun test`, and
+declines `node:test` outside it. Both numbers are true and they answer different
+questions.
 
 Two rules are enforced rather than asked for:
 

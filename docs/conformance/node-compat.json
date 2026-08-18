@@ -6,7 +6,7 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "54aec87fc5341465cbf7ee60db6b19e0f35a3613",
+    "revision": "29eb3fbf5e4dce92cdff9b94b06368475b4034ff",
     "dirty": false
   },
   "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
@@ -18,8 +18,8 @@
     "excludedNodeInternal": 606
   },
   "totals": {
-    "pass": 173,
-    "fail": 227,
+    "pass": 184,
+    "fail": 216,
     "total": 400
   },
   "areas": [
@@ -31,8 +31,8 @@
     },
     {
       "area": "fs",
-      "pass": 6,
-      "fail": 23,
+      "pass": 8,
+      "fail": 21,
       "total": 29
     },
     {
@@ -48,21 +48,21 @@
       "total": 15
     },
     {
-      "area": "net",
-      "pass": 1,
-      "fail": 13,
-      "total": 14
-    },
-    {
       "area": "buffer",
       "pass": 3,
       "fail": 11,
       "total": 14
     },
     {
-      "area": "async",
+      "area": "net",
       "pass": 4,
       "fail": 10,
+      "total": 14
+    },
+    {
+      "area": "async",
+      "pass": 5,
+      "fail": 9,
       "total": 14
     },
     {
@@ -108,18 +108,6 @@
       "total": 5
     },
     {
-      "area": "diagnostics",
-      "pass": 5,
-      "fail": 4,
-      "total": 9
-    },
-    {
-      "area": "timers",
-      "pass": 5,
-      "fail": 4,
-      "total": 9
-    },
-    {
       "area": "vm",
       "pass": 1,
       "fail": 4,
@@ -150,13 +138,13 @@
       "total": 3
     },
     {
-      "area": "dns",
-      "pass": 0,
+      "area": "diagnostics",
+      "pass": 7,
       "fail": 2,
-      "total": 2
+      "total": 9
     },
     {
-      "area": "event",
+      "area": "dns",
       "pass": 0,
       "fail": 2,
       "total": 2
@@ -184,6 +172,12 @@
       "pass": 0,
       "fail": 2,
       "total": 2
+    },
+    {
+      "area": "timers",
+      "pass": 7,
+      "fail": 2,
+      "total": 9
     },
     {
       "area": "url",
@@ -256,6 +250,12 @@
       "pass": 0,
       "fail": 1,
       "total": 1
+    },
+    {
+      "area": "event",
+      "pass": 1,
+      "fail": 1,
+      "total": 2
     },
     {
       "area": "events",

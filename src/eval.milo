@@ -27,7 +27,7 @@ from "./modules" import {
     dirOf, resolveSpec, findModule, reportUnresolved, relativizeToCwd
 }
 from "std/os" import {
-    exit
+    exit, readFd
 }
 from "std/process" import {
     Child
@@ -4348,6 +4348,11 @@ let NATIVE_TCP_PORT: i64 = 201
 // Run a program to completion and hand back its output. The async spawn family
 // is built on top of this in JS; nothing could spawn at all before.
 let NATIVE_SPAWN_SYNC: i64 = 202
+// Read a connection, distinguishing "nothing yet" from "peer closed". recvOnce
+// collapses both to an empty string, so a client could never tell that the other
+// end had gone and never emitted 'end'/'close': the socket stayed live and the
+// event loop with it. Answers -1 for would-block and the empty string for EOF.
+let NATIVE_TCP_READ: i64 = 203
 let NATIVE_HTTP_REGISTER: i64 = 73
 let NATIVE_HTTP_UNREGISTER: i64 = 74
 let NATIVE_WRITE_FILE: i64 = 75
@@ -5485,6 +5490,35 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         popTemp(st)
         return JSValue.Obj(out)
+    }
+    if id == NATIVE_TCP_READ {
+        var idx: i64 = 0
+        if argVals.len() > 0 {
+            idx = numToIndex(toNum(argVals[0]))
+        }
+        if idx < 0 || idx >= st.conns.len() || !st.connOpen[idx] {
+            return JSValue.Str("")
+        }
+        var buf: [u8; 65536] = [0; 65536]
+        var n: i64 = 0
+        unsafe {
+            n = readFd(st.conns[idx].rawFd(), buf, 65536)
+        }
+        if n > 0 {
+            var out = ""
+            var bi: i64 = 0
+            while bi < n {
+                out.push(buf[bi])
+                bi = bi + 1
+            }
+            return JSValue.Str(out)
+        }
+        if n == 0 {
+            // a clean EOF: the peer closed its writing side
+            return JSValue.Str("")
+        }
+        // would-block, which is NOT end of stream
+        return JSValue.Number(0.0 - 1.0)
     }
     if id == NATIVE_TCP_PORT {
         var idx: i64 = 0
@@ -9538,6 +9572,7 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "__tcpClose", JSValue.Native(NATIVE_TCP_CLOSE))
     scopeDefine(st, 0, "__tcpConnect", JSValue.Native(NATIVE_TCP_CONNECT))
     scopeDefine(st, 0, "__tcpPort", JSValue.Native(NATIVE_TCP_PORT))
+    scopeDefine(st, 0, "__tcpRead", JSValue.Native(NATIVE_TCP_READ))
     scopeDefine(st, 0, "__spawnSync", JSValue.Native(NATIVE_SPAWN_SYNC))
     scopeDefine(st, 0, "__httpFetch", JSValue.Native(NATIVE_HTTP_FETCH))
     scopeDefine(st, 0, "__sqliteOpen", JSValue.Native(NATIVE_SQLITE_OPEN))
