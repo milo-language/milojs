@@ -94,6 +94,7 @@ const FACTS = {
   "node-pct": () => pct(report("node-compat").totals.pass, report("node-compat").totals.total),
   "node-sample": () => String(report("node-compat").selection.sample ?? report("node-compat").totals.total),
   "node-available": () => String(report("node-compat").selection.available),
+  "node-excluded": () => String(report("node-compat").selection.excludedNodeInternal),
   "qjs-pass": () => String(report("quickjs").totals.pass),
   "qjs-total": () => String(report("quickjs").totals.total ?? report("quickjs").totals.scored),
   "qjs-corpus": () => short(report("quickjs").corpus.revision),

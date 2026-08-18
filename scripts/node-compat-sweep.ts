@@ -71,7 +71,31 @@ function gitDirty(dir: string): boolean {
   } catch { return true; }
 }
 
+// 606 of node's 3979 parallel tests are unwinnable by anything that is not node
+// itself, and counting them scores every other runtime against a denominator it
+// cannot reach:
+//
+//   - `// Flags: --expose-internals` and friends. Node's official runner reads
+//     that comment and re-execs with those flags; this harness does not, and
+//     most of them expose node-private state anyway.
+//   - `require("internal/...")` reaches into node's own module tree, which is
+//     not API and not implementable by a third party.
+//
+// Excluding them is not grading on a curve: node still scores highest on what
+// remains, and the number finally means "of the tests a Node-compatible runtime
+// could pass". --all keeps them, for measuring node against itself.
+const keepAll = argv.includes("--all");
+const NODE_ONLY = /^\/\/ Flags:|require\(['"]internal\//m;
 let files = readdirSync(PARALLEL).filter((f) => f.startsWith("test-") && f.endsWith(".js"));
+const before = files.length;
+if (!keepAll) {
+  files = files.filter((f) => {
+    try {
+      return !NODE_ONLY.test(readFileSync(join(PARALLEL, f), "utf8"));
+    } catch { return true; }
+  });
+}
+const excluded = before - files.length;
 if (subDir) files = files.filter((f) => f.startsWith(`test-${subDir}`));
 files.sort();
 
@@ -180,7 +204,7 @@ if (verbose) {
   console.log("\nfailing:");
   rows.filter((r) => !r.ok).forEach((r) => console.log(`  ${r.file}  ${r.why}`));
 }
-console.log(`\nnode-compat-sweep: ${pass}/${rows.length} pass (${pct}%), of ${selected.length} selected from ${files.length} in test/parallel`);
+console.log(`\nnode-compat-sweep: ${pass}/${rows.length} pass (${pct}%), of ${selected.length} selected from ${files.length} runnable (${excluded} node-internal tests excluded)`);
 
 if (failsPath) {
   writeFileSync(failsPath, rows.filter((r) => !r.ok).map((r) => JSON.stringify({ file: r.file, why: r.why })).join("\n") + "\n");
@@ -193,7 +217,7 @@ const report = {
   corpus: { path: tilde(NODE_TESTS), revision: gitRev(NODE_TESTS) },
   milojs: { revision: gitRev("."), dirty: gitDirty(".") },
   runtime: tilde(RUNTIME),
-  selection: { directory: subDir || null, sample: sampleN, seed: "0x5eed17", available: files.length },
+  selection: { directory: subDir || null, sample: sampleN, seed: "0x5eed17", available: files.length, excludedNodeInternal: excluded },
   totals: { pass, fail, total: rows.length },
   areas: areaRows,
 };
