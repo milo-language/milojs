@@ -34,6 +34,11 @@ GUARD_MAX_RSS_MB=${GUARD_MAX_RSS_MB:-$(( mem_mb / 2 ))}
 GUARD_TIMEOUT=${GUARD_TIMEOUT:-1800}            # wall-clock seconds
 GUARD_POLL=${GUARD_POLL:-2}
 GUARD_QUIET=${GUARD_QUIET:-0}
+# Processes counted no matter where they sit in the tree. An orphan whose parent
+# was killed re-parents to launchd and leaves the descendant walk entirely — and
+# those are precisely the ones that pile up, because nothing is waiting on them
+# any more. A kill left 42 of these behind before this existed.
+GUARD_MATCH=${GUARD_MATCH:-'mj-runtime|mj-engine|milojs_'}
 
 note() { [ "$GUARD_QUIET" = "1" ] || echo "guard: $*" >&2; }
 
@@ -111,10 +116,13 @@ reap() {
       # matching then sees one process and the caps go blind while the machine
       # fills up. Walking pid/ppid catches those; the pgid match is kept as well,
       # for anything that changed group without re-parenting.
-      read -r n rss < <(ps -A -o pid=,ppid=,pgid=,rss= 2>/dev/null | awk -v root="$child" -v g="$pgid" '
-        { pid[NR]=$1; ppid[NR]=$2; pgid[NR]=$3; rss[NR]=$4; N=NR }
+      read -r n rss < <(ps -A -o pid=,ppid=,pgid=,rss=,comm= 2>/dev/null | awk -v root="$child" -v g="$pgid" -v m="$GUARD_MATCH" '
+        { pid[NR]=$1; ppid[NR]=$2; pgid[NR]=$3; rss[NR]=$4; cmd[NR]=$5; N=NR }
         END {
           mine[root]=1
+          # Seeded BEFORE the walk so that anything still hanging off an orphan
+          # is reached as well, not just the orphan itself.
+          for (i=1; i<=N; i++) if (m != "" && cmd[i] ~ m) mine[pid[i]]=1
           # Repeat until no new descendant appears: ps output is in no useful
           # order, so one pass would miss a child listed before its parent.
           do {
