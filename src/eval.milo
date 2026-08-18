@@ -797,9 +797,9 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
     // arr[Symbol.iterator] — a bound `values`, so arr[Symbol.iterator]() yields
     // the same iterator for-of drives. Lives here rather than in getMember
     // because building the bound method allocates and getMember is immutable.
-    if st.objects[o].isArray && key == symIteratorKey() && objOwnIndex(st, o, key) < 0 {
-        return makeBoundMethod(st, JSValue.Obj(o), "values")
-    }
+    // No array arm here: Array.prototype carries Symbol.iterator as a real
+    // property and arrays link it as a real proto, so the ordinary walk finds
+    // it and a program that deletes or replaces it is obeyed.
     // The same for Map and Set. for-of and spread already worked, because those
     // drive the collection directly, but READING the member gave undefined —
     // and get-intrinsic resolves %MapIteratorPrototype% by calling it.
@@ -4050,6 +4050,15 @@ fn assignPattern(prog: &Prog, patId: ExprId, value: JSValue, st: &mut Interp, sc
             popTemp(st)
         }
         Expr.ObjLit(litIdx) => {
+            // An object pattern performs RequireObjectCoercible on its source
+            // before reading any key. In the ASSIGNMENT form that check was
+            // missing entirely: a nested `[{a}] = [null]` read nothing off the
+            // null and bound undefined instead of throwing.
+            if isNullish(value) {
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", "Cannot destructure '" + toStr(value) + "' as it is " + toStr(value) + "." + currentModule(st))
+                return
+            }
             pushTemp(st, cloneValue(value))
             let vh = objHandle(value)
             var i: i64 = 0
@@ -9225,6 +9234,13 @@ pub fn setupGlobals(st: &mut Interp) {
         objSetNonEnumerable(st, arrayProto, apNames[apm])
         apm = apm + 1
     }
+    // Array.prototype[Symbol.iterator] IS Array.prototype.values, as a real
+    // property rather than something synthesised per instance. Synthesising it
+    // meant `delete Array.prototype[Symbol.iterator]` had no effect at all and
+    // the two were not the same function, which test262 checks directly and
+    // which every iteration test that removes the method depends on.
+    objSet(st, arrayProto, symIteratorKey(), objGet(st, arrayProto, "values"))
+    objSetNonEnumerable(st, arrayProto, symIteratorKey())
     let arrayCtor = newObject(st)
     st.objects[arrayCtor].isFunctionLike = true
     objSet(st, arrayCtor, "prototype", JSValue.Obj(arrayProto))
