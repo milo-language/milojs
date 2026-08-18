@@ -214,7 +214,16 @@ function bucket(why: string): string {
   return why.split(tmp).join("").replace(/'[^']*'/g, "'…'").replace(/\b\d+\b/g, "N").slice(0, 90);
 }
 
-let pass = 0, fail = 0, skip = 0;
+// A failure the parser caused is a MISSING SYNTAX FEATURE, not a wrong answer,
+// and the two want different work. Unlike the QuickJS sweep this does not change
+// the score: test262 is one case per file, so a parse gap costs exactly the cases
+// that use it rather than taking a whole file down. It is reported as a breakdown
+// of the failures so the syntax half of the gap is visible.
+function isParseFailure(why: string): boolean {
+  return /^milojs(-engine)?: [^\n]*: /.test(why) || /\bSyntaxError\b/.test(why);
+}
+
+let pass = 0, fail = 0, skip = 0, parseFail = 0;
 const areaTotals = new Map<string, { p: number; f: number }>();
 const buckets = new Map<string, string[]>();
 const allFails: { file: string; why: string }[] = [];
@@ -227,13 +236,17 @@ for (const file of files) {
   const a = areaOf(file);
   const t = areaTotals.get(a) ?? areaTotals.set(a, { p: 0, f: 0 }).get(a)!;
   if (res === "pass") { pass++; t.p++; }
-  else { fail++; t.f++; const b = bucket(why); (buckets.get(b) ?? buckets.set(b, []).get(b)!).push(file.slice(root.length + 1)); allFails.push({ file: file.slice(root.length + 1), why }); }
+  else { fail++; t.f++; if (isParseFailure(why)) parseFail++; const b = bucket(why); (buckets.get(b) ?? buckets.set(b, []).get(b)!).push(file.slice(root.length + 1)); allFails.push({ file: file.slice(root.length + 1), why }); }
   if (++done % 500 === 0) process.stderr.write(`  ${done}/${files.length}\r`);
 }
 
 const scored = pass + fail;
 console.log(`\ntest262-sweep: ${pass}/${scored} pass (${((pass / scored) * 100).toFixed(1)}%), ${skip} skipped (module/atomics), of ${files.length} sampled${subDir ? " in " + subDir : " across the whole suite"}`);
-console.log(`engine: ${ENGINE}  (default tests run sloppy-only; onlyStrict honored)\n`);
+console.log(`engine: ${ENGINE}  (default tests run sloppy-only; onlyStrict honored)`);
+if (parseFail > 0) {
+  console.log(`  of the ${fail} failures, ${parseFail} (${((parseFail / fail) * 100).toFixed(1)}%) are PARSE failures: missing syntax, not a wrong answer.`);
+}
+console.log();
 
 console.log("by area:");
 for (const [a, t] of [...areaTotals.entries()].sort((x, y) => (y[1].p + y[1].f) - (x[1].p + x[1].f)).slice(0, 25)) {
@@ -264,7 +277,7 @@ if (jsonPath) {
       limit: Number.isFinite(limit) ? limit : null,
       seed: sampleN ? "0x2f6e2b1" : null,
     },
-    totals: { pass, fail, skip, scored, selected: files.length },
+    totals: { pass, fail, parseFail, skip, scored, selected: files.length },
     areas: [...areaTotals.entries()]
       .map(([area, t]) => ({ area, pass: t.p, fail: t.f, total: t.p + t.f }))
       .sort((a, b) => b.total - a.total || a.area.localeCompare(b.area)),

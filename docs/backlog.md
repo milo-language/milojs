@@ -43,6 +43,38 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## RegExp.escape escaped 18 code points wrongly, and string indexing is quadratic
+
+**Fixed: the escape set.** `RegExp.escape` handled the SyntaxCharacters and the
+control escapes but NONE of the ES2025 "other punctuators", nor the space:
+` ! " # % & \' , - : ; < = > @ ` ~` all came out literal where the spec requires
+`\xNN`. A literal `-` is the dangerous one, since spliced into a character class
+it reads as a range. U+00A0 was also emitted as `\u00a0` where below 256 the spec
+spells it `\xa0`. Found by diffing every code point against node;
+`tests/regexpEscape.js` keeps doing that over 0..0x300.
+
+**Not fixed: `charCodeAt(i)` is O(i), so any scan of a string is quadratic.**
+This is what actually makes quickjs's `bug1571.js` and `test_builtin.js:test_rope`
+time out, and it is not the accumulator problem the RegExp.escape comment already
+solved. Measured on an ALL-ASCII string, where a UTF-16 index equals a byte
+offset:
+
+| scan | milojs | node |
+|---|---:|---:|
+| `charCodeAt` over 10k | 93 ms | 1 ms |
+| `charCodeAt` over 40k | 1668 ms | 1 ms |
+| `RegExp.escape` of 10k | 155 ms | 0 ms |
+| `RegExp.escape` of 100k | 12686 ms | 0 ms |
+
+`utf16Locate` already takes an ASCII fast path, but it reaches it by calling
+`firstNonAsciiUpTo(s, idx + 1)`, which rescans from byte 0 on EVERY access. 4x the
+length costs 18x the time. The fix is not a better scan, it is somewhere to cache
+the answer: a JS string needs a representation carrying its byte length, its
+UTF-16 length and an ASCII flag, rather than being a bare Milo `string`. That is
+the same representation change rope support needs, so the two should land
+together. Loop accumulation (`s += "ab"` 40k times, 263 ms against node's 1 ms) is
+the other half of it.
+
 ## A syntax error now exits 1, and the sweep counts parse gaps separately
 
 Two changes that belong together, because the first is only publishable with the
