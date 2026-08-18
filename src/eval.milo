@@ -9633,6 +9633,14 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             if st.optShort {
                 return JSValue.Undefined
             }
+            // A throw while evaluating the OBJECT must propagate. Without this
+            // the failed subexpression read as `undefined` and the property read
+            // replaced the real error with "cannot read property 'x' of
+            // undefined" — `Temporal.Instant.from(bad).ns` reported a TypeError
+            // where the parser had raised a RangeError.
+            if st.throwing {
+                return JSValue.Undefined
+            }
             match ov {
                 JSValue.Obj(o) => {
                     return getMemberDyn(prog, o, name, st)
@@ -9742,6 +9750,11 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             let ov = evalExpr(prog, objIdx, st, scope)
             // a preceding `?.` short-circuited this chain
             if st.optShort {
+                return JSValue.Undefined
+            }
+            // same as the Member case: a throw in the object expression is the
+            // real error and must not be masked by the property read
+            if st.throwing {
                 return JSValue.Undefined
             }
             // the key expression can run user code and collect the base
