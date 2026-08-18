@@ -606,10 +606,15 @@ runs next. The caller owns the returned context until it restores it.
 ### `scopeAssign`
 
 ```milo
-pub fn scopeAssign(st: &mut Interp, scope: i64, name: string, value: JSValue)
+pub fn scopeAssign(st: &mut Interp, scope: i64, name: &string, value: JSValue)
 ```
 
 Assignment walks the chain; if unbound, creates a global (sloppy JS).
+`name` is borrowed, not owned: this runs on every assignment, and taking it by
+value made each caller clone the identifier string (a malloc/free pair per
+`x = ...`). Writing only the `value` field for the same reason — replacing the
+whole Binding dropped the old name string and moved a new one in, when the
+name is by definition already correct.
 
 ### `scopeDefine`
 

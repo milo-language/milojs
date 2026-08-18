@@ -4052,7 +4052,7 @@ fn assignTarget(prog: &Prog, targetId: ExprId, value: JSValue, st: &mut Interp, 
             if isUndefinedValue(value) {
                 v = evalExpr(prog, defaultIdx, st, scope)
             }
-            scopeAssign(st, scope, name.clone(), cloneValue(v))
+            scopeAssign(st, scope, name, cloneValue(v))
         }
         _ => {
             writeLValue(prog, targetId, st, scope, cloneValue(value))
@@ -4201,7 +4201,7 @@ fn readLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
 fn writeLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64, value: JSValue) {
     match prog.exprs[targetId.index] {
         Expr.Ident(name) => {
-            scopeAssign(st, scope, name.clone(), value)
+            scopeAssign(st, scope, name, value)
         }
         Expr.Member(objIdx, name) => {
             let ov = evalExpr(prog, objIdx, st, scope)
@@ -10381,7 +10381,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
         }
         Expr.Assign(name, e) => {
             let v = evalExpr(prog, e, st, scope)
-            scopeAssign(st, scope, name.clone(), cloneValue(v))
+            scopeAssign(st, scope, name, cloneValue(v))
             return v
         }
         Expr.Call(callee, argsIdx) => {
@@ -21327,7 +21327,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                             // copy back so the update clause sees the body's writes
                             var lo: i64 = 0
                             while lo < letNames.len() {
-                                scopeAssign(st, loopScope, letNames[lo].clone(), scopeLookup(st, bodyScope, letNames[lo]))
+                                scopeAssign(st, loopScope, letNames[lo], scopeLookup(st, bodyScope, letNames[lo]))
                                 lo = lo + 1
                             }
                             popActive(st)
