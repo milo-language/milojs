@@ -85,7 +85,7 @@ pub fn evalSourceValue(src: &string, prog: &mut Prog, st: &mut Interp): JSValue 
     st.throwing = false
     st.thrownValue = JSValue.Undefined
     let toks = lex(src)
-    var p = PState { depth: 0,
+    var p = PState { depth: 0, noIn: false,
         toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: "<embed>", errored: false, eofError: false, quiet: true, strict: false
     }
     let top = parseProgram(p, prog)
@@ -130,7 +130,7 @@ pub fn evalSourceValue(src: &string, prog: &mut Prog, st: &mut Interp): JSValue 
 fn runSource(src: &string, st: &mut Interp): i32 {
     let toks = lex(src)
     var prog = newProg()
-    var p = PState { depth: 0,
+    var p = PState { depth: 0, noIn: false,
         toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: "<entry>", errored: false, eofError: false, quiet: false, strict: false
     }
     let top = parseProgram(p, prog)

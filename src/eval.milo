@@ -20455,7 +20455,7 @@ pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
     // other's text, or the first one's functions stringify from the second's
     let evalName = "<eval:" + numToStr(gProg.srcNames.len() as f64) + ">"
     registerSource(gProg, evalName.clone(), src.clone())
-    var ep = PState { depth: 0,
+    var ep = PState { depth: 0, noIn: false,
         toks: lex(src.clone()), pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: evalName, errored: false, eofError: false, quiet: true, strict: false
     }
     let top = parseProgram(ep, gProg)
@@ -21245,7 +21245,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             scopeDefine(st, scope, prog.classes[classIdx].name.clone(), v)
             return Flow.Normal
         }
-        Stmt.ForOf(name, objExpr, body, isForAwait) => {
+        Stmt.ForOf(name, objExpr, body, isForAwait, bindKind) => {
             let ov = evalExpr(prog, objExpr, st, scope)
             // the snapshot's element handles are only kept alive by the source
             // object, so it must stay rooted for the whole loop. `holder` keeps
@@ -21352,7 +21352,11 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                                 // binds the resolved values
                                 bound = awaitValue(prog, cloneValue(bound), st)
                             }
-                            scopeDefine(st, iterScope, name.clone(), bound)
+                            if bindKind == 2 {
+                                scopeDefine(st, iterScope, name.clone(), bound)
+                            } else {
+                                scopeAssign(st, scope, name, bound)
+                            }
                             let flow = execStmt(prog, body, st, iterScope)
                             popActive(st)
                             popTemp(st)
@@ -21494,7 +21498,11 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                     // binds the resolved values, not the promises
                     eagerBound = awaitValue(prog, cloneValue(eagerBound), st)
                 }
-                scopeDefine(st, iterScope, name.clone(), eagerBound)
+                if bindKind == 2 {
+                    scopeDefine(st, iterScope, name.clone(), eagerBound)
+                } else {
+                    scopeAssign(st, scope, name, eagerBound)
+                }
                 let flow = execStmt(prog, body, st, iterScope)
                 popActive(st)
                 match flow {
@@ -21534,7 +21542,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             popTemp(st)
             return Flow.Normal
         }
-        Stmt.ForIn(name, objExpr, body) => {
+        Stmt.ForIn(name, objExpr, body, bindKind) => {
             let ov = evalExpr(prog, objExpr, st, scope)
             var keys: Vec<string> = Vec.new()
             match ov {
@@ -21579,7 +21587,15 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 // in the body captures this key, not the last one enumerated
                 let iterScope = newScope(st, loopScope)
                 pushActive(st, iterScope)
-                scopeDefine(st, iterScope, name.clone(), JSValue.Str(keys[i].clone()))
+                // See Stmt.ForIn: `let`/`const` binds per iteration so a closure in
+                // the body captures this key; `var` and a bare assignment share one
+                // binding in the enclosing scope, which is what makes the variable
+                // still hold the last key after the loop.
+                if bindKind == 2 {
+                    scopeDefine(st, iterScope, name.clone(), JSValue.Str(keys[i].clone()))
+                } else {
+                    scopeAssign(st, scope, name, JSValue.Str(keys[i].clone()))
+                }
                 let flow = execStmt(prog, body, st, iterScope)
                 popActive(st)
                 match flow {
@@ -22138,8 +22154,8 @@ fn stmtMayCapture(prog: &Prog, id: StmtId): bool {
         }
         Stmt.While(c, b) => { return exprMayCapture(prog, c) || stmtMayCapture(prog, b) }
         Stmt.DoWhile(b, c) => { return stmtMayCapture(prog, b) || exprMayCapture(prog, c) }
-        Stmt.ForIn(_n, o, b) => { return exprMayCapture(prog, o) || stmtMayCapture(prog, b) }
-        Stmt.ForOf(_n, o, b, _aw) => { return exprMayCapture(prog, o) || stmtMayCapture(prog, b) }
+        Stmt.ForIn(_n, o, b, _bk) => { return exprMayCapture(prog, o) || stmtMayCapture(prog, b) }
+        Stmt.ForOf(_n, o, b, _aw, _bk) => { return exprMayCapture(prog, o) || stmtMayCapture(prog, b) }
         Stmt.For(init, cond, upd, b) => {
             return optStmtMayCapture(prog, init) || optExprMayCapture(prog, cond)
                 || optExprMayCapture(prog, upd) || stmtMayCapture(prog, b)
@@ -22267,10 +22283,18 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64, nested: bool,
             }
             hoistStmt(prog, body, st, scope, true, shadow)
         }
-        Stmt.ForIn(_nm, _o, body) => {
+        Stmt.ForIn(nm, _o, body, bindKind) => {
+            // `var` in a for-in head is function-scoped, so it hoists like any
+            // other var. `let`/`const` (2) and a bare assignment (0) do not.
+            if bindKind == 1 && nm.len() > 0 && !scopeHasOwn(st, scope, nm) {
+                scopeDefine(st, scope, nm.clone(), JSValue.Undefined)
+            }
             hoistStmt(prog, body, st, scope, true, shadow)
         }
-        Stmt.ForOf(_nm, _o, body, _aw) => {
+        Stmt.ForOf(nm, _o, body, _aw, bindKind) => {
+            if bindKind == 1 && nm.len() > 0 && !scopeHasOwn(st, scope, nm) {
+                scopeDefine(st, scope, nm.clone(), JSValue.Undefined)
+            }
             hoistStmt(prog, body, st, scope, true, shadow)
         }
         Stmt.Try(tryB, _p, catchB, finallyB) => {

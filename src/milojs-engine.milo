@@ -155,7 +155,7 @@ fn main(): i32 {
                 // the entry is module code too when it is ESM, and module code
                 // is strict without a directive
                 let entryStrict = moduleIsStrict(toks, path)
-                var p = PState { depth: 0,
+                var p = PState { depth: 0, noIn: false,
                     toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: entryStrict
                 }
                 topBlock = parseProgram(p, gProg)

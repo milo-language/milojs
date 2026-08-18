@@ -43,6 +43,46 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## for-in/for-of heads: binding kind and non-identifier targets
+
+`Stmt.ForIn` stored only a NAME, which lost two things at once.
+
+**Binding kind.** Every form got a fresh per-iteration binding, so
+`for (var j in o) {}` left `j` undefined after the loop where node reports the
+last key, and `for (var w of [1,2])` gave closures separate values where node
+shares one. The variants now carry a kind: 0 bare (assign an existing or global
+variable), 1 `var` (one hoisted function-scoped binding), 2 `let`/`const` (fresh
+per iteration). Only kind 2 calls `scopeDefine` on the iteration scope; 0 and 1
+call `scopeAssign` against the enclosing scope, and kind 1 also hoists.
+
+**Non-identifier targets.** `for (a.x in o)`, `for (a.y of it)` and
+`for (arr[0] in o)` did not parse at all: only a bare identifier was recognised,
+and the failure took the C-style path down with it. The head is now parsed with
+`parsePostfix`, which stops before `in` (where `parseExpr` would take it as a
+relational operator), then desugared to the temp form the destructuring head
+already used: `for (a.x in o) BODY` becomes `for (__t in o) { a.x = __t; BODY }`.
+
+**Annex B `for (var k = 2 in o)`.** Legal in sloppy code and used by
+`test_loop.js`. This needed the grammar's NoIn variant, now a `noIn` flag on
+PState that gates the binary `in` operator, because `parseExpr` was otherwise
+parsing `2 in o` as a relational expression and then finding `)` where it wanted
+`;`. The initializer really runs; it is only invisible when a first key
+overwrites it.
+
+`tests/forInOfBinding.js` pins all of it against node.
+
+**test_loop.js now parses completely**, and the two cases it loses are real
+engine bugs that the parse failure had been hiding, not regressions:
+
+- `test_for_in` enumerates `1,y,x` where node gives `1,y`. A property deleted
+  during enumeration is still being visited.
+- `test_try_catch5` HANGS (the sweep kills it). Not yet diagnosed.
+
+The sweep reads 95/149 against 109 before this work started. Every case lost is
+one that previously never executed; see the entry below for why that number is
+measuring truncation rather than the engine, and why the report has not been
+regenerated.
+
 ## Three parser/lexer gaps closed, and why the QuickJS number went DOWN
 
 All three came out of the 45 QuickJS cases recorded below as never having parsed.

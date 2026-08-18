@@ -47,6 +47,12 @@ pub struct PState {
     // than a SIGBUS. The descent is not bounded by anything else; measured, this
     // engine bus-errored at about 5330 levels on an 8 MB stack.
     depth: i64,
+    // The grammar has a NoIn variant of Expression, used in exactly one place:
+    // the initializer of a for-statement head, where a bare `in` belongs to the
+    // for-in form rather than to the expression. Without it `for (var k = 2 in o)`
+    // parsed `2 in o` as a relational expression and then found `)` where it
+    // wanted `;`.
+    noIn: bool,
 }
 
 // Deepest expression nesting the parser accepts. Set ABOVE node's own limits
@@ -1374,7 +1380,7 @@ fn parseRel(p: &mut PState, prog: &mut Prog): ExprId {
             advance(p)
             let right = parseShift(p, prog)
             left = addExpr(prog, Expr.Bin("instanceof", left, right))
-        } else if k == T_IN {
+        } else if k == T_IN && !p.noIn {
             advance(p)
             let right = parseShift(p, prog)
             left = addExpr(prog, Expr.Bin("in", left, right))
@@ -2061,7 +2067,17 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
         // `of` is not a reserved word in JS — it lexes as an identifier, so
         // for-of is detected by text, unlike for-in's real T_IN keyword
         var isOf = false
+        // How a for-in/for-of head binds its name: 0 none (plain assignment to an
+        // existing variable), 1 `var`, 2 `let`/`const`. See Stmt.ForIn.
+        var sawVarKw = false
+        var bindKind: i64 = 0
         if peekKind(p) == T_VAR || peekKind(p) == T_LET || peekKind(p) == T_CONST {
+            sawVarKw = peekKind(p) == T_VAR
+            if sawVarKw {
+                bindKind = 1
+            } else {
+                bindKind = 2
+            }
             advance(p)
         }
         if isPatternStart(p) {
@@ -2087,13 +2103,25 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
             let wrappedBlock = addBlock(prog, wrapped)
             let body = addStmt(prog, Stmt.Block(wrappedBlock))
             if patIsOf {
-                return addStmt(prog, Stmt.ForOf(tmp, objExpr, body, isForAwait))
+                return addStmt(prog, Stmt.ForOf(tmp, objExpr, body, isForAwait, 2))
             }
-            return addStmt(prog, Stmt.ForIn(tmp, objExpr, body))
+            return addStmt(prog, Stmt.ForIn(tmp, objExpr, body, 2))
         }
+        // Annex B `for (var k = 2 in obj)`: legal in sloppy code, and quickjs's
+        // test_loop.js depends on it. The initializer really does run, so it is
+        // kept rather than discarded; it is only unobservable because the first
+        // key overwrites it, and over an EMPTY object the variable keeps it.
+        var forInInit: Option<ExprId> = Option.None
         if peekKind(p) == T_IDENT {
             let cand = p.toks[p.pos].text.clone()
             advance(p)
+            if sawVarKw && peekKind(p) == T_EQ {
+                advance(p)
+                let savedNoIn = p.noIn
+                p.noIn = true
+                forInInit = Option.Some(parseExpr(p, prog))
+                p.noIn = savedNoIn
+            }
             if peekKind(p) == T_IN {
                 forInName = cand
             } else if peekKind(p) == T_IDENT && p.toks[p.pos].text == "of" {
@@ -2107,11 +2135,98 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
             expect(p, T_RPAREN)
             let body = parseStmt(p, prog)
             if isOf {
-                return addStmt(prog, Stmt.ForOf(forInName, objExpr, body, isForAwait))
+                return addStmt(prog, Stmt.ForOf(forInName, objExpr, body, isForAwait, bindKind))
             }
-            return addStmt(prog, Stmt.ForIn(forInName, objExpr, body))
+            let loop = addStmt(prog, Stmt.ForIn(forInName.clone(), objExpr, body, bindKind))
+            match forInInit {
+                Option.Some(initExpr) => {
+                    // `{ var k = INIT; for (k in obj) BODY }`
+                    var initItems: Vec<DeclItem> = Vec.new()
+                    initItems.push(DeclItem {
+                        name: forInName.clone(), init: initExpr, isVar: true
+                    }
+                    )
+                    var seq: Vec<StmtId> = Vec.new()
+                    seq.push(declsToStmt(prog, initItems))
+                    seq.push(loop)
+                    let seqBlock = addBlock(prog, seq)
+                    return addStmt(prog, Stmt.Block(seqBlock))
+                }
+                Option.None => {
+                }
+            }
+            return loop
         }
         p.pos = savedPos
+        // for (a.x in obj) / for (arr[0] of it): the head is an assignment
+        // TARGET, not a binding. Only a bare identifier was ever recognised, so
+        // every member or index target failed to parse and took the C-style path
+        // down with it. parsePostfix is the right parser here because it stops
+        // before `in`, which parseExpr would swallow as a binary operator.
+        //
+        // Desugared rather than given its own AST node, using the same temp
+        // shape the destructuring case above already uses:
+        //   for (a.x in obj) BODY   ==>   for (__t in obj) { a.x = __t; BODY }
+        let headK = peekKind(p)
+        if headK != T_SEMI && headK != T_VAR && headK != T_LET && headK != T_CONST {
+            let lvStart = p.pos
+            // The parser's `errored` flag is sticky and suppresses every later
+            // diagnostic, so a SPECULATIVE parse must not be able to set it.
+            let lvSavedErr = p.errored
+            let lvSavedEof = p.eofError
+            let lvTarget = parsePostfix(p, prog)
+            var lvIsOf = false
+            var lvMatched = false
+            if peekKind(p) == T_IN {
+                lvMatched = true
+            } else if peekKind(p) == T_IDENT && p.toks[p.pos].text == "of" {
+                lvMatched = true
+                lvIsOf = true
+            }
+            if lvMatched && !p.errored {
+                advance(p)
+                let lvObj = parseExpr(p, prog)
+                expect(p, T_RPAREN)
+                let lvBody = parseStmt(p, prog)
+                let lvTmp = "__fl" + i64ToStr(lvStart)
+                let lvRead = addExpr(prog, Expr.Ident(lvTmp.clone()))
+                // getExpr clones the node out: building the assignment appends to
+                // the same arena being inspected.
+                var lvAssign: Option<ExprId> = Option.None
+                match getExpr(prog, lvTarget) {
+                    Expr.Member(lvObjE, lvName) => {
+                        let lvKey = addExpr(prog, Expr.StrLit(lvName.clone()))
+                        lvAssign = Option.Some(addExpr(prog, Expr.SetMember(lvObjE, lvKey, lvRead)))
+                    }
+                    Expr.Index(lvObjE, lvKeyE) => {
+                        lvAssign = Option.Some(addExpr(prog, Expr.SetMember(lvObjE, lvKeyE, lvRead)))
+                    }
+                    Expr.Ident(lvName) => {
+                        lvAssign = Option.Some(addExpr(prog, Expr.Assign(lvName.clone(), lvRead)))
+                    }
+                    _ => {
+                    }
+                }
+                match lvAssign {
+                    Option.Some(lvSet) => {
+                        var lvSeq: Vec<StmtId> = Vec.new()
+                        lvSeq.push(addStmt(prog, Stmt.ExprStmt(lvSet)))
+                        lvSeq.push(lvBody)
+                        let lvBlockId = addBlock(prog, lvSeq)
+                        let lvWrapped = addStmt(prog, Stmt.Block(lvBlockId))
+                        if lvIsOf {
+                            return addStmt(prog, Stmt.ForOf(lvTmp, lvObj, lvWrapped, isForAwait, 2))
+                        }
+                        return addStmt(prog, Stmt.ForIn(lvTmp, lvObj, lvWrapped, 2))
+                    }
+                    Option.None => {
+                    }
+                }
+            }
+            p.pos = lvStart
+            p.errored = lvSavedErr
+            p.eofError = lvSavedEof
+        }
         // init clause (consumes its own terminating ;)
         var init: Option<StmtId> = Option.None
         if peekKind(p) == T_SEMI {

@@ -157,11 +157,16 @@ pub enum Stmt {
     Throw(ExprId),
     // let/var/const with one or more declarators: index into prog.declLists
     MultiDecl(DeclListId),
-    // for (name in objExpr) body
-    ForIn(string, ExprId, StmtId),
+    // for (name in objExpr) body. The last field is how `name` BINDS, which the
+    // AST used to drop: 0 bare (assign an existing/global variable), 1 `var`
+    // (one function-scoped binding, hoisted, surviving the loop), 2 `let`/`const`
+    // (a fresh binding per iteration so a closure captures that key). Without it
+    // every form got the per-iteration treatment and `for (var j in o)` left `j`
+    // undefined after the loop.
+    ForIn(string, ExprId, StmtId, i64),
     // for (name of iterExpr) body; the bool is `for await`, which awaits each
     // step (and prefers Symbol.asyncIterator over Symbol.iterator)
-    ForOf(string, ExprId, StmtId, bool),
+    ForOf(string, ExprId, StmtId, bool, i64),
     // break/continue carry their target label, "" when unlabeled
     Break(string),
     Continue(string),
@@ -490,11 +495,11 @@ fn cloneStmt(s: &Stmt): Stmt {
         Stmt.MultiDecl(listIdx) => {
             return Stmt.MultiDecl(listIdx)
         }
-        Stmt.ForIn(name, objExpr, body) => {
-            return Stmt.ForIn(name.clone(), objExpr, body)
+        Stmt.ForIn(name, objExpr, body, bindKind) => {
+            return Stmt.ForIn(name.clone(), objExpr, body, bindKind)
         }
-        Stmt.ForOf(name, objExpr, body, isAwait) => {
-            return Stmt.ForOf(name.clone(), objExpr, body, isAwait)
+        Stmt.ForOf(name, objExpr, body, isAwait, bindKind) => {
+            return Stmt.ForOf(name.clone(), objExpr, body, isAwait, bindKind)
         }
         Stmt.ClassDecl(idx) => {
             return Stmt.ClassDecl(idx)
