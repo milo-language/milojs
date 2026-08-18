@@ -47,8 +47,15 @@ note() { [ "$GUARD_QUIET" = "1" ] || echo "guard: $*" >&2; }
 # cap, fork() returns EAGAIN instantly and the bomb cannot grow at all. The cap
 # is set relative to what this uid is already running, so it bounds the guarded
 # subtree without breaking whatever the user has open.
+# The headroom is tied to GUARD_MAX_PROCS rather than being a flat number, so
+# the kernel cap sits just ABOVE the watchdog cap. That ordering is the point:
+# a genuine runaway trips the watchdog (which reports why and kills cleanly),
+# while a legitimate workload staying under GUARD_MAX_PROCS never sees EAGAIN.
+# A flat +150 got this backwards — a 400-case sweep hit the kernel cap and four
+# real tests failed with "EAGAIN ... posix_spawn", quietly costing a point on a
+# published conformance number. A guard that changes the measurement is a bug.
 uid_procs=$(ps -U "$(id -u)" -o pid= 2>/dev/null | wc -l | tr -d ' ')
-GUARD_NPROC=${GUARD_NPROC:-$(( uid_procs + 150 ))}
+GUARD_NPROC=${GUARD_NPROC:-$(( uid_procs + GUARD_MAX_PROCS + 50 ))}
 hard=$(ulimit -H -u 2>/dev/null)
 if [ "$hard" != "unlimited" ] && [ -n "$hard" ] && [ "$GUARD_NPROC" -gt "$hard" ]; then
   GUARD_NPROC=$hard
