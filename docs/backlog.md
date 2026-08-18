@@ -27,9 +27,11 @@ still becomes a catchable `RangeError`; the engine guard is 104 frames.
 
 A `sample`-based profile of `bench/arith.js` (pure arithmetic, no property access,
 no strings) attributes roughly a third of samples to malloc/free/`drop`/`cloneValue`
-and only about a tenth to the string compares in scope lookup. The 30-400x gap to
-bun in `bench/run.sh` is not one mechanism; it is per-node dispatch plus allocator
-traffic on owned values. Reproduce with:
+and only about a tenth to the string compares in scope lookup. The gap to bun in
+`bench/run.sh` is not one mechanism; it is per-node dispatch plus allocator
+traffic on owned values. (That gap reads 300-2600x since the harness stopped
+clamping bun's sub-millisecond times to 1 ms; the 30-400x figures this entry was
+first written against were the clamp, not the engine.) Reproduce with:
 
 ```sh
 tools/dev.sh                                    # build .dev/mj-engine
