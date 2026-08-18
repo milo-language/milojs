@@ -166,6 +166,9 @@ fn builtinSource(name: &string): string {
     }
     // milojs's own shared validators. Not a node module name, so it cannot
     // shadow one; see the _http_* convention immediately below.
+    if name == "readline" || name == "readline/promises" {
+        return @embedFile("../lib/readline.js")
+    }
     if name == "dgram" {
         return @embedFile("../lib/dgram.js")
     }
