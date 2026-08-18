@@ -10261,6 +10261,47 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Inter
 // Hot recursive nodes bypass the full dispatcher. The fallback contains large
 // await/literal/construction arms whose locals otherwise reserve stack space on
 // every simple call, even when those arms are not selected.
+// Assignment and update live in their own functions so the FRONT dispatcher can
+// reach them without entering evalExprFallback. That matters for size, not
+// tidiness: evalExprFallback reserves about 11.9 KB of stack per call
+// (`sub sp, sp, #0x2, lsl #12` plus `#0xdf0`) against evalExpr's ~800 bytes, and
+// `x = ...` / `x++` are among the most frequent nodes in any loop. Routing them
+// through the big frame cost both time and recursion depth.
+fn evalAssignExpr(prog: &Prog, name: &string, e: ExprId, st: &mut Interp, scope: i64): JSValue {
+    let v = evalExpr(prog, e, st, scope)
+    scopeAssign(st, scope, name, cloneValue(v))
+    return v
+}
+
+fn evalUpdateExpr(prog: &Prog, targetIdx: ExprId, isInc: bool, isPrefix: bool, st: &mut Interp, scope: i64): JSValue {
+        let old = readLValue(prog, targetIdx, st, scope)
+        // a BigInt counter increments by 1n and stays a BigInt (x++ on 5n
+        // must yield 5n / store 6n, not coerce through f64)
+        if isBigIntVal(old) {
+            var op = "+"
+            if !isInc {
+                op = "-"
+            }
+            let updated = evalBigIntBin(op, cloneValue(old), JSValue.BigInt("1"), st)
+            writeLValue(prog, targetIdx, st, scope, cloneValue(updated))
+            if isPrefix {
+                return updated
+            }
+            return old
+        }
+        let oldNum = toNum(old)
+        var newNum = oldNum + 1.0
+        if !isInc {
+            newNum = oldNum - 1.0
+        }
+        writeLValue(prog, targetIdx, st, scope, JSValue.Number(newNum))
+        if isPrefix {
+            return JSValue.Number(newNum)
+        }
+        // postfix yields the numeric value before the update (JS coerces)
+        return JSValue.Number(oldNum)
+}
+
 pub fn evalExpr(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue {
     if st.throwing {
         return JSValue.Undefined
@@ -10303,6 +10344,12 @@ pub fn evalExpr(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue {
         }
         Expr.Call(callee, argsIdx) => {
             return evalCall(prog, callee, argsIdx, st, scope)
+        }
+        Expr.Assign(name, e) => {
+            return evalAssignExpr(prog, name, e, st, scope)
+        }
+        Expr.Update(targetIdx, isInc, isPrefix) => {
+            return evalUpdateExpr(prog, targetIdx, isInc, isPrefix, st, scope)
         }
         _ => {
     return evalExprFallback(prog, id, st, scope)
@@ -10694,9 +10741,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             return JSValue.Bool(!truthy(va))
         }
         Expr.Assign(name, e) => {
-            let v = evalExpr(prog, e, st, scope)
-            scopeAssign(st, scope, name, cloneValue(v))
-            return v
+            return evalAssignExpr(prog, name, e, st, scope)
         }
         Expr.Call(callee, argsIdx) => {
             return evalCall(prog, callee, argsIdx, st, scope)
@@ -11381,32 +11426,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             }
         }
         Expr.Update(targetIdx, isInc, isPrefix) => {
-            let old = readLValue(prog, targetIdx, st, scope)
-            // a BigInt counter increments by 1n and stays a BigInt (x++ on 5n
-            // must yield 5n / store 6n, not coerce through f64)
-            if isBigIntVal(old) {
-                var op = "+"
-                if !isInc {
-                    op = "-"
-                }
-                let updated = evalBigIntBin(op, cloneValue(old), JSValue.BigInt("1"), st)
-                writeLValue(prog, targetIdx, st, scope, cloneValue(updated))
-                if isPrefix {
-                    return updated
-                }
-                return old
-            }
-            let oldNum = toNum(old)
-            var newNum = oldNum + 1.0
-            if !isInc {
-                newNum = oldNum - 1.0
-            }
-            writeLValue(prog, targetIdx, st, scope, JSValue.Number(newNum))
-            if isPrefix {
-                return JSValue.Number(newNum)
-            }
-            // postfix yields the numeric value before the update (JS coerces)
-            return JSValue.Number(oldNum)
+            return evalUpdateExpr(prog, targetIdx, isInc, isPrefix, st, scope)
         }
         Expr.CompoundAssign(targetIdx, op, rhsIdx) => {
             let cur = readLValue(prog, targetIdx, st, scope)

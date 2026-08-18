@@ -55,9 +55,7 @@ _Undocumented._
 pub fn evalExpr(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue
 ```
 
-Hot recursive nodes bypass the full dispatcher. The fallback contains large
-await/literal/construction arms whose locals otherwise reserve stack space on
-every simple call, even when those arms are not selected.
+_Undocumented._
 
 ### `execBlock`
 
