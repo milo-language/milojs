@@ -43,6 +43,51 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## Dispatcher frame size, and the two things that measured
+
+`evalExprFallback` reserved about 11.9 KB of stack per call
+(`sub sp, sp, #0x2, lsl #12` plus `#0xdf0`) against `evalExpr`'s ~800 bytes, because
+a function reserves the sum of every arm's locals. Every `x = ...`, `x++`, `o.x`
+and `o[k]` reached it. Two changes followed, and they paid in different currencies.
+
+**Speed, from routing hot nodes around it.** Assign/Update, then Member/Index,
+moved to the front dispatcher as small helpers. Measured against a pinned
+baseline: propFew -27%, localRead -22%, arith -19%, and every other bench
+between -5% and -19%.
+
+One trap worth keeping: binding the arm payloads in the front dispatcher
+(`Expr.Member(objIdx, name) => ...`) grew `evalExpr`'s own frame from 128 to 736
+bytes, which EVERY expression then paid, and non-property benches regressed ~2%.
+Matching with `_` and re-matching inside the helper keeps the front frame at 128
+and the regression disappears.
+
+**Nesting depth, from shrinking the frame itself.** Lifting the three largest
+remaining arms out (Bin, Un, New) took the fallback from 9264 to ~2.9 KB. Wall
+time is a wash, but the maximum nested-expression depth roughly TRIPLES:
+
+```sh
+# deepest `[[[...1...]]]` that still runs
+1767 before, 5281 after
+```
+
+ObjLit and SetMember were tried in the same pass and REVERTED. Unlike Bin/Un/New
+they are reached only through the fallback, so extracting them added a real call
+to a hot node: objChurn regressed 3-5% for no further depth. Extraction pays only
+where the node either is not hot or already made the call.
+
+**Still open: deep nesting CRASHES rather than throwing.** At the limit the engine
+dies with SIGBUS (exit 138), before and after; node raises a catchable error. The
+change moves the cliff out 3x, it does not add a guard. A depth check on the
+expression recursion is the real fix.
+
+**Also rejected: a discriminator tag on `Binding`.** Storing `(len << 8) | first
+byte` beside each name to skip the `memcmp` in scope scans measured as noise
+(-1.3% to +5.7%, objChurn worst). The reason is that Milo's string `==` ALREADY
+short-circuits on length, so the tag only helps a same-length miss, while the
+`memcmp` samples in a profile are mostly HITS, which no pre-filter can avoid.
+Making scope identity an integer (interning) or removing the lookup (lexical
+addressing) are the shapes that would work.
+
 ## Interpreter allocation churn: what a profile says, and one dead end
 
 A `sample`-based profile of `bench/arith.js` (pure arithmetic, no property access,
