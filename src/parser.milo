@@ -482,17 +482,40 @@ fn patternDecls(p: &mut PState, prog: &mut Prog, srcName: string, out: &mut Vec<
             // [a, ...rest] — rest is everything from this position on
             sawRest = true
             advance(p)
-            let restName = p.toks[p.pos].text.clone()
-            advance(p)
             let srcIdx = addExpr(prog, Expr.Ident(readName.clone()))
             var sliceArgs: Vec<ExprId> = Vec.new()
             sliceArgs.push(addExpr(prog, Expr.Num(i as f64)))
             let sliceArgsId = addArgList(prog, sliceArgs)
             let callee = addExpr(prog, Expr.Member(srcIdx, "slice"))
-            items.push(DeclItem {
-                name: restName, init: addExpr(prog, Expr.Call(callee, sliceArgsId)), isVar: false
+            let restInit = addExpr(prog, Expr.Call(callee, sliceArgsId))
+            // The rest target is a BindingPattern, not only an identifier:
+            // `[...[a, b]]` and `[...{length}]` bind out of the array the rest
+            // collected. Reading a bare token here treated `{length}` as the
+            // binding NAME, so the length of the rest array was never observed.
+            if peekKind(p) == T_LBRACE || peekKind(p) == T_LBRACKET {
+                let tmp = "__d" + i64ToStr(p.pos)
+                var inner: Vec<DeclItem> = Vec.new()
+                patternDecls(p, prog, tmp.clone(), inner)
+                items.push(DeclItem {
+                    name: tmp.clone(), init: restInit, isVar: false
+                }
+                )
+                var ri: i64 = 0
+                while ri < inner.len() {
+                    items.push(DeclItem {
+                        name: inner[ri].name.clone(), init: inner[ri].init, isVar: inner[ri].isVar
+                    }
+                    )
+                    ri = ri + 1
+                }
+            } else {
+                let restName = p.toks[p.pos].text.clone()
+                advance(p)
+                items.push(DeclItem {
+                    name: restName, init: restInit, isVar: false
+                }
+                )
             }
-            )
             if peekKind(p) == T_COMMA {
                 advance(p)
             }
