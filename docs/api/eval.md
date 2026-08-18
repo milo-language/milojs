@@ -200,6 +200,16 @@ pub fn setupGlobals(st: &mut Interp)
 
 _Undocumented._
 
+### `toNumArg`
+
+```milo
+pub fn toNumArg(prog: &Prog, v: &JSValue, st: &mut Interp): f64
+```
+
+ToNumber for an ARGUMENT position, where a symbol is a TypeError rather than
+NaN. toNumProg cannot do this for every caller: loose equality reaches it too,
+and `Symbol() == 1` is false rather than an exception.
+
 ### `toNumProg`
 
 ```milo
