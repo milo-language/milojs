@@ -65,6 +65,9 @@ jobs:
       # stale copy is worse than none. The pre-commit hook regenerates and stages
       # it, but core.hooksPath is opt-in — a clone without the hook ships stale
       # generated docs and nothing notices. This is the gate for that case.
+      - name: README stays within its prose budget
+        run: node tools/check-readme.mjs
+
       - name: docs/api is not stale
         run: |
           ./tools/gen-docs.sh

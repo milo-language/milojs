@@ -64,6 +64,14 @@ if command -v node >/dev/null 2>&1 && ! node tools/check-docs.mjs; then
     status=1
 fi
 
+# The README's SHAPE: allowed sections, in order, each within a prose budget.
+# Explanations accrete there faster than anywhere else — every measurement wants
+# a paragraph justifying itself — and the four things a reader came for get
+# buried. Blocks rather than rewrites: only a human can decide what to cut.
+if command -v node >/dev/null 2>&1 && ! node tools/check-readme.mjs; then
+    status=1
+fi
+
 # Numbers quoted in prose are compiled from the tree. Rewritten and staged rather
 # than failed: the counts move on ordinary commits, and a hook that blocks on
 # "your line count changed" just trains people to use --no-verify. CI runs the

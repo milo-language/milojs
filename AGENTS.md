@@ -352,6 +352,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/check-gaps.mjs` | re-probes every "known engine limit" in `docs/status.md`; fails when one has been fixed and the bullet is still there |
 | `tools/check-docs-exec.mjs` | runs the `<!-- exec -->`-tagged examples in the docs and diffs them against the output the docs claim. Needs built binaries; part of `dev.sh`. |
 | `tools/check-docs.mjs` | doc-meta present, key-files real, AGENTS tables complete, and a staleness ratchet against each doc's key-files |
+| `tools/check-readme.mjs` | the README's allowed sections, in order, each within a prose budget — explanations belong in `docs/` |
 | `tools/gen-facts.mjs` | compiles the numbers prose quotes (line counts, fixture counts, entry points) into `<!--fact:...-->` spans. `--check` gates, `--list` prints them all. |
 | `tools/precommit.sh` | every cheap gate below, in one command. See "Wiring the hook". |
 

@@ -22,22 +22,13 @@ Experimental, not yet a drop-in replacement for either.
 | [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | <!--fact:t262-pct-->78.0%<!--/fact--> (<!--fact:t262-pass-->1146<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) |
 | [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | <!--fact:qjs-pct-->67.8%<!--/fact--> (<!--fact:qjs-pass-->101<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) |
 
-Cases the engine could not PARSE are counted separately from cases that ran and
-answered wrongly, because one missing syntax feature takes every case in its file
-with it and would otherwise read as a pile of unrelated bugs. QuickJS currently has
-<!--fact:qjs-parsefail-->0<!--/fact--> of them, so all
-<!--fact:qjs-ran-->149<!--/fact--> cases ran and the headline is the whole story. In the
-test262 sample, <!--fact:t262-parsefail-->41<!--/fact--> of
-<!--fact:t262-fail-->324<!--/fact--> failures are parse gaps
-(<!--fact:t262-parsefail-pct-->12.7%<!--/fact-->), so the rest of that gap is semantics.
-
 ## Node Conformance
 
 `milojs` — modules, event loop, host bindings.
 
 | suite | score |
 |---|---|
-| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) (all <!--fact:node-available-->3373<!--/fact--> externally runnable tests, <!--fact:node-excluded-->606<!--/fact--> node-internal excluded) | <!--fact:node-pct-->46.8%<!--/fact--> (<!--fact:node-pass-->1578<!--/fact-->/<!--fact:node-total-->3373<!--/fact-->) |
+| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) (all <!--fact:node-available-->3373<!--/fact--> externally runnable tests, <!--fact:node-excluded-->606<!--/fact--> node-internal excluded) | <!--fact:node-pct-->48.1%<!--/fact--> (<!--fact:node-pass-->1623<!--/fact-->/<!--fact:node-total-->3373<!--/fact-->) |
 
 Node's own tests, unmodified, through Node's `test/common` harness, each invoked
 as a plain `<binary> test.js`. The same harness scores any node-compatible
