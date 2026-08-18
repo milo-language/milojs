@@ -14860,9 +14860,9 @@ fn drainMicrotasks(prog: &Prog, st: &mut Interp, limit: i64) {
             let _ = callValue(prog, task, args, JSValue.Undefined, st)
             popTemp(st)
             if st.throwing {
-                eprint("Uncaught (in microtask) " + describeThrownValue(st, st.thrownValue))
-                st.throwing = false
-                st.thrownValue = JSValue.Undefined
+                // Same rule as a timer callback: an uncaught exception is fatal.
+                eprint("Uncaught " + describeThrownValue(st, st.thrownValue))
+                exit(1)
             }
         } else if !isCallable(task) {
             // no handler for this state: the value flows to the derived promise
@@ -14954,9 +14954,14 @@ fn runOneTimer(prog: &Prog, st: &mut Interp): bool {
     }
     let _ = callValue(prog, cb, args, JSValue.Undefined, st)
     if st.throwing {
-        eprint("Uncaught (in timer) " + describeThrownValue(st, st.thrownValue))
-        st.throwing = false
-        st.thrownValue = JSValue.Undefined
+        // An uncaught exception ENDS the process, as it does in node. Logging it
+        // and carrying on left the loop running with its work half done: a test
+        // that failed an assertion inside a callback printed the failure and
+        // then hung until something killed it, so the real error was reported as
+        // a timeout. Node exits 1 here, and the exit code is how a harness
+        // learns anything happened at all.
+        eprint("Uncaught " + describeThrownValue(st, st.thrownValue))
+        exit(1)
     }
     return true
 }
