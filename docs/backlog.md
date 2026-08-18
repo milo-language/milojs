@@ -3,7 +3,7 @@ system: backlog
 purpose: what to work on next, with measured conformance attribution per change
 key-files: src/eval.milo, src/builtins.milo, src/parser.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts
 update-when: an item lands, a gap is discovered, or a sweep re-attributes a score
-last-verified: 2026-08-17
+last-verified: 2026-08-18 (re-read after the native id enum landed; the NATIVE_* names in the history below are the constants it replaced)
 -->
 
 # milojs backlog

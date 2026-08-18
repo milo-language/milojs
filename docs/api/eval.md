@@ -24,7 +24,7 @@ unwrapping, the activation park, and the main-task drain.
 ### `callNativeProg`
 
 ```milo
-pub fn callNativeProg(prog: &Prog, id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn callNativeProg(prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue
 ```
 
 Native dispatch for the call sites that hold a Prog. callNative itself does
@@ -161,7 +161,7 @@ every path that enumerates.
 ### `nativeSourceText`
 
 ```milo
-pub fn nativeSourceText(st: &mut Interp, nid: i64): string
+pub fn nativeSourceText(st: &mut Interp, n: &Native): string
 ```
 
 Parse `src` into the shared program and run it in `scope`, answering the

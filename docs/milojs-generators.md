@@ -3,7 +3,7 @@ system: milojs-generators
 purpose: design of record for generator functions in milojs, reusing the async-activation green-task machinery
 key-files: src/eval.milo, src/parser.milo, src/ast.milo
 update-when: generators are implemented or the design changes
-last-verified: 2026-08-17 (generator objects gained the spec's prototype chain, which is what puts the iterator helpers on them)
+last-verified: 2026-08-18 (re-read after the native id enum landed: generators are unaffected, their natives are Builtin variants now rather than NATIVE_* constants)
 -->
 
 # milojs: generators (design of record)

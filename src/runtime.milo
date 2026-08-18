@@ -18,7 +18,7 @@ from "std/sync" import {
     Channel
 }
 from "./value" import {
-    JSValue, i64ToStr, roundHalfAwayFromZero
+    JSValue, Native, Builtin, i64ToStr, roundHalfAwayFromZero, cloneNative, nativeEq
 }
 from "./bigint" import {
     bnMod, bnAdd, bnToRadix
@@ -863,9 +863,14 @@ pub struct Interp {
     stringCtorProps: i64,
     stringProtoObj: i64,
     functionProtoObj: i64,
-    // nativeId -> property object, so `Error.captureStackTrace = fn` sticks;
-    // natives otherwise have nowhere to hold assigned properties
+    // native -> property object, so `Error.captureStackTrace = fn` sticks;
+    // natives otherwise have nowhere to hold assigned properties. Parallel
+    // vectors: nativeKeys[i] owns nativeProps[i] (see getNativeProps).
+    nativeKeys: Vec<Native>,
     nativeProps: Vec<i64>,
+    // the same, for a promise's resolve/reject pair, keyed by resolverPropsSlot
+    // rather than scanned
+    resolverProps: Vec<i64>,
     // property bag for statics on the Date constructor (Date.now)
     dateCtorProps: i64,
     // Date.prototype, so instances can link it (identity tests, and inherited
@@ -1051,7 +1056,7 @@ pub var gInterp: Interp = Interp {
     throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 10000,
     rngState: 88172645463325252,
-    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, nativeProps: Vec.new(), dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, symbolCounter: 0, anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actEnv: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, reportedMissing: Vec.new(), httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false
+    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, nativeKeys: Vec.new(), nativeProps: Vec.new(), resolverProps: Vec.new(), dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, symbolCounter: 0, anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actEnv: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, reportedMissing: Vec.new(), httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false
 }
 
 fn allocObj(st: &mut Interp, isArray: bool): i64 {
@@ -1952,29 +1957,87 @@ pub fn objHasInChain(st: &Interp, o: i64, key: &string): bool {
 // Property bag for a function's own (static) properties. Separate from
 // funcProtos, which holds what instances inherit.
 // Lazily created property bag for a native constructor.
+// nativeKeys/nativeProps are one association list, not a map keyed by an id: a
+// Native is a variant, not an integer, so there is nothing to index a Vec with.
+// Entries are appended on first use, and the families that live here are
+// bounded (one entry per Builtin, one per typed-array kind), so the scan is
+// short and does not grow with the program.
+fn nativePropsSlot(st: &Interp, n: &Native): i64 {
+    var i: i64 = 0
+    while i < st.nativeKeys.len() {
+        if nativeEq(st.nativeKeys[i], n) {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// Resolvers are the exception, and get an index rather than a scan: a program
+// mints two per promise, and scanning a list that grows with them made a loop
+// over 50k promises 24x slower. The key is the promise's own handle, an index
+// into the object arena, so nothing else is numbered from it.
+fn resolverPropsSlot(promise: i64, isReject: bool): i64 {
+    if isReject {
+        return promise * 2 + 1
+    }
+    return promise * 2
+}
+
+fn newNativePropsObj(st: &mut Interp): i64 {
+    let o = newObject(st)
+    // A native IS callable, so its property bag must inherit Function.prototype
+    // — that is what makes `String.constructor` resolve to Function and
+    // `Object.getPrototypeOf(String)` answer Function.prototype.
+    st.objects[o].isFunctionLike = true
+    return o
+}
+
 // The property bag a native already has, or -1. The read-only half of
 // getNativeProps, for callers that hold an immutable Interp and must not
 // materialise a bag as a side effect of asking.
-pub fn nativePropsOf(st: &Interp, nativeId: i64): i64 {
-    if nativeId < 0 || nativeId >= st.nativeProps.len() {
+pub fn nativePropsOf(st: &Interp, n: &Native): i64 {
+    match n {
+        Native.Resolver(promise, isReject) => {
+            let k = resolverPropsSlot(promise, isReject)
+            if k >= st.resolverProps.len() {
+                return -1
+            }
+            return st.resolverProps[k]
+        }
+        _ => {
+        }
+    }
+    let slot = nativePropsSlot(st, n)
+    if slot < 0 {
         return -1
     }
-    return st.nativeProps[nativeId]
+    return st.nativeProps[slot]
 }
 
-pub fn getNativeProps(st: &mut Interp, nativeId: i64): i64 {
-    while st.nativeProps.len() <= nativeId {
-        st.nativeProps.push(-1)
+pub fn getNativeProps(st: &mut Interp, n: &Native): i64 {
+    match n {
+        Native.Resolver(promise, isReject) => {
+            let k = resolverPropsSlot(promise, isReject)
+            while st.resolverProps.len() <= k {
+                st.resolverProps.push(-1)
+            }
+            if st.resolverProps[k] < 0 {
+                st.resolverProps[k] = newNativePropsObj(st)
+            }
+            return st.resolverProps[k]
+        }
+        _ => {
+        }
     }
-    if st.nativeProps[nativeId] < 0 {
-        let o = newObject(st)
-        // A native IS callable, so its property bag must inherit Function.prototype
-        // — that is what makes `String.constructor` resolve to Function and
-        // `Object.getPrototypeOf(String)` answer Function.prototype.
-        st.objects[o].isFunctionLike = true
-        st.nativeProps[nativeId] = o
+    let slot = nativePropsSlot(st, n)
+    if slot >= 0 {
+        return st.nativeProps[slot]
     }
-    return st.nativeProps[nativeId]
+    let o = newNativePropsObj(st)
+    st.nativeKeys.push(cloneNative(n))
+    st.nativeProps.push(o)
+    return o
 }
 
 pub fn getFuncStatics(st: &mut Interp, fnIdx: i64, envIdx: i64): i64 {
@@ -2080,11 +2143,6 @@ pub fn popTemp(st: &mut Interp) {
 // object handle roots its heap slot; primitives root nothing. The three mark
 // functions are mutually recursive and all idempotent (mark flags), so cyclic
 // closure/object graphs terminate.
-// resolve/reject functions encode their promise handle in the native id, so a
-// stored resolver has to keep that promise alive — otherwise the promise is
-// swept while its resolver is still reachable from a closure or timer.
-pub let NATIVE_RESOLVER_BASE: i64 = 1000000
-
 fn markValue(st: &mut Interp, v: &JSValue) {
     match v {
         JSValue.Func(_f, envIdx) => {
@@ -2093,12 +2151,16 @@ fn markValue(st: &mut Interp, v: &JSValue) {
         JSValue.Obj(objIdx) => {
             markObject(st, objIdx)
         }
-        JSValue.Native(id) => {
-            // a resolve/reject function encodes its promise handle in the native
-            // id, so it must keep that promise alive — otherwise a resolver held
-            // in a closure or timer outlives the promise it settles
-            if id >= NATIVE_RESOLVER_BASE {
-                markObject(st, (id - NATIVE_RESOLVER_BASE) / 2)
+        JSValue.Native(n) => {
+            // a resolve/reject function carries its promise handle, and must keep
+            // that promise alive — otherwise a resolver held in a closure or timer
+            // outlives the promise it settles
+            match n {
+                Native.Resolver(promise, _isReject) => {
+                    markObject(st, promise)
+                }
+                _ => {
+                }
             }
         }
         _ => {
@@ -2128,16 +2190,20 @@ fn markTargetOf(v: &JSValue): MarkTarget {
                 obj: o, scope: -1
             }
         }
-        JSValue.Native(id) => {
-            // a resolve/reject function encodes its promise handle in the native
-            // id, so it must keep that promise alive
-            if id >= NATIVE_RESOLVER_BASE {
-                return MarkTarget {
-                    obj: (id - NATIVE_RESOLVER_BASE) / 2, scope: -1
+        JSValue.Native(n) => {
+            // a resolve/reject function carries its promise handle, and must keep
+            // that promise alive
+            match n {
+                Native.Resolver(promise, _isReject) => {
+                    return MarkTarget {
+                        obj: promise, scope: -1
+                    }
                 }
-            }
-            return MarkTarget {
-                obj: -1, scope: -1
+                _ => {
+                    return MarkTarget {
+                        obj: -1, scope: -1
+                    }
+                }
             }
         }
         _ => {
@@ -2516,6 +2582,13 @@ pub fn collect(st: &mut Interp) {
             markObject(st, st.nativeProps[np])
         }
         np = np + 1
+    }
+    var rp: i64 = 0
+    while rp < st.resolverProps.len() {
+        if st.resolverProps[rp] >= 0 {
+            markObject(st, st.resolverProps[rp])
+        }
+        rp = rp + 1
     }
     // as are static-property bags
     var fs: i64 = 0

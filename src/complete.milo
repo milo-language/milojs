@@ -12,13 +12,13 @@
 // mutate the session.
 
 from "./value" import {
-    JSValue
+    JSValue, Native, Builtin, nativeEq
 }
 from "./runtime" import {
     Interp, objHas, scopeHas, scopeLookup
 }
 from "./eval" import {
-    getMember, NATIVE_DATE, NATIVE_STRING
+    getMember
 }
 
 pub fn cmplIsIdentByte(b: u8): bool {
@@ -238,10 +238,10 @@ fn cmplMembers(st: &Interp, base: &string, prefix: &string, out: &mut Vec<string
         JSValue.Native(nid) => {
             // a few native constructors keep their statics (Date.now,
             // String.fromCharCode) in a side object instead of being real objects
-            if nid == NATIVE_DATE && st.dateCtorProps >= 0 {
+            if nativeEq(nid, Native.Fn(Builtin.Date)) && st.dateCtorProps >= 0 {
                 cmplObjectProps(st, st.dateCtorProps, prefix, out, kinds)
             }
-            if nid == NATIVE_STRING && st.stringCtorProps >= 0 {
+            if nativeEq(nid, Native.Fn(Builtin.String)) && st.stringCtorProps >= 0 {
                 cmplObjectProps(st, st.stringCtorProps, prefix, out, kinds)
             }
             cmplAddAll(out, kinds, cmplFunctionMethods(), prefix, CMPL_BUILTIN)

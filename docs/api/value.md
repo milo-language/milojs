@@ -1,5 +1,13 @@
 ## value
 
+### `cloneNative`
+
+```milo
+pub fn cloneNative(n: &Native): Native
+```
+
+_Undocumented._
+
 ### `cloneValue`
 
 ```milo
@@ -53,6 +61,14 @@ _Undocumented._
 
 ```milo
 pub fn isFiniteF(n: f64): bool
+```
+
+_Undocumented._
+
+### `isNativeValue`
+
+```milo
+pub fn isNativeValue(v: &JSValue): bool
 ```
 
 _Undocumented._
@@ -136,13 +152,23 @@ numeric coercion.
 Strict equality (===): same type, same value, no coercion. Objects, functions
 and natives compare by identity (their handle/index).
 
+### `nativeEq`
+
+```milo
+pub fn nativeEq(a: &Native, b: &Native): bool
+```
+
+Two natives are the same built-in. Milo has no `==` on an enum with
+payload-bearing variants, and the payload-free half (Builtin) is exactly the
+half that can use it.
+
 ### `nativeHandle`
 
 ```milo
-pub fn nativeHandle(v: &JSValue): i64
+pub fn nativeHandle(v: &JSValue): Option<Native>
 ```
 
-native id if v is a builtin function/constructor, else -1
+which built-in v is, or None if it is not one
 
 ### `numToExponential`
 
