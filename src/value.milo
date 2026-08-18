@@ -150,6 +150,19 @@ pub enum Builtin {
     Rmdir,
     Rename,
     IsDir,
+    // Filesystem metadata and link operations. std/fs has had all of these for
+    // a while; milojs simply never wired them through, so fs.statSync faked its
+    // numbers and readlink/symlink/realpath/mkdtemp did not exist at all.
+    StatInfo,
+    FileSize,
+    Readlink,
+    Symlink,
+    Hardlink,
+    Realpath,
+    Chmod,
+    TruncateFile,
+    Mkdtemp,
+    CopyFile,
     BigInt,
     ObjectGetOwnPropSymbols,
     ObjectGetOwnPropDescs,

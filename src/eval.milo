@@ -66,7 +66,9 @@ from "std/datetime" import {
     DateTime
 }
 from "std/fs" import {
-    currentDir, writeFile, appendFile, readDir, removeFile, makeDir, removeDir, renameFile, isDir
+    currentDir, writeFile, appendFile, readDir, removeFile, makeDir, removeDir, renameFile, isDir,
+    fileInfo, lstatInfo, isSymlink, fileSizePath, readLink, softLink, hardLink, realPath,
+    setMode, truncateFile, makeTempDir, copyFile
 }
 from "./napi" import {
     NAPI_OK, NAPI_INVALID_ARG, NAPI_PENDING_EXCEPTION, napiHandle, napiValueOf, napiWriteHandle, napiLoadI64,
@@ -5878,6 +5880,167 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
+    if id == Builtin.StatInfo {
+        // __statSync(path, lstat) -> { size, mode, isDir, isFile, isSymlink } or
+        // null. One native for both stat and lstat: the only difference is
+        // whether a symlink is followed, and splitting them would duplicate the
+        // whole object build.
+        if argVals.len() < 1 {
+            return JSValue.Null
+        }
+        let sPath = toStr(argVals[0])
+        var useLstat = false
+        if argVals.len() > 1 {
+            useLstat = truthy(argVals[1])
+        }
+        var info = fileInfo(sPath)
+        if useLstat {
+            info = lstatInfo(sPath)
+        }
+        match info {
+            Option.Some(fi) => {
+                let o = newObject(st)
+                pushTemp(st, JSValue.Obj(o))
+                objSet(st, o, "size", JSValue.Number(fi.size as f64))
+                objSet(st, o, "mode", JSValue.Number(fi.mode as f64))
+                // isDir/isFile/isSymlink come from dedicated helpers rather than
+                // from fi.mode: std/fs documents that mode is read at an
+                // arch-specific offset and comes back 0 on arm64 Linux.
+                objSet(st, o, "isDir", JSValue.Bool(isDir(sPath)))
+                objSet(st, o, "isSymlink", JSValue.Bool(isSymlink(sPath)))
+                objSet(st, o, "isFile", JSValue.Bool(!isDir(sPath) && !isSymlink(sPath)))
+                popTemp(st)
+                return JSValue.Obj(o)
+            }
+            Option.None => {
+                return JSValue.Null
+            }
+        }
+    }
+    if id == Builtin.FileSize {
+        // Size without reading the file. fs.statSync used to read the whole
+        // thing and measure the string, which turned `stat` on a large file
+        // into a full load into memory.
+        if argVals.len() < 1 {
+            return JSValue.Number(-1.0)
+        }
+        match fileSizePath(toStr(argVals[0])) {
+            Option.Some(n) => {
+                return JSValue.Number(n as f64)
+            }
+            Option.None => {
+                return JSValue.Number(-1.0)
+            }
+        }
+    }
+    if id == Builtin.Readlink {
+        if argVals.len() < 1 {
+            return JSValue.Null
+        }
+        match readLink(toStr(argVals[0])) {
+            Result.Ok(t) => {
+                return JSValue.Str(t)
+            }
+            Result.Err(_e) => {
+                return JSValue.Null
+            }
+        }
+    }
+    if id == Builtin.Symlink {
+        if argVals.len() < 2 {
+            return JSValue.Bool(false)
+        }
+        match softLink(toStr(argVals[0]), toStr(argVals[1])) {
+            Result.Ok(_v) => {
+                return JSValue.Bool(true)
+            }
+            Result.Err(_e) => {
+                return JSValue.Bool(false)
+            }
+        }
+    }
+    if id == Builtin.Hardlink {
+        if argVals.len() < 2 {
+            return JSValue.Bool(false)
+        }
+        match hardLink(toStr(argVals[0]), toStr(argVals[1])) {
+            Result.Ok(_v) => {
+                return JSValue.Bool(true)
+            }
+            Result.Err(_e) => {
+                return JSValue.Bool(false)
+            }
+        }
+    }
+    if id == Builtin.Realpath {
+        if argVals.len() < 1 {
+            return JSValue.Null
+        }
+        match realPath(toStr(argVals[0])) {
+            Result.Ok(rp) => {
+                return JSValue.Str(rp)
+            }
+            Result.Err(_e) => {
+                return JSValue.Null
+            }
+        }
+    }
+    if id == Builtin.Chmod {
+        if argVals.len() < 2 {
+            return JSValue.Bool(false)
+        }
+        match setMode(toStr(argVals[0]), toNum(argVals[1]) as i32) {
+            Result.Ok(_v) => {
+                return JSValue.Bool(true)
+            }
+            Result.Err(_e) => {
+                return JSValue.Bool(false)
+            }
+        }
+    }
+    if id == Builtin.TruncateFile {
+        if argVals.len() < 1 {
+            return JSValue.Bool(false)
+        }
+        var tlen: i64 = 0
+        if argVals.len() > 1 {
+            tlen = toNum(argVals[1]) as i64
+        }
+        match truncateFile(toStr(argVals[0]), tlen) {
+            Result.Ok(_v) => {
+                return JSValue.Bool(true)
+            }
+            Result.Err(_e) => {
+                return JSValue.Bool(false)
+            }
+        }
+    }
+    if id == Builtin.Mkdtemp {
+        if argVals.len() < 1 {
+            return JSValue.Null
+        }
+        match makeTempDir(toStr(argVals[0])) {
+            Result.Ok(d) => {
+                return JSValue.Str(d)
+            }
+            Result.Err(_e) => {
+                return JSValue.Null
+            }
+        }
+    }
+    if id == Builtin.CopyFile {
+        if argVals.len() < 2 {
+            return JSValue.Bool(false)
+        }
+        match copyFile(toStr(argVals[0]), toStr(argVals[1])) {
+            Result.Ok(_v) => {
+                return JSValue.Bool(true)
+            }
+            Result.Err(_e) => {
+                return JSValue.Bool(false)
+            }
+        }
+    }
     if id == Builtin.Mkdir {
         // __mkdirSync(path): one directory, no parents (the JS shim walks the
         // path for {recursive:true}). true on success, false on any error —
@@ -9566,6 +9729,16 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "__rmdirSync", JSValue.Native(Native.Fn(Builtin.Rmdir)))
     scopeDefine(st, 0, "__renameSync", JSValue.Native(Native.Fn(Builtin.Rename)))
     scopeDefine(st, 0, "__isDir", JSValue.Native(Native.Fn(Builtin.IsDir)))
+    scopeDefine(st, 0, "__statSync", JSValue.Native(Native.Fn(Builtin.StatInfo)))
+    scopeDefine(st, 0, "__fileSize", JSValue.Native(Native.Fn(Builtin.FileSize)))
+    scopeDefine(st, 0, "__readlinkSync", JSValue.Native(Native.Fn(Builtin.Readlink)))
+    scopeDefine(st, 0, "__symlinkSync", JSValue.Native(Native.Fn(Builtin.Symlink)))
+    scopeDefine(st, 0, "__linkSync", JSValue.Native(Native.Fn(Builtin.Hardlink)))
+    scopeDefine(st, 0, "__realpathSync", JSValue.Native(Native.Fn(Builtin.Realpath)))
+    scopeDefine(st, 0, "__chmodSync", JSValue.Native(Native.Fn(Builtin.Chmod)))
+    scopeDefine(st, 0, "__truncateSync", JSValue.Native(Native.Fn(Builtin.TruncateFile)))
+    scopeDefine(st, 0, "__mkdtempSync", JSValue.Native(Native.Fn(Builtin.Mkdtemp)))
+    scopeDefine(st, 0, "__copyFileSync", JSValue.Native(Native.Fn(Builtin.CopyFile)))
     scopeDefine(st, 0, "__fileExists", JSValue.Native(Native.Fn(Builtin.FileExists)))
     scopeDefine(st, 0, "__byteLength", JSValue.Native(Native.Fn(Builtin.ByteLength)))
     scopeDefine(st, 0, "__napiLoad", JSValue.Native(Native.Fn(Builtin.NapiLoad)))

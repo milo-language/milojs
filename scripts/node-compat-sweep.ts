@@ -180,6 +180,17 @@ let done = 0;
 // it off; without that the comparison measures the wrong thing.
 const CHILD_ENV = { ...process.env, NODE_TEST_DIR: NODE_TESTS, NODE_TEST_KNOWN_GLOBALS: "0" };
 
+// Every test that touches the filesystem calls tmpdir.refresh(), and node names
+// that directory `.tmp.${TEST_SERIAL_ID ?? TEST_THREAD_ID ?? 0}`. Unset, all of
+// them share `.tmp.0` — so with N jobs, N concurrent tests rm -rf and recreate
+// the SAME directory underneath each other, and the losers fail on a temp file
+// that vanished mid-test. Node's own runner hands each worker its own id; this
+// is that, and without it the fs number is a race, not a measurement. It cost
+// 35 fs cases the day a change made fs fast enough to widen the window.
+function envForSlot(slot: number): NodeJS.ProcessEnv {
+  return { ...CHILD_ENV, TEST_THREAD_ID: String(slot), TEST_SERIAL_ID: String(slot) };
+}
+
 // Each case runs DETACHED, in its own process group, and the timeout kills the
 // group rather than the pid. Node's tests spawn children (`fork(__filename)` is
 // how half of test-child-process-* works), and a plain execFile timeout signals
@@ -187,11 +198,11 @@ const CHILD_ENV = { ...process.env, NODE_TEST_DIR: NODE_TESTS, NODE_TEST_KNOWN_G
 // the runtime under test has a spawn bug they keep multiplying. That is how this
 // sweep took a machine down. Run it under tools/guard.sh as well; this is the
 // inner half of the same defence.
-function runOne(f: string): Promise<Row> {
+function runOne(f: string, slot: number): Promise<Row> {
   return new Promise((resolve) => {
     const child = spawn(RUNTIME, [join(PARALLEL, f)], {
       cwd: PARALLEL,
-      env: CHILD_ENV,
+      env: envForSlot(slot),
       detached: true,
       // All three piped, then stdin closed immediately: this is what execFile
       // does, and matching it matters. Handing the child no stdin at all
@@ -289,14 +300,14 @@ widthSampler.unref?.();
 // thrash, and the servers these tests start would collide on ports.
 const rows: Row[] = new Array(selected.length);
 let next = 0;
-async function worker() {
+async function worker(slot: number) {
   while (true) {
     const i = next++;
     if (i >= selected.length) return;
-    rows[i] = await runOne(selected[i]);
+    rows[i] = await runOne(selected[i], slot);
   }
 }
-await Promise.all(Array.from({ length: Math.max(1, jobs) }, () => worker()));
+await Promise.all(Array.from({ length: Math.max(1, jobs) }, (_, slot) => worker(slot)));
 process.stdout.write("\n");
 
 const pass = rows.filter((r) => r.ok).length;
