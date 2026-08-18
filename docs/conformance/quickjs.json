@@ -6,7 +6,7 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "4bc182bc39abd25acd4525101827c17e951d669d",
+    "revision": "ae9c7e56d6de8b6a4ac18752e4036b1d4d0c2989",
     "dirty": false
   },
   "engine": "/private/tmp/mj-next/.dev/mj-engine",
@@ -25,57 +25,20 @@
     ]
   },
   "totals": {
-    "pass": 81,
-    "fail": 40,
-    "parseFail": 28,
+    "pass": 101,
+    "fail": 48,
+    "parseFail": 0,
     "total": 149,
-    "ran": 121,
+    "ran": 149,
     "files": 58
   },
   "failureBuckets": [
     {
-      "reason": "milojs: /case.js: unexpected '…' after declaration",
-      "count": 28,
-      "cases": [
-        "test_language.js:test_op1",
-        "test_language.js:test_cvt",
-        "test_language.js:test_eq",
-        "test_language.js:test_inc_dec",
-        "test_language.js:test_op2",
-        "test_language.js:test_delete",
-        "test_language.js:test_constructor",
-        "test_language.js:test_prototype",
-        "test_language.js:test_arguments",
-        "test_language.js:test_class",
-        "test_language.js:test_template",
-        "test_language.js:test_template_skip",
-        "test_language.js:test_object_literal",
-        "test_language.js:test_regexp_skip",
-        "test_language.js:test_labels",
-        "test_language.js:test_destructuring",
-        "test_language.js:test_spread",
-        "test_language.js:test_function_length",
-        "test_language.js:test_argument_scope",
-        "test_language.js:test_function_expr_name",
-        "test_language.js:test_reserved_names",
-        "test_language.js:test_number_literals",
-        "test_language.js:test_syntax",
-        "test_language.js:test_optional_chaining",
-        "test_language.js:test_parse_semicolon",
-        "test_language.js:test_non_extensible_receiver_existing_property_set",
-        "test_language.js:test_using",
-        "test_language.js:test_await_using"
-      ]
-    },
-    {
       "reason": "Uncaught Error: assertion failed: got |…|, expected |…|",
-      "count": 20,
+      "count": 22,
       "cases": [
         "bug1498.js:<whole>",
-        "bug492.js:test_resize_shrink",
         "bug492.js:test_detach",
-        "bug492.js:test_resize_zero",
-        "bug492.js:test_resize_grow",
         "bug652.js:<whole>",
         "bug858.js:<whole>",
         "for-await-normal-close.js:<whole>",
@@ -90,7 +53,12 @@
         "test_builtin.js:test_function_source_pos",
         "test_builtin.js:test_exception_prepare_stack",
         "test_builtin.js:test_exception_stack_size_limit",
-        "test_closure.js:test_eval_const"
+        "test_closure.js:test_eval_const",
+        "test_language.js:test_constructor",
+        "test_language.js:test_class",
+        "test_language.js:test_function_length",
+        "test_language.js:test_number_literals",
+        "test_language.js:test_optional_chaining"
       ]
     },
     {
@@ -189,6 +157,48 @@
       "count": 1,
       "cases": [
         "test_for_of_line_numbers.js:<whole>"
+      ]
+    },
+    {
+      "reason": "Uncaught Error: assertion failed: got |…|, expected |…| (delete)",
+      "count": 1,
+      "cases": [
+        "test_language.js:test_delete"
+      ]
+    },
+    {
+      "reason": "Uncaught Error: assertion failed: got |…|, expected |…| (prototype)",
+      "count": 1,
+      "cases": [
+        "test_language.js:test_prototype"
+      ]
+    },
+    {
+      "reason": "Uncaught Error: expected SyntaxError",
+      "count": 1,
+      "cases": [
+        "test_language.js:test_argument_scope"
+      ]
+    },
+    {
+      "reason": "Uncaught Error: assertion failed: got |…|, expected |function myfunc() {",
+      "count": 1,
+      "cases": [
+        "test_language.js:test_function_expr_name"
+      ]
+    },
+    {
+      "reason": "Uncaught SyntaxError: Unexpected token in eval",
+      "count": 1,
+      "cases": [
+        "test_language.js:test_reserved_names"
+      ]
+    },
+    {
+      "reason": "Uncaught Error: assertion failed: got |…|, expected |…| (non-extensible receiver existing property super set value)",
+      "count": 1,
+      "cases": [
+        "test_language.js:test_non_extensible_receiver_existing_property_set"
       ]
     }
   ]

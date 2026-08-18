@@ -20,13 +20,16 @@ Experimental, not yet a drop-in replacement for either.
 | suite | score |
 |---|---|
 | [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | <!--fact:t262-pct-->78.0%<!--/fact--> (<!--fact:t262-pass-->1146<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) |
-| [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | <!--fact:qjs-pct-->54.4%<!--/fact--> (<!--fact:qjs-pass-->81<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) |
+| [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | <!--fact:qjs-pct-->67.8%<!--/fact--> (<!--fact:qjs-pass-->101<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) |
 
-<!--fact:qjs-parsefail-->28<!--/fact--> of the QuickJS cases never RAN: the engine could not parse the
-source, and one missing syntax feature takes every case in its file with it. Of the
-<!--fact:qjs-ran-->121<!--/fact--> that did run, <!--fact:qjs-ran-pct-->66.9%<!--/fact--> pass. Both
-numbers are reported because they answer different questions: the first is what the
-suite says today, the second is how the engine does on what it can read.
+Cases the engine could not PARSE are counted separately from cases that ran and
+answered wrongly, because one missing syntax feature takes every case in its file
+with it and would otherwise read as a pile of unrelated bugs. QuickJS currently has
+<!--fact:qjs-parsefail-->0<!--/fact--> of them, so all
+<!--fact:qjs-ran-->149<!--/fact--> cases ran and the headline is the whole story. In the
+test262 sample, <!--fact:t262-parsefail-->41<!--/fact--> of
+<!--fact:t262-fail-->324<!--/fact--> failures are parse gaps
+(<!--fact:t262-parsefail-pct-->12.7%<!--/fact-->), so the rest of that gap is semantics.
 
 ## Node Conformance
 
