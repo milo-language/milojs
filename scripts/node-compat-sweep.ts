@@ -20,6 +20,7 @@ import { readdirSync, readFileSync, writeFileSync, existsSync, statSync } from "
 import { execFileSync, spawn } from "child_process";
 import { join, resolve, isAbsolute } from "path";
 import { homedir } from "node:os";
+import os from "node:os";
 
 const tilde = (x: string) => (x.startsWith(homedir()) ? "~" + x.slice(homedir().length) : x);
 
@@ -52,7 +53,17 @@ const timeoutMs = arg("--timeout") ? parseInt(arg("--timeout")!) : 10_000;
 // the timeout kills them, so a serial run spends most of its wall clock asleep:
 // 400 cases took about eight minutes, four and a half of which were the hangs.
 // Running them concurrently makes the hangs overlap instead of queue.
-const jobs = arg("--jobs") ? parseInt(arg("--jobs")!) : 8;
+//
+// The cap is MEMORY, not CPU, and the unit that matters is the JOB, not the
+// process: a measured 400-case run at 8 jobs peaked at 83 processes and 9.5 GB,
+// because a single case spawns children of its own. That is ~1.2 GB per job,
+// and 9.5 of 16 GB is close enough to the edge that the machine, not the sweep,
+// decides how the run ends. Derive the default from what this machine has and
+// leave half of it alone.
+const MB_PER_JOB = 1200;
+const totalMb = os.totalmem() / 1024 / 1024;
+const memJobs = Math.max(2, Math.floor((totalMb * 0.5) / MB_PER_JOB));
+const jobs = arg("--jobs") ? parseInt(arg("--jobs")!) : Math.min(8, memJobs);
 // A --dir run is a DIAGNOSTIC, not the published number: the same rule the
 // test262 sweep follows, and for the same reason. Only a whole-suite run may
 // write the committed report.

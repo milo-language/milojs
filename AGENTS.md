@@ -171,9 +171,11 @@ Three things have to hold, and only the third is obvious:
 
 Sizing the caps: `guard.sh` reports `peak N processes, M MB rss` on every run,
 so set `GUARD_MAX_PROCS` from a measured peak rather than a guess. A 400-case
-node-compat sweep at `--jobs 8` legitimately peaks near 150 processes, because
-the cases spawn children of their own; a cap under that reads as a fork bomb
-when it is only the workload.
+node-compat sweep peaks at 83 processes and 9.5 GB at `--jobs 8`, because the
+cases spawn children of their own; a cap under that reads as a fork bomb when it
+is only the workload. The sweep's own `--jobs` default is derived from
+`os.totalmem()` at ~1.2 GB per job for that reason — on a 16 GB machine it picks
+6, not 8, and the whole run stays under half of RAM.
 
 What the memory cap actually caught, first run: **8562 MB resident across 150
 processes** on a 16 GB machine, mid-sweep. That is the freeze, reproduced and

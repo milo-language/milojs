@@ -6,7 +6,7 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "3c6bab138803d75b5830975d38a47c3ac58eaa66",
+    "revision": "cd1e99d4b5ef0adad3b101e868c867174977639e",
     "dirty": false
   },
   "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
@@ -18,8 +18,8 @@
     "excludedNodeInternal": 606
   },
   "totals": {
-    "pass": 155,
-    "fail": 245,
+    "pass": 180,
+    "fail": 220,
     "total": 400
   },
   "areas": [
@@ -36,18 +36,6 @@
       "total": 29
     },
     {
-      "area": "child",
-      "pass": 3,
-      "fail": 15,
-      "total": 18
-    },
-    {
-      "area": "cluster",
-      "pass": 0,
-      "fail": 15,
-      "total": 15
-    },
-    {
       "area": "worker",
       "pass": 0,
       "fail": 15,
@@ -61,8 +49,8 @@
     },
     {
       "area": "net",
-      "pass": 3,
-      "fail": 11,
+      "pass": 4,
+      "fail": 10,
       "total": 14
     },
     {
@@ -82,6 +70,12 @@
       "pass": 4,
       "fail": 8,
       "total": 12
+    },
+    {
+      "area": "child",
+      "pass": 11,
+      "fail": 7,
+      "total": 18
     },
     {
       "area": "fastutf8stream",
@@ -108,6 +102,12 @@
       "total": 9
     },
     {
+      "area": "cluster",
+      "pass": 11,
+      "fail": 4,
+      "total": 15
+    },
+    {
       "area": "console",
       "pass": 1,
       "fail": 4,
@@ -118,12 +118,6 @@
       "pass": 5,
       "fail": 4,
       "total": 9
-    },
-    {
-      "area": "domain",
-      "pass": 0,
-      "fail": 4,
-      "total": 4
     },
     {
       "area": "vm",
@@ -144,6 +138,12 @@
       "total": 3
     },
     {
+      "area": "domain",
+      "pass": 1,
+      "fail": 3,
+      "total": 4
+    },
+    {
       "area": "runner",
       "pass": 0,
       "fail": 3,
@@ -154,12 +154,6 @@
       "pass": 1,
       "fail": 3,
       "total": 4
-    },
-    {
-      "area": "common",
-      "pass": 0,
-      "fail": 2,
-      "total": 2
     },
     {
       "area": "dns",
@@ -187,12 +181,6 @@
     },
     {
       "area": "snapshot",
-      "pass": 0,
-      "fail": 2,
-      "total": 2
-    },
-    {
-      "area": "stdout",
       "pass": 0,
       "fail": 2,
       "total": 2
@@ -232,6 +220,12 @@
       "pass": 0,
       "fail": 1,
       "total": 1
+    },
+    {
+      "area": "common",
+      "pass": 1,
+      "fail": 1,
+      "total": 2
     },
     {
       "area": "delayed",
@@ -306,16 +300,16 @@
       "total": 2
     },
     {
-      "area": "pipe",
-      "pass": 1,
-      "fail": 1,
-      "total": 2
-    },
-    {
       "area": "require",
       "pass": 2,
       "fail": 1,
       "total": 3
+    },
+    {
+      "area": "stdout",
+      "pass": 1,
+      "fail": 1,
+      "total": 2
     },
     {
       "area": "stream2",
@@ -328,12 +322,6 @@
       "pass": 15,
       "fail": 1,
       "total": 16
-    },
-    {
-      "area": "trace",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
     },
     {
       "area": "tty",
@@ -420,6 +408,12 @@
       "total": 5
     },
     {
+      "area": "pipe",
+      "pass": 2,
+      "fail": 0,
+      "total": 2
+    },
+    {
       "area": "shadow",
       "pass": 1,
       "fail": 0,
@@ -433,6 +427,12 @@
     },
     {
       "area": "temporal",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "trace",
       "pass": 1,
       "fail": 0,
       "total": 1
