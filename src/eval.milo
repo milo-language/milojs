@@ -2745,7 +2745,7 @@ fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValue>):
                 count = 0
             }
             if args.len() > 2 && !isUndefinedValue(args[2]) {
-                let want = numToIndex(toNum(args[2]))
+                let want = numToIndex(toNumProg(prog, args[2], st))
                 // A window that runs past the end of the buffer is a RangeError.
                 // Clamping it instead handed back a SHORTER view than asked for,
                 // so the caller saw a successful construction of the wrong size.
@@ -3173,7 +3173,7 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 if name == "resize" {
                     var to: i64 = 0
                     if args.len() > 0 {
-                        to = numToIndex(toNum(args[0]))
+                        to = numToIndex(toNumProg(prog, args[0], st))
                     }
                     // only a buffer created with {maxByteLength} may resize, and
                     // only within [0, cap]
@@ -3216,14 +3216,14 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                     let n = st.objExtras[st.objects[o].extra].bytes.len()
                     var a: i64 = 0
                     if args.len() > 0 {
-                        a = numToIndex(toNum(args[0]))
+                        a = numToIndex(toNumProg(prog, args[0], st))
                     }
                     if a < 0 {
                         a = n + a
                     }
                     var e = n
                     if args.len() > 1 {
-                        e = numToIndex(toNum(args[1]))
+                        e = numToIndex(toNumProg(prog, args[1], st))
                         if e < 0 {
                             e = n + e
                         }
@@ -16321,7 +16321,7 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
     if name == "at" {
         var idx: i64 = 0
         if args.len() > 0 {
-            idx = numToIndex(toNum(args[0]))
+            idx = numToIndex(toNumProg(prog, args[0], st))
         }
         if idx < 0 {
             idx = n + idx
@@ -16334,18 +16334,18 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
     if name == "fill" {
         var v: f64 = 0.0
         if args.len() > 0 {
-            v = toNum(args[0])
+            v = toNumProg(prog, args[0], st)
         }
         var start: i64 = 0
         if argPresent(args, 1) {
-            start = numToIndex(toNum(args[1]))
+            start = numToIndex(toNumProg(prog, args[1], st))
             if start < 0 {
                 start = n + start
             }
         }
         var end = n
         if argPresent(args, 2) {
-            end = numToIndex(toNum(args[2]))
+            end = numToIndex(toNumProg(prog, args[2], st))
             if end < 0 {
                 end = n + end
             }
@@ -16366,7 +16366,7 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
     if name == "indexOf" || name == "includes" {
         var target: f64 = 0.0
         if args.len() > 0 {
-            target = toNum(args[0])
+            target = toNumProg(prog, args[0], st)
         }
         var i: i64 = 0
         while i < n {
@@ -16413,7 +16413,7 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
         }
         var off: i64 = 0
         if args.len() > 1 {
-            off = numToIndex(toNum(args[1]))
+            off = numToIndex(toNumProg(prog, args[1], st))
         }
         let sh = objHandle(args[0])
         if sh < 0 {
@@ -16437,14 +16437,14 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
     if name == "subarray" || name == "slice" {
         var start: i64 = 0
         if argPresent(args, 0) {
-            start = numToIndex(toNum(args[0]))
+            start = numToIndex(toNumProg(prog, args[0], st))
             if start < 0 {
                 start = n + start
             }
         }
         var end = n
         if argPresent(args, 1) {
-            end = numToIndex(toNum(args[1]))
+            end = numToIndex(toNumProg(prog, args[1], st))
             if end < 0 {
                 end = n + end
             }
@@ -16648,25 +16648,67 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
         return JSValue.Number(0.0 - 1.0)
     }
     if name == "with" {
-        // a copy with one element replaced (negative index from the end)
+        // A copy with one element replaced (negative index from the end).
+        //
+        // Both arguments are converted with toNumProg, NOT toNum: toNum cannot
+        // re-enter the interpreter, so an object argument coerced to 0 (or NaN for
+        // a float array) and the replacement value was silently dropped. Converting
+        // also runs USER code, which can detach or resize the buffer underneath
+        // this call, so the length is snapshotted first and revalidated after, and
+        // reads past the shrunk source yield zero rather than stale bytes.
+        let snapLen = n
         var idx: i64 = 0
         if args.len() > 0 {
-            idx = numToIndex(toNum(args[0]))
+            idx = numToIndex(toNumProg(prog, args[0], st))
+            if st.throwing {
+                return JSValue.Undefined
+            }
         }
         if idx < 0 {
-            idx = n + idx
+            idx = snapLen + idx
+        }
+        var repl: f64 = 0.0
+        if args.len() > 1 {
+            repl = toNumProg(prog, args[1], st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+        }
+        if idx < 0 || idx >= snapLen {
+            st.throwing = true
+            st.thrownValue = makeError(st, "RangeError", "invalid index in TypedArray.prototype.with")
+            return JSValue.Undefined
+        }
+        if taIsDetached(st, o) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "RangeError", "TypedArray buffer was detached during conversion")
+            return JSValue.Undefined
+        }
+        // ...and against the length as it stands NOW. A resizable buffer shrunk to
+        // zero leaves a tracking view with no elements, so an index that was valid
+        // against the snapshot is not valid any more. A partial shrink is NOT an
+        // error: the surviving prefix is copied and the rest reads zero.
+        if idx >= taCurrentLen(st, o) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "RangeError", "index is out of bounds after conversion resized the buffer")
+            return JSValue.Undefined
         }
         var lenArgs: Vec<JSValue> = Vec.new()
-        lenArgs.push(JSValue.Number(n as f64))
+        lenArgs.push(JSValue.Number(snapLen as f64))
         let out = makeTypedArray(prog, st, kind, lenArgs)
         let oh = objHandle(out)
         pushTemp(st, cloneValue(out))
+        // The source may have SHRUNK while user code ran; the result keeps the
+        // snapshotted length and the elements that no longer exist read as zero.
+        let liveLen = taCurrentLen(st, o)
         var i: i64 = 0
-        while i < n {
+        while i < snapLen {
             if i == idx && args.len() > 1 {
-                taSetElem(st, oh, i, toNum(args[1]))
-            } else {
+                taSetElem(st, oh, i, repl)
+            } else if i < liveLen {
                 taSetElem(st, oh, i, taElem(st, o, i))
+            } else {
+                taSetElem(st, oh, i, 0.0)
             }
             i = i + 1
         }
@@ -16686,14 +16728,14 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
     if name == "copyWithin" {
         // copies WITHIN the same buffer, so the ranges may overlap — snapshot
         // the source before writing, exactly as memmove would
-        var tgt = relIndex(toNum(args[0]), n)
+        var tgt = relIndex(toNumProg(prog, args[0], st), n)
         var cs: i64 = 0
         if args.len() > 1 {
-            cs = relIndex(toNum(args[1]), n)
+            cs = relIndex(toNumProg(prog, args[1], st), n)
         }
         var ce = n
         if args.len() > 2 && !(args[2] is JSValue.Undefined) {
-            ce = relIndex(toNum(args[2]), n)
+            ce = relIndex(toNumProg(prog, args[2], st), n)
         }
         var snap: Vec<f64> = Vec.new()
         var si = cs
@@ -16712,10 +16754,10 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
         if args.len() == 0 || n == 0 {
             return JSValue.Number(-1.0)
         }
-        let needle = toNum(args[0])
+        let needle = toNumProg(prog, args[0], st)
         var from = n - 1
         if args.len() > 1 {
-            let raw = toNum(args[1])
+            let raw = toNumProg(prog, args[1], st)
             if raw < 0.0 {
                 from = n + (raw as i64)
             } else {
@@ -18917,7 +18959,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
     if name == "at" {
         var idx: i64 = 0
         if args.len() > 0 {
-            idx = numToIndex(toNum(args[0]))
+            idx = numToIndex(toNumProg(prog, args[0], st))
         }
         if idx < 0 {
             idx = n + idx
@@ -18934,7 +18976,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
     if name == "with" {
         var wi: i64 = 0
         if args.len() > 0 {
-            wi = numToIndex(toNum(args[0]))
+            wi = numToIndex(toNumProg(prog, args[0], st))
         }
         if wi < 0 {
             wi = wi + n
@@ -18992,7 +19034,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
     if name == "toSpliced" {
         var ss: i64 = 0
         if args.len() > 0 {
-            ss = numToIndex(toNum(args[0]))
+            ss = numToIndex(toNumProg(prog, args[0], st))
         }
         if ss < 0 {
             ss = n + ss
@@ -19007,7 +19049,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         if args.len() == 1 {
             sd = n - ss
         } else if args.len() > 1 {
-            sd = numToIndex(toNum(args[1]))
+            sd = numToIndex(toNumProg(prog, args[1], st))
             if sd < 0 {
                 sd = 0
             }
@@ -19070,21 +19112,21 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         // copyWithin(target, start, end) — an in-place memmove within the array
         var target: i64 = 0
         if argPresent(args, 0) {
-            target = numToIndex(toNum(args[0]))
+            target = numToIndex(toNumProg(prog, args[0], st))
         }
         if target < 0 {
             target = n + target
         }
         var start: i64 = 0
         if argPresent(args, 1) {
-            start = numToIndex(toNum(args[1]))
+            start = numToIndex(toNumProg(prog, args[1], st))
         }
         if start < 0 {
             start = n + start
         }
         var end = n
         if argPresent(args, 2) {
-            end = numToIndex(toNum(args[2]))
+            end = numToIndex(toNumProg(prog, args[2], st))
             if end < 0 {
                 end = n + end
             }
@@ -19120,14 +19162,14 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         // fill(value, start, end) — the range args are optional but not ignorable
         var start: i64 = 0
         if argPresent(args, 1) {
-            start = numToIndex(toNum(args[1]))
+            start = numToIndex(toNumProg(prog, args[1], st))
             if start < 0 {
                 start = n + start
             }
         }
         var end = n
         if argPresent(args, 2) {
-            end = numToIndex(toNum(args[2]))
+            end = numToIndex(toNumProg(prog, args[2], st))
             if end < 0 {
                 end = n + end
             }
@@ -19149,7 +19191,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         // splice(start, deleteCount, ...items) — mutates and returns the removed
         var start: i64 = 0
         if args.len() > 0 {
-            start = numToIndex(toNum(args[0]))
+            start = numToIndex(toNumProg(prog, args[0], st))
         }
         if start < 0 {
             start = n + start
@@ -19162,7 +19204,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         }
         var delCount = n - start
         if args.len() > 1 {
-            delCount = numToIndex(toNum(args[1]))
+            delCount = numToIndex(toNumProg(prog, args[1], st))
         }
         if delCount < 0 {
             delCount = 0
@@ -19343,10 +19385,10 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
         var a: i64 = 0
         var b = n
         if argPresent(args, 0) {
-            a = numToIndex(toNum(args[0]))
+            a = numToIndex(toNumProg(prog, args[0], st))
         }
         if argPresent(args, 1) {
-            b = numToIndex(toNum(args[1]))
+            b = numToIndex(toNumProg(prog, args[1], st))
         }
         if a < 0 {
             a = n + a
@@ -19680,7 +19722,7 @@ fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut
     if name == "flat" {
         var depth: i64 = 1
         if argPresent(args, 0) {
-            let dn = toNum(args[0])
+            let dn = toNumProg(prog, args[0], st)
             if dn > 1000000.0 {
                 // Infinity / very deep → cap (real arrays never nest this far)
                 depth = 1000000

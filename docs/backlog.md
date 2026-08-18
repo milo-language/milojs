@@ -43,6 +43,40 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## Numeric arguments were coerced without running user `valueOf`
+
+`toNum` cannot re-enter the interpreter, so wherever a built-in coerced an
+argument with it, an OBJECT argument silently became 0 (or NaN for a float
+target) and the call did the wrong thing without erroring:
+
+```js
+new Int32Array([1,2,3]).with(0, {valueOf(){return 7}})[0]   // 0, node 7
+[1,2,3].with({valueOf(){return 1}}, 9)                      // 9,2,3, node 1,9,3
+[5,6,7].at({valueOf(){return 2}})                           // 5, node 7
+new Int32Array([1,2,3]).fill({valueOf(){return 8}})         // 0,0,0, node 8,8,8
+```
+
+36 argument coercions in `eval.milo` now use `toNumProg`, which can. The other 24
+matches are in functions with no `prog`/`st` in scope (they coerce a receiver or a
+radix, not a user-supplied numeric argument) and are left alone.
+
+`TypedArray.prototype.with` needed more than the coercion, and is what
+quickjs `bug492.js` is about: converting RUNS user code, which can detach or
+resize the buffer underneath the call. Both arguments are now converted first,
+the length is snapshotted before conversion, and afterwards the index is
+revalidated against BOTH the snapshot and the length as it stands. A partial
+shrink is not an error, and the elements that no longer exist read as zero rather
+than as stale bytes from the old allocation.
+
+Known quickjs/node disagreement, left as node's answer: detaching during
+conversion throws RangeError in node, while `bug492.js` asserts TypeError. node is
+this repo's oracle, so that one assertion in bug492 still fails.
+
+`tests/toNumberRunsValueOf.js` pins sixteen of these against node, including the
+left-to-right conversion ORDER, which is separately observable.
+
+Sweep 98/149 to 101/149.
+
 ## `using` declarations, and the parse gap that was hiding 28 cases
 
 ES2026 explicit resource management is implemented far enough that

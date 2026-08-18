@@ -1,0 +1,16 @@
+ta.with-value: 7
+ta.with-index: 1,9,3
+f64.with: 2.5
+arr.with-index: 1,9,3
+toSpliced: 1,3
+ta.at: 2
+arr.at: 7
+ta.fill: 8,8,8
+arr.slice: 2,3
+ta.subarray: 2,3
+arr.indexOf: 2
+repeat: abab
+order: a,b
+detach: threw RangeError
+resize0: threw RangeError
+shrink: 999/1024/0/0
