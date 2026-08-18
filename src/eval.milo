@@ -36,7 +36,7 @@ from "std/platform" import {
     netErrno, netEagain
 }
 from "std/process" import {
-    Child
+    Child, Command, Stdio, exePath
 }
 from "std/env" import {
     Env
@@ -5781,6 +5781,72 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Obj(p)
     }
+    if id == Builtin.SpawnAsync {
+        var program = ""
+        if argVals.len() > 0 {
+            program = toStr(argVals[0])
+        }
+        var sargs: Vec<string> = Vec.new()
+        if argVals.len() > 1 {
+            let ah = objHandle(argVals[1])
+            if ah >= 0 && st.objects[ah].isArray {
+                var ai: i64 = 0
+                while ai < arrLen(st, ah) {
+                    sargs.push(toStr(arrGet(st, ah, ai)))
+                    ai = ai + 1
+                }
+            }
+        }
+        // Environment overrides as "K=V" strings. A worker learns which role it
+        // has this way, which is how cluster tells primary from worker at all.
+        var senv: Vec<string> = Vec.new()
+        if argVals.len() > 2 {
+            let eh = objHandle(argVals[2])
+            if eh >= 0 && st.objects[eh].isArray {
+                var ei: i64 = 0
+                while ei < arrLen(st, eh) {
+                    senv.push(toStr(arrGet(st, eh, ei)))
+                    ei = ei + 1
+                }
+            }
+        }
+        let p = newPromise(st, 0, JSValue.Undefined)
+        match Channel<string>.new(1) {
+            Result.Ok(ch) => {
+                let chForTask = ch.clone()
+                // Same shape as HttpFetchAsync, and for the same reason: the
+                // interpreter loop owns the OS main thread and never parks, so
+                // the blocking read-to-EOF and waitpid have to happen somewhere
+                // else. The worker touches only its own arguments and the
+                // channel. The synchronous spawn could not be used for this at
+                // all: a child that outlives the call, which is every server a
+                // cluster worker starts, would hang the parent forever.
+                spawnOsThreadDetached(move(): void => {
+                    let r = runChildToCompletion(program, sargs, senv)
+                    let _s = chForTask.send(r)
+                }
+                )
+                st.fetches.push(PendingFetch {
+                    promise: p, chan: ch
+                }
+                )
+            }
+            Result.Err(_e) => {
+                settlePromise(st, p, 1, JSValue.Str("E-1|cannot start process"))
+            }
+        }
+        return JSValue.Obj(p)
+    }
+    if id == Builtin.ExePath {
+        match exePath() {
+            Result.Ok(pth) => {
+                return JSValue.Str(pth)
+            }
+            Result.Err(_e) => {
+                return JSValue.Undefined
+            }
+        }
+    }
     if id == Builtin.WriteFile {
         if argVals.len() < 2 {
             return JSValue.Bool(false)
@@ -9431,6 +9497,8 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "__tcpPort", JSValue.Native(Native.Fn(Builtin.TcpPort)))
     scopeDefine(st, 0, "__tcpRead", JSValue.Native(Native.Fn(Builtin.TcpRead)))
     scopeDefine(st, 0, "__spawnSync", JSValue.Native(Native.Fn(Builtin.SpawnSync)))
+    scopeDefine(st, 0, "__spawnAsync", JSValue.Native(Native.Fn(Builtin.SpawnAsync)))
+    scopeDefine(st, 0, "__exePath", JSValue.Native(Native.Fn(Builtin.ExePath)))
     scopeDefine(st, 0, "__httpFetch", JSValue.Native(Native.Fn(Builtin.HttpFetch)))
     scopeDefine(st, 0, "__sqliteOpen", JSValue.Native(Native.Fn(Builtin.SqliteOpen)))
     scopeDefine(st, 0, "__sqliteClose", JSValue.Native(Native.Fn(Builtin.SqliteClose)))
@@ -13691,6 +13759,70 @@ fn symbolDisplay(s: &string): string {
 // crosses into the interpreter.
 // Settle any fetch whose worker thread has finished. Called from the event loop
 // and from a blocked await, the same way node-api work is serviced.
+// Run a child to completion off the interpreter thread and encode the result as
+// one string, because that is what the pending-work channel carries. The format
+// is "<status>|<output>": a status and the combined stdout/stderr, with the
+// first pipe separating them so output containing pipes survives intact.
+fn runChildToCompletion(program: string, args: Vec<string>, envPairs: Vec<string>): string {
+    // Command rather than Child.spawn when the caller supplied environment
+    // overrides: Child.spawn has no way to set one, and a cluster worker that
+    // cannot be told it is a worker would run the primary's branch instead.
+    var cmd = Command.new(program).args(args).stderr(Stdio.Merge)
+    var ei: i64 = 0
+    while ei < envPairs.len() {
+        let pair = envPairs[ei].clone()
+        var eq: i64 = 0 - 1
+        var ci: i64 = 0
+        while ci < pair.len() {
+            if pair[ci] == '=' && eq < 0 {
+                eq = ci
+            }
+            ci = ci + 1
+        }
+        if eq > 0 {
+            let ename = pair.slice(0, eq).clone()
+            let eval_ = pair.slice(eq + 1, pair.len()).clone()
+            cmd = cmd.env(ename, eval_)
+        }
+        ei = ei + 1
+    }
+    match cmd.spawn() {
+        Result.Ok(child) => {
+            var text = ""
+            var buf: [u8; 4096] = [0; 4096]
+            var reading = true
+            while reading {
+                var n: i64 = 0
+                unsafe {
+                    n = child.readStdout(buf as *u8, 4096)
+                }
+                if n <= 0 {
+                    reading = false
+                } else {
+                    var bi: i64 = 0
+                    while bi < n {
+                        text.push(buf[bi])
+                        bi = bi + 1
+                    }
+                }
+            }
+            var code: i64 = 0
+            match child.wait() {
+                Result.Ok(c) => {
+                    code = c as i64
+                }
+                Result.Err(_w) => {
+                    code = 0 - 1
+                }
+            }
+            return i64ToStr(code) + "|" + text
+        }
+        Result.Err(_e) => {
+            return "E-1|spawn failed"
+        }
+    }
+}
+
 fn serviceFetches(st: &mut Interp) {
     var i: i64 = 0
     while i < st.fetches.len() {

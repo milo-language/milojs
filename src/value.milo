@@ -176,6 +176,15 @@ pub enum Builtin {
     // Run a program to completion and hand back its output. The async spawn
     // family is built on top of this in JS; nothing could spawn at all before.
     SpawnSync,
+    // Run a program off the interpreter thread and settle a promise with its
+    // result. The synchronous spawn cannot serve an async caller at all: a child
+    // that outlives the call would hang the parent, which is every server a
+    // cluster worker starts.
+    SpawnAsync,
+    // Absolute path of the running binary. process.argv[0] is only the name it
+    // was invoked as, so nothing could re-run this runtime on another script,
+    // which is exactly what fork() and cluster need.
+    ExePath,
     HttpRegister,
     HttpUnregister,
     WriteFile,

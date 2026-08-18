@@ -213,7 +213,7 @@ fn napiReadStr(p: *u8, len: i64): string {
 // ── value creation ──
 
 @externalLinkage
-fn napi_get_undefined(_env: *u8, result: *u8): i32 {
+pub fn napi_get_undefined(_env: *u8, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -225,7 +225,7 @@ fn napi_get_undefined(_env: *u8, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_get_null(_env: *u8, result: *u8): i32 {
+pub fn napi_get_null(_env: *u8, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -237,7 +237,7 @@ fn napi_get_null(_env: *u8, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_get_boolean(_env: *u8, value: bool, result: *u8): i32 {
+pub fn napi_get_boolean(_env: *u8, value: bool, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -249,7 +249,7 @@ fn napi_get_boolean(_env: *u8, value: bool, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_create_int32(_env: *u8, value: i32, result: *u8): i32 {
+pub fn napi_create_int32(_env: *u8, value: i32, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -261,7 +261,7 @@ fn napi_create_int32(_env: *u8, value: i32, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_create_uint32(_env: *u8, value: i32, result: *u8): i32 {
+pub fn napi_create_uint32(_env: *u8, value: i32, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -273,7 +273,7 @@ fn napi_create_uint32(_env: *u8, value: i32, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_create_int64(_env: *u8, value: i64, result: *u8): i32 {
+pub fn napi_create_int64(_env: *u8, value: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -285,7 +285,7 @@ fn napi_create_int64(_env: *u8, value: i64, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_create_double(_env: *u8, value: f64, result: *u8): i32 {
+pub fn napi_create_double(_env: *u8, value: f64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -297,7 +297,7 @@ fn napi_create_double(_env: *u8, value: f64, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_create_string_utf8(_env: *u8, str: *u8, length: i64, result: *u8): i32 {
+pub fn napi_create_string_utf8(_env: *u8, str: *u8, length: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -309,7 +309,7 @@ fn napi_create_string_utf8(_env: *u8, str: *u8, length: i64, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_create_object(_env: *u8, result: *u8): i32 {
+pub fn napi_create_object(_env: *u8, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -322,7 +322,7 @@ fn napi_create_object(_env: *u8, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_create_array(_env: *u8, result: *u8): i32 {
+pub fn napi_create_array(_env: *u8, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -335,7 +335,7 @@ fn napi_create_array(_env: *u8, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_create_array_with_length(_env: *u8, length: i64, result: *u8): i32 {
+pub fn napi_create_array_with_length(_env: *u8, length: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -353,7 +353,7 @@ fn napi_create_array_with_length(_env: *u8, length: i64, result: *u8): i32 {
 // ── properties ──
 
 @externalLinkage
-fn napi_set_named_property(_env: *u8, object: i64, utf8name: *u8, value: i64): i32 {
+pub fn napi_set_named_property(_env: *u8, object: i64, utf8name: *u8, value: i64): i32 {
     match napiValueOf(object) {
         JSValue.Obj(o) => {
             objSet(gInterp, o, napiReadStr(utf8name, -1), napiValueOf(value))
@@ -366,7 +366,7 @@ fn napi_set_named_property(_env: *u8, object: i64, utf8name: *u8, value: i64): i
 }
 
 @externalLinkage
-fn napi_get_named_property(_env: *u8, object: i64, utf8name: *u8, result: *u8): i32 {
+pub fn napi_get_named_property(_env: *u8, object: i64, utf8name: *u8, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -388,7 +388,7 @@ fn napi_get_named_property(_env: *u8, object: i64, utf8name: *u8, result: *u8): 
 // ── value extraction ──
 
 @externalLinkage
-fn napi_get_value_double(_env: *u8, value: i64, result: *u8): i32 {
+pub fn napi_get_value_double(_env: *u8, value: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -400,7 +400,7 @@ fn napi_get_value_double(_env: *u8, value: i64, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_get_value_int32(_env: *u8, value: i64, result: *u8): i32 {
+pub fn napi_get_value_int32(_env: *u8, value: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -412,7 +412,7 @@ fn napi_get_value_int32(_env: *u8, value: i64, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_get_value_bool(_env: *u8, value: i64, result: *u8): i32 {
+pub fn napi_get_value_bool(_env: *u8, value: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -426,7 +426,7 @@ fn napi_get_value_bool(_env: *u8, value: i64, result: *u8): i32 {
 // napi_valuetype: undefined 0, null 1, boolean 2, number 3, string 4, symbol 5,
 // object 6, function 7, external 8, bigint 9
 @externalLinkage
-fn napi_typeof(_env: *u8, value: i64, result: *u8): i32 {
+pub fn napi_typeof(_env: *u8, value: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -470,7 +470,7 @@ fn napi_typeof(_env: *u8, value: i64, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_is_array(_env: *u8, value: i64, result: *u8): i32 {
+pub fn napi_is_array(_env: *u8, value: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -489,7 +489,7 @@ fn napi_is_array(_env: *u8, value: i64, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_get_array_length(_env: *u8, value: i64, result: *u8): i32 {
+pub fn napi_get_array_length(_env: *u8, value: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -515,7 +515,7 @@ fn napi_get_array_length(_env: *u8, value: i64, result: *u8): i32 {
 // as a function to typeof and is dispatched by callValue, so from JS it is
 // indistinguishable from any other callable.
 @externalLinkage
-fn napi_create_function(_env: *u8, _utf8name: *u8, _length: i64, cb: i64, data: i64, result: *u8): i32 {
+pub fn napi_create_function(_env: *u8, _utf8name: *u8, _length: i64, cb: i64, data: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -543,7 +543,7 @@ fn napi_create_function(_env: *u8, _utf8name: *u8, _length: i64, cb: i64, data: 
 // number of arguments actually copied. Real argument count is reported even when
 // the buffer is smaller, which is how addons detect being under-called.
 @externalLinkage
-fn napi_get_cb_info(_env: *u8, cbinfo: i64, argc: *u8, argv: *u8, thisArg: *u8, data: *u8): i32 {
+pub fn napi_get_cb_info(_env: *u8, cbinfo: i64, argc: *u8, argv: *u8, thisArg: *u8, data: *u8): i32 {
     if cbinfo < 0 || cbinfo >= gNapi.calls.len() {
         return NAPI_INVALID_ARG
     }
@@ -664,51 +664,51 @@ pub fn napiLoadAddon(path: &string): Result<JSValue, string> {
 // the remaining work, not a finished surface.
 
 @externalLinkage
-fn napi_add_env_cleanup_hook(_a0: *u8, _a1: *u8, _a2: *u8): i32 {
+pub fn napi_add_env_cleanup_hook(_a0: *u8, _a1: *u8, _a2: *u8): i32 {
     return NAPI_OK
 }
 
 @externalLinkage
-fn napi_coerce_to_object(_a0: *u8, _a1: *u8, _a2: *u8): i32 {
+pub fn napi_coerce_to_object(_a0: *u8, _a1: *u8, _a2: *u8): i32 {
     return NAPI_OK
 }
 
 @externalLinkage
-fn napi_create_bigint_words(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8): i32 {
+pub fn napi_create_bigint_words(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8): i32 {
     return NAPI_OK
 }
 
 @externalLinkage
-fn napi_create_external_buffer(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8, _a5: *u8): i32 {
+pub fn napi_create_external_buffer(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8, _a5: *u8): i32 {
     return NAPI_OK
 }
 
 @externalLinkage
-fn napi_fatal_error(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8) {
+pub fn napi_fatal_error(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8) {
 }
 
 @externalLinkage
-fn napi_fatal_exception(_a0: *u8, _a1: *u8): i32 {
+pub fn napi_fatal_exception(_a0: *u8, _a1: *u8): i32 {
     return NAPI_OK
 }
 
 @externalLinkage
-fn napi_get_and_clear_last_exception(_a0: *u8, _a1: *u8): i32 {
+pub fn napi_get_and_clear_last_exception(_a0: *u8, _a1: *u8): i32 {
     return NAPI_OK
 }
 
 @externalLinkage
-fn napi_get_value_bigint_int64(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8): i32 {
+pub fn napi_get_value_bigint_int64(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8): i32 {
     return NAPI_OK
 }
 
 @externalLinkage
-fn napi_get_value_bigint_uint64(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8): i32 {
+pub fn napi_get_value_bigint_uint64(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8): i32 {
     return NAPI_OK
 }
 
 @externalLinkage
-fn napi_get_value_bigint_words(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8): i32 {
+pub fn napi_get_value_bigint_words(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8): i32 {
     return NAPI_OK
 }
 
@@ -760,7 +760,7 @@ fn napiMakeFn(cb: i64, data: i64): i64 {
 // Produces a constructor object plus a prototype carrying the instance methods.
 // `new Ctor()` links the instance's proto here, so method lookup finds them.
 @externalLinkage
-fn napi_define_class(_env: *u8, _utf8name: *u8, _length: i64, constructor: i64, data: i64, propertyCount: i64, properties: *u8, result: *u8): i32 {
+pub fn napi_define_class(_env: *u8, _utf8name: *u8, _length: i64, constructor: i64, data: i64, propertyCount: i64, properties: *u8, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -807,7 +807,7 @@ fn napi_define_class(_env: *u8, _utf8name: *u8, _length: i64, constructor: i64, 
 // The finalizer is accepted but never invoked yet: milojs's collector has no
 // finalizer hook, so a wrapped native allocation outlives its JS object.
 @externalLinkage
-fn napi_wrap(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _finalizeHint: i64, _result: *u8): i32 {
+pub fn napi_wrap(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _finalizeHint: i64, _result: *u8): i32 {
     match napiValueOf(jsObject) {
         JSValue.Obj(o) => {
             let _ew = ensureExtra(gInterp, o)
@@ -821,7 +821,7 @@ fn napi_wrap(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _fin
 }
 
 @externalLinkage
-fn napi_unwrap(_env: *u8, jsObject: i64, result: *u8): i32 {
+pub fn napi_unwrap(_env: *u8, jsObject: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -846,7 +846,7 @@ fn napi_unwrap(_env: *u8, jsObject: i64, result: *u8): i32 {
 // index is uint32_t, NOT size_t. Declaring it i64 reads the undefined upper half
 // of the 32-bit argument slot on AArch64, so the index came through as garbage and
 // every element resolved to undefined.
-fn napi_get_element(_env: *u8, object: i64, index32: i32, result: *u8): i32 {
+pub fn napi_get_element(_env: *u8, object: i64, index32: i32, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -870,7 +870,7 @@ fn napi_get_element(_env: *u8, object: i64, index32: i32, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_set_element(_env: *u8, object: i64, index32: i32, value: i64): i32 {
+pub fn napi_set_element(_env: *u8, object: i64, index32: i32, value: i64): i32 {
     let index = index32 as i64
     match napiValueOf(object) {
         JSValue.Obj(o) => {
@@ -884,7 +884,7 @@ fn napi_set_element(_env: *u8, object: i64, index32: i32, value: i64): i32 {
 }
 
 @externalLinkage
-fn napi_has_named_property(_env: *u8, object: i64, utf8name: *u8, result: *u8): i32 {
+pub fn napi_has_named_property(_env: *u8, object: i64, utf8name: *u8, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -912,7 +912,7 @@ fn napi_has_named_property(_env: *u8, object: i64, utf8name: *u8, result: *u8): 
 }
 
 @externalLinkage
-fn napi_get_value_uint32(_env: *u8, value: i64, result: *u8): i32 {
+pub fn napi_get_value_uint32(_env: *u8, value: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -927,7 +927,7 @@ fn napi_get_value_uint32(_env: *u8, value: i64, result: *u8): i32 {
 // A NULL buf means "just tell me the length", which is how addons size their
 // allocation before the real call.
 @externalLinkage
-fn napi_get_value_string_utf8(_env: *u8, value: i64, buf: *u8, bufsize: i64, result: *u8): i32 {
+pub fn napi_get_value_string_utf8(_env: *u8, value: i64, buf: *u8, bufsize: i64, result: *u8): i32 {
     let s = toStr(napiValueOf(value))
     unsafe {
         if (buf as i64) == 0 {
@@ -956,7 +956,7 @@ fn napi_get_value_string_utf8(_env: *u8, value: i64, buf: *u8, bufsize: i64, res
 }
 
 @externalLinkage
-fn napi_coerce_to_string(_env: *u8, value: i64, result: *u8): i32 {
+pub fn napi_coerce_to_string(_env: *u8, value: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -971,7 +971,7 @@ fn napi_coerce_to_string(_env: *u8, value: i64, result: *u8): i32 {
 
 // napi_get_property(env, object, key, result) — key is a napi_value, not a C string
 @externalLinkage
-fn napi_get_property(_env: *u8, object: i64, key: i64, result: *u8): i32 {
+pub fn napi_get_property(_env: *u8, object: i64, key: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -991,7 +991,7 @@ fn napi_get_property(_env: *u8, object: i64, key: i64, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_get_global(_env: *u8, result: *u8): i32 {
+pub fn napi_get_global(_env: *u8, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1014,7 +1014,7 @@ fn napiMakeError(msgVal: JSValue): i64 {
 }
 
 @externalLinkage
-fn napi_create_error(_env: *u8, _code: i64, msg: i64, result: *u8): i32 {
+pub fn napi_create_error(_env: *u8, _code: i64, msg: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1029,14 +1029,14 @@ fn napi_create_error(_env: *u8, _code: i64, msg: i64, result: *u8): i32 {
 // Raise a JS exception. The addon returns to us immediately afterwards, and the
 // pending throw is what callers observe.
 @externalLinkage
-fn napi_throw(_env: *u8, error: i64): i32 {
+pub fn napi_throw(_env: *u8, error: i64): i32 {
     gInterp.throwing = true
     gInterp.thrownValue = napiValueOf(error)
     return NAPI_OK
 }
 
 @externalLinkage
-fn napi_throw_error(_env: *u8, _code: *u8, msg: *u8): i32 {
+pub fn napi_throw_error(_env: *u8, _code: *u8, msg: *u8): i32 {
     let o = napiMakeError(JSValue.Str(napiReadStr(msg, -1)))
     gInterp.throwing = true
     gInterp.thrownValue = JSValue.Obj(o)
@@ -1048,7 +1048,7 @@ fn napi_throw_error(_env: *u8, _code: *u8, msg: *u8): i32 {
 // returns napi_ok without writing anything leaves it reading an uninitialized
 // handle off its own stack.
 @externalLinkage
-fn napi_get_property_names(_env: *u8, object: i64, result: *u8): i32 {
+pub fn napi_get_property_names(_env: *u8, object: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1158,7 +1158,7 @@ fn napiEnsureBufferView(buf: i64): i64 {
 }
 
 @externalLinkage
-fn napi_create_buffer(_env: *u8, length: i64, data: *u8, result: *u8): i32 {
+pub fn napi_create_buffer(_env: *u8, length: i64, data: *u8, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1179,7 +1179,7 @@ fn napi_create_buffer(_env: *u8, length: i64, data: *u8, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_create_buffer_copy(_env: *u8, length: i64, source: *u8, data: *u8, result: *u8): i32 {
+pub fn napi_create_buffer_copy(_env: *u8, length: i64, source: *u8, data: *u8, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1202,7 +1202,7 @@ fn napi_create_buffer_copy(_env: *u8, length: i64, source: *u8, data: *u8, resul
 }
 
 @externalLinkage
-fn napi_get_buffer_info(_env: *u8, value: i64, data: *u8, length: *u8): i32 {
+pub fn napi_get_buffer_info(_env: *u8, value: i64, data: *u8, length: *u8): i32 {
     match napiValueOf(value) {
         JSValue.Obj(buf) => {
             let view = napiEnsureBufferView(buf)
@@ -1228,7 +1228,7 @@ fn napi_get_buffer_info(_env: *u8, value: i64, data: *u8, length: *u8): i32 {
 // took a plain string for a Buffer and the whole deserialize failed with a bare
 // InvalidArg and no reason string.
 @externalLinkage
-fn napi_is_buffer(_env: *u8, value: i64, result: *u8): i32 {
+pub fn napi_is_buffer(_env: *u8, value: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1250,7 +1250,7 @@ fn napi_is_buffer(_env: *u8, value: i64, result: *u8): i32 {
 // collector yet, so a reference is simply a handle that is never released — it
 // over-retains rather than freeing something the addon still points at.
 @externalLinkage
-fn napi_create_reference(_env: *u8, value: i64, _initialRefcount: i32, result: *u8): i32 {
+pub fn napi_create_reference(_env: *u8, value: i64, _initialRefcount: i32, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1262,7 +1262,7 @@ fn napi_create_reference(_env: *u8, value: i64, _initialRefcount: i32, result: *
 }
 
 @externalLinkage
-fn napi_get_reference_value(_env: *u8, ref: i64, result: *u8): i32 {
+pub fn napi_get_reference_value(_env: *u8, ref: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1274,12 +1274,12 @@ fn napi_get_reference_value(_env: *u8, ref: i64, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_delete_reference(_env: *u8, _ref: i64): i32 {
+pub fn napi_delete_reference(_env: *u8, _ref: i64): i32 {
     return NAPI_OK
 }
 
 @externalLinkage
-fn napi_reference_unref(_env: *u8, _ref: i64, result: *u8): i32 {
+pub fn napi_reference_unref(_env: *u8, _ref: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1360,7 +1360,7 @@ pub fn napiTakePending(): Vec<NapiPending> {
 }
 
 @externalLinkage
-fn napi_create_promise(_env: *u8, deferred: *u8, promise: *u8): i32 {
+pub fn napi_create_promise(_env: *u8, deferred: *u8, promise: *u8): i32 {
     let p = newPromise(gInterp, 0, JSValue.Undefined)
     gNapi.liveDeferred = gNapi.liveDeferred + 1
     napiWriteHandle(deferred, napiHandle(JSValue.Obj(p)))
@@ -1369,7 +1369,7 @@ fn napi_create_promise(_env: *u8, deferred: *u8, promise: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_resolve_deferred(_env: *u8, deferred: i64, resolution: i64): i32 {
+pub fn napi_resolve_deferred(_env: *u8, deferred: i64, resolution: i64): i32 {
     match napiValueOf(deferred) {
         JSValue.Obj(p) => {
             napiSettle(p, 1, napiValueOf(resolution))
@@ -1382,7 +1382,7 @@ fn napi_resolve_deferred(_env: *u8, deferred: i64, resolution: i64): i32 {
 }
 
 @externalLinkage
-fn napi_reject_deferred(_env: *u8, deferred: i64, rejection: i64): i32 {
+pub fn napi_reject_deferred(_env: *u8, deferred: i64, rejection: i64): i32 {
     match napiValueOf(deferred) {
         JSValue.Obj(p) => {
             napiSettle(p, 2, napiValueOf(rejection))
@@ -1427,7 +1427,7 @@ fn napiEnsurePipe() {
 }
 
 @externalLinkage
-fn napi_create_threadsafe_function(_env: *u8, func: i64, _asyncResource: i64, _asyncResourceName: i64, _maxQueueSize: i64, _initialThreadCount: i64, _threadFinalizeData: i64, _threadFinalizeCb: i64, context: i64, callJsCb: i64, result: *u8): i32 {
+pub fn napi_create_threadsafe_function(_env: *u8, func: i64, _asyncResource: i64, _asyncResourceName: i64, _maxQueueSize: i64, _initialThreadCount: i64, _threadFinalizeData: i64, _threadFinalizeCb: i64, context: i64, callJsCb: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1451,7 +1451,7 @@ fn napi_create_threadsafe_function(_env: *u8, func: i64, _asyncResource: i64, _a
 // CALLED FROM A FOREIGN THREAD. Touch nothing but the pipe fd, which is read-only
 // after setup.
 @externalLinkage
-fn napi_call_threadsafe_function(func: i64, data: i64, _isBlocking: i32): i32 {
+pub fn napi_call_threadsafe_function(func: i64, data: i64, _isBlocking: i32): i32 {
     unsafe {
         if gNapi.tsfnW < 0 {
             return NAPI_INVALID_ARG
@@ -1467,7 +1467,7 @@ fn napi_call_threadsafe_function(func: i64, data: i64, _isBlocking: i32): i32 {
 }
 
 @externalLinkage
-fn napi_get_threadsafe_function_context(func: i64, result: *u8): i32 {
+pub fn napi_get_threadsafe_function_context(func: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1483,7 +1483,7 @@ fn napi_get_threadsafe_function_context(func: i64, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_acquire_threadsafe_function(_func: i64): i32 {
+pub fn napi_acquire_threadsafe_function(_func: i64): i32 {
     let i = _func - 1
     if i >= 0 && i < gNapi.tsfns.len() {
         gNapi.tsfns[i].refs = gNapi.tsfns[i].refs + 1
@@ -1492,7 +1492,7 @@ fn napi_acquire_threadsafe_function(_func: i64): i32 {
 }
 
 @externalLinkage
-fn napi_release_threadsafe_function(_func: i64, _mode: i32): i32 {
+pub fn napi_release_threadsafe_function(_func: i64, _mode: i32): i32 {
     let i = _func - 1
     if i >= 0 && i < gNapi.tsfns.len() {
         // mode 1 is napi_tsfn_abort: drop every outstanding reference at once
@@ -1506,7 +1506,7 @@ fn napi_release_threadsafe_function(_func: i64, _mode: i32): i32 {
 }
 
 @externalLinkage
-fn napi_unref_threadsafe_function(_env: *u8, _func: i64): i32 {
+pub fn napi_unref_threadsafe_function(_env: *u8, _func: i64): i32 {
     let i = _func - 1
     if i >= 0 && i < gNapi.tsfns.len() {
         gNapi.tsfns[i].unrefed = true
@@ -1515,7 +1515,7 @@ fn napi_unref_threadsafe_function(_env: *u8, _func: i64): i32 {
 }
 
 @externalLinkage
-fn napi_ref_threadsafe_function(_env: *u8, _func: i64): i32 {
+pub fn napi_ref_threadsafe_function(_env: *u8, _func: i64): i32 {
     let i = _func - 1
     if i >= 0 && i < gNapi.tsfns.len() {
         gNapi.tsfns[i].unrefed = false
@@ -1599,7 +1599,7 @@ pub fn napiHasTsfn(): bool {
 // storage to reclaim and these are bookkeeping. The scope handle is a counter so
 // an addon that compares or nests them sees distinct values.
 @externalLinkage
-fn napi_open_handle_scope(_env: *u8, result: *u8): i32 {
+pub fn napi_open_handle_scope(_env: *u8, result: *u8): i32 {
     gNapi.scopeSeq = gNapi.scopeSeq + 1
     if (result as i64) != 0 {
         napiWriteHandle(result, gNapi.scopeSeq)
@@ -1608,12 +1608,12 @@ fn napi_open_handle_scope(_env: *u8, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_close_handle_scope(_env: *u8, _scope: i64): i32 {
+pub fn napi_close_handle_scope(_env: *u8, _scope: i64): i32 {
     return NAPI_OK
 }
 
 @externalLinkage
-fn napi_open_escapable_handle_scope(_env: *u8, result: *u8): i32 {
+pub fn napi_open_escapable_handle_scope(_env: *u8, result: *u8): i32 {
     gNapi.scopeSeq = gNapi.scopeSeq + 1
     if (result as i64) != 0 {
         napiWriteHandle(result, gNapi.scopeSeq)
@@ -1622,7 +1622,7 @@ fn napi_open_escapable_handle_scope(_env: *u8, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_close_escapable_handle_scope(_env: *u8, _scope: i64): i32 {
+pub fn napi_close_escapable_handle_scope(_env: *u8, _scope: i64): i32 {
     return NAPI_OK
 }
 
@@ -1630,7 +1630,7 @@ fn napi_close_escapable_handle_scope(_env: *u8, _scope: i64): i32 {
 // already outlives the scope, so this hands back a fresh handle to the same
 // value rather than moving anything.
 @externalLinkage
-fn napi_escape_handle(_env: *u8, _scope: i64, escapee: i64, result: *u8): i32 {
+pub fn napi_escape_handle(_env: *u8, _scope: i64, escapee: i64, result: *u8): i32 {
     if (result as i64) != 0 {
         napiWriteHandle(result, napiHandle(napiValueOf(escapee)))
     }
@@ -1643,7 +1643,7 @@ fn napi_escape_handle(_env: *u8, _scope: i64, escapee: i64, result: *u8): i32 {
 // A caller reads it after a failure to build a message, so the pointer must be
 // to storage that outlives this call: it is a single reused static record.
 @externalLinkage
-fn napi_get_last_error_info(_env: *u8, result: *u8): i32 {
+pub fn napi_get_last_error_info(_env: *u8, result: *u8): i32 {
     unsafe {
         if (gNapi.lastErrorInfo as i64) == 0 {
             // { const char* error_message; void* engine_reserved;
@@ -1660,7 +1660,7 @@ fn napi_get_last_error_info(_env: *u8, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_is_exception_pending(_env: *u8, result: *u8): i32 {
+pub fn napi_is_exception_pending(_env: *u8, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1672,7 +1672,7 @@ fn napi_is_exception_pending(_env: *u8, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_create_type_error(_env: *u8, _code: i64, msg: i64, result: *u8): i32 {
+pub fn napi_create_type_error(_env: *u8, _code: i64, msg: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1691,7 +1691,7 @@ fn napi_create_type_error(_env: *u8, _code: i64, msg: i64, result: *u8): i32 {
 // latin1 is one byte per code point, so each byte is its own code point rather
 // than a UTF-8 continuation. Decoding it as UTF-8 mangles anything over 0x7f.
 @externalLinkage
-fn napi_create_string_latin1(_env: *u8, str: *u8, length: i64, result: *u8): i32 {
+pub fn napi_create_string_latin1(_env: *u8, str: *u8, length: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1725,7 +1725,7 @@ fn napi_create_string_latin1(_env: *u8, str: *u8, length: i64, result: *u8): i32
 }
 
 @externalLinkage
-fn napi_get_value_int64(_env: *u8, value: i64, result: *u8): i32 {
+pub fn napi_get_value_int64(_env: *u8, value: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1737,7 +1737,7 @@ fn napi_get_value_int64(_env: *u8, value: i64, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_has_property(_env: *u8, object: i64, key: i64, result: *u8): i32 {
+pub fn napi_has_property(_env: *u8, object: i64, key: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1761,7 +1761,7 @@ fn napi_has_property(_env: *u8, object: i64, key: i64, result: *u8): i32 {
 }
 
 @externalLinkage
-fn napi_has_own_property(_env: *u8, object: i64, key: i64, result: *u8): i32 {
+pub fn napi_has_own_property(_env: *u8, object: i64, key: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -1785,7 +1785,7 @@ fn napi_has_own_property(_env: *u8, object: i64, key: i64, result: *u8): i32 {
 // buffer's: an addon that reads the buffer base for a subarray sees the wrong
 // pixels.
 @externalLinkage
-fn napi_get_typedarray_info(_env: *u8, typedarray: i64, ttype: *u8, length: *u8, data: *u8, arraybuffer: *u8, byteOffset: *u8): i32 {
+pub fn napi_get_typedarray_info(_env: *u8, typedarray: i64, ttype: *u8, length: *u8, data: *u8, arraybuffer: *u8, byteOffset: *u8): i32 {
     match napiValueOf(typedarray) {
         JSValue.Obj(o) => {
             let ex = gInterp.objects[o].extra
@@ -1858,7 +1858,7 @@ fn napiTypedArrayType(kind: i64): i32 {
 // object. Accessors are honoured: a getter-only descriptor must not become a
 // data property, or an addon's computed field reads as a function.
 @externalLinkage
-fn napi_define_properties(_env: *u8, object: i64, propertyCount: i64, properties: *u8): i32 {
+pub fn napi_define_properties(_env: *u8, object: i64, propertyCount: i64, properties: *u8): i32 {
     match napiValueOf(object) {
         JSValue.Obj(target) => {
             var i: i64 = 0
@@ -1915,7 +1915,7 @@ fn napi_define_properties(_env: *u8, object: i64, propertyCount: i64, properties
 // rather than dropped silently: an addon that registers one and never sees it
 // run leaks, and that is worth saying in one place instead of pretending.
 @externalLinkage
-fn napi_add_finalizer(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _finalizeHint: i64, result: *u8): i32 {
+pub fn napi_add_finalizer(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _finalizeHint: i64, result: *u8): i32 {
     match napiValueOf(jsObject) {
         JSValue.Obj(o) => {
             let _ea = ensureExtra(gInterp, o)
@@ -1951,7 +1951,7 @@ struct NapiWork {
 var gNapiWork: Vec<NapiWork> = Vec.new()
 
 @externalLinkage
-fn napi_create_async_work(_env: *u8, _asyncResource: i64, _asyncResourceName: i64, execute: i64, complete: i64, data: i64, result: *u8): i32 {
+pub fn napi_create_async_work(_env: *u8, _asyncResource: i64, _asyncResourceName: i64, execute: i64, complete: i64, data: i64, result: *u8): i32 {
     gNapiWork.push(NapiWork {
         execute: execute, complete: complete, data: data, done: false
     }
@@ -1963,7 +1963,7 @@ fn napi_create_async_work(_env: *u8, _asyncResource: i64, _asyncResourceName: i6
 }
 
 @externalLinkage
-fn napi_queue_async_work(_env: *u8, work: i64): i32 {
+pub fn napi_queue_async_work(_env: *u8, work: i64): i32 {
     let idx = work - 1
     if idx < 0 || idx >= gNapiWork.len() {
         return NAPI_INVALID_ARG
@@ -1990,7 +1990,7 @@ fn napi_queue_async_work(_env: *u8, work: i64): i32 {
 }
 
 @externalLinkage
-fn napi_delete_async_work(_env: *u8, work: i64): i32 {
+pub fn napi_delete_async_work(_env: *u8, work: i64): i32 {
     let idx = work - 1
     if idx < 0 || idx >= gNapiWork.len() {
         return NAPI_INVALID_ARG
@@ -2007,7 +2007,7 @@ fn napi_delete_async_work(_env: *u8, work: i64): i32 {
 // and only the addon can read it out. fsevents stores its event-stream handle
 // this way.
 @externalLinkage
-fn napi_create_external(_env: *u8, data: i64, _finalizeCb: i64, _finalizeHint: i64, result: *u8): i32 {
+pub fn napi_create_external(_env: *u8, data: i64, _finalizeCb: i64, _finalizeHint: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -2023,7 +2023,7 @@ fn napi_create_external(_env: *u8, data: i64, _finalizeCb: i64, _finalizeHint: i
 }
 
 @externalLinkage
-fn napi_get_value_external(_env: *u8, value: i64, result: *u8): i32 {
+pub fn napi_get_value_external(_env: *u8, value: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.

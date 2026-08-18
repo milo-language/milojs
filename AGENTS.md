@@ -34,7 +34,7 @@ Two binaries, both written in [Milo](https://github.com/milo-language/milo):
 - `milojs` — a Node-compatible **runtime** on top of it: module loader, event
   loop, fs/http, Node-API addons. Like node/deno/bun.
 
-~<!--fact:loc-milo-->43.5k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
+~<!--fact:loc-milo-->43.7k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
 own bigint. No V8, no JSC, no C engine underneath.
 
 ## Before you write any Milo
@@ -136,6 +136,42 @@ different membership each time, every fixture passing when run alone.
 Neither of us was wrong about the code. We were wrong about what was still
 running. Before believing a number that moved without a code change, check
 `uptime` and look for strays.
+
+## The fork bomb that took the machine down
+
+```sh
+tools/guard.sh tools/dev.sh
+GUARD_MAX_PROCS=60 GUARD_TIMEOUT=2400 tools/guard.sh bun scripts/node-compat-sweep.ts --sample 400
+```
+
+Node's tests re-exec themselves constantly — `fork(__filename, ['child'])`, then
+a branch on `process.argv[2]` to tell parent from child. Get argv wrong in the
+runtime and the child takes the PARENT branch and forks again: growth is
+exponential, every process carries a full interpreter heap, and the machine is
+out of RAM in seconds. That has already happened here once, hard enough to need
+a reboot.
+
+Three things have to hold, and only the third is obvious:
+
+- **`RLIMIT_NPROC` is the only defence fast enough.** A polling watchdog samples
+  every second or two; a fork bomb doubles far quicker than that. `guard.sh`
+  caps the uid's process limit relative to what it is already running, so
+  `fork()` starts returning `EAGAIN` immediately and the bomb cannot grow at
+  all. The poll is the backstop, not the defence — measured on a controlled
+  bomb, the group still reached 152 processes before the 1-second poll caught it.
+- **Kill the process GROUP, never the pid.** `execFile`'s `timeout`, and
+  `timeout(1)`, signal exactly the process they started. The grandchildren
+  survive, keep holding their ports, and if the spawn bug is real they keep
+  multiplying after the harness thinks the case is over. `node-compat-sweep.ts`
+  runs each case `detached` and kills `-pgid`; `guard.sh` does the same for the
+  whole run.
+- **`kill()` in `lib/child_process.js` must actually signal.** An implementation
+  that sets `this.killed = true` and returns is a runaway with no brakes: node's
+  tests call it expecting the child to die.
+
+Cheap habit that catches the aftermath: `uptime` before believing any number
+that moved without a code change. A load average in the double digits on an idle
+machine means something from the last run is still going.
 
 ## Real applications are a separate gate
 
@@ -289,6 +325,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 
 | tool | what it does |
 |---|---|
+| `tools/guard.sh` | process-group watchdog. Wrap anything that spawns milojs: caps RLIMIT_NPROC, SIGKILLs the whole group on process-count / RSS / free-memory / wall-clock breach. Exit 99 = it fired. |
 | `tools/dev.sh` | one-command dev loop: build engine+runtime (cached in `.dev/`, skipped when up to date), then run the suites in "Tests". `tools/dev.sh <pattern>` filters `run.sh` to matching fixtures. |
 | `tools/lint-symbols.sh` | duplicate + std-shadowing definitions. Exit 1 on a finding. |
 | `tools/gen-docs.sh` | regenerates `docs/api/` from doc-comments |

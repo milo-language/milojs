@@ -17,7 +17,7 @@
 // is a different thing from test262: that measures the ENGINE, the language
 // itself. A high score on one says nothing about the other.
 import { readdirSync, readFileSync, writeFileSync, existsSync, statSync } from "fs";
-import { execFileSync, execFile } from "child_process";
+import { execFileSync, spawn } from "child_process";
 import { join, resolve, isAbsolute } from "path";
 import { homedir } from "node:os";
 
@@ -131,27 +131,59 @@ let done = 0;
 // it off; without that the comparison measures the wrong thing.
 const CHILD_ENV = { ...process.env, NODE_TEST_DIR: NODE_TESTS, NODE_TEST_KNOWN_GLOBALS: "0" };
 
+// Each case runs DETACHED, in its own process group, and the timeout kills the
+// group rather than the pid. Node's tests spawn children (`fork(__filename)` is
+// how half of test-child-process-* works), and a plain execFile timeout signals
+// only the process it started: the grandchildren survive, keep running, and if
+// the runtime under test has a spawn bug they keep multiplying. That is how this
+// sweep took a machine down. Run it under tools/guard.sh as well; this is the
+// inner half of the same defence.
 function runOne(f: string): Promise<Row> {
   return new Promise((resolve) => {
-    execFile(RUNTIME, [join(PARALLEL, f)], {
+    const child = spawn(RUNTIME, [join(PARALLEL, f)], {
       cwd: PARALLEL,
-      encoding: "utf-8",
-      timeout: timeoutMs,
       env: CHILD_ENV,
-    }, (e: any, _stdout, stderr) => {
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderr = "";
+    let timedOut = false;
+    let settled = false;
+    // Bounded: a test that loops on output would otherwise buffer until this
+    // process is the one that runs the machine out of memory.
+    const cap = 1 << 16;
+    child.stdout.on("data", () => {});
+    child.stderr.on("data", (d) => { if (stderr.length < cap) stderr += String(d); });
+
+    const killGroup = (sig: NodeJS.Signals) => {
+      try { process.kill(-child.pid!, sig); } catch { try { child.kill(sig); } catch {} }
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGroup("SIGTERM");
+      // A runtime wedged in a native call ignores SIGTERM; SIGKILL is not
+      // optional here, it is the whole point.
+      setTimeout(() => killGroup("SIGKILL"), 2_000).unref();
+    }, timeoutMs);
+
+    const finish = (row: Row) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      killGroup("SIGKILL");   // reap anything the test left behind, pass or fail
       done++;
       if (done % 100 === 0) process.stdout.write(`  ${done}/${selected.length}`);
-      if (!e) { resolve({ file: f, ok: true, why: "" }); return; }
-      // A timeout is its own category: a hang is not the same failure as a
-      // throw, and lumping them together hides an event-loop bug behind an API
-      // gap.
-      if (e.signal === "SIGTERM" || e.killed) {
-        resolve({ file: f, ok: false, why: "timeout" });
-        return;
-      }
-      const err = String(stderr ?? e.message ?? "").trim();
-      const why = err.split("\n").filter((l) => l.trim().length > 0).slice(0, 1).join(" ").slice(0, 200) || `exit ${e.code}`;
-      resolve({ file: f, ok: false, why });
+      resolve(row);
+    };
+
+    child.on("error", (e: any) => finish({ file: f, ok: false, why: String(e.message).slice(0, 200) }));
+    child.on("close", (code, signal) => {
+      if (timedOut) { finish({ file: f, ok: false, why: "timeout" }); return; }
+      if (code === 0) { finish({ file: f, ok: true, why: "" }); return; }
+      const err = stderr.trim();
+      const why = err.split("\n").filter((l) => l.trim().length > 0).slice(0, 1).join(" ").slice(0, 200)
+        || (signal ? `signal ${signal}` : `exit ${code}`);
+      finish({ file: f, ok: false, why });
     });
   });
 }

@@ -227,6 +227,9 @@ fn builtinSource(name: &string): string {
     if name == "perf_hooks" {
         return @embedFile("../lib/perf_hooks.js")
     }
+    if name == "cluster" {
+        return @embedFile("../lib/cluster.js")
+    }
     if name == "tty" {
         return @embedFile("../lib/tty.js")
     }
