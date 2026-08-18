@@ -2628,11 +2628,17 @@ fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValue>):
             if count < 0 {
                 count = 0
             }
-            if args.len() > 2 {
+            if args.len() > 2 && !isUndefinedValue(args[2]) {
                 let want = numToIndex(toNum(args[2]))
-                if want >= 0 && want < count {
-                    count = want
+                // A window that runs past the end of the buffer is a RangeError.
+                // Clamping it instead handed back a SHORTER view than asked for,
+                // so the caller saw a successful construction of the wrong size.
+                if want < 0 || boff + want * w > st.objExtras[st.objects[h].extra].bytes.len() {
+                    st.throwing = true
+                    st.thrownValue = makeError(st, "RangeError", "Invalid typed array length" + currentModule(st))
+                    return JSValue.Undefined
                 }
+                count = want
             }
             viewOffset = boff
             len = count
@@ -2695,7 +2701,19 @@ fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValue>):
             }
             len = seed.len()
         } else {
-            len = numToIndex(toNum(args[0]))
+            // ToIndex rejects a negative or non-integral length with a
+            // RangeError; clamping it to 0 made `new Int8Array(-1)` an empty
+            // view, which reads as a successful construction.
+            let rawLen = toNumArg(prog, args[0], st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            if rawLen == rawLen && (rawLen < 0.0 || rawLen > 9007199254740991.0) {
+                st.throwing = true
+                st.thrownValue = makeError(st, "RangeError", "Invalid typed array length: " + numToStr(rawLen) + currentModule(st))
+                return JSValue.Undefined
+            }
+            len = numToIndex(rawLen)
             if len < 0 {
                 len = 0
             }
@@ -9720,6 +9738,13 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
         }
         Expr.Member(objIdx, name) => {
             let ov = evalExpr(prog, objIdx, st, scope)
+            // An object expression that THREW leaves ov undefined, and reading a
+            // property off it then raised "cannot read property 'x' of
+            // undefined" — replacing the real exception with a bogus TypeError.
+            // `boom().length` reported the TypeError, not what boom() threw.
+            if st.throwing {
+                return JSValue.Undefined
+            }
             // a preceding `?.` in this chain short-circuited: the whole chain,
             // including this member access, is undefined
             if st.optShort {
@@ -9832,6 +9857,11 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
         }
         Expr.Index(objIdx, keyIdx) => {
             let ov = evalExpr(prog, objIdx, st, scope)
+            // see the Member arm: a throw in the object expression must not be
+            // overwritten by an index read against undefined
+            if st.throwing {
+                return JSValue.Undefined
+            }
             // a preceding `?.` short-circuited this chain
             if st.optShort {
                 return JSValue.Undefined
@@ -9840,6 +9870,9 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             pushTemp(st, cloneValue(ov))
             let kv = evalExpr(prog, keyIdx, st, scope)
             popTemp(st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
             let key = toStr(kv)
             match ov {
                 JSValue.Obj(o) => {
