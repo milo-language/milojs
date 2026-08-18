@@ -163,6 +163,13 @@ pub enum Builtin {
     TruncateFile,
     Mkdtemp,
     CopyFile,
+    // UDP. node's dgram module has no equivalent in std/net (which is TCP only),
+    // so these sit directly on the socket syscalls.
+    UdpBind,
+    UdpSend,
+    UdpRecv,
+    UdpClose,
+    UdpAddress,
     // Descriptor-level file IO. Everything above is path-based; node's fs is
     // built on open/read/write/close and its tests exercise that layer directly.
     OpenFlags,

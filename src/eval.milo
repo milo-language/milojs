@@ -27,11 +27,18 @@ from "./modules" import {
     dirOf, resolveSpec, findModule, reportUnresolved, relativizeToCwd
 }
 from "std/os" import {
-    exit, readFd, read, write, open, close, lseek, fsync, ftruncate, fchmod
+    exit, readFd, read, write, open, close, lseek, fsync, ftruncate, fchmod,
+    socket, bindIn, setsockopt, getSockPort, ntohs
 }
 from "std/platform" import {
-    oWriteCreateTrunc, oWriteCreateAppend
+    oWriteCreateTrunc, oWriteCreateAppend,
+    SockAddr, makeSockaddr, makeZeroedSockaddr, sockAddrInLen, solSocket, soReuseaddr
 }
+
+// std/os stops at bind/connect/accept; the datagram pair is not there, so it is
+// declared here rather than growing the compiler's std for one consumer.
+extern fn sendto(fd: i32, buf: *u8, len: i64, flags: i32, dest: *SockAddr, addrlen: u32): i64
+extern fn recvfrom(fd: i32, buf: *u8, len: i64, flags: i32, src: *SockAddr, addrlen: *u32): i64
 from "std/event" import {
     setNonblocking
 }
@@ -5990,6 +5997,98 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Bool(fchmod(toNum(argVals[0]) as i32, toNum(argVals[1]) as u32) == 0 as i32)
     }
+    if id == Builtin.UdpBind {
+        // AF_INET and SOCK_DGRAM are both 2 on darwin and linux, and makeSockaddr
+        // already fixes the family, so no per-platform constant is needed here.
+        // Addresses cross this boundary as a network-order u32: formatting and
+        // parsing dotted quads is trivial in JavaScript and needs no string
+        // primitives here, so lib/dgram.js owns both directions.
+        var uport: i64 = 0
+        if argVals.len() > 0 {
+            uport = numToIndex(toNum(argVals[0]))
+        }
+        var uaddr: u32 = 0 as u32
+        if argVals.len() > 1 {
+            uaddr = (numToIndex(toNum(argVals[1])) & 4294967295) as u32
+        }
+        let fd = socket(2 as i32, 2 as i32, 0 as i32)
+        if fd < 0 as i32 {
+            return JSValue.Number(0.0 - 1.0)
+        }
+        var one: i32 = 1
+        setsockopt(fd, solSocket(), soReuseaddr(), one, 4 as u32)
+        var sa = makeSockaddr(uport as u16, uaddr)
+        if bindIn(fd, sa) < 0 as i32 {
+            close(fd)
+            return JSValue.Number(0.0 - 1.0)
+        }
+        // Non-blocking, so the event loop polls for datagrams instead of parking
+        // on one and starving every timer behind it.
+        setNonblocking(fd)
+        return JSValue.Number(fd as f64)
+    }
+    if id == Builtin.UdpSend {
+        if argVals.len() < 4 {
+            return JSValue.Number(0.0 - 1.0)
+        }
+        let sfd = toNum(argVals[0]) as i32
+        let payload = toStr(argVals[1])
+        let dport = numToIndex(toNum(argVals[2]))
+        let daddr = (numToIndex(toNum(argVals[3])) & 4294967295) as u32
+        var da = makeSockaddr(dport as u16, daddr)
+        var sent: i64 = -1
+        unsafe {
+            sent = sendto(sfd, payload, payload.len(), 0 as i32,
+                          (da.addrOf()) as *SockAddr, sockAddrInLen())
+        }
+        return JSValue.Number(sent as f64)
+    }
+    if id == Builtin.UdpRecv {
+        // One datagram, or null when none is waiting. The peer comes back with
+        // the payload because node's 'message' event carries rinfo, and a second
+        // syscall could not tell which datagram it belonged to.
+        if argVals.len() < 1 {
+            return JSValue.Null
+        }
+        let rfd = toNum(argVals[0]) as i32
+        var buf: [u8; 65536] = [0; 65536]
+        var src = makeZeroedSockaddr()
+        var slen: u32 = sockAddrInLen()
+        var n: i64 = -1
+        unsafe {
+            n = recvfrom(rfd, buf, 65536, 0 as i32,
+                         (src.addrOf()) as *SockAddr, slen.addrOf() as *u32)
+        }
+        if n < 0 {
+            return JSValue.Null
+        }
+        var text: string = ""
+        var j: i64 = 0
+        while j < n {
+            text.push(buf[j])
+            j = j + 1
+        }
+        let o = newObject(st)
+        pushTemp(st, JSValue.Obj(o))
+        objSet(st, o, "data", JSValue.Str(text))
+        objSet(st, o, "addr", JSValue.Number(src.sin_addr as f64))
+        objSet(st, o, "port", JSValue.Number(ntohs(src.sin_port) as f64))
+        objSet(st, o, "size", JSValue.Number(n as f64))
+        popTemp(st)
+        return JSValue.Obj(o)
+    }
+    if id == Builtin.UdpClose {
+        if argVals.len() < 1 {
+            return JSValue.Bool(false)
+        }
+        return JSValue.Bool(close(toNum(argVals[0]) as i32) == 0 as i32)
+    }
+    if id == Builtin.UdpAddress {
+        if argVals.len() < 1 {
+            return JSValue.Number(0.0 - 1.0)
+        }
+        return JSValue.Number(getSockPort(toNum(argVals[0]) as i32) as f64)
+    }
     if id == Builtin.StatInfo {
         // __statSync(path, lstat) -> { size, mode, isDir, isFile, isSymlink } or
         // null. One native for both stat and lstat: the only difference is
@@ -9863,6 +9962,11 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "__renameSync", JSValue.Native(Native.Fn(Builtin.Rename)))
     scopeDefine(st, 0, "__isDir", JSValue.Native(Native.Fn(Builtin.IsDir)))
     scopeDefine(st, 0, "__statSync", JSValue.Native(Native.Fn(Builtin.StatInfo)))
+    scopeDefine(st, 0, "__udpBind", JSValue.Native(Native.Fn(Builtin.UdpBind)))
+    scopeDefine(st, 0, "__udpSend", JSValue.Native(Native.Fn(Builtin.UdpSend)))
+    scopeDefine(st, 0, "__udpRecv", JSValue.Native(Native.Fn(Builtin.UdpRecv)))
+    scopeDefine(st, 0, "__udpClose", JSValue.Native(Native.Fn(Builtin.UdpClose)))
+    scopeDefine(st, 0, "__udpAddress", JSValue.Native(Native.Fn(Builtin.UdpAddress)))
     scopeDefine(st, 0, "__openFlags", JSValue.Native(Native.Fn(Builtin.OpenFlags)))
     scopeDefine(st, 0, "__openSync", JSValue.Native(Native.Fn(Builtin.OpenFd)))
     scopeDefine(st, 0, "__closeSync", JSValue.Native(Native.Fn(Builtin.CloseFd)))
