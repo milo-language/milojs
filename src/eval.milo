@@ -8621,8 +8621,26 @@ fn setupTypedArrayProtos(st: &mut Interp) {
 // built-in must only win when nothing down there claims the name. Dispatching
 // to the built-in unconditionally made every override unreachable through
 // `buf.toString()` while `Buffer.prototype.toString.call(buf)` still worked.
-fn typedArrayOverride(st: &mut Interp, o: i64, key: &string): bool {
-    let builtin = typedArrayProtoFor(st, st.objExtras[st.objects[o].extra].taKind)
+//
+// Deliberately &Interp, not &mut: typedArrayProtoFor needs a mutable lookup, and
+// threading one into these two dispatch sites made the prover havoc interpreter
+// state and drop six neighbouring contracts. nativePropsOf answers the same
+// question without creating anything — by the time an instance exists its
+// constructor's props bag does too, so the -1 arm is unreachable in practice and
+// falls back to the built-in, which is the pre-existing behaviour.
+fn typedArrayBuiltinProto(st: &Interp, kind: i64): i64 {
+    let bag = nativePropsOf(st, Native.TypedArrayCtor(kind))
+    if bag < 0 {
+        return -1
+    }
+    return objHandle(objGet(st, bag, "prototype"))
+}
+
+fn typedArrayOverride(st: &Interp, o: i64, key: &string): bool {
+    let builtin = typedArrayBuiltinProto(st, st.objExtras[st.objects[o].extra].taKind)
+    if builtin < 0 {
+        return false
+    }
     var cur = st.objects[o].proto
     while cur >= 0 && cur != builtin {
         if objHas(st, cur, key) {
