@@ -43,6 +43,24 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## A class escape as a range bound rejected valid patterns
+
+`[a-\d]` threw. A class escape is a SET, not a code point, so it cannot be a range
+bound: Annex B makes the `-` literal there and keeps the class valid, while the u
+flag makes it an early error. milojs read the BACKSLASH itself as the upper bound,
+which is code point 92 and below most literals, so the class was rejected as a
+reversed range. This is the harmful direction, a valid pattern failing to compile.
+
+`tests/regexpClassEscapeRange.js` pins it, both flag modes, plus the reversed
+ranges that must still be rejected.
+
+Still too LENIENT, and left alone for now because accepting an invalid pattern is
+the milder failure: `[\d-z]` and `[\w-\s]` should be early errors under the u
+flag (the LOW side is the escape, handled in a different branch), `[a-]` should be
+one under the v flag, and a duplicate named group in the same alternative
+(`(?<a>x)(?<a>y)`) should be a SyntaxError while one across alternatives
+(`(?<a>x)|(?<a>y)`) stays legal.
+
 ## Date had no TimeClip, and could not read or write an extended year
 
 Three bugs at the ends of the representable range, found from one QuickJS

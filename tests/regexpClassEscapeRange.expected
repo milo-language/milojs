@@ -1,0 +1,14 @@
+[a-\d]/ ok
+[a-\d]/u SyntaxError
+[\d-z]/ ok
+[b-a]/ SyntaxError
+[z-a]/ SyntaxError
+[\w-\s]/ ok
+[a-]/ ok
+[a-]/u ok
+[]/ ok
+[^]/ ok
+[a-c]/ ok
+[a-c]/u ok
+members: true true true false
+ranges-still-work: true false
