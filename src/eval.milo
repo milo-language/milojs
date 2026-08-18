@@ -5486,7 +5486,17 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         var data = ""
         if argVals.len() > 1 {
-            data = toStr(argVals[1])
+            // A Uint8Array carries its bytes through unchanged. toStr() would
+            // route them through a UTF-8 decode, and invalid sequences become
+            // U+FFFD — a 6-byte binary write reached the peer as 14 bytes of
+            // replacement characters, which is unrecoverable rather than merely
+            // re-encoded. Strings still take the string path.
+            let asBytes = bytesFromTypedArray(st, argVals[1])
+            if asBytes.len() > 0 {
+                data = asBytes
+            } else {
+                data = toStr(argVals[1])
+            }
         }
         match st.conns[idx].send(data) {
             Result.Ok(_n) => {
@@ -6151,7 +6161,11 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Number(0.0 - 1.0)
         }
         let sfd = toNum(argVals[0]) as i32
-        let payload = toStr(argVals[1])
+        // Bytes, not a string: a JS string is UTF-8 here, so every byte >= 0x80
+        // went out as its two-byte encoding. A milojs-to-milojs test still
+        // passed because both ends applied the same wrong transform; node
+        // received 10 bytes for a 6-byte datagram.
+        let payload = bytesFromTypedArray(st, argVals[1])
         let dport = numToIndex(toNum(argVals[2]))
         let daddr = (numToIndex(toNum(argVals[3])) & 4294967295) as u32
         var da = makeSockaddr(dport as u16, daddr)
@@ -6189,7 +6203,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         let o = newObject(st)
         pushTemp(st, JSValue.Obj(o))
-        objSet(st, o, "data", JSValue.Str(text))
+        objSet(st, o, "data", typedArrayFromBytes(st, text))
         objSet(st, o, "addr", JSValue.Number(src.sin_addr as f64))
         objSet(st, o, "port", JSValue.Number(ntohs(src.sin_port) as f64))
         objSet(st, o, "size", JSValue.Number(n as f64))
