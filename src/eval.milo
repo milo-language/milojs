@@ -4812,10 +4812,26 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if argVals.len() == 0 {
             return JSValue.Number(0.0)
         }
+        // ToNumber of a SYMBOL is a TypeError, not NaN. Symbols are interned
+        // strings here, so toNum happily parsed one as a failed number and every
+        // "reject a symbol argument" case read as a quiet NaN instead.
+        if isSymbolValue(argVals[0]) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a number" + currentModule(st))
+            return JSValue.Undefined
+        }
         // an object coerces via ToPrimitive(number) — honouring a user
         // [Symbol.toPrimitive]/valueOf — before ToNumber; toNum alone gives NaN
         if objHandle(argVals[0]) >= 0 {
             let p = toPrimitiveNumber(gProg, argVals[0], st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            if isSymbolValue(p) {
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a number" + currentModule(st))
+                return JSValue.Undefined
+            }
             return JSValue.Number(toNum(p))
         }
         return JSValue.Number(toNum(argVals[0]))

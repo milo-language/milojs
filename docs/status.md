@@ -30,7 +30,7 @@ The project deliberately has two deliverables:
 Engine maturity comes first. Runtime compatibility cannot be credible while the
 language engine and embedding contract are unstable.
 
-About <!--fact:loc-total-->51.2k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
+About <!--fact:loc-total-->51.4k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
 program, with no V8, JavaScriptCore, or C JavaScript engine underneath.
 
 ## Evidence
@@ -226,7 +226,6 @@ before it was made executable — prose about what is missing rots faster than a
 other prose in a repo, because closing a gap never touches the file claiming it
 is open.
 
-- **`Atomics` is absent.** <!--gap:atomics-->
 - **`Float16Array` is absent.** <!--gap:float16-->
 - **`BigInt64Array` / `BigUint64Array` have no `from`/`of`.** <!--gap:bigint64-from-->
   The types themselves exist and store and wrap 64-bit values correctly; it is
