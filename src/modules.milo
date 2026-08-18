@@ -749,7 +749,7 @@ pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
             // a builtin can require another builtin (http needs events), so its
             // own requires have to be queued like any other module's
             let bspecs = scanRequires(toks)
-            var bp = PState {
+            var bp = PState { depth: 0,
                 toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: bStrict
             }
             let btop = parseProgram(bp, prog)
@@ -795,7 +795,7 @@ pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
                     // computed before `toks` is moved into the PState below
                     let fStrict = moduleIsStrict(toks, path)
                     let specs = scanRequires(toks)
-                    var p = PState {
+                    var p = PState { depth: 0,
                         toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: fStrict
                     }
                     let top = parseProgram(p, prog)

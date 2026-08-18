@@ -43,6 +43,52 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## Deep expression nesting: crash fixed, and two things it uncovered
+
+**Fixed.** The recursive-descent parser had no depth bound. Nested `[[[...]]]`
+bus-errored (exit 138) at about 5330 levels; node raises a catchable error
+instead. `parseExpr` is now a depth-guarded wrapper around `parseExprInner`, with
+`PARSE_DEPTH_LIMIT` at 4000. Measured limits on the same machine, for why 4000:
+
+| | milojs | node |
+|---|---|---|
+| parse only | 5330 | 3621 |
+| parse and evaluate | 5330 | 2791 |
+
+so the guard sits above everything node accepts and below where this parser
+faults. `tests/deepNesting.js` covers it and matches node byte for byte; the
+pre-fix engine printed NOTHING for that fixture and exited 0.
+
+One trap in the guard itself: the first version returned a placeholder without
+consuming input, which left the unconsumed brackets in front of every enclosing
+loop and turned the crash into an infinite HANG. It now jumps `p.pos` to EOF,
+which is the single move that unwinds every parse loop at once.
+
+**Uncovered 1: a syntax error exits 0 and runs anyway.** Neither `runSource`
+(driver.milo) nor the engine entry checks `p.errored` after `parseProgram`, so a
+broken script prints its parse error to stderr and then executes the half-parsed
+program with exit status 0. node exits 1 and runs nothing. NOT FIXED HERE, on
+purpose: see below.
+
+**Uncovered 2: the QuickJS score counts 45 cases that never parsed.** Adding the
+`p.errored` check above drops the sweep from 109/149 (73.2%) to 64/149 (43.0%).
+Those 45 cases are not new failures; they are cases where the parser rejected the
+source and the engine ran the wreckage anyway and still printed the right answer.
+All 45 come from two real gaps, in two files:
+
+- `test_language.js` (28 cases): a class field NAMED with a contextual keyword,
+  `get = () => 123`. The parser commits to a getter method on seeing `get` and
+  then finds `=>`. Same for `set` and `async`.
+- `test_loop.js` (17 cases): `for (a.x in obj)`, a for-in whose target is a
+  member expression. `Stmt.ForIn(string, ExprId, StmtId)` stores a NAME, so the
+  AST cannot represent this at all; fixing it means widening the target to an
+  lvalue expression, as `Stmt.For` already has.
+
+Order matters here: fix those two gaps FIRST, then land the `p.errored` check, so
+the honest number goes up rather than down. Landing the check alone would publish
+a 30-point drop that is a measurement correction, not a regression, and would
+report the engine as worse when nothing about it changed.
+
 ## Dispatcher frame size, and the two things that measured
 
 `evalExprFallback` reserved about 11.9 KB of stack per call

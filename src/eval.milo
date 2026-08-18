@@ -20447,7 +20447,7 @@ pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
     // other's text, or the first one's functions stringify from the second's
     let evalName = "<eval:" + numToStr(gProg.srcNames.len() as f64) + ">"
     registerSource(gProg, evalName.clone(), src.clone())
-    var ep = PState {
+    var ep = PState { depth: 0,
         toks: lex(src.clone()), pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: evalName, errored: false, eofError: false, quiet: true, strict: false
     }
     let top = parseProgram(ep, gProg)

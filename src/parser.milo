@@ -43,7 +43,19 @@ pub struct PState {
     // receiver. Strictness is inherited — a function nested in strict code is
     // strict whether or not it repeats the directive.
     strict: bool,
+    // Expression-nesting depth, so `[[[[...]]]]` fails with a parse error rather
+    // than a SIGBUS. The descent is not bounded by anything else; measured, this
+    // engine bus-errored at about 5330 levels on an 8 MB stack.
+    depth: i64,
 }
+
+// Deepest expression nesting the parser accepts. Set ABOVE node's own limits
+// (measured 3621 parsing, 2791 parsing-and-evaluating on the same machine) so
+// nothing node accepts is rejected here, and well below where this parser's
+// native recursion faults (~5330). The gap is what absorbs a smaller stack
+// elsewhere.
+let PARSE_DEPTH_LIMIT: i64 = 4000
+
 
 fn peekKind(p: &PState): i32 {
     if p.pos < p.toks.len() {
@@ -1502,7 +1514,34 @@ fn compoundOp(k: i32): string {
     return "%"
 }
 
+// Depth-guarded wrapper. Every recursive path through an expression comes back
+// here (an array element, a call argument, a parenthesised subexpression), so one
+// counter on this function bounds the whole descent, and one increment/decrement
+// pair keeps it off the many return paths inside the body.
 fn parseExpr(p: &mut PState, prog: &mut Prog): ExprId {
+    p.depth = p.depth + 1
+    if p.depth > PARSE_DEPTH_LIMIT {
+        p.depth = p.depth - 1
+        if !p.errored {
+            p.errored = true
+            if !p.quiet {
+                eprint($"milojs: {p.file}: expression nests deeper than {PARSE_DEPTH_LIMIT} levels")
+            }
+        }
+        // Jump to EOF. Returning a placeholder without consuming input leaves the
+        // unconsumed `[`s in front of every enclosing loop, and the parser spins
+        // forever instead of finishing — which is how the first version of this
+        // guard turned a crash into a hang. Every loop in the parser terminates
+        // at EOF, so this is the one move that unwinds all of them at once.
+        p.pos = p.toks.len()
+        return addExpr(prog, Expr.UndefLit)
+    }
+    let r = parseExprInner(p, prog)
+    p.depth = p.depth - 1
+    return r
+}
+
+fn parseExprInner(p: &mut PState, prog: &mut Prog): ExprId {
     // `yield` binds looser than everything but the comma operator, so it belongs
     // here rather than with the unary operators: `yield a + b` yields the sum.
     // Parsed but not executable — calling a generator throws first (eval.milo),
