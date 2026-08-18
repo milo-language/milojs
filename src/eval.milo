@@ -1078,7 +1078,10 @@ fn descRejectReason(st: &mut Interp, o: i64, key: &string, d: i64): string {
         if hasValue && !st.objects[o].props[existing].writable {
             let nv = getMember(st, d, "value")
             let cur = cloneValue(st.objects[o].props[existing].value)
-            if !jsStrictEquals(nv, cur) {
+            // SameValue, not strict equality: redefining a non-writable +0 as -0
+            // is a rejected redefinition even though the two compare equal, and
+            // redefining NaN as NaN is allowed even though they do not.
+            if !sameValue(nv, cur) {
                 return cannotRedefine
             }
         }
@@ -2922,7 +2925,7 @@ fn builtinAccessorValue(st: &mut Interp, o: i64, name: &string): JSValue {
 
 // True for the names builtinAccessorValue answers.
 fn isBuiltinAccessorName(n: &string): bool {
-    return n == "__mapSize" || n == "__setSize" || n == "__taLength" || n == "__taByteLength" || n == "__taByteOffset" || n == "__taBuffer" || n == "__dvByteLength" || n == "__dvByteOffset" || n == "__dvBuffer"
+    return n == "__speciesSelf" || n == "__mapSize" || n == "__setSize" || n == "__taLength" || n == "__taByteLength" || n == "__taByteOffset" || n == "__taBuffer" || n == "__dvByteLength" || n == "__dvByteOffset" || n == "__dvBuffer"
 }
 
 // Invoke a builtin method by name against an already-evaluated receiver+args.
@@ -2930,6 +2933,12 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
     // the accessor properties on the builtin prototypes; brandOk has already
     // rejected an incompatible receiver by the time this runs
     if isBuiltinAccessorName(name) {
+        // get [Symbol.species] answers the RECEIVER unchanged, which may be a
+        // native constructor value rather than an object handle, so it is
+        // resolved before the handle conversion below.
+        if name == "__speciesSelf" {
+            return cloneValue(recv)
+        }
         let ah = objHandle(recv)
         if ah >= 0 {
             return builtinAccessorValue(st, ah, name)
@@ -6823,14 +6832,44 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                         } else {
                             v = cloneValue(st.objects[src].props[k].value)
                         }
-                        setMember(st, t, key, v)
+                        assignInto(st, t, key, v)
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                     }
+                }
+                // CopyDataProperties covers own enumerable SYMBOL keys as well,
+                // and enumOrder deliberately omits them (it drives Object.keys
+                // and for-in, which must not see one). Walk the props again for
+                // that half.
+                var sy: i64 = 0
+                while sy < st.objects[src].props.len() {
+                    if isSymbolKey(st.objects[src].props[sy].key) && st.objects[src].props[sy].enumerable {
+                        let skey = st.objects[src].props[sy].key.clone()
+                        var sv2 = JSValue.Undefined
+                        if propIsAccessor(st, src, sy) {
+                            sv2 = getMemberDyn(gProg, src, skey, st)
+                        } else {
+                            sv2 = cloneValue(st.objects[src].props[sy].value)
+                        }
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
+                        assignInto(st, t, skey, sv2)
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
+                    }
+                    sy = sy + 1
                 }
                 // enumerable elements come across too (assign from an array)
                 var e: i64 = 0
                 while e < st.objects[src].elems.len() {
                     let ev = cloneValue(st.objects[src].elems[e])
-                    setMember(st, t, i64ToStr(e), ev)
+                    assignInto(st, t, i64ToStr(e), ev)
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
                     e = e + 1
                 }
             }
@@ -6839,6 +6878,18 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         return target
     }
     return JSValue.Undefined
+}
+
+// One Object.assign write. The spec's step is Set(to, key, value, THROW), and
+// setMemberDyn only throws in strict code — so a copy onto a frozen or
+// non-writable target was silently dropped and Object.assign reported success.
+// Borrowing the strict flag for the duration is what makes that write throw;
+// assign's obligation does not depend on the caller's mode.
+fn assignInto(st: &mut Interp, t: i64, key: string, v: JSValue) {
+    let wasStrict = st.strict
+    st.strict = true
+    setMemberDyn(gProg, t, key, v, st)
+    st.strict = wasStrict
 }
 
 // The property bag a value carries, or -1. A function's own properties live in
@@ -8634,6 +8685,25 @@ fn setupRemainingProtos(st: &mut Interp) {
     promNames.push("catch")
     promNames.push("finally")
     st.promiseProtoObj = buildNativeProto(st, NATIVE_PROMISE, promNames)
+    // Symbol.species is an accessor returning `this` on every constructor that
+    // derives new objects from an existing one. ArraySpeciesCreate and friends
+    // read it, and test262 checks the descriptor directly; it was absent
+    // everywhere, so the read answered undefined.
+    var speciesBags: Vec<i64> = Vec.new()
+    speciesBags.push(getNativeProps(st, NATIVE_ARRAYBUFFER))
+    speciesBags.push(getNativeProps(st, NATIVE_MAP))
+    speciesBags.push(getNativeProps(st, NATIVE_SET))
+    speciesBags.push(getNativeProps(st, NATIVE_REGEXP))
+    if st.promiseCtorObj >= 0 {
+        speciesBags.push(st.promiseCtorObj)
+    }
+    var sb: i64 = 0
+    while sb < speciesBags.len() {
+        let sg = makeBoundMethod(st, JSValue.Undefined, "__speciesSelf")
+        objDefineAccessor(st, speciesBags[sb], symSpeciesKey(), sg, JSValue.Undefined)
+        objSetNonEnumerable(st, speciesBags[sb], symSpeciesKey())
+        sb = sb + 1
+    }
     // Promise's global binding is a plain OBJECT, not a JSValue.Native, so the
     // prototype hung off the NATIVE_PROMISE bag is unreachable from it — hang it
     // on the constructor object too. This runs after setupGlobals built that
@@ -9125,6 +9195,11 @@ pub fn setupGlobals(st: &mut Interp) {
     objDefineBuiltinAttr(st, arrayCtor, "name", JSValue.Str("Array"))
     st.arrayCtorObj = arrayCtor
     st.arrayProtoObj = arrayProto
+    // Array's species accessor goes on here rather than with the others: the
+    // constructor object does not exist yet when that block runs.
+    let arrSpecies = makeBoundMethod(st, JSValue.Undefined, "__speciesSelf")
+    objDefineAccessor(st, arrayCtor, symSpeciesKey(), arrSpecies, JSValue.Undefined)
+    objSetNonEnumerable(st, arrayCtor, symSpeciesKey())
     // Set only now that setup has finished writing the methods in, so the setup
     // writes themselves do not count as a user touch.
     st.arrayProtoPristine = true

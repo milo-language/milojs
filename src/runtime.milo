@@ -1753,7 +1753,7 @@ pub fn asArrayIndex(key: &string): i64 {
 // A property key is a symbol iff it carries the "@@sym:" sentinel prefix that
 // symbol values stringify to (see makeSymbol in eval.milo). Kept here so
 // runtime.milo stays free of an eval.milo import cycle.
-fn isSymbolKey(s: &string): bool {
+pub fn isSymbolKey(s: &string): bool {
     return s.len() >= 6 && s[0] == '@' && s[1] == '@' && s[2] == 's' && s[3] == 'y' && s[4] == 'm' && s[5] == ':'
 }
 

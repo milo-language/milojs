@@ -256,6 +256,24 @@ pub fn isPromiseCtor(st: &Interp, o: i64): bool
 
 _Undocumented._
 
+### `isSymbolKey`
+
+```milo
+pub fn isSymbolKey(s: &string): bool
+```
+
+JS own-property enumeration order: integer-index keys ascending first, then
+the remaining string keys in insertion order. Returns prop indices into
+st.objects[o].props in that order. Symbol-keyed props (stored with the
+"@@sym:" prefix, including internal ones like Symbol.iterator) are omitted —
+string-key enumeration never yields symbols in JS. Enumeration sites
+(Object.keys/values/entries, for-in, spread, Object.assign) iterate these
+instead of 0..len so `{ 2:a, 1:b, 10:c, x:d }` enumerates 1,2,10,x and a
+symbol key never leaks into keys()/for-in/JSON — matching V8/node.
+A property key is a symbol iff it carries the "@@sym:" sentinel prefix that
+symbol values stringify to (see makeSymbol in eval.milo). Kept here so
+runtime.milo stays free of an eval.milo import cycle.
+
 ### `isWrapperObj`
 
 ```milo
