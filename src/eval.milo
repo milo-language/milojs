@@ -12823,6 +12823,13 @@ fn adoptBuiltinSlots(st: &mut Interp, dst: i64, src: i64) {
     st.objects[dst].isDataView = st.objects[src].isDataView
     st.objects[dst].isError = st.objects[src].isError
     st.objects[dst].promiseState = st.objects[src].promiseState
+    // An Array subclass instance IS an array exotic object: Array.isArray must
+    // answer true and `new A(3)` must give it length 3. The elements move with
+    // the flag, since the base constructor is where they were built.
+    if st.objects[src].isArray {
+        st.objects[dst].isArray = true
+        st.objects[dst].elems = replace(st.objects[src].elems, Vec.new())
+    }
     let de = ensureExtra(st, dst)
     let se = st.objects[src].extra
     st.objExtras[de].mapKeys = cloneValueVec(st.objExtras[se].mapKeys)
