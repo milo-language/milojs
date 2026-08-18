@@ -87,7 +87,11 @@ eq(T.PlainYearMonth.from("2024-02").daysInMonth, 29, "leap February length");
 eq(T.PlainYearMonth.from("2023-02").daysInMonth, 28, "non-leap February length");
 eq(new T.PlainYearMonth(2026, 12).add({ months: 1 }).toString(), "2027-01", "year-month rolls over");
 eq(new T.PlainYearMonth(2026, 1).subtract({ months: 1 }).toString(), "2025-12", "year-month rolls back");
-eq(new T.PlainYearMonth(2026, 1).until("2027-03").months, 14, "year-month until");
+// largestUnit defaults to "year" for a year-month difference, so 14 months is
+// reported as 1 year and 2 months rather than as a flat month count.
+eq(new T.PlainYearMonth(2026, 1).until("2027-03").years, 1, "year-month until years");
+eq(new T.PlainYearMonth(2026, 1).until("2027-03").months, 2, "year-month until months");
+eq(new T.PlainYearMonth(2026, 1).until("2027-03", { largestUnit: "month" }).months, 14, "year-month until in months");
 eq(T.PlainYearMonth.compare("2026-02", "2026-01"), 1, "year-month compare");
 eq(new T.PlainYearMonth(2026, 8).toPlainDate({ day: 16 }).toString(), "2026-08-16", "year-month toPlainDate");
 
