@@ -7147,15 +7147,24 @@ fn strIndexOfMj(hay: &string, needle: &string): i64 {
     return -1
 }
 
+// Which half of the validity flag failed, for the message. A pattern can be
+// rejected for a bad property name or for malformed syntax, and the two read
+// very differently to whoever hits one.
+fn regexInvalidReason(re: &Regex): string {
+    if re.badPropName {
+        return "Invalid property name"
+    }
+    return "Invalid regular expression"
+}
+
 fn makeRegex(st: &mut Interp, pattern: string, flags: string): JSValue {
     let re = regexCompile(pattern.clone(), flags.clone())
-    // An unknown `\p{...}` property is an EARLY error: the spec rejects the
-    // pattern at compile time rather than letting it match nothing. This is the
-    // only thing that reads Regex.valid, and until property escapes existed
-    // nothing could set it false.
+    // An unknown `\p{...}` property, an unclosed group, an unterminated class or
+    // a reversed {n,m} are all EARLY errors: the spec rejects the pattern at
+    // compile time rather than letting it match nothing or match something else.
     if !re.valid {
         st.throwing = true
-        st.thrownValue = makeError(st, "SyntaxError", "Invalid regular expression: /" + pattern.clone() + "/: Invalid property name" + currentModule(st))
+        st.thrownValue = makeError(st, "SyntaxError", "Invalid regular expression: /" + pattern.clone() + "/: " + regexInvalidReason(re) + currentModule(st))
         return JSValue.Undefined
     }
     let isGlobal = re.flagG

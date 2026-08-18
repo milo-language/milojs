@@ -79,6 +79,9 @@ pub struct Regex {
     source: string,
     flags: string,
     valid: bool,
+    // Which check rejected the pattern, so the message can say. A bad property
+    // name and malformed syntax read very differently to whoever hits one.
+    badPropName: bool,
     // named capture groups: parallel arrays mapping (?<name>...) to its 1-based
     // group number, so exec/match can build the result's `.groups` object
     groupNames: Vec<string>,
@@ -131,6 +134,11 @@ struct ReParse {
     // an unknown property name is an early SyntaxError, not a pattern that
     // matches nothing — recorded here and reported by regexCompile
     badProp: bool,
+    // The same channel for a MALFORMED pattern. Every site that used to tolerate
+    // a missing delimiter (an unclosed group, an unterminated class, a reversed
+    // {n,m}) sets this instead of quietly parsing something else, because
+    // `new RegExp("(")` is a SyntaxError rather than a regex that matches "(".
+    badSyntax: bool,
 }
 
 // Same as reCharLen, over the pattern's byte vector.
@@ -589,6 +597,18 @@ fn reParseClass(p: &mut ReParse): i64 {
     }
     if p.pos < p.pat.len() && p.pat[p.pos] == ']' {
         p.pos = p.pos + 1
+    } else {
+        // ran off the end without a ']'
+        p.badSyntax = true
+    }
+    // A reversed range is an early error: [b-a] is "range out of order in
+    // character class", not an empty class.
+    var ri: i64 = 0
+    while ri < cls.lo.len() {
+        if cls.lo[ri] > cls.hi[ri] {
+            p.badSyntax = true
+        }
+        ri = ri + 1
     }
     p.classes.push(cls)
     let ci = p.classes.len() - 1
@@ -611,6 +631,8 @@ fn reParseAtom(p: &mut ReParse): i64 {
             let body = reParseAlt(p)
             if p.pos < p.pat.len() && p.pat[p.pos] == ')' {
                 p.pos = p.pos + 1
+            } else {
+                p.badSyntax = true
             }
             return reAddNode(p, ReNode.LookBehind(body, negated))
         } else if p.pos + 1 < p.pat.len() && p.pat[p.pos] == '?' && p.pat[p.pos + 1] == '<' {
@@ -625,6 +647,8 @@ fn reParseAtom(p: &mut ReParse): i64 {
             }
             if p.pos < p.pat.len() && p.pat[p.pos] == '>' {
                 p.pos = p.pos + 1
+            } else {
+                p.badSyntax = true
             }
             p.ngroup = p.ngroup + 1
             let gnum = p.ngroup
@@ -633,6 +657,8 @@ fn reParseAtom(p: &mut ReParse): i64 {
             let inner = reParseAlt(p)
             if p.pos < p.pat.len() && p.pat[p.pos] == ')' {
                 p.pos = p.pos + 1
+            } else {
+                p.badSyntax = true
             }
             return reAddNode(p, ReNode.Group(inner, gnum))
         } else if p.pos + 1 < p.pat.len() && p.pat[p.pos] == '?' && (p.pat[p.pos + 1] == '=' || p.pat[p.pos + 1] == '!') {
@@ -641,6 +667,8 @@ fn reParseAtom(p: &mut ReParse): i64 {
             let body = reParseAlt(p)
             if p.pos < p.pat.len() && p.pat[p.pos] == ')' {
                 p.pos = p.pos + 1
+            } else {
+                p.badSyntax = true
             }
             return reAddNode(p, ReNode.Look(body, negated))
         }
@@ -650,6 +678,8 @@ fn reParseAtom(p: &mut ReParse): i64 {
         let inner = reParseAlt(p)
         if p.pos < p.pat.len() && p.pat[p.pos] == ')' {
             p.pos = p.pos + 1
+        } else {
+            p.badSyntax = true
         }
         return reAddNode(p, ReNode.Group(inner, capIdx))
     }
@@ -780,6 +810,12 @@ fn reParseRepeat(p: &mut ReParse, atom: i64): i64 {
             greedy = false
             p.pos = p.pos + 1
         }
+        // A quantifier cannot itself be quantified: `a**` is "nothing to repeat".
+        // The lazy `?` was already consumed above, so anything quantifier-shaped
+        // still sitting here is a second one.
+        if p.pos < p.pat.len() && (p.pat[p.pos] == '*' || p.pat[p.pos] == '+' || p.pat[p.pos] == '?') {
+            p.badSyntax = true
+        }
         if c == '*' {
             return reAddNode(p, ReNode.Star(atom, greedy))
         }
@@ -813,6 +849,11 @@ fn reParseRepeat(p: &mut ReParse, atom: i64): i64 {
             }
         }
         if p.pos < p.pat.len() && p.pat[p.pos] == '}' && haveMin {
+            // {3,1} is "numbers out of order in {} quantifier", an early error
+            // rather than a range that can never match. maxV -1 means {n,}.
+            if maxV >= 0 && maxV < minV {
+                p.badSyntax = true
+            }
             p.pos = p.pos + 1
             var greedy = true
             if p.pos < p.pat.len() && p.pat[p.pos] == '?' {
@@ -839,6 +880,16 @@ fn reParseConcat(p: &mut ReParse): i64 {
             if c == '|' || c == ')' {
                 going = false
             } else {
+                // A quantifier needs something to repeat. At the start of a term
+                // there is nothing, so `*`, `+` and `?` are early errors rather
+                // than literal characters.
+                if items.len() == 0 && (c == '*' || c == '+' || c == '?') {
+                    p.badSyntax = true
+                }
+                // a backslash at the very end escapes nothing
+                if c == 92 as u8 && p.pos + 1 >= p.pat.len() {
+                    p.badSyntax = true
+                }
                 let atom = reParseAtom(p)
                 let quant = reParseRepeat(p, atom)
                 items.push(quant)
@@ -1185,16 +1236,22 @@ pub fn regexCompile(source: string, flags: string): Regex {
         fj = fj + 1
     }
     var p = ReParse {
-        pat: patBytes, pos: 0, nodes: Vec.new(), lists: Vec.new(), classes: Vec.new(), ngroup: 0, groupNames: Vec.new(), groupNums: Vec.new(), unicode: fu, badProp: false
+        pat: patBytes, pos: 0, nodes: Vec.new(), lists: Vec.new(), classes: Vec.new(), ngroup: 0, groupNames: Vec.new(), groupNums: Vec.new(), unicode: fu, badProp: false, badSyntax: false
     }
     let root = reParseAlt(p)
+    // Anything left over is unconsumed input, which at the top level can only be
+    // a stray ')': reParseConcat stops at one, so an unbalanced close never gets
+    // eaten and shows up here.
+    if p.pos < p.pat.len() {
+        p.badSyntax = true
+    }
     var prog: Vec<ReInst> = Vec.new()
     reEmit(prog, RE_SAVE, 0, 0)
     reCompileNode(p, root, prog)
     reEmit(prog, RE_SAVE, 1, 0)
     reEmit(prog, RE_MATCH, 0, 0)
     return Regex {
-        prog: prog, classes: p.classes, nGroups: p.ngroup, flagI: fi, flagG: fg, flagM: fm, flagS: fs_, source: source, flags: flags, valid: !p.badProp, groupNames: p.groupNames, groupNums: p.groupNums
+        prog: prog, classes: p.classes, nGroups: p.ngroup, flagI: fi, flagG: fg, flagM: fm, flagS: fs_, source: source, flags: flags, valid: !p.badProp && !p.badSyntax, badPropName: p.badProp, groupNames: p.groupNames, groupNums: p.groupNums
     }
 }
 
