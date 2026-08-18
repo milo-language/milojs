@@ -21292,6 +21292,12 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 Option.None => {
                 }
             }
+            // The per-iteration copy below exists only so a closure made in the
+            // body captures that iteration's value. When nothing in the body can
+            // hold on to a binding, the scope, its per-name string clone and the
+            // copy-back are all unobservable, and skipping them is worth 6-20%
+            // on loop-heavy code. Computed ONCE per loop, not per iteration.
+            let perIterScope = letNames.len() > 0 && stmtMayCapture(prog, body)
             var looping = true
             while looping {
                 if st.throwing {
@@ -21313,7 +21319,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                         // so a closure made in the body captures that iteration's
                         // value rather than the final one
                         var bodyScope = loopScope
-                        if letNames.len() > 0 {
+                        if perIterScope {
                             bodyScope = newScope(st, loopScope)
                             pushActive(st, bodyScope)
                             var li: i64 = 0
@@ -21323,7 +21329,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                             }
                         }
                         let flow = execStmt(prog, body, st, bodyScope)
-                        if letNames.len() > 0 {
+                        if perIterScope {
                             // copy back so the update clause sees the body's writes
                             var lo: i64 = 0
                             while lo < letNames.len() {
@@ -21528,6 +21534,231 @@ fn recordAnnexB(st: &mut Interp, scope: i64, name: &string) {
     if !nameInList(st.scopes[scope].annexBFns, name) {
         st.scopes[scope].annexBFns.push(name.clone())
     }
+}
+
+// Whether running a `for (let ...)` body in the loop's own scope, instead of a
+// fresh per-iteration copy, would be observable. The copy exists so a closure
+// made in the body captures that iteration's value; nothing else can tell the
+// difference, so the only disqualifiers are constructs that can hold on to a
+// binding: a function or class (either form), a DIRECT `eval` (which runs in
+// this scope and can both capture and mutate), and `with` (which splices an
+// object into the chain).
+//
+// Conservative by construction: every arm here returns FALSE only after proving
+// its children safe, and the catch-all answers TRUE. An AST node these do not
+// handle therefore costs the optimisation, never correctness.
+// `tests/forLetCaptureShapes.js` walks this decision boundary shape by shape.
+fn exprMayCapture(prog: &Prog, id: ExprId): bool {
+    match prog.exprs[id.index] {
+        Expr.Num(_v) => { return false }
+        Expr.StrLit(_v) => { return false }
+        Expr.BigIntLit(_v) => { return false }
+        Expr.BoolLit(_v) => { return false }
+        Expr.NullLit => { return false }
+        Expr.UndefLit => { return false }
+        Expr.Ident(_n) => { return false }
+        Expr.RegexLit(_p, _f) => { return false }
+        Expr.Bin(_op, a, b) => { return exprMayCapture(prog, a) || exprMayCapture(prog, b) }
+        Expr.Un(_op, a) => { return exprMayCapture(prog, a) }
+        Expr.Assign(_n, v) => { return exprMayCapture(prog, v) }
+        Expr.Member(o, _n) => { return exprMayCapture(prog, o) }
+        Expr.OptMember(o, _n) => { return exprMayCapture(prog, o) }
+        Expr.Index(o, k) => { return exprMayCapture(prog, o) || exprMayCapture(prog, k) }
+        Expr.OptIndex(o, k) => { return exprMayCapture(prog, o) || exprMayCapture(prog, k) }
+        Expr.OptChainRoot(e) => { return exprMayCapture(prog, e) }
+        Expr.ToStrHole(e) => { return exprMayCapture(prog, e) }
+        Expr.Spread(e) => { return exprMayCapture(prog, e) }
+        Expr.Update(t, _inc, _pre) => { return exprMayCapture(prog, t) }
+        Expr.SetMember(o, k, v) => {
+            return exprMayCapture(prog, o) || exprMayCapture(prog, k) || exprMayCapture(prog, v)
+        }
+        Expr.CompoundAssign(t, _op, v) => { return exprMayCapture(prog, t) || exprMayCapture(prog, v) }
+        Expr.LogicalAssign(t, _op, v) => { return exprMayCapture(prog, t) || exprMayCapture(prog, v) }
+        Expr.DestructAssign(pat, rhs) => { return exprMayCapture(prog, pat) || exprMayCapture(prog, rhs) }
+        Expr.Cond(c, a, b) => {
+            return exprMayCapture(prog, c) || exprMayCapture(prog, a) || exprMayCapture(prog, b)
+        }
+        Expr.Comma(a, b) => { return exprMayCapture(prog, a) || exprMayCapture(prog, b) }
+        Expr.ArrLit(li) => {
+            var i: i64 = 0
+            while i < prog.arrLits[li.index].len() {
+                match prog.arrLits[li.index][i] {
+                    Option.Some(e) => {
+                        if exprMayCapture(prog, e) {
+                            return true
+                        }
+                    }
+                    Option.None => {
+                    }
+                }
+                i = i + 1
+            }
+            return false
+        }
+        Expr.ObjLit(li) => {
+            var i: i64 = 0
+            while i < prog.objLits[li.index].len() {
+                // kind 1/2 are get/set accessors, which ARE functions
+                if prog.objLits[li.index][i].kind != 0 {
+                    return true
+                }
+                if exprMayCapture(prog, prog.objLits[li.index][i].val) {
+                    return true
+                }
+                match prog.objLits[li.index][i].keyExpr {
+                    Option.Some(ke) => {
+                        if exprMayCapture(prog, ke) {
+                            return true
+                        }
+                    }
+                    Option.None => {
+                    }
+                }
+                i = i + 1
+            }
+            return false
+        }
+        Expr.New(c, args) => {
+            if exprMayCapture(prog, c) {
+                return true
+            }
+            return argsMayCapture(prog, args)
+        }
+        Expr.Call(callee, args) => { return callMayCapture(prog, callee, args) }
+        Expr.OptCall(callee, args) => { return callMayCapture(prog, callee, args) }
+        _ => {
+        }
+    }
+    return true
+}
+
+fn argsMayCapture(prog: &Prog, args: ArgListId): bool {
+    var i: i64 = 0
+    while i < prog.argLists[args.index].len() {
+        if exprMayCapture(prog, prog.argLists[args.index][i]) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+fn callMayCapture(prog: &Prog, callee: ExprId, args: ArgListId): bool {
+    // A call to a function defined elsewhere cannot capture THIS scope; it runs
+    // in its own closure environment. Direct `eval` is the exception the spec
+    // carves out: it evaluates in the caller's scope.
+    match prog.exprs[callee.index] {
+        Expr.Ident(n) => {
+            if n == "eval" {
+                return true
+            }
+        }
+        _ => {
+        }
+    }
+    if exprMayCapture(prog, callee) {
+        return true
+    }
+    return argsMayCapture(prog, args)
+}
+
+fn blockMayCapture(prog: &Prog, b: BlockId): bool {
+    var i: i64 = 0
+    while i < prog.blocks[b.index].len() {
+        if stmtMayCapture(prog, prog.blocks[b.index][i]) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+fn optStmtMayCapture(prog: &Prog, s: Option<StmtId>): bool {
+    match s {
+        Option.Some(inner) => {
+            return stmtMayCapture(prog, inner)
+        }
+        Option.None => {
+        }
+    }
+    return false
+}
+
+fn optExprMayCapture(prog: &Prog, e: Option<ExprId>): bool {
+    match e {
+        Option.Some(inner) => {
+            return exprMayCapture(prog, inner)
+        }
+        Option.None => {
+        }
+    }
+    return false
+}
+
+fn optBlockMayCapture(prog: &Prog, b: Option<BlockId>): bool {
+    match b {
+        Option.Some(inner) => {
+            return blockMayCapture(prog, inner)
+        }
+        Option.None => {
+        }
+    }
+    return false
+}
+
+fn stmtMayCapture(prog: &Prog, id: StmtId): bool {
+    match prog.stmts[id.index] {
+        Stmt.Empty => { return false }
+        Stmt.Break(_l) => { return false }
+        Stmt.Continue(_l) => { return false }
+        Stmt.ExprStmt(e) => { return exprMayCapture(prog, e) }
+        Stmt.Ret(e) => { return exprMayCapture(prog, e) }
+        Stmt.Throw(e) => { return exprMayCapture(prog, e) }
+        Stmt.Decl(_n, e) => { return exprMayCapture(prog, e) }
+        Stmt.Block(b) => { return blockMayCapture(prog, b) }
+        Stmt.Labeled(_l, inner) => { return stmtMayCapture(prog, inner) }
+        Stmt.If(c, t, e) => {
+            return exprMayCapture(prog, c) || stmtMayCapture(prog, t) || optStmtMayCapture(prog, e)
+        }
+        Stmt.While(c, b) => { return exprMayCapture(prog, c) || stmtMayCapture(prog, b) }
+        Stmt.DoWhile(b, c) => { return stmtMayCapture(prog, b) || exprMayCapture(prog, c) }
+        Stmt.ForIn(_n, o, b) => { return exprMayCapture(prog, o) || stmtMayCapture(prog, b) }
+        Stmt.ForOf(_n, o, b, _aw) => { return exprMayCapture(prog, o) || stmtMayCapture(prog, b) }
+        Stmt.For(init, cond, upd, b) => {
+            return optStmtMayCapture(prog, init) || optExprMayCapture(prog, cond)
+                || optExprMayCapture(prog, upd) || stmtMayCapture(prog, b)
+        }
+        Stmt.MultiDecl(li) => {
+            var d: i64 = 0
+            while d < prog.declLists[li.index].len() {
+                if exprMayCapture(prog, prog.declLists[li.index][d].init) {
+                    return true
+                }
+                d = d + 1
+            }
+            return false
+        }
+        Stmt.Switch(discr, cases) => {
+            if exprMayCapture(prog, discr) {
+                return true
+            }
+            var c: i64 = 0
+            while c < prog.switches[cases.index].len() {
+                if blockMayCapture(prog, prog.switches[cases.index][c].body) {
+                    return true
+                }
+                c = c + 1
+            }
+            return false
+        }
+        Stmt.Try(tryB, _p, catchB, finB) => {
+            return blockMayCapture(prog, tryB) || optBlockMayCapture(prog, catchB)
+                || optBlockMayCapture(prog, finB)
+        }
+        _ => {
+        }
+    }
+    return true
 }
 
 pub fn hoistBlock(prog: &Prog, blockId: BlockId, st: &mut Interp, scope: i64) {
