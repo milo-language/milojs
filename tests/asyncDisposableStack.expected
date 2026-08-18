@@ -1,0 +1,11 @@
+order: c,adopt:res,b,a
+disposed: true
+use-after-dispose: ReferenceError
+second-dispose-ok: function
+use-nondisposable: TypeError
+adopt-nonfn: TypeError
+nullish-passes-through: null
+needs-new: TypeError
+move: true true false
+after-move: c,adopt:res,b,a,m
+throwing: boom last,first

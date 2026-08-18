@@ -43,6 +43,33 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## AsyncDisposableStack, and what the test262 gap is actually made of
+
+`AsyncDisposableStack` was missing entirely, which is 75 test262 cases from one
+absent global. Added as the async sibling of the existing `DisposableStack`:
+`disposeAsync` returns a promise and awaits each disposer IN TURN, so release
+order stays the reverse of acquisition and a slow disposer does not overlap the
+next. Resources are collected through `[Symbol.asyncDispose]`, falling back to
+`[Symbol.dispose]` for a resource that is only synchronously disposable. A
+throwing disposer does not stop the remaining ones and its error still surfaces.
+`tests/asyncDisposableStack.js` pins eleven behaviours against node.
+
+**Both test262 sweeps now report their parse split**, the same way the QuickJS one
+does, and the answer is different in a way that changes what to work on:
+
+| | scored | pass | parse failures |
+|---|---:|---:|---:|
+| whole corpus (48735 selected) | 47896 | 36720 (76.7%) | 1172 of 11176 failures (10.5%) |
+| published 1500 sample | 1470 | 1144 (77.8%) | 41 of 326 failures (12.6%) |
+
+So roughly 90% of the test262 gap is SEMANTIC, not syntax. That is the opposite of
+QuickJS, where a single missing syntax feature took a whole file of 28 cases with
+it, and it means the two suites want different work: quickjs rewarded parser
+features, test262 will not.
+
+The whole-corpus and 1500-sample rates agreeing to within 1.1 points is also the
+first independent check that the committed sample is representative.
+
 ## Numeric arguments were coerced without running user `valueOf`
 
 `toNum` cannot re-enter the interpreter, so wherever a built-in coerced an
