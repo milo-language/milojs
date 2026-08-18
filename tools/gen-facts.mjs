@@ -101,6 +101,13 @@ const FACTS = {
   // Cases the engine could not PARSE, and the rate over the ones that actually
   // ran. Published alongside the headline so a missing syntax feature, which
   // takes a whole file with it, cannot read as a pile of unrelated failures.
+  // test262's parse gaps do NOT amplify the way quickjs's do: one case per file
+  // there, so a missing syntax feature costs exactly the cases that use it. The
+  // count is published as a share of FAILURES, which is the number that says how
+  // much of the gap is syntax rather than semantics.
+  "t262-parsefail": () => String(report("test262").totals.parseFail ?? 0),
+  "t262-fail": () => String(report("test262").totals.fail),
+  "t262-parsefail-pct": () => pct(report("test262").totals.parseFail ?? 0, report("test262").totals.fail),
   "qjs-parsefail": () => String(report("quickjs").totals.parseFail ?? 0),
   "qjs-ran": () => String(report("quickjs").totals.ran ?? report("quickjs").totals.total),
   "qjs-ran-pct": () => pct(report("quickjs").totals.pass, report("quickjs").totals.ran ?? report("quickjs").totals.total),

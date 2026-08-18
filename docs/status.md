@@ -42,8 +42,9 @@ reproducible release artifact.
 
 | measure | result | corpus |
 |---|---:|---|
-| deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->1139<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->77.5%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
+| deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->1146<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->78.0%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
 | QuickJS `tests/` | **<!--fact:qjs-pass-->81<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = <!--fact:qjs-pct-->54.4%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
+| test262 failures that are PARSE failures | <!--fact:t262-parsefail-->41<!--/fact--> of <!--fact:t262-fail-->324<!--/fact--> | <!--fact:t262-parsefail-pct-->12.7%<!--/fact--> of the gap is missing syntax; the rest is semantics |
 | QuickJS cases that never ran (parse gaps) | <!--fact:qjs-parsefail-->28<!--/fact--> | of those that ran, <!--fact:qjs-ran-pct-->66.9%<!--/fact--> of <!--fact:qjs-ran-->121<!--/fact--> pass |
 | locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->230<!--/fact--> | byte-exact differential output vs node |
 | locked runtime fixtures (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->35<!--/fact--> | module, async, fetch, HTTP, sqlite, host behavior |
@@ -89,7 +90,7 @@ Not every remaining difference is milojs's: `/api/v2/roads` hangs under node too
 (it needs a live upstream), and `analytics/middleware` keeps both runtimes alive
 because it installs a `setInterval` at module scope.
 
-test262 stands at <!--fact:t262-pass-->1139<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = **<!--fact:t262-pct-->77.5%<!--/fact-->** on the deterministic sample. The
+test262 stands at <!--fact:t262-pass-->1146<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = **<!--fact:t262-pct-->78.0%<!--/fact-->** on the deterministic sample. The
 backlog carries the per-change attribution.
 
 Where the remaining failures are, compiled from the committed report rather than
@@ -99,14 +100,14 @@ sweep moved:
 <!--fact-block:t262-areas-->
 | area | failing | passing |
 |---|---:|---:|
-| `language/statements` | 55 | 227/282 |
-| `language/expressions` | 43 | 291/334 |
+| `language/statements` | 53 | 229/282 |
+| `language/expressions` | 45 | 289/334 |
 | `built-ins/Object` | 32 | 95/127 |
-| `built-ins/Array` | 26 | 65/91 |
+| `built-ins/Array` | 25 | 66/91 |
 | `built-ins/RegExp` | 19 | 54/73 |
-| `built-ins/Temporal` | 17 | 114/131 |
-| `built-ins/TypedArray` | 14 | 24/38 |
+| `built-ins/Temporal` | 18 | 113/131 |
 | `built-ins/String` | 12 | 27/39 |
+| `built-ins/TypedArray` | 12 | 26/38 |
 <!--/fact-block-->
 
 Reading it: the two `language/` rows are one area split in the corpus, and
