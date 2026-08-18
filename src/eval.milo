@@ -15645,14 +15645,17 @@ fn runOneTimer(prog: &Prog, st: &mut Interp): bool {
     }
     let _ = callValue(prog, cb, args, JSValue.Undefined, st)
     if st.throwing {
-        // An uncaught exception ENDS the process, as it does in node. Logging it
-        // and carrying on left the loop running with its work half done: a test
-        // that failed an assertion inside a callback printed the failure and
-        // then hung until something killed it, so the real error was reported as
-        // a timeout. Node exits 1 here, and the exit code is how a harness
-        // learns anything happened at all.
-        eprint("Uncaught " + describeThrownValue(st, st.thrownValue))
-        exit(1)
+        // An uncaught exception ENDS the process, as it does in node — unless the
+        // program registered an uncaughtException listener, which is node's one
+        // documented way to survive one. Logging it and carrying on left the loop
+        // running with its work half done: a test that failed an assertion inside
+        // a callback printed the failure and then hung until something killed it,
+        // so the real error was reported as a timeout. Node exits 1 here, and the
+        // exit code is how a harness learns anything happened at all.
+        if !dispatchUncaught(prog, st) {
+            eprint("Uncaught " + describeThrownValue(st, st.thrownValue))
+            exit(1)
+        }
     }
     return true
 }
@@ -15783,7 +15786,7 @@ fn serveHttpOnce(prog: &Prog, st: &mut Interp): bool {
             if truthy(r) {
                 handled = true
             }
-            if st.throwing {
+            if st.throwing && !dispatchUncaught(prog, st) {
                 // Same rule as runOneTimer: an uncaught exception ENDS the
                 // process, as it does in node. Swallowing it here left the loop
                 // running with the request half handled, so an assertion that
@@ -15811,6 +15814,39 @@ fn serveHttpOnce(prog: &Prog, st: &mut Interp): bool {
 }
 
 // Call a method on an object with already-evaluated arguments.
+// Give the program its chance at an uncaught exception before the process dies.
+// Returns true when a process.on('uncaughtException') listener ran, which is
+// node's rule for NOT exiting. Without this the interpreter exited on every
+// uncaught error, including the ones a test had explicitly asked to handle.
+fn dispatchUncaught(prog: &Prog, st: &mut Interp): bool {
+    let handler = scopeLookup(st, 0, "__dispatchUncaught")
+    match handler {
+        JSValue.Func(fIdx, envIdx) => {
+            // Cleared before re-entering JS: the callee runs on a clean frame,
+            // and the flag is restored by the caller if nothing handled it.
+            let thrown = cloneValue(st.thrownValue)
+            st.throwing = false
+            st.thrownValue = JSValue.Undefined
+            var args: Vec<JSValue> = Vec.new()
+            args.push(cloneValue(thrown))
+            let r = callFunction(prog, fIdx, envIdx, args, JSValue.Undefined, st)
+            if st.throwing {
+                // The handler itself threw; that one is genuinely fatal.
+                return false
+            }
+            if truthy(r) {
+                return true
+            }
+            st.throwing = true
+            st.thrownValue = thrown
+            return false
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
 fn callMemberValue(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSValue>, st: &mut Interp): JSValue {
     let o = objHandle(recv)
     if o < 0 {

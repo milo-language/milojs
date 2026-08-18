@@ -6,7 +6,7 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "e9e0e894ff7b958146ccdd25cf0b8112a774834a",
+    "revision": "286fc2a709921bca91816ae3693945f61af34a0c",
     "dirty": false
   },
   "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
@@ -18,15 +18,15 @@
     "excludedNodeInternal": 606
   },
   "totals": {
-    "pass": 1565,
-    "fail": 1808,
+    "pass": 1564,
+    "fail": 1809,
     "total": 3373
   },
   "areas": [
     {
       "area": "http",
-      "pass": 79,
-      "fail": 298,
+      "pass": 71,
+      "fail": 306,
       "total": 377
     },
     {
@@ -37,8 +37,8 @@
     },
     {
       "area": "stream",
-      "pass": 49,
-      "fail": 116,
+      "pass": 50,
+      "fail": 115,
       "total": 165
     },
     {
@@ -102,12 +102,6 @@
       "total": 57
     },
     {
-      "area": "cluster",
-      "pass": 44,
-      "fail": 37,
-      "total": 81
-    },
-    {
       "area": "dgram",
       "pass": 28,
       "fail": 36,
@@ -118,6 +112,12 @@
       "pass": 7,
       "fail": 36,
       "total": 43
+    },
+    {
+      "area": "cluster",
+      "pass": 46,
+      "fail": 35,
+      "total": 81
     },
     {
       "area": "timers",
@@ -186,12 +186,6 @@
       "total": 17
     },
     {
-      "area": "readline",
-      "pass": 0,
-      "fail": 15,
-      "total": 15
-    },
-    {
       "area": "console",
       "pass": 7,
       "fail": 14,
@@ -229,9 +223,15 @@
     },
     {
       "area": "cli",
-      "pass": 4,
-      "fail": 10,
+      "pass": 3,
+      "fail": 11,
       "total": 14
+    },
+    {
+      "area": "readline",
+      "pass": 4,
+      "fail": 11,
+      "total": 15
     },
     {
       "area": "perf",
@@ -744,12 +744,6 @@
       "total": 7
     },
     {
-      "area": "strace",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
       "area": "streams",
       "pass": 0,
       "fail": 1,
@@ -1054,6 +1048,12 @@
       "pass": 5,
       "fail": 0,
       "total": 5
+    },
+    {
+      "area": "strace",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
     },
     {
       "area": "sync",
