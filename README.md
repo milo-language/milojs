@@ -22,6 +22,12 @@ Experimental, not yet a drop-in replacement for either.
 | [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | <!--fact:t262-pct-->77.5%<!--/fact--> (<!--fact:t262-pass-->1139<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) |
 | [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | <!--fact:qjs-pct-->73.8%<!--/fact--> (<!--fact:qjs-pass-->110<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) |
 
+<!--fact:qjs-parsefail-->0<!--/fact--> of the QuickJS cases never RAN: the engine could not parse the
+source, and one missing syntax feature takes every case in its file with it. Of the
+<!--fact:qjs-ran-->149<!--/fact--> that did run, <!--fact:qjs-ran-pct-->73.8%<!--/fact--> pass. Both
+numbers are reported because they answer different questions: the first is what the
+suite says today, the second is how the engine does on what it can read.
+
 ## Node Conformance
 
 `milojs` — modules, event loop, host bindings.

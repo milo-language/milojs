@@ -159,6 +159,11 @@ fn main(): i32 {
                     toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: entryStrict
                 }
                 topBlock = parseProgram(p, gProg)
+                // see runSource in driver.milo: a syntax error must not run, and
+                // must not exit 0
+                if p.errored {
+                    return 1
+                }
             } else {
                 entryIdx = preloadGraph(path.clone(), gProg, gInterp)
                 if entryIdx < 0 {

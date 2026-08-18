@@ -43,6 +43,40 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## A syntax error now exits 1, and the sweep counts parse gaps separately
+
+Two changes that belong together, because the first is only publishable with the
+second.
+
+**A parse error must not run the program and must not exit 0.** Neither
+`runSource` nor the engine entry checked `p.errored` after `parseProgram`, so a
+broken script printed its diagnostic to stderr and then executed the half-parsed
+wreckage with status 0. node exits 1 and runs nothing. This is the kind of bug a
+CI pipeline never notices, because the pipeline is what reads the exit code.
+
+**The sweep now separates "could not parse" from "ran and answered wrong."**
+Counting them together is what made this fix look like a 30-point regression the
+first two times it was measured: ONE missing syntax feature takes every case in
+its file with it, so `using x = {}` alone accounts for all 28 remaining cases in
+`test_language.js`. The sweep now reports both numbers, and `qjs-parsefail`,
+`qjs-ran` and `qjs-ran-pct` publish them:
+
+```
+quickjs-sweep: 81/149 cases pass (54.4%) across 58 files
+  28 of those never RAN: the engine could not parse the source. Of the 121 that ran, 81 pass (66.9%).
+```
+
+The headline drops from the previously published 73.8% because that figure was
+crediting cases whose source the parser had REJECTED: the engine ran the
+truncated remainder and, when it happened not to throw, the harness scored it a
+pass. Nothing about the engine got worse. What changed is that the measurement
+stopped lying, and it now says which half of the gap is a feature and which is a
+bug.
+
+Republishing requires a sweep from a CLEAN tree (`tools/gen-facts.mjs` refuses a
+report measured on a dirty checkout), so the report lands in its own commit after
+this one.
+
 ## for-in enumerated shadowed and duplicate names
 
 Two rules of the prototype-chain walk were missing, both visible as wrong output:

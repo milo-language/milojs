@@ -134,6 +134,13 @@ fn runSource(src: &string, st: &mut Interp): i32 {
         toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: "<entry>", errored: false, eofError: false, quiet: false, strict: false
     }
     let top = parseProgram(p, prog)
+    // A parse error used to print its message and then run the half-parsed
+    // program anyway, exiting 0. node exits 1 on a SyntaxError and runs nothing;
+    // a script whose syntax is broken reporting success is what a CI pipeline
+    // never notices.
+    if p.errored {
+        return 1
+    }
     // top-level code has no FuncDef to carry its strictness, so seed it here
     st.strict = prog.progStrict
     hoistBlock(prog, top, st, 0)

@@ -135,7 +135,16 @@ const files = readdirSync(QJS)
   .filter(f => !filter || f.includes(filter))
   .sort();
 
-let pass = 0, fail = 0;
+// A case the engine could not PARSE is not the same result as one that ran and
+// answered wrongly, and counting them together makes a missing syntax feature
+// read as a pile of unrelated bugs. The parser prefixes its diagnostics with
+// "milojs: <file>: " and nothing runs afterwards, which is what identifies them.
+function isParseFailure(out: string): boolean {
+  if (/^Uncaught /m.test(out)) return false;
+  return /^milojs(-engine)?: [^\n]*: /m.test(out);
+}
+
+let pass = 0, fail = 0, parseFail = 0;
 const buckets = new Map<string, string[]>();
 
 for (const file of files) {
@@ -159,15 +168,24 @@ for (const file of files) {
     }
     if (ok) pass++;
     else {
-      fail++;
+      if (isParseFailure(out)) parseFail++;
+      else fail++;
       const b = bucket(out);
       (buckets.get(b) ?? buckets.set(b, []).get(b)!).push(`${file}:${c.name}`);
     }
   }
 }
 
-const total = pass + fail;
-console.log(`quickjs-sweep: ${pass}/${total} cases pass (${((pass / total) * 100).toFixed(1)}%) across ${files.length} files\n`);
+const total = pass + fail + parseFail;
+console.log(`quickjs-sweep: ${pass}/${total} cases pass (${((pass / total) * 100).toFixed(1)}%) across ${files.length} files`);
+if (parseFail > 0) {
+  const ran = pass + fail;
+  console.log(
+    `  ${parseFail} of those never RAN: the engine could not parse the source. ` +
+    `Of the ${ran} that ran, ${pass} pass (${((pass / ran) * 100).toFixed(1)}%).`);
+  console.log("  A parse gap is one missing syntax feature taking a whole file with it, not N separate bugs.");
+}
+console.log();
 const ranked = [...buckets.entries()].sort((a, b) => b[1].length - a[1].length);
 console.log("top causes:");
 for (const [b, cases] of ranked.slice(0, verbose ? 999 : 25)) {
@@ -183,7 +201,7 @@ if (jsonPath) {
     milojs: selfRevision(),
     engine: tilde(ENGINE),
     selection: { filter, skippedFiles: [...SKIP_FILES].sort() },
-    totals: { pass, fail, total, files: files.length },
+    totals: { pass, fail, parseFail, total, ran: pass + fail, files: files.length },
     failureBuckets: ranked.map(([reason, cases]) => ({ reason, count: cases.length, cases })),
   };
   mkdirSync(jsonPath.replace(/\/[^/]+$/, ""), { recursive: true });

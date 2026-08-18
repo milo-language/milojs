@@ -98,6 +98,12 @@ const FACTS = {
   "qjs-pass": () => String(report("quickjs").totals.pass),
   "qjs-total": () => String(report("quickjs").totals.total ?? report("quickjs").totals.scored),
   "qjs-corpus": () => short(report("quickjs").corpus.revision),
+  // Cases the engine could not PARSE, and the rate over the ones that actually
+  // ran. Published alongside the headline so a missing syntax feature, which
+  // takes a whole file with it, cannot read as a pile of unrelated failures.
+  "qjs-parsefail": () => String(report("quickjs").totals.parseFail ?? 0),
+  "qjs-ran": () => String(report("quickjs").totals.ran ?? report("quickjs").totals.total),
+  "qjs-ran-pct": () => pct(report("quickjs").totals.pass, report("quickjs").totals.ran ?? report("quickjs").totals.total),
 
   "node-modules-shimmed": () =>
     String(
