@@ -6,7 +6,7 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "286fc2a709921bca91816ae3693945f61af34a0c",
+    "revision": "30dc19544a484265c61c24a189e5d8314507ddb1",
     "dirty": false
   },
   "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
@@ -18,15 +18,15 @@
     "excludedNodeInternal": 606
   },
   "totals": {
-    "pass": 1564,
-    "fail": 1809,
+    "pass": 1578,
+    "fail": 1795,
     "total": 3373
   },
   "areas": [
     {
       "area": "http",
-      "pass": 71,
-      "fail": 306,
+      "pass": 75,
+      "fail": 302,
       "total": 377
     },
     {
@@ -61,8 +61,8 @@
     },
     {
       "area": "process",
-      "pass": 23,
-      "fail": 58,
+      "pass": 26,
+      "fail": 55,
       "total": 81
     },
     {
@@ -115,21 +115,21 @@
     },
     {
       "area": "cluster",
-      "pass": 46,
-      "fail": 35,
+      "pass": 47,
+      "fail": 34,
       "total": 81
-    },
-    {
-      "area": "timers",
-      "pass": 17,
-      "fail": 31,
-      "total": 48
     },
     {
       "area": "diagnostics",
       "pass": 35,
       "fail": 29,
       "total": 64
+    },
+    {
+      "area": "timers",
+      "pass": 19,
+      "fail": 29,
+      "total": 48
     },
     {
       "area": "snapshot",
@@ -139,8 +139,8 @@
     },
     {
       "area": "async",
-      "pass": 22,
-      "fail": 23,
+      "pass": 23,
+      "fail": 22,
       "total": 45
     },
     {
@@ -342,6 +342,12 @@
       "total": 5
     },
     {
+      "area": "signal",
+      "pass": 1,
+      "fail": 3,
+      "total": 4
+    },
+    {
       "area": "socket",
       "pass": 2,
       "fail": 3,
@@ -390,12 +396,6 @@
       "total": 2
     },
     {
-      "area": "exception",
-      "pass": 0,
-      "fail": 2,
-      "total": 2
-    },
-    {
       "area": "heapsnapshot",
       "pass": 0,
       "fail": 2,
@@ -424,12 +424,6 @@
       "pass": 1,
       "fail": 2,
       "total": 3
-    },
-    {
-      "area": "signal",
-      "pass": 2,
-      "fail": 2,
-      "total": 4
     },
     {
       "area": "stream3",
@@ -570,12 +564,6 @@
       "total": 1
     },
     {
-      "area": "emit",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
       "area": "error",
       "pass": 1,
       "fail": 1,
@@ -601,12 +589,6 @@
     },
     {
       "area": "find",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
-      "area": "handle",
       "pass": 0,
       "fail": 1,
       "total": 1
@@ -870,6 +852,12 @@
       "total": 1
     },
     {
+      "area": "emit",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
       "area": "env",
       "pass": 1,
       "fail": 0,
@@ -900,6 +888,12 @@
       "total": 1
     },
     {
+      "area": "exception",
+      "pass": 2,
+      "fail": 0,
+      "total": 2
+    },
+    {
       "area": "filehandle",
       "pass": 2,
       "fail": 0,
@@ -919,6 +913,12 @@
     },
     {
       "area": "h2",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "handle",
       "pass": 1,
       "fail": 0,
       "total": 1
