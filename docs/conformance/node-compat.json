@@ -6,7 +6,7 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "bbfdeaee4538e7205b94f67113e4410665226a52",
+    "revision": "9ae88c5f329261c41fa34588d2179c1c2be70ee3",
     "dirty": false
   },
   "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
@@ -18,15 +18,15 @@
     "excludedNodeInternal": 606
   },
   "totals": {
-    "pass": 1528,
-    "fail": 1845,
+    "pass": 1535,
+    "fail": 1838,
     "total": 3373
   },
   "areas": [
     {
       "area": "http",
-      "pass": 76,
-      "fail": 301,
+      "pass": 78,
+      "fail": 299,
       "total": 377
     },
     {
@@ -37,14 +37,14 @@
     },
     {
       "area": "stream",
-      "pass": 48,
-      "fail": 117,
+      "pass": 49,
+      "fail": 116,
       "total": 165
     },
     {
       "area": "net",
-      "pass": 25,
-      "fail": 111,
+      "pass": 28,
+      "fail": 108,
       "total": 136
     },
     {
@@ -120,16 +120,16 @@
       "total": 43
     },
     {
-      "area": "diagnostics",
-      "pass": 33,
-      "fail": 31,
-      "total": 64
-    },
-    {
       "area": "timers",
       "pass": 17,
       "fail": 31,
       "total": 48
+    },
+    {
+      "area": "diagnostics",
+      "pass": 34,
+      "fail": 30,
+      "total": 64
     },
     {
       "area": "snapshot",
