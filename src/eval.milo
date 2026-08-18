@@ -6,10 +6,10 @@ from "./ast" import {
     ArgListId, ArrLitId, BlockId, ExprId, ObjLitId, Prog, StmtId, gProg, registerSource, sourceOf
 }
 from "./value" import {
-    JSValue, i64ToStr, daysFromCivil
+    JSValue, Native, Builtin, i64ToStr, daysFromCivil, nativeEq, isNativeValue
 }
 from "./runtime" import {
-    Interp, Timer, Microtask, Reaction, PendingFetch, NATIVE_RESOLVER_BASE, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn, TA_MAX, TA_I64, TA_U64, taIsBigKind, taLoadBig, taStoreBig, isPrivateKey
+    Interp, Timer, Microtask, Reaction, PendingFetch, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn, TA_MAX, TA_I64, TA_U64, taIsBigKind, taLoadBig, taStoreBig, isPrivateKey
 }
 from "./builtins" import {
     stringMethod, jsCharAt, mjStringifyVal, mjJsonParse, mjJsonOmitted, numToIndex
@@ -272,8 +272,8 @@ fn trySymToPrimitive(prog: &Prog, h: i64, hint: &string, st: &mut Interp): Optio
 // being applied to a string. boxedPrimitive/isWrapperObj live in runtime.milo.
 // The prototype object a built-in constructor hands to its instances. Held in
 // the constructor's own property bag, which is where buildNativeProto put it.
-fn nativeProtoHandle(st: &mut Interp, nativeId: i64): i64 {
-    let bag = getNativeProps(st, nativeId)
+fn nativeProtoHandle(st: &mut Interp, nativeId: Builtin): i64 {
+    let bag = getNativeProps(st, Native.Fn(nativeId))
     return objHandle(objGet(st, bag, "prototype"))
 }
 
@@ -284,11 +284,11 @@ fn nativeProtoHandle(st: &mut Interp, nativeId: i64): i64 {
 pub fn makeWrapper(st: &mut Interp, v: &JSValue): JSValue {
     let o = newObject(st)
     pushTemp(st, JSValue.Obj(o))
-    var protoNative: i64 = -1
+    var protoNative: Option<Builtin> = Option.None
     match v {
         JSValue.Str(sv) => {
             if isSymbolStr(sv) {
-                protoNative = NATIVE_SYMBOL
+                protoNative = Option.Some(Builtin.Symbol)
             } else {
                 st.objects[o].proto = st.stringProtoObj
                 var idx: i64 = 0
@@ -303,21 +303,25 @@ pub fn makeWrapper(st: &mut Interp, v: &JSValue): JSValue {
             }
         }
         JSValue.Number(_n) => {
-            protoNative = NATIVE_NUMBER
+            protoNative = Option.Some(Builtin.Number)
         }
         JSValue.Bool(_b) => {
-            protoNative = NATIVE_BOOLEAN
+            protoNative = Option.Some(Builtin.Boolean)
         }
         JSValue.BigInt(_g) => {
-            protoNative = NATIVE_BIGINT
+            protoNative = Option.Some(Builtin.BigInt)
         }
         _ => {
         }
     }
-    if protoNative >= 0 {
-        let pr = nativeProtoHandle(st, protoNative)
-        if pr >= 0 {
-            st.objects[o].proto = pr
+    match protoNative {
+        Option.Some(pn) => {
+            let pr = nativeProtoHandle(st, pn)
+            if pr >= 0 {
+                st.objects[o].proto = pr
+            }
+        }
+        Option.None => {
         }
     }
     let _ = ensureExtra(st, o)
@@ -1109,17 +1113,27 @@ fn validDescriptor(st: &mut Interp, o: i64, key: &string, d: i64): bool {
 // Which natives answer to `new`. Everything else — Math.max, JSON.parse, every
 // Object static — is a plain function, and `new` on one is a TypeError rather
 // than a silently constructed object.
-fn nativeIsConstructor(id: i64): bool {
-    if id >= NATIVE_TA_BASE && id <= NATIVE_TA_BASE + TA_MAX {
+fn nativeIsConstructor(n: &Native): bool {
+    match n {
+        Native.TypedArrayCtor(_kind) => {
+            return true
+        }
+        Native.Resolver(_promise, _isReject) => {
+            return false
+        }
+        Native.Fn(b) => {
+            return builtinIsConstructor(b)
+        }
+    }
+}
+
+fn builtinIsConstructor(id: Builtin): bool {
+    if isErrorCtor(id) {
         return true
     }
-    if id >= NATIVE_ERROR && id <= NATIVE_REFERENCE_ERROR {
-        return true
-    }
-    return id == NATIVE_PROXY || id == NATIVE_OBJECT_CTOR || id == NATIVE_STRING || id == NATIVE_NUMBER || id == NATIVE_BOOLEAN
-        || id == NATIVE_DATE || id == NATIVE_MAP || id == NATIVE_SET || id == NATIVE_REGEXP
-        || id == NATIVE_ARRAYBUFFER || id == NATIVE_DATAVIEW || id == NATIVE_FUNCTION_CTOR
-        || id == NATIVE_EVAL_ERROR || id == NATIVE_URI_ERROR
+    return id == Builtin.Proxy || id == Builtin.ObjectCtor || id == Builtin.String || id == Builtin.Number || id == Builtin.Boolean
+        || id == Builtin.Date || id == Builtin.Map || id == Builtin.Set || id == Builtin.RegExp
+        || id == Builtin.ArrayBuffer || id == Builtin.DataView || id == Builtin.FunctionCtor
 }
 
 // Is `new v()` allowed? Callable and constructable are different: arrows,
@@ -1128,9 +1142,12 @@ fn nativeIsConstructor(id: i64): bool {
 // Mirrors the arms of the `new` evaluation below, which is what makes the two
 // agree.
 pub fn valueIsConstructor(prog: &Prog, st: &Interp, v: &JSValue): bool {
-    let n = nativeHandle(v)
-    if n >= 0 {
-        return nativeIsConstructor(n)
+    match nativeHandle(v) {
+        Option.Some(n) => {
+            return nativeIsConstructor(n)
+        }
+        Option.None => {
+        }
     }
     let f = funcHandle(v)
     if f >= 0 {
@@ -3527,7 +3544,7 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
             // answered the string "function" — so every name.js/length.js/
             // prop-desc.js for a native failed on the own-property check before
             // it ever looked at the value.
-            if nativeHandle(recv) >= 0 && (name == "hasOwnProperty" || name == "propertyIsEnumerable") {
+            if isNativeValue(recv) && (name == "hasOwnProperty" || name == "propertyIsEnumerable") {
                 var nkey = ""
                 if args.len() > 0 {
                     nkey = toStr(args[0])
@@ -4219,269 +4236,6 @@ fn writeLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64, value
     }
 }
 
-// Built-in function/constructor ids. The Error family shares one path; the
-// specific kind is carried in the object's `name` property.
-let NATIVE_ERROR: i64 = 0
-let NATIVE_TYPE_ERROR: i64 = 1
-let NATIVE_RANGE_ERROR: i64 = 2
-let NATIVE_SYNTAX_ERROR: i64 = 3
-let NATIVE_REFERENCE_ERROR: i64 = 4
-let NATIVE_JSON_STRINGIFY: i64 = 5
-let NATIVE_JSON_PARSE: i64 = 6
-let NATIVE_MATH_FLOOR: i64 = 7
-let NATIVE_MATH_CEIL: i64 = 8
-let NATIVE_MATH_ROUND: i64 = 9
-let NATIVE_MATH_TRUNC: i64 = 10
-let NATIVE_MATH_ABS: i64 = 11
-let NATIVE_MATH_SIGN: i64 = 12
-let NATIVE_MATH_LOG2: i64 = 98
-let NATIVE_MATH_LOG10: i64 = 99
-let NATIVE_MATH_EXP: i64 = 89
-let NATIVE_MATH_LOG: i64 = 90
-let NATIVE_MATH_SIN: i64 = 91
-let NATIVE_MATH_COS: i64 = 92
-let NATIVE_MATH_TAN: i64 = 93
-let NATIVE_MATH_ASIN: i64 = 94
-let NATIVE_MATH_ACOS: i64 = 95
-let NATIVE_MATH_ATAN: i64 = 96
-let NATIVE_MATH_ATAN2: i64 = 97
-let NATIVE_MATH_SQRT: i64 = 13
-let NATIVE_MATH_POW: i64 = 14
-let NATIVE_MATH_MIN: i64 = 15
-let NATIVE_MATH_MAX: i64 = 16
-let NATIVE_MATH_RANDOM: i64 = 17
-let NATIVE_REGEXP: i64 = 18
-let NATIVE_OBJECT_DEFINEPROPERTY: i64 = 19
-let NATIVE_OBJECT_KEYS: i64 = 20
-let NATIVE_OBJECT_ASSIGN: i64 = 21
-let NATIVE_NUMBER: i64 = 22
-pub let NATIVE_STRING: i64 = 23
-let NATIVE_BOOLEAN: i64 = 24
-let NATIVE_READ_FILE_SYNC: i64 = 25
-let NATIVE_FILE_EXISTS: i64 = 26
-let NATIVE_OBJECT_VALUES: i64 = 27
-let NATIVE_OBJECT_ENTRIES: i64 = 28
-let NATIVE_OBJECT_FREEZE: i64 = 29
-let NATIVE_PROMISE_RESOLVE: i64 = 30
-let NATIVE_PROMISE_REJECT: i64 = 31
-// 32/33/34 were Promise.all/allSettled/race. They are self-hosted in the prelude
-// now: the native took a synchronous snapshot of each input's state instead of
-// subscribing to it, and could not adopt a thenable at all (calling user .then
-// needs the program, which a native does not have). Ids left retired rather than
-// reused so an old id in a serialized form can never mean something new.
-// `new Promise(cb)` hands its executor a resolve/reject pair bound to one
-// specific promise. Natives are identified by a bare id, so the promise handle
-// is encoded into the id itself: base + handle*2 + (0 resolve | 1 reject).
-let NATIVE_PROMISE: i64 = 35
-let NATIVE_IS_NAN: i64 = 36
-let NATIVE_IS_FINITE: i64 = 37
-let NATIVE_ARRAY_ISARRAY: i64 = 38
-let NATIVE_OBJECT_CREATE: i64 = 39
-let NATIVE_OBJECT_GETPROTO: i64 = 40
-let NATIVE_OBJECT_SETPROTO: i64 = 41
-let NATIVE_OBJECT_GETOWNPROPDESC: i64 = 42
-let NATIVE_PARSE_INT: i64 = 43
-let NATIVE_PARSE_FLOAT: i64 = 44
-let NATIVE_SYMBOL: i64 = 45
-let NATIVE_OBJECT_DEFINEPROPERTIES: i64 = 46
-let NATIVE_MAP: i64 = 47
-let NATIVE_SET: i64 = 48
-let NATIVE_OBJECT_GETOWNPROPNAMES: i64 = 49
-let NATIVE_ARRAY_FROM: i64 = 50
-pub let NATIVE_PROCESS_EXIT: i64 = 51
-pub let NATIVE_NOOP: i64 = 52
-pub let NATIVE_PROCESS_HRTIME: i64 = 53
-pub let NATIVE_PROCESS_CWD: i64 = 54
-let NATIVE_STRING_FROMCHARCODE: i64 = 55
-pub let NATIVE_DATE: i64 = 56
-let NATIVE_DATE_NOW: i64 = 57
-// Date.UTC(year, month[, day, hours, minutes, seconds, ms]) — the fields are
-// interpreted as UTC and out-of-range values roll over (month 12 is January of
-// the next year), which falls out of doing the arithmetic in days and seconds
-// rather than validating each field.
-let NATIVE_DATE_UTC: i64 = 110
-// The Object constructor itself. Registering the global as a plain object made
-// `typeof Object` report "object" and `new Object()` fail outright — both used
-// constantly, and by three of the QuickJS builtin tests.
-let NATIVE_OBJECT_CTOR: i64 = 111
-let NATIVE_ENCODE_URI_COMPONENT: i64 = 58
-let NATIVE_DECODE_URI_COMPONENT: i64 = 59
-let NATIVE_ENCODE_URI: i64 = 60
-let NATIVE_DECODE_URI: i64 = 61
-let NATIVE_SET_TIMEOUT: i64 = 62
-let NATIVE_SET_INTERVAL: i64 = 63
-let NATIVE_CLEAR_TIMER: i64 = 64
-let NATIVE_SET_IMMEDIATE: i64 = 65
-pub let NATIVE_QUEUE_MICROTASK: i64 = 66
-// queueMicrotask has its own native (distinct from process.nextTick, which
-// shares NATIVE_QUEUE_MICROTASK) so it can call the callback with zero
-// arguments per spec while nextTick's behaviour is left untouched.
-let NATIVE_QUEUE_MICROTASK_JS: i64 = 112
-let NATIVE_DATAVIEW: i64 = 113
-let NATIVE_OBJECT_HASOWN: i64 = 114
-let NATIVE_STRING_RAW: i64 = 115
-let NATIVE_STRING_FROMCODEPOINT: i64 = 116
-let NATIVE_DATE_PARSE: i64 = 117
-let NATIVE_MKDIR: i64 = 118
-let NATIVE_READDIR: i64 = 119
-let NATIVE_UNLINK: i64 = 120
-let NATIVE_RMDIR: i64 = 121
-let NATIVE_RENAME: i64 = 122
-let NATIVE_IS_DIR: i64 = 123
-let NATIVE_BIGINT: i64 = 124
-let NATIVE_OBJECT_GETOWNPROPSYMBOLS: i64 = 125
-let NATIVE_OBJECT_GETOWNPROPDESCS: i64 = 126
-let NATIVE_ARRAY_CTOR: i64 = 67
-let NATIVE_TCP_LISTEN: i64 = 68
-let NATIVE_TCP_ACCEPT: i64 = 69
-let NATIVE_TCP_RECV: i64 = 70
-let NATIVE_TCP_SEND: i64 = 71
-let NATIVE_TCP_CLOSE: i64 = 72
-// The client half of the TCP surface. Only listen/accept existed, so a module
-// could serve connections but never make one, which is why net.connect could not
-// be written at all.
-let NATIVE_TCP_CONNECT: i64 = 200
-// The port a listener actually bound. Binding 0 asks the OS to choose, and
-// without a way to read the result every server had to hardcode a port and hope
-// it was free — which is exactly what node's tests do NOT do.
-let NATIVE_TCP_PORT: i64 = 201
-// Run a program to completion and hand back its output. The async spawn family
-// is built on top of this in JS; nothing could spawn at all before.
-let NATIVE_SPAWN_SYNC: i64 = 202
-// Read a connection, distinguishing "nothing yet" from "peer closed". recvOnce
-// collapses both to an empty string, so a client could never tell that the other
-// end had gone and never emitted 'end'/'close': the socket stayed live and the
-// event loop with it. Answers -1 for would-block and the empty string for EOF.
-let NATIVE_TCP_READ: i64 = 203
-let NATIVE_HTTP_REGISTER: i64 = 73
-let NATIVE_HTTP_UNREGISTER: i64 = 74
-let NATIVE_WRITE_FILE: i64 = 75
-let NATIVE_GC: i64 = 76
-let NATIVE_OBJECT_ISFROZEN: i64 = 77
-let NATIVE_OBJECT_PREVENTEXT: i64 = 100
-let NATIVE_OBJECT_ISEXT: i64 = 101
-let NATIVE_OBJECT_SEAL: i64 = 102
-let NATIVE_OBJECT_ISSEALED: i64 = 103
-// __byteLength(s): the raw UTF-8 byte count of an engine string. JS `.length`
-// decodes to code points and charCodeAt is lossy on bytes that aren't valid
-// UTF-8, so neither can measure file content read as a string. Content-Length
-// must come from here or binary responses (fonts, images) get truncated.
-let NATIVE_BYTE_LENGTH: i64 = 104
-// __napiLoad(path): dlopen a .node addon, run napi_register_module_v1, return its
-// exports. This is what require() resolves a .node file to.
-let NATIVE_NAPI_LOAD: i64 = 105
-// console.* as real functions. The identifier fast path above handles the common
-// `console.log(x)` call shape, but code that passes the method around — prisma's
-// runtime does `console.debug || console.log` — needs `console` to be a real
-// object whose properties are callable values.
-pub let NATIVE_CONSOLE_LOG: i64 = 106
-// console.error/warn: same formatting, stderr instead of stdout
-let NATIVE_CONSOLE_ERROR: i64 = 152
-// new Proxy(target, handler)
-let NATIVE_PROXY: i64 = 107
-// Object.is — SameValue: like ===, except NaN equals itself and +0 differs
-// from -0. ts-pattern (bundled into prisma's runtime) matches literals with it.
-let NATIVE_OBJECT_IS: i64 = 108
-// __httpFetchAsync(method, url, headersJson, body): runs the request on a worker
-// OS thread and returns a promise the event loop settles with the raw response.
-let NATIVE_HTTP_FETCH_ASYNC: i64 = 109
-let NATIVE_ARRAYBUFFER: i64 = 78
-// the typed-array constructors occupy a contiguous block so the element kind is
-// just (id - NATIVE_TA_BASE); keep in step with the TA_* order in runtime.milo
-// Moved off 79 when the two BigInt kinds were added: the block is
-// NATIVE_TA_BASE..NATIVE_TA_BASE+TA_MAX, and at 79 that ran into
-// NATIVE_HTTP_FETCH (88) and NATIVE_MATH_EXP (89). A new BigInt64Array
-// therefore constructed a fetch, which returned an error STRING rather than a
-// view — silent, and exactly as confusing as it sounds. 160 is above every id
-// in use at the time (highest was 153).
-//
-// It happened AGAIN with 161/162/163, which look free in the list of `let
-// NATIVE_*` lines but are Int8Array/Uint8Array/Int16Array here: `new Int8Array(2)`
-// answered the number 2. Anything added now goes at 200 and up, above the whole
-// block, and tools/lint-symbols.sh knows this range is reserved.
-let NATIVE_TA_BASE: i64 = 160
-// __httpFetch(method, url, headersJson, body): synchronous outbound HTTP/HTTPS.
-// Above the TA block (79..87). node-fetch is built on this.
-let NATIVE_HTTP_FETCH: i64 = 88
-
-// node:sqlite primitives (lib/sqlite.js wraps these into the Node API shape).
-// Databases and statements are addressed by index into st.sqliteDbs/sqliteStmts;
-// JS never sees a pointer. Left a gap above the last id (126) so the unrelated
-// blocks stay easy to extend.
-let NATIVE_SQLITE_OPEN: i64 = 130
-let NATIVE_SQLITE_CLOSE: i64 = 131
-let NATIVE_SQLITE_EXEC: i64 = 132
-let NATIVE_SQLITE_PREPARE: i64 = 133
-let NATIVE_SQLITE_ERRMSG: i64 = 134
-let NATIVE_SQLITE_STEP: i64 = 135
-let NATIVE_SQLITE_COLUMN_COUNT: i64 = 136
-let NATIVE_SQLITE_COLUMN_NAME: i64 = 137
-let NATIVE_SQLITE_COLUMN_VALUE: i64 = 138
-let NATIVE_SQLITE_BIND: i64 = 139
-let NATIVE_SQLITE_RESET: i64 = 140
-let NATIVE_SQLITE_FINALIZE: i64 = 141
-let NATIVE_SQLITE_CHANGES: i64 = 142
-let NATIVE_SQLITE_LAST_INSERT_ID: i64 = 143
-let NATIVE_SQLITE_BIND_INDEX: i64 = 144
-let NATIVE_SQLITE_FILENAME: i64 = 145
-// The engine's console.log renderer, exposed to JS so lib/util.js does not have
-// to keep a second, diverging copy of node's util.inspect.
-pub let NATIVE_INSPECT: i64 = 146
-// Exposed to the prelude as __isConstructor so Reflect.construct can validate
-// its target and newTarget. There is no JS-level way to ask this question
-// without side effects, and test262's isConstructor helper asks it of every
-// builtin (one not-a-constructor.js per method).
-let NATIVE_IS_CONSTRUCTOR: i64 = 154
-// __markNotConstructor(fn): records that a JS-defined built-in method has no
-// [[Construct]]. The prelude and lib/temporal.js implement real built-ins as
-// ordinary JS functions, which the engine cannot otherwise tell from user code
-// — and an ordinary function IS a constructor.
-let NATIVE_MARK_NOT_CTOR: i64 = 155
-// Proxy.revocable(target, handler) → { proxy, revoke }.
-let NATIVE_PROXY_REVOCABLE: i64 = 156
-// The Reflect entry points that cannot be expressed in the prelude's JS. Each
-// reports a rejected operation as `false` where the Object.* spelling throws,
-// and that distinction has to be made below the JS layer: wrapping the call in
-// try/catch would also swallow a Test262Error thrown by user code inside a
-// proxy trap, which must propagate.
-let NATIVE_REFLECT_DEFINEPROP: i64 = 157
-let NATIVE_REFLECT_SET: i64 = 158
-let NATIVE_REFLECT_GET: i64 = 159
-let NATIVE_REFLECT_SETPROTO: i64 = 127
-let NATIVE_REFLECT_PREVENTEXT: i64 = 128
-// __reflectOwnKeys(target): [[OwnPropertyKeys]] verbatim. Composing it in JS as
-// getOwnPropertyNames+getOwnPropertySymbols re-sorts the list, and a proxy's
-// ownKeys trap result has to reach the caller in the order the trap chose.
-let NATIVE_REFLECT_OWNKEYS: i64 = 32
-// __construct(target, argsArray, newTarget): [[Construct]] with an explicit
-// newTarget, which `new target(...args)` has no way to express.
-let NATIVE_REFLECT_CONSTRUCT: i64 = 129
-// ArrayBuffer.isView(x): true for a typed-array view or a DataView, and
-// crucially FALSE for an ArrayBuffer itself
-let NATIVE_ARRAYBUFFER_ISVIEW: i64 = 147
-// EvalError and URIError are core ECMAScript constructors that simply did not
-// exist: `EvalError` was a ReferenceError at the first mention, and get-intrinsic
-// (a dependency of a large slice of npm) reads all seven error constructors on
-// its first line. They do not fit the contiguous NATIVE_ERROR..NATIVE_REFERENCE_ERROR
-// range — 0..4 is full — so the range checks below name them explicitly.
-let NATIVE_EVAL_ERROR: i64 = 148
-let NATIVE_URI_ERROR: i64 = 149
-// `eval` as a VALUE. There is no runtime compiler, so calling this throws — but
-// it has to EXIST, because get-intrinsic tabulates `'%eval%': eval` on its way
-// to being required by a large slice of npm. The direct-call form
-// `eval("bareIdent")` is handled at the call site and still works.
-let NATIVE_EVAL: i64 = 150
-// `Function(body)` / `new Function(a, b, body)`. Built on the same evaluator as
-// eval: `Function("return this")()` is the classic globalThis probe, and
-// es-get-iterator and function-bind both build their test subjects with it.
-let NATIVE_FUNCTION_CTOR: i64 = 153
-// __callFrames() → the module paths currently executing, innermost first. This
-// is what Error.captureStackTrace turns into V8 CallSite objects: `bindings`
-// (under better-sqlite3 and most native addons) discovers the filename of its
-// CALLER through Error.prepareStackTrace and CallSite#getFileName, and with no
-// frames at all it read undefined and threw on `fileName.indexOf`.
-let NATIVE_CALL_FRAMES: i64 = 151
-
 // sqlite3_column_name is not wrapped by std/sqlite, but node:sqlite's get()/all()
 // return row objects keyed by column name, so it is declared here directly. The
 // libsqlite3 link flag already comes from the std/sqlite import.
@@ -4517,78 +4271,128 @@ fn sqliteStmtIdx(st: &Interp, v: &JSValue): i64 {
 // The `.name` of a native constructor (Object.name === "Object" etc), so
 // `err.constructor.name` and similar resolve. Empty for natives that are not
 // named constructors.
-fn nativeCtorName(id: i64): string {
-    if id >= NATIVE_ERROR && id <= NATIVE_REFERENCE_ERROR {
-        return nativeErrorName(id)
+fn nativeCtorName(n: &Native): string {
+    match n {
+        Native.Fn(id) => {
+            // the five original error constructors only; EvalError and URIError
+            // were added later and have never answered here
+            if id == Builtin.Error || id == Builtin.TypeError || id == Builtin.RangeError
+                || id == Builtin.SyntaxError || id == Builtin.ReferenceError {
+                return nativeErrorName(id)
+            }
+            if id == Builtin.ObjectCtor {
+                return "Object"
+            }
+            if id == Builtin.Number {
+                return "Number"
+            }
+            if id == Builtin.BigInt {
+                return "BigInt"
+            }
+            if id == Builtin.String {
+                return "String"
+            }
+            if id == Builtin.Boolean {
+                return "Boolean"
+            }
+            return ""
+        }
+        _ => {
+            // typed-array constructors and resolvers keep their name in their
+            // property bag, not here
+            return ""
+        }
     }
-    if id == NATIVE_OBJECT_CTOR {
-        return "Object"
-    }
-    if id == NATIVE_NUMBER {
-        return "Number"
-    }
-    if id == NATIVE_BIGINT {
-        return "BigInt"
-    }
-    if id == NATIVE_STRING {
-        return "String"
-    }
-    if id == NATIVE_BOOLEAN {
-        return "Boolean"
-    }
-    return ""
 }
 
-fn nativeErrorName(id: i64): string {
-    if id == NATIVE_TYPE_ERROR {
+fn nativeErrorName(id: Builtin): string {
+    if id == Builtin.TypeError {
         return "TypeError"
     }
-    if id == NATIVE_RANGE_ERROR {
+    if id == Builtin.RangeError {
         return "RangeError"
     }
-    if id == NATIVE_SYNTAX_ERROR {
+    if id == Builtin.SyntaxError {
         return "SyntaxError"
     }
-    if id == NATIVE_REFERENCE_ERROR {
+    if id == Builtin.ReferenceError {
         return "ReferenceError"
     }
-    if id == NATIVE_EVAL_ERROR {
+    if id == Builtin.EvalError {
         return "EvalError"
     }
-    if id == NATIVE_URI_ERROR {
+    if id == Builtin.UriError {
         return "URIError"
     }
     return "Error"
 }
 
-fn isErrorCtor(id: i64): bool {
-    return (id >= NATIVE_ERROR && id <= NATIVE_REFERENCE_ERROR) || id == NATIVE_EVAL_ERROR || id == NATIVE_URI_ERROR
+// The native error constructor `class X extends <base>` extends, if the base is
+// one. Used to initialise the instance in place rather than let the base build
+// and return an object of its own.
+fn nativeErrorCtorOf(v: &JSValue): Option<Builtin> {
+    match nativeHandle(v) {
+        Option.Some(n) => {
+            match n {
+                Native.Fn(b) => {
+                    if isErrorCtor(b) {
+                        return Option.Some(b)
+                    }
+                }
+                _ => {
+                }
+            }
+        }
+        Option.None => {
+        }
+    }
+    return Option.None
+}
+
+fn isErrorCtor(id: Builtin): bool {
+    return id == Builtin.Error || id == Builtin.TypeError || id == Builtin.RangeError
+        || id == Builtin.SyntaxError || id == Builtin.ReferenceError
+        || id == Builtin.EvalError || id == Builtin.UriError
+}
+
+// The error name for ANY native, which is what the tail of nativeInstanceOf
+// asks: a native that is not an error constructor answers "Error", the default
+// nativeErrorName has always returned for one.
+fn nativeErrorNameOf(n: &Native): string {
+    match n {
+        Native.Fn(b) => {
+            return nativeErrorName(b)
+        }
+        _ => {
+            return "Error"
+        }
+    }
 }
 
 // Reverse of nativeErrorName: the constructor id for a kind string, so an error
 // raised internally by makeError links to the same prototype a constructed one
 // does. Unknown kinds (URIError, EvalError — thrown by name but with no native
 // constructor) fall back to Error.
-fn errorCtorIdFor(kind: &string): i64 {
+fn errorCtorIdFor(kind: &string): Builtin {
     if kind == "TypeError" {
-        return NATIVE_TYPE_ERROR
+        return Builtin.TypeError
     }
     if kind == "RangeError" {
-        return NATIVE_RANGE_ERROR
+        return Builtin.RangeError
     }
     if kind == "SyntaxError" {
-        return NATIVE_SYNTAX_ERROR
+        return Builtin.SyntaxError
     }
     if kind == "ReferenceError" {
-        return NATIVE_REFERENCE_ERROR
+        return Builtin.ReferenceError
     }
     if kind == "EvalError" {
-        return NATIVE_EVAL_ERROR
+        return Builtin.EvalError
     }
     if kind == "URIError" {
-        return NATIVE_URI_ERROR
+        return Builtin.UriError
     }
-    return NATIVE_ERROR
+    return Builtin.Error
 }
 
 // Invoke a native function/constructor. Error(msg) and new Error(msg) behave the
@@ -4723,8 +4527,8 @@ fn doHttpFetch(method: &string, url: &string, headersRaw: &string, body: &string
 // intercepted here — otherwise `String(obj)` reports "[object Object]" for an
 // object whose toString says otherwise, while `${obj}` and `"" + obj` (both of
 // which run the full ToPrimitive) disagree with it.
-pub fn callNativeProg(prog: &Prog, id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
-    if id == NATIVE_STRING && argVals.len() > 0 {
+pub fn callNativeProg(prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
+    if nativeEq(n, Native.Fn(Builtin.String)) && argVals.len() > 0 {
         let h = objHandle(argVals[0])
         if h >= 0 {
             // Straight to toStrProg for any object. This used to first READ
@@ -4739,10 +4543,49 @@ pub fn callNativeProg(prog: &Prog, id: i64, argVals: &Vec<JSValue>, st: &mut Int
             return JSValue.Str(toStrProg(gProg, argVals[0], st))
         }
     }
-    return callNative(id, argVals, st)
+    return callNative(n, argVals, st)
 }
 
-fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
+// The two payload-carrying natives answer here; everything else is one of the
+// Builtin variants and goes to callBuiltin's chain.
+fn callNative(n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
+    match n {
+        Native.Fn(b) => {
+            return callBuiltin(b, argVals, st)
+        }
+        Native.TypedArrayCtor(kind) => {
+            // Float32/Float64 store real IEEE-754 bytes via taStore's f32/f64
+            // reinterpret (runtime.milo), so every kind is constructible.
+            return makeTypedArray(gProg, st, kind, argVals)
+        }
+        Native.Resolver(target, isReject) => {
+            return callResolver(st, target, isReject, argVals)
+        }
+    }
+}
+
+// One half of a promise's resolve/reject pair. The pair fires at most once
+// BETWEEN them, and the flag is set the moment either runs — not when the
+// promise settles. Resolving with a thenable leaves it pending while the
+// adoption job is queued, and a resolve/reject arriving in that window is
+// ignored.
+fn callResolver(st: &mut Interp, target: i64, isReject: bool, argVals: &Vec<JSValue>): JSValue {
+    var v = JSValue.Undefined
+    if argVals.len() > 0 {
+        v = cloneValue(argVals[0])
+    }
+    if !st.objExtras[st.objects[target].extra].promiseResolved {
+        st.objExtras[st.objects[target].extra].promiseResolved = true
+        if isReject {
+            settlePromise(st, target, 2, v)
+        } else {
+            resolvePromiseValue(gProg, st, target, v)
+        }
+    }
+    return JSValue.Undefined
+}
+
+fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     if isErrorCtor(id) {
         let o = newObject(st)
         st.objects[o].isError = true
@@ -4795,35 +4638,30 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         objSetNonEnumerable(st, o, "stack")
         return JSValue.Obj(o)
     }
-    if id == NATIVE_JSON_STRINGIFY {
+    if id == Builtin.JsonStringify {
         if argVals.len() == 0 || mjJsonOmitted(argVals[0]) {
             // JSON.stringify(undefined) / a function is the JS value undefined
             return JSValue.Undefined
         }
         return JSValue.Str(mjStringifyVal(argVals[0], st))
     }
-    if id == NATIVE_JSON_PARSE {
+    if id == Builtin.JsonParse {
         if argVals.len() == 0 {
             return JSValue.Undefined
         }
         let text = toStr(argVals[0])
         return mjJsonParse(text, st)
     }
-    if id >= NATIVE_MATH_FLOOR && id <= NATIVE_MATH_RANDOM {
+    if isMathBuiltin(id) {
         return mathNative(id, argVals, st)
     }
-    // the transcendentals were appended after the original block, so they sit
-    // outside the contiguous FLOOR..RANDOM range the gate above covers
-    if (id >= NATIVE_MATH_EXP && id <= NATIVE_MATH_ATAN2) || id == NATIVE_MATH_LOG2 || id == NATIVE_MATH_LOG10 {
-        return mathNative(id, argVals, st)
-    }
-    if id == NATIVE_GC {
+    if id == Builtin.Gc {
         // a real collection, not a no-op: the QuickJS GC tests call this to force
         // finalization, and a stub would make them pass without exercising anything
         collect(st)
         return JSValue.Undefined
     }
-    if id == NATIVE_REGEXP {
+    if id == Builtin.RegExp {
         var pat = ""
         var flags = ""
         if argVals.len() > 0 {
@@ -4859,7 +4697,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return makeRegex(st, pat, flags)
     }
-    if id == NATIVE_NUMBER {
+    if id == Builtin.Number {
         if argVals.len() == 0 {
             return JSValue.Number(0.0)
         }
@@ -4887,7 +4725,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Number(toNum(argVals[0]))
     }
-    if id == NATIVE_BIGINT {
+    if id == Builtin.BigInt {
         if argVals.len() == 0 {
             return JSValue.BigInt("0")
         }
@@ -4929,7 +4767,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_STRING {
+    if id == Builtin.String {
         if argVals.len() == 0 {
             return JSValue.Str("")
         }
@@ -4965,13 +4803,13 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // object's user toString has to run
         return JSValue.Str(toStrProg(gProg, argVals[0], st))
     }
-    if id == NATIVE_BOOLEAN {
+    if id == Builtin.Boolean {
         if argVals.len() == 0 {
             return JSValue.Bool(false)
         }
         return JSValue.Bool(truthy(argVals[0]))
     }
-    if id == NATIVE_READ_FILE_SYNC {
+    if id == Builtin.ReadFileSync {
         if argVals.len() == 0 {
             return JSValue.Undefined
         }
@@ -4984,7 +4822,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_FILE_EXISTS {
+    if id == Builtin.FileExists {
         if argVals.len() == 0 {
             return JSValue.Bool(false)
         }
@@ -4997,7 +4835,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_OBJECT_DEFINEPROPERTY {
+    if id == Builtin.ObjectDefineProperty {
         // Every one of these was silently accepted, so a call that the spec says
         // must throw returned the object unchanged and the caller carried on
         // believing the property was defined.
@@ -5042,33 +4880,12 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         applyDescriptor(st, o, key, d)
         return JSValue.Obj(o)
     }
-    if id >= NATIVE_RESOLVER_BASE {
-        let off = id - NATIVE_RESOLVER_BASE
-        let target = off / 2
+    if id == Builtin.PromiseResolve || id == Builtin.PromiseReject {
         var v = JSValue.Undefined
         if argVals.len() > 0 {
             v = cloneValue(argVals[0])
         }
-        // A promise's resolve/reject pair fires at most once between them, and
-        // the flag is set the moment either runs — not when the promise settles.
-        // Resolving with a thenable leaves it pending while the adoption job is
-        // queued, and a resolve/reject arriving in that window is ignored.
-        if !st.objExtras[st.objects[target].extra].promiseResolved {
-            st.objExtras[st.objects[target].extra].promiseResolved = true
-            if off % 2 == 1 {
-                settlePromise(st, target, 2, v)
-            } else {
-                resolvePromiseValue(gProg, st, target, v)
-            }
-        }
-        return JSValue.Undefined
-    }
-    if id == NATIVE_PROMISE_RESOLVE || id == NATIVE_PROMISE_REJECT {
-        var v = JSValue.Undefined
-        if argVals.len() > 0 {
-            v = cloneValue(argVals[0])
-        }
-        if id == NATIVE_PROMISE_RESOLVE {
+        if id == Builtin.PromiseResolve {
             // Promise.resolve(p) is p
             let h = objHandle(v)
             if h >= 0 && isPromise(st, h) {
@@ -5086,18 +4903,18 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Obj(newPromise(st, 2, v))
     }
-    if id == NATIVE_IS_NAN || id == NATIVE_IS_FINITE {
+    if id == Builtin.IsNan || id == Builtin.IsFinite {
         var x = jsNan()
         if argVals.len() > 0 {
             x = toNum(argVals[0])
         }
         let isNan = x != x
-        if id == NATIVE_IS_NAN {
+        if id == Builtin.IsNan {
             return JSValue.Bool(isNan)
         }
         return JSValue.Bool(!isNan && x != jsInfinity() && x != (0.0 - jsInfinity()))
     }
-    if id == NATIVE_ARRAY_ISARRAY {
+    if id == Builtin.ArrayIsArray {
         if argVals.len() > 0 {
             let h = objHandle(argVals[0])
             if h >= 0 {
@@ -5107,12 +4924,12 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Bool(false)
     }
-    if id == NATIVE_PARSE_INT || id == NATIVE_PARSE_FLOAT {
+    if id == Builtin.ParseInt || id == Builtin.ParseFloat {
         if argVals.len() == 0 {
             return JSValue.Number(jsNan())
         }
         let text = toStr(argVals[0])
-        if id == NATIVE_PARSE_FLOAT {
+        if id == Builtin.ParseFloat {
             return JSValue.Number(jsParseFloatPrefix(text))
         }
         var radix: i64 = 10
@@ -5124,7 +4941,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Number(jsParsePrefixNum(text, radix))
     }
-    if id == NATIVE_SYMBOL {
+    if id == Builtin.Symbol {
         // Symbols are modelled as unique strings; enough for the well-known
         // ones used as property keys, not for real symbol semantics
         var desc = ""
@@ -5134,7 +4951,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         st.symbolCounter = st.symbolCounter + 1
         return JSValue.Str("@@sym:" + desc + ":" + i64ToStr(st.symbolCounter))
     }
-    if id == NATIVE_OBJECT_DEFINEPROPERTIES {
+    if id == Builtin.ObjectDefineProperties {
         if argVals.len() < 2 {
             return JSValue.Undefined
         }
@@ -5215,9 +5032,9 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         popTemp(st)
         return JSValue.Obj(o)
     }
-    if id == NATIVE_MAP || id == NATIVE_SET {
+    if id == Builtin.Map || id == Builtin.Set {
         let o = newObject(st)
-        if id == NATIVE_MAP {
+        if id == Builtin.Map {
             st.objects[o].isMap = true
             if st.mapProtoObj >= 0 {
                 st.objects[o].proto = st.mapProtoObj
@@ -5243,7 +5060,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 var i: i64 = 0
                 while i < arrLen(st, src) {
                     let e = arrGet(st, src, i)
-                    if id == NATIVE_SET {
+                    if id == Builtin.Set {
                         mapPut(st, o, e, JSValue.Bool(true))
                     } else {
                         let pair = objHandle(e)
@@ -5259,11 +5076,11 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         popTemp(st)
         return JSValue.Obj(o)
     }
-    if id == NATIVE_OBJECT_GETOWNPROPNAMES || id == NATIVE_OBJECT_GETOWNPROPSYMBOLS {
+    if id == Builtin.ObjectGetOwnPropNames || id == Builtin.ObjectGetOwnPropSymbols {
         // Two views of the same [[OwnPropertyKeys]] list: symbols are stored as
         // "@@sym:"-prefixed string keys, and a symbol value IS that string, so
         // the two differ only in which half of the list they keep.
-        let wantSymbols = id == NATIVE_OBJECT_GETOWNPROPSYMBOLS
+        let wantSymbols = id == Builtin.ObjectGetOwnPropSymbols
         let arr = newArray(st)
         if argVals.len() > 0 {
             pushTemp(st, JSValue.Obj(arr))
@@ -5283,7 +5100,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Obj(arr)
     }
-    if id == NATIVE_ARRAY_FROM {
+    if id == Builtin.ArrayFrom {
         let arr = newArray(st)
         pushTemp(st, JSValue.Obj(arr))
         // gather the source elements, then apply the optional map function
@@ -5367,7 +5184,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         popTemp(st)
         return JSValue.Obj(arr)
     }
-    if id == NATIVE_TCP_LISTEN {
+    if id == Builtin.TcpListen {
         var port: i64 = 0
         if argVals.len() > 0 {
             port = numToIndex(toNum(argVals[0]))
@@ -5382,7 +5199,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_TCP_ACCEPT {
+    if id == Builtin.TcpAccept {
         // Nonblocking by default: a blocking accept parks the event-loop task on
         // the listener, which stalls timers, microtasks and fetch servicing until
         // the NEXT connection arrives — with R1 activations that wedged every
@@ -5423,7 +5240,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_SPAWN_SYNC {
+    if id == Builtin.SpawnSync {
         var program = ""
         if argVals.len() > 0 {
             program = toStr(argVals[0])
@@ -5491,7 +5308,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         popTemp(st)
         return JSValue.Obj(out)
     }
-    if id == NATIVE_TCP_READ {
+    if id == Builtin.TcpRead {
         var idx: i64 = 0
         if argVals.len() > 0 {
             idx = numToIndex(toNum(argVals[0]))
@@ -5520,7 +5337,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // would-block, which is NOT end of stream
         return JSValue.Number(0.0 - 1.0)
     }
-    if id == NATIVE_TCP_PORT {
+    if id == Builtin.TcpPort {
         var idx: i64 = 0
         if argVals.len() > 0 {
             idx = numToIndex(toNum(argVals[0]))
@@ -5530,7 +5347,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Number(st.listeners[idx].port() as f64)
     }
-    if id == NATIVE_TCP_CONNECT {
+    if id == Builtin.TcpConnect {
         var host = "127.0.0.1"
         if argVals.len() > 0 {
             host = toStr(argVals[0])
@@ -5550,7 +5367,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_TCP_RECV {
+    if id == Builtin.TcpRecv {
         var idx: i64 = 0
         if argVals.len() > 0 {
             idx = numToIndex(toNum(argVals[0]))
@@ -5560,7 +5377,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Str(st.conns[idx].recvOnce())
     }
-    if id == NATIVE_TCP_SEND {
+    if id == Builtin.TcpSend {
         var idx: i64 = 0
         if argVals.len() > 0 {
             idx = numToIndex(toNum(argVals[0]))
@@ -5581,7 +5398,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_TCP_CLOSE {
+    if id == Builtin.TcpClose {
         var idx: i64 = 0
         if argVals.len() > 0 {
             idx = numToIndex(toNum(argVals[0]))
@@ -5601,7 +5418,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Undefined
     }
-    if id == NATIVE_SQLITE_OPEN {
+    if id == Builtin.SqliteOpen {
         if argVals.len() == 0 {
             return JSValue.Number(0.0 - 1.0)
         }
@@ -5616,7 +5433,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_SQLITE_CLOSE {
+    if id == Builtin.SqliteClose {
         if argVals.len() == 0 {
             return JSValue.Undefined
         }
@@ -5639,7 +5456,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         st.sqliteDbLive[d] = false
         return JSValue.Undefined
     }
-    if id == NATIVE_SQLITE_EXEC {
+    if id == Builtin.SqliteExec {
         if argVals.len() < 2 {
             return JSValue.Number(0.0 - 1.0)
         }
@@ -5656,7 +5473,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_SQLITE_PREPARE {
+    if id == Builtin.SqlitePrepare {
         if argVals.len() < 2 {
             return JSValue.Number(0.0 - 1.0)
         }
@@ -5676,7 +5493,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_SQLITE_ERRMSG {
+    if id == Builtin.SqliteErrmsg {
         if argVals.len() == 0 {
             return JSValue.Str("")
         }
@@ -5692,7 +5509,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Str(_cstrToString(p))
         }
     }
-    if id == NATIVE_SQLITE_STEP {
+    if id == Builtin.SqliteStep {
         // The raw sqlite code, not a bool: SQLITE_ROW 100, SQLITE_DONE 101, and
         // anything else is a real failure (SQLITE_CONSTRAINT 19 and friends).
         // dbStep() collapses all of those to false, which silently swallowed
@@ -5706,7 +5523,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Number(sqlite3_step(st.sqliteStmts[s]._handle) as f64)
     }
-    if id == NATIVE_SQLITE_COLUMN_COUNT {
+    if id == Builtin.SqliteColumnCount {
         if argVals.len() == 0 {
             return JSValue.Number(0.0)
         }
@@ -5716,7 +5533,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Number(dbColumnCount(st.sqliteStmts[s]) as f64)
     }
-    if id == NATIVE_SQLITE_COLUMN_NAME {
+    if id == Builtin.SqliteColumnName {
         if argVals.len() < 2 {
             return JSValue.Str("")
         }
@@ -5732,7 +5549,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Str(_cstrToString(p))
         }
     }
-    if id == NATIVE_SQLITE_COLUMN_VALUE {
+    if id == Builtin.SqliteColumnValue {
         if argVals.len() < 2 {
             return JSValue.Null
         }
@@ -5757,7 +5574,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // TEXT, and BLOB as its bytes reinterpreted as text (no Buffer yet)
         return JSValue.Str(dbColumnText(st.sqliteStmts[s], col))
     }
-    if id == NATIVE_SQLITE_BIND {
+    if id == Builtin.SqliteBind {
         if argVals.len() < 3 {
             return JSValue.Bool(false)
         }
@@ -5812,7 +5629,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_SQLITE_FILENAME {
+    if id == Builtin.SqliteFilename {
         if argVals.len() == 0 {
             return JSValue.Str("")
         }
@@ -5828,7 +5645,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Str(_cstrToString(p))
         }
     }
-    if id == NATIVE_SQLITE_BIND_INDEX {
+    if id == Builtin.SqliteBindIndex {
         if argVals.len() < 2 {
             return JSValue.Number(0.0)
         }
@@ -5838,7 +5655,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Number(sqlite3_bind_parameter_index(st.sqliteStmts[s]._handle, toStr(argVals[1])) as f64)
     }
-    if id == NATIVE_SQLITE_RESET {
+    if id == Builtin.SqliteReset {
         if argVals.len() == 0 {
             return JSValue.Undefined
         }
@@ -5848,7 +5665,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Undefined
     }
-    if id == NATIVE_SQLITE_FINALIZE {
+    if id == Builtin.SqliteFinalize {
         if argVals.len() == 0 {
             return JSValue.Undefined
         }
@@ -5859,7 +5676,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Undefined
     }
-    if id == NATIVE_SQLITE_CHANGES {
+    if id == Builtin.SqliteChanges {
         if argVals.len() == 0 {
             return JSValue.Number(0.0)
         }
@@ -5869,7 +5686,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Number(sqlite3_changes(st.sqliteDbs[d]._handle) as f64)
     }
-    if id == NATIVE_SQLITE_LAST_INSERT_ID {
+    if id == Builtin.SqliteLastInsertId {
         if argVals.len() == 0 {
             return JSValue.Number(0.0)
         }
@@ -5879,7 +5696,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Number(dbLastInsertId(st.sqliteDbs[d]) as f64)
     }
-    if id == NATIVE_HTTP_FETCH {
+    if id == Builtin.HttpFetch {
         var method = "GET"
         var url = ""
         var headersRaw = ""
@@ -5898,7 +5715,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Str(doHttpFetch(method, url, headersRaw, body))
     }
-    if id == NATIVE_HTTP_FETCH_ASYNC {
+    if id == Builtin.HttpFetchAsync {
         var method = "GET"
         var url = ""
         var headersRaw = ""
@@ -5939,7 +5756,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Obj(p)
     }
-    if id == NATIVE_WRITE_FILE {
+    if id == Builtin.WriteFile {
         if argVals.len() < 2 {
             return JSValue.Bool(false)
         }
@@ -5968,7 +5785,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_MKDIR {
+    if id == Builtin.Mkdir {
         // __mkdirSync(path): one directory, no parents (the JS shim walks the
         // path for {recursive:true}). true on success, false on any error —
         // "already exists" reads as false, which the shim treats as fine.
@@ -5984,7 +5801,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_CALL_FRAMES {
+    if id == Builtin.CallFrames {
         let arr = newArray(st)
         pushTemp(st, JSValue.Obj(arr))
         var fi = st.fnFileStack.len() - 1
@@ -6007,7 +5824,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         popTemp(st)
         return JSValue.Obj(arr)
     }
-    if id == NATIVE_READDIR {
+    if id == Builtin.Readdir {
         // __readdirSync(path) → array of entry name strings, or null on error
         if argVals.len() < 1 {
             return JSValue.Null
@@ -6028,7 +5845,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         popTemp(st)
         return JSValue.Obj(arr)
     }
-    if id == NATIVE_UNLINK {
+    if id == Builtin.Unlink {
         if argVals.len() < 1 {
             return JSValue.Bool(false)
         }
@@ -6041,7 +5858,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_RMDIR {
+    if id == Builtin.Rmdir {
         if argVals.len() < 1 {
             return JSValue.Bool(false)
         }
@@ -6054,7 +5871,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_RENAME {
+    if id == Builtin.Rename {
         if argVals.len() < 2 {
             return JSValue.Bool(false)
         }
@@ -6067,7 +5884,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_IS_DIR {
+    if id == Builtin.IsDir {
         // __isDir(path): real S_IFDIR check via stat — the read-file-returns-null
         // heuristic was wrong on macOS (reading a directory yields "" not null)
         if argVals.len() < 1 {
@@ -6075,7 +5892,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Bool(isDir(toStr(argVals[0])))
     }
-    if id == NATIVE_HTTP_REGISTER {
+    if id == Builtin.HttpRegister {
         if argVals.len() > 0 {
             let h = objHandle(argVals[0])
             if h >= 0 {
@@ -6084,7 +5901,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Undefined
     }
-    if id == NATIVE_HTTP_UNREGISTER {
+    if id == Builtin.HttpUnregister {
         if argVals.len() > 0 {
             let h = objHandle(argVals[0])
             var kept: Vec<i64> = Vec.new()
@@ -6099,7 +5916,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Undefined
     }
-    if id == NATIVE_PROCESS_EXIT {
+    if id == Builtin.ProcessExit {
         var code: i64 = 0
         if argVals.len() > 0 {
             code = numToIndex(toNum(argVals[0]))
@@ -6107,15 +5924,15 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         exit(code as i32)
         return JSValue.Undefined
     }
-    if id == NATIVE_NOOP {
+    if id == Builtin.Noop {
         return JSValue.Undefined
     }
-    if id == NATIVE_SET_TIMEOUT || id == NATIVE_SET_INTERVAL || id == NATIVE_SET_IMMEDIATE {
+    if id == Builtin.SetTimeout || id == Builtin.SetInterval || id == Builtin.SetImmediate {
         if argVals.len() == 0 {
             return JSValue.Number(0.0)
         }
         var delay = 0.0
-        if id != NATIVE_SET_IMMEDIATE && argVals.len() > 1 {
+        if id != Builtin.SetImmediate && argVals.len() > 1 {
             delay = toNum(argVals[1])
         }
         if delay != delay || delay < 0.0 {
@@ -6124,7 +5941,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // extra args after the delay are passed through to the callback
         var extra: Vec<JSValue> = Vec.new()
         var firstExtra: i64 = 2
-        if id == NATIVE_SET_IMMEDIATE {
+        if id == Builtin.SetImmediate {
             firstExtra = 1
         }
         var ei = firstExtra
@@ -6133,7 +5950,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             ei = ei + 1
         }
         var repeat = 0.0
-        if id == NATIVE_SET_INTERVAL {
+        if id == Builtin.SetInterval {
             repeat = delay
             if repeat <= 0.0 {
                 // a zero-delay interval would spin the loop forever
@@ -6146,7 +5963,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // microtasks are drained. Node leaves setImmediate-vs-setTimeout(0)
         // ordering unspecified at top level; this makes it deterministic.
         var due = (epochMillis() as f64) + delay
-        if id == NATIVE_SET_IMMEDIATE {
+        if id == Builtin.SetImmediate {
             due = 0.0
         }
         st.timers.push(Timer {
@@ -6155,7 +5972,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         )
         return JSValue.Number(tid as f64)
     }
-    if id == NATIVE_CLEAR_TIMER {
+    if id == Builtin.ClearTimer {
         if argVals.len() > 0 {
             let tid = numToIndex(toNum(argVals[0]))
             var i: i64 = 0
@@ -6168,7 +5985,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Undefined
     }
-    if id == NATIVE_QUEUE_MICROTASK {
+    if id == Builtin.QueueMicrotask {
         if argVals.len() > 0 {
             st.microtasks.push(Microtask {
                 cb: cloneValue(argVals[0]), arg: JSValue.Undefined, derived: -1, passthroughReject: false, isFinally: false, noArgs: false
@@ -6177,7 +5994,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Undefined
     }
-    if id == NATIVE_ARRAYBUFFER_ISVIEW {
+    if id == Builtin.ArrayBufferIsView {
         if argVals.len() == 0 {
             return JSValue.Bool(false)
         }
@@ -6187,7 +6004,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Bool(st.objects[h].isDataView || st.objExtras[st.objects[h].extra].taBuf >= 0)
     }
-    if id == NATIVE_MARK_NOT_CTOR {
+    if id == Builtin.MarkNotCtor {
         if argVals.len() > 0 {
             let mf = funcHandle(argVals[0])
             if mf >= 0 {
@@ -6210,14 +6027,14 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Undefined
     }
-    if id == NATIVE_IS_CONSTRUCTOR {
+    if id == Builtin.IsConstructor {
         if argVals.len() == 0 {
             return JSValue.Bool(false)
         }
         // this dispatcher has no Prog parameter; gProg is the one program
         return JSValue.Bool(valueIsConstructor(gProg, st, argVals[0]))
     }
-    if id == NATIVE_INSPECT {
+    if id == Builtin.Inspect {
         if argVals.len() == 0 {
             return JSValue.Str("undefined")
         }
@@ -6236,7 +6053,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Str(inspectTop(st, cloneValue(argVals[0])))
     }
-    if id == NATIVE_QUEUE_MICROTASK_JS {
+    if id == Builtin.QueueMicrotaskJs {
         if argVals.len() > 0 {
             // noArgs: extra arguments to queueMicrotask are ignored; the callback
             // is invoked with none.
@@ -6247,16 +6064,16 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Undefined
     }
-    if id == NATIVE_ENCODE_URI_COMPONENT || id == NATIVE_ENCODE_URI {
+    if id == Builtin.EncodeUriComponent || id == Builtin.EncodeUri {
         var text = ""
         if argVals.len() > 0 {
             text = toStr(argVals[0])
         }
         // encodeURI leaves the reserved delimiters alone; encodeURIComponent does not
-        let keepReserved = id == NATIVE_ENCODE_URI
+        let keepReserved = id == Builtin.EncodeUri
         return JSValue.Str(uriEncode(text, keepReserved))
     }
-    if id == NATIVE_DECODE_URI_COMPONENT || id == NATIVE_DECODE_URI {
+    if id == Builtin.DecodeUriComponent || id == Builtin.DecodeUri {
         var text = ""
         if argVals.len() > 0 {
             text = toStr(argVals[0])
@@ -6268,7 +6085,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Str(uriDecode(text))
     }
-    if id == NATIVE_OBJECT_CTOR {
+    if id == Builtin.ObjectCtor {
         // Object(x) and new Object(x): a nullish argument (or none) makes a fresh
         // empty object, anything else is returned as-is.
         if argVals.len() > 0 {
@@ -6291,17 +6108,17 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Obj(newObject(st))
     }
-    if id == NATIVE_DATE_NOW {
+    if id == Builtin.DateNow {
         return JSValue.Number(epochMillis() as f64)
     }
-    if id == NATIVE_DATE_PARSE {
+    if id == Builtin.DateParse {
         // Date.parse(str) → epoch ms, or NaN. Same parser the Date(str) ctor uses.
         if argVals.len() == 0 {
             return JSValue.Number(jsNan())
         }
         return JSValue.Number(parseIsoDate(toStr(argVals[0])))
     }
-    if id == NATIVE_DATE_UTC {
+    if id == Builtin.DateUtc {
         if argVals.len() == 0 {
             return JSValue.Number(jsNan())
         }
@@ -6349,7 +6166,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         let total = (days * 86400 + hour * 3600 + minute * 60 + second) * 1000 + millis
         return JSValue.Number(total as f64)
     }
-    if id == NATIVE_DATE {
+    if id == Builtin.Date {
         let o = newObject(st)
         st.objects[o].isDate = true
         // Object.getPrototypeOf(new Date()) === Date.prototype
@@ -6372,7 +6189,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Obj(o)
     }
-    if id == NATIVE_STRING_RAW {
+    if id == Builtin.StringRaw {
         // String.raw(template, ...subs): join template.raw segments with the
         // substitutions interleaved — raw[0] sub[0] raw[1] sub[1] … raw[n-1]
         if argVals.len() == 0 {
@@ -6399,7 +6216,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Str(out)
     }
-    if id == NATIVE_STRING_FROMCHARCODE {
+    if id == Builtin.StringFromCharCode {
         var units: Vec<i64> = Vec.new()
         var i: i64 = 0
         while i < argVals.len() {
@@ -6408,7 +6225,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Str(stringFromUtf16Units(units))
     }
-    if id == NATIVE_STRING_FROMCODEPOINT {
+    if id == Builtin.StringFromCodePoint {
         // String.fromCodePoint: each argument is a full Unicode code point (may be
         // astral, unlike fromCharCode's UTF-16 units), encoded straight to UTF-8
         var out = String.withCapacity(16)
@@ -6419,7 +6236,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Str(out)
     }
-    if id == NATIVE_PROCESS_CWD {
+    if id == Builtin.ProcessCwd {
         match currentDir() {
             Result.Ok(d) => {
                 return JSValue.Str(d)
@@ -6429,13 +6246,13 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_PROCESS_HRTIME {
+    if id == Builtin.ProcessHrtime {
         let arr = newArray(st)
         arrPush(st, arr, JSValue.Number(0.0))
         arrPush(st, arr, JSValue.Number(0.0))
         return JSValue.Obj(arr)
     }
-    if id == NATIVE_OBJECT_CREATE {
+    if id == Builtin.ObjectCreate {
         let o = newObject(st)
         if argVals.len() > 0 {
             let proto = objHandle(argVals[0])
@@ -6476,7 +6293,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Obj(o)
     }
-    if id == NATIVE_OBJECT_GETPROTO {
+    if id == Builtin.ObjectGetProto {
         if argVals.len() == 0 || isNullish(argVals[0]) {
             st.throwing = true
             st.thrownValue = makeError(st, "TypeError", "Object.getPrototypeOf called on null or undefined" + currentModule(st))
@@ -6484,7 +6301,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return getProtoOf(gProg, st, argVals[0])
     }
-    if id == NATIVE_FUNCTION_CTOR {
+    if id == Builtin.FunctionCtor {
         // node's exact source layout, because Function.prototype.toString on the
         // result is observable and libraries compare against it
         var params = ""
@@ -6504,7 +6321,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // the caller, which is the difference from direct eval
         return runEvalSource("(function anonymous(" + params + "\n) {\n" + body + "\n})", st, 0)
     }
-    if id == NATIVE_EVAL {
+    if id == Builtin.Eval {
         // INDIRECT eval (`const e = eval; e(src)`) runs in the GLOBAL scope,
         // not the caller's, which is the whole difference from the direct form
         if argVals.len() == 0 {
@@ -6519,7 +6336,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_OBJECT_SETPROTO {
+    if id == Builtin.ObjectSetProto {
         if argVals.len() == 0 || isNullish(argVals[0]) {
             st.throwing = true
             st.thrownValue = makeError(st, "TypeError", "Object.setPrototypeOf called on null or undefined" + currentModule(st))
@@ -6547,14 +6364,14 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return cloneValue(argVals[0])
     }
-    if id == NATIVE_OBJECT_GETOWNPROPDESC {
+    if id == Builtin.ObjectGetOwnPropDesc {
         if argVals.len() < 2 {
             return JSValue.Undefined
         }
         let key = toStr(argVals[1])
         return getOwnPropDescOf(gProg, st, argVals[0], key)
     }
-    if id == NATIVE_OBJECT_GETOWNPROPDESCS {
+    if id == Builtin.ObjectGetOwnPropDescs {
         let out = newObject(st)
         if argVals.len() > 0 {
             let h = propertyBagOf(st, argVals[0])
@@ -6575,7 +6392,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Obj(out)
     }
-    if id == NATIVE_OBJECT_FREEZE {
+    if id == Builtin.ObjectFreeze {
         if argVals.len() > 0 {
             // A typed array's integer-indexed elements cannot be made
             // non-configurable, so SetIntegrityLevel fails outright on a view
@@ -6613,7 +6430,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Undefined
     }
-    if id == NATIVE_ARRAYBUFFER {
+    if id == Builtin.ArrayBuffer {
         var n: i64 = 0
         if argVals.len() > 0 {
             n = numToIndex(toNum(argVals[0]))
@@ -6652,13 +6469,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         st.objExtras[st.objects[bo].extra].bytes = b
         return JSValue.Obj(bo)
     }
-    if id >= NATIVE_TA_BASE && id <= NATIVE_TA_BASE + TA_MAX {
-        let kind = id - NATIVE_TA_BASE
-        // Float32/Float64 now store real IEEE-754 bytes via taStore's f32/f64
-        // reinterpret (runtime.milo), so every kind is constructible.
-        return makeTypedArray(gProg, st, kind, argVals)
-    }
-    if id == NATIVE_DATAVIEW {
+    if id == Builtin.DataView {
         // new DataView(buffer, byteOffset = 0, byteLength = buffer.byteLength - offset)
         var bufH: i64 = -1
         if argVals.len() > 0 {
@@ -6692,16 +6503,16 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         st.objExtras[st.objects[dv].extra].taLen = byteLen
         return JSValue.Obj(dv)
     }
-    if id == NATIVE_OBJECT_PREVENTEXT || id == NATIVE_OBJECT_SEAL {
+    if id == Builtin.ObjectPreventExt || id == Builtin.ObjectSeal {
         if argVals.len() > 0 {
             // Sealing has the same obstacle as freezing: see the note there.
             // preventExtensions does not, since it never touches the elements.
-            if id == NATIVE_OBJECT_SEAL && taIntegrityBlocked(st, argVals[0]) {
+            if id == Builtin.ObjectSeal && taIntegrityBlocked(st, argVals[0]) {
                 st.throwing = true
                 st.thrownValue = makeError(st, "TypeError", "Cannot seal array buffer views with elements" + currentModule(st))
                 return JSValue.Undefined
             }
-            let ok = preventExtOf(gProg, st, argVals[0], id == NATIVE_OBJECT_SEAL)
+            let ok = preventExtOf(gProg, st, argVals[0], id == Builtin.ObjectSeal)
             if st.throwing {
                 return JSValue.Undefined
             }
@@ -6714,17 +6525,17 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Undefined
     }
-    if id == NATIVE_OBJECT_ISEXT {
+    if id == Builtin.ObjectIsExt {
         if argVals.len() > 0 {
             return JSValue.Bool(isExtensibleOf(gProg, st, argVals[0]))
         }
         // primitives are never extensible
         return JSValue.Bool(false)
     }
-    if id == NATIVE_PROXY {
+    if id == Builtin.Proxy {
         return makeProxy(st, argVals)
     }
-    if id == NATIVE_REFLECT_DEFINEPROP {
+    if id == Builtin.ReflectDefineProp {
         if argVals.len() < 3 {
             return throwTypeErr(st, "Reflect.defineProperty requires 3 arguments")
         }
@@ -6742,17 +6553,17 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Bool(definePropOf(gProg, st, argVals[0], key, nd))
     }
-    if id == NATIVE_REFLECT_SETPROTO {
+    if id == Builtin.ReflectSetProto {
         var proto = JSValue.Undefined
         if argVals.len() > 1 {
             proto = cloneValue(argVals[1])
         }
         return JSValue.Bool(setProtoOf(gProg, st, argVals[0], proto))
     }
-    if id == NATIVE_REFLECT_PREVENTEXT {
+    if id == Builtin.ReflectPreventExt {
         return JSValue.Bool(preventExtOf(gProg, st, argVals[0], false))
     }
-    if id == NATIVE_REFLECT_OWNKEYS {
+    if id == Builtin.ReflectOwnKeys {
         let arr = newArray(st)
         pushTemp(st, JSValue.Obj(arr))
         let keys = ownKeysOf(gProg, st, argVals[0])
@@ -6768,7 +6579,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         popTemp(st)
         return JSValue.Obj(arr)
     }
-    if id == NATIVE_REFLECT_CONSTRUCT {
+    if id == Builtin.ReflectConstruct {
         var cargs: Vec<JSValue> = Vec.new()
         if argVals.len() > 1 {
             applyArgsInto(gProg, st, argVals[1], cargs)
@@ -6782,7 +6593,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return constructValue(gProg, st, argVals[0], cargs, nt)
     }
-    if id == NATIVE_REFLECT_GET {
+    if id == Builtin.ReflectGet {
         // ToPropertyKey runs a user toString, and it runs BEFORE the read
         let key = toStrProg(gProg, argVals[1], st)
         if st.throwing {
@@ -6794,7 +6605,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return reflectGet(gProg, st, argVals[0], key, receiver)
     }
-    if id == NATIVE_REFLECT_SET {
+    if id == Builtin.ReflectSet {
         let key = toStrProg(gProg, argVals[1], st)
         if st.throwing {
             return JSValue.Undefined
@@ -6809,7 +6620,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Bool(reflectSet(gProg, st, argVals[0], key, v, receiver))
     }
-    if id == NATIVE_PROXY_REVOCABLE {
+    if id == Builtin.ProxyRevocable {
         let pv = makeProxy(st, argVals)
         if st.throwing {
             return JSValue.Undefined
@@ -6821,7 +6632,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         popTemp(st)
         return JSValue.Obj(out)
     }
-    if id == NATIVE_CONSOLE_LOG || id == NATIVE_CONSOLE_ERROR {
+    if id == Builtin.ConsoleLog || id == Builtin.ConsoleError {
         var line = ""
         var j: i64 = 0
         while j < argVals.len() {
@@ -6834,7 +6645,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // console.error and console.warn belong on STDERR. Both went to stdout,
         // so any program whose output is piped or parsed got its diagnostics
         // mixed into its data, and 2>/dev/null hid nothing.
-        if id == NATIVE_CONSOLE_ERROR {
+        if id == Builtin.ConsoleError {
             eprint(line)
         } else {
             print(line)
@@ -6842,7 +6653,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Undefined
     }
-    if id == NATIVE_NAPI_LOAD {
+    if id == Builtin.NapiLoad {
         if argVals.len() == 0 {
             return JSValue.Undefined
         }
@@ -6861,19 +6672,19 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
-    if id == NATIVE_BYTE_LENGTH {
+    if id == Builtin.ByteLength {
         if argVals.len() == 0 {
             return JSValue.Number(0.0)
         }
         return JSValue.Number(toStr(argVals[0]).len() as f64)
     }
-    if id == NATIVE_OBJECT_IS {
+    if id == Builtin.ObjectIs {
         if argVals.len() < 2 {
             return JSValue.Bool(argVals.len() == 0 || isUndefinedValue(argVals[0]))
         }
         return JSValue.Bool(sameValue(argVals[0], argVals[1]))
     }
-    if id == NATIVE_OBJECT_HASOWN {
+    if id == Builtin.ObjectHasOwn {
         if argVals.len() < 2 {
             return JSValue.Bool(false)
         }
@@ -6885,7 +6696,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // mirrors hasOwnProperty: own named prop, or a real (non-hole) array index
         return JSValue.Bool(objOwnIndex(st, o, key) >= 0 || (st.objects[o].isArray && asArrayIndex(key) >= 0 && asArrayIndex(key) < arrLen(st, o) && !arrIsHole(st, o, asArrayIndex(key))))
     }
-    if id == NATIVE_OBJECT_ISSEALED {
+    if id == Builtin.ObjectIsSealed {
         if argVals.len() > 0 {
             let h = propertyBagOf(st, argVals[0])
             if h >= 0 {
@@ -6894,7 +6705,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Bool(true)
     }
-    if id == NATIVE_OBJECT_ISFROZEN {
+    if id == Builtin.ObjectIsFrozen {
         if argVals.len() > 0 {
             let fh = propertyBagOf(st, argVals[0])
             if fh >= 0 {
@@ -6905,8 +6716,8 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Bool(true)
     }
-    if id == NATIVE_OBJECT_VALUES || id == NATIVE_OBJECT_ENTRIES {
-        let wantPairs = id == NATIVE_OBJECT_ENTRIES
+    if id == Builtin.ObjectValues || id == Builtin.ObjectEntries {
+        let wantPairs = id == Builtin.ObjectEntries
         let arr = newArray(st)
         if argVals.len() > 0 {
             pushTemp(st, JSValue.Obj(arr))
@@ -6988,7 +6799,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Obj(arr)
     }
-    if id == NATIVE_OBJECT_KEYS {
+    if id == Builtin.ObjectKeys {
         let arr = newArray(st)
         if argVals.len() > 0 {
             pushTemp(st, JSValue.Obj(arr))
@@ -7055,7 +6866,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Obj(arr)
     }
-    if id == NATIVE_OBJECT_ASSIGN {
+    if id == Builtin.ObjectAssign {
         if argVals.len() == 0 {
             // no target at all is the same as an undefined one
             st.throwing = true
@@ -7209,7 +7020,7 @@ fn protoOfHandle(st: &Interp, h: i64): i64 {
 // never overridden — this is only ever consulted as a fallback.
 fn builtinConstructorOf(st: &Interp, o: i64): JSValue {
     if o == st.objectProtoObj {
-        return JSValue.Native(NATIVE_OBJECT_CTOR)
+        return JSValue.Native(Native.Fn(Builtin.ObjectCtor))
     }
     if o == st.arrayProtoObj && st.arrayCtorObj >= 0 {
         return JSValue.Obj(st.arrayCtorObj)
@@ -7238,13 +7049,26 @@ fn builtinConstructorOf(st: &Interp, o: i64): JSValue {
     // constructor here (Map/Set/Date/typed-array/proxy/promise/function…) are
     // left Undefined rather than mis-reported as Object
     if !st.objects[o].isMap && !st.objects[o].isSet && !st.objects[o].isDate && !st.objects[o].isProxy && !st.objects[o].isArrayBuffer && st.objExtras[st.objects[o].extra].taBuf < 0 && !st.objects[o].isGenerator && st.objects[o].promiseState < 0 && !st.objects[o].isFunctionLike && !st.objects[o].isBound {
-        return JSValue.Native(NATIVE_OBJECT_CTOR)
+        return JSValue.Native(Native.Fn(Builtin.ObjectCtor))
     }
     return JSValue.Undefined
 }
 
-fn mathNative(id: i64, args: &Vec<JSValue>, st: &mut Interp): JSValue {
-    if id == NATIVE_MATH_RANDOM {
+// Math.* in one native family. Two groups because the transcendentals were
+// added after the original set.
+fn isMathBuiltin(id: Builtin): bool {
+    return id == Builtin.MathFloor || id == Builtin.MathCeil || id == Builtin.MathRound
+        || id == Builtin.MathTrunc || id == Builtin.MathAbs || id == Builtin.MathSign
+        || id == Builtin.MathSqrt || id == Builtin.MathPow || id == Builtin.MathMin
+        || id == Builtin.MathMax || id == Builtin.MathRandom
+        || id == Builtin.MathExp || id == Builtin.MathLog || id == Builtin.MathSin
+        || id == Builtin.MathCos || id == Builtin.MathTan || id == Builtin.MathAsin
+        || id == Builtin.MathAcos || id == Builtin.MathAtan || id == Builtin.MathAtan2
+        || id == Builtin.MathLog2 || id == Builtin.MathLog10
+}
+
+fn mathNative(id: Builtin, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    if id == Builtin.MathRandom {
         let next = mjNextRandom(st.rngState)
         st.rngState = next
         var bits = next
@@ -7254,7 +7078,7 @@ fn mathNative(id: i64, args: &Vec<JSValue>, st: &mut Interp): JSValue {
         let m = bits % 9007199254740992
         return JSValue.Number((m as f64) / 9007199254740992.0)
     }
-    if id == NATIVE_MATH_MIN {
+    if id == Builtin.MathMin {
         if args.len() == 0 {
             return JSValue.Number(jsInf())
         }
@@ -7272,7 +7096,7 @@ fn mathNative(id: i64, args: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Number(m)
     }
-    if id == NATIVE_MATH_MAX {
+    if id == Builtin.MathMax {
         if args.len() == 0 {
             return JSValue.Number(0.0 - jsInf())
         }
@@ -7294,25 +7118,25 @@ fn mathNative(id: i64, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     if args.len() > 0 {
         x = toNum(args[0])
     }
-    if id == NATIVE_MATH_FLOOR {
+    if id == Builtin.MathFloor {
         return JSValue.Number(mjFloor(x))
     }
-    if id == NATIVE_MATH_CEIL {
+    if id == Builtin.MathCeil {
         return JSValue.Number(mjCeil(x))
     }
-    if id == NATIVE_MATH_ROUND {
+    if id == Builtin.MathRound {
         return JSValue.Number(mjRound(x))
     }
-    if id == NATIVE_MATH_TRUNC {
+    if id == Builtin.MathTrunc {
         return JSValue.Number(mjTrunc(x))
     }
-    if id == NATIVE_MATH_ABS {
+    if id == Builtin.MathAbs {
         return JSValue.Number(mjAbs(x))
     }
-    if id == NATIVE_MATH_SIGN {
+    if id == Builtin.MathSign {
         return JSValue.Number(mjSign(x))
     }
-    if id == NATIVE_MATH_EXP {
+    if id == Builtin.MathExp {
         return JSValue.Number(Math.exp(x))
     }
     // std's mathLog* carry `requires x > 0.0`; JS defines the whole domain
@@ -7320,50 +7144,50 @@ fn mathNative(id: i64, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     // non-positive cases here rather than calling out of contract — a contract
     // violation aborts under --debug, and only survives -O2 because the check is
     // compiled out and libc happens to return the right value.
-    if id == NATIVE_MATH_LOG || id == NATIVE_MATH_LOG2 || id == NATIVE_MATH_LOG10 {
+    if id == Builtin.MathLog || id == Builtin.MathLog2 || id == Builtin.MathLog10 {
         if x < 0.0 {
             return JSValue.Number(jsNan())
         }
         if x == 0.0 {
             return JSValue.Number(0.0 - jsInf())
         }
-        if id == NATIVE_MATH_LOG {
+        if id == Builtin.MathLog {
             return JSValue.Number(Math.log(x))
         }
-        if id == NATIVE_MATH_LOG2 {
+        if id == Builtin.MathLog2 {
             return JSValue.Number(Math.log2(x))
         }
         return JSValue.Number(Math.log10(x))
     }
-    if id == NATIVE_MATH_SIN {
+    if id == Builtin.MathSin {
         return JSValue.Number(Math.sin(x))
     }
-    if id == NATIVE_MATH_COS {
+    if id == Builtin.MathCos {
         return JSValue.Number(Math.cos(x))
     }
-    if id == NATIVE_MATH_TAN {
+    if id == Builtin.MathTan {
         return JSValue.Number(Math.tan(x))
     }
-    if id == NATIVE_MATH_ASIN {
+    if id == Builtin.MathAsin {
         return JSValue.Number(Math.atan2(x, Math.sqrt(1.0 - x * x)))
     }
-    if id == NATIVE_MATH_ACOS {
+    if id == Builtin.MathAcos {
         return JSValue.Number(Math.atan2(Math.sqrt(1.0 - x * x), x))
     }
-    if id == NATIVE_MATH_ATAN {
+    if id == Builtin.MathAtan {
         return JSValue.Number(Math.atan2(x, 1.0))
     }
-    if id == NATIVE_MATH_ATAN2 {
+    if id == Builtin.MathAtan2 {
         var y2 = 0.0
         if args.len() > 1 {
             y2 = toNum(args[1])
         }
         return JSValue.Number(Math.atan2(x, y2))
     }
-    if id == NATIVE_MATH_SQRT {
+    if id == Builtin.MathSqrt {
         return JSValue.Number(Math.sqrt(x))
     }
-    if id == NATIVE_MATH_POW {
+    if id == Builtin.MathPow {
         var y = 0.0
         if args.len() > 1 {
             y = toNum(args[1])
@@ -8395,8 +8219,8 @@ fn requireModuleFrom(prog: &Prog, spec: &string, st: &mut Interp, dirIn: string)
 // chain looking for that constructor's `prototype`. The internal-kind checks in
 // instanceOf are shortcuts for the common case; this is the general rule they
 // stand in for, and the only thing that recognises a subclass instance.
-fn nativeProtoChainHas(st: &Interp, o: i64, id: i64): bool {
-    let bag = nativePropsOf(st, id)
+fn nativeProtoChainHas(st: &Interp, o: i64, n: &Native): bool {
+    let bag = nativePropsOf(st, n)
     if bag < 0 {
         return false
     }
@@ -8414,12 +8238,91 @@ fn nativeProtoChainHas(st: &Interp, o: i64, id: i64): bool {
     return false
 }
 
+// `o instanceof <native constructor>`. Split out of instanceOf so the built-in
+// shortcuts can match on the constructor's variant.
+fn nativeInstanceOf(st: &Interp, o: i64, nv: &Native): bool {
+    match nv {
+        Native.Fn(id) => {
+            // every object inherits from Object.prototype
+            if id == Builtin.ObjectCtor {
+                return true
+            }
+            // the built-in exotic constructors are recognised by the object's
+            // internal kind (Date/Map/Set/RegExp/ArrayBuffer are Native values,
+            // so `x instanceof Date` reaches here)
+            if id == Builtin.Date && st.objects[o].isDate {
+                return true
+            }
+            // a wrapper is an instance of the constructor that boxed it
+            if id == Builtin.String || id == Builtin.Number || id == Builtin.Boolean {
+                match st.objExtras[st.objects[o].extra].boxed {
+                    JSValue.Str(_ws) => {
+                        return id == Builtin.String
+                    }
+                    JSValue.Number(_wn) => {
+                        return id == Builtin.Number
+                    }
+                    JSValue.Bool(_wb) => {
+                        return id == Builtin.Boolean
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+            }
+            if id == Builtin.Map && st.objects[o].isMap {
+                return true
+            }
+            if id == Builtin.Set && st.objects[o].isSet {
+                return true
+            }
+            if id == Builtin.RegExp && st.objExtras[st.objects[o].extra].regexId >= 0 {
+                return true
+            }
+            if id == Builtin.ArrayBuffer && st.objects[o].isArrayBuffer {
+                return true
+            }
+        }
+        Native.TypedArrayCtor(kind) => {
+            // a typed-array view instanceof its exact kind (Uint8Array,
+            // Float64Array, …): a view has taBuf >= 0 and its taKind is the
+            // constructor's kind
+            if st.objExtras[st.objects[o].extra].taBuf >= 0 && !st.objects[o].isDataView && st.objExtras[st.objects[o].extra].taKind == kind {
+                return true
+            }
+            return nativeProtoChainHas(st, o, nv)
+        }
+        Native.Resolver(_promise, _isReject) => {
+        }
+    }
+    if !st.objects[o].isError {
+        // The internal-kind shortcuts above are exactly that: a SUBCLASS instance
+        // carries the right prototype chain but not the base's internal slot, so
+        // `new (class extends Map {})() instanceof Map` answered false. Fall back
+        // to OrdinaryHasInstance, which is what the shortcuts stand in for.
+        return nativeProtoChainHas(st, o, nv)
+    }
+    if nativeEq(nv, Native.Fn(Builtin.Error)) {
+        return true
+    }
+    // getMember, not objGet: this read the OWN `name` property, which stopped
+    // identifying anything the moment errors stopped carrying one. node reports
+    // only `stack` (and `message`, when passed) as own properties of an Error;
+    // `name` lives on each subtype's prototype, so the lookup has to walk the
+    // chain that already links them.
+    let nm = getMember(st, o, "name")
+    if toStr(nm) == nativeErrorNameOf(nv) {
+        return true
+    }
+    return nativeProtoChainHas(st, o, nv)
+}
+
 fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
     // `f instanceof Function` for a plain function value: functions are not Objs
     // here, so the object walk below never saw them and answered false.
     match ctor {
         JSValue.Native(cid) => {
-            if cid == NATIVE_FUNCTION_CTOR {
+            if nativeEq(cid, Native.Fn(Builtin.FunctionCtor)) {
                 return isCallableIn(st, val)
             }
         }
@@ -8450,78 +8353,8 @@ fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
                     }
                     return false
                 }
-                JSValue.Native(id) => {
-                    // every object inherits from Object.prototype
-                    if id == NATIVE_OBJECT_CTOR {
-                        return true
-                    }
-                    // the built-in exotic constructors are recognised by the
-                    // object's internal kind (Date/Map/Set/RegExp/ArrayBuffer are
-                    // Native values, so `x instanceof Date` reaches here)
-                    if id == NATIVE_DATE && st.objects[o].isDate {
-                        return true
-                    }
-                    // a wrapper is an instance of the constructor that boxed it
-                    if id == NATIVE_STRING || id == NATIVE_NUMBER || id == NATIVE_BOOLEAN {
-                        match st.objExtras[st.objects[o].extra].boxed {
-                            JSValue.Str(_ws) => {
-                                return id == NATIVE_STRING
-                            }
-                            JSValue.Number(_wn) => {
-                                return id == NATIVE_NUMBER
-                            }
-                            JSValue.Bool(_wb) => {
-                                return id == NATIVE_BOOLEAN
-                            }
-                            _ => {
-                                return false
-                            }
-                        }
-                    }
-                    if id == NATIVE_MAP && st.objects[o].isMap {
-                        return true
-                    }
-                    if id == NATIVE_SET && st.objects[o].isSet {
-                        return true
-                    }
-                    if id == NATIVE_REGEXP && st.objExtras[st.objects[o].extra].regexId >= 0 {
-                        return true
-                    }
-                    if id == NATIVE_ARRAYBUFFER && st.objects[o].isArrayBuffer {
-                        return true
-                    }
-                    // a typed-array view instanceof its exact kind (Uint8Array,
-                    // Float64Array, …): a view has taBuf >= 0 and its taKind is
-                    // the ctor's offset from the base id
-                    if id >= NATIVE_TA_BASE && id <= NATIVE_TA_BASE + TA_MAX {
-                        if st.objExtras[st.objects[o].extra].taBuf >= 0 && !st.objects[o].isDataView && st.objExtras[st.objects[o].extra].taKind == (id - NATIVE_TA_BASE) {
-                            return true
-                        }
-                        return nativeProtoChainHas(st, o, id)
-                    }
-                    if !st.objects[o].isError {
-                        // The internal-kind shortcuts above are exactly that: a
-                        // SUBCLASS instance carries the right prototype chain but
-                        // not the base's internal slot, so `new (class extends
-                        // Map {})() instanceof Map` answered false. Fall back to
-                        // OrdinaryHasInstance, which is what the shortcuts stand
-                        // in for.
-                        return nativeProtoChainHas(st, o, id)
-                    }
-                    if id == NATIVE_ERROR {
-                        return true
-                    }
-                    // getMember, not objGet: this read the OWN `name` property,
-                    // which stopped identifying anything the moment errors
-                    // stopped carrying one. node reports only `stack` (and
-                    // `message`, when passed) as own properties of an Error;
-                    // `name` lives on each subtype's prototype, so the lookup
-                    // has to walk the chain that already links them.
-                    let nm = getMember(st, o, "name")
-                    if toStr(nm) == nativeErrorName(id) {
-                        return true
-                    }
-                    return nativeProtoChainHas(st, o, id)
+                JSValue.Native(nv) => {
+                    return nativeInstanceOf(st, o, nv)
                 }
                 JSValue.Obj(c) => {
                     // Array is an object constructor (JSValue.Obj), not a Native,
@@ -8666,14 +8499,14 @@ fn setupTypedArrayProtos(st: &mut Interp) {
     while tk <= TA_MAX {
         let sub = newObject(st)
         st.objects[sub].proto = taProto
-        objSet(st, sub, "constructor", JSValue.Native(NATIVE_TA_BASE + tk))
+        objSet(st, sub, "constructor", JSValue.Native(Native.TypedArrayCtor(tk)))
         objSetNonEnumerable(st, sub, "constructor")
         // BYTES_PER_ELEMENT is { writable: false, enumerable: false,
         // configurable: false } on both the constructor and its prototype;
         // objSet left it writable and configurable, so every test262 case that
         // verifies the descriptor failed regardless of the value.
         objSetFrozenOwn(st, sub, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64), false)
-        let bag = getNativeProps(st, NATIVE_TA_BASE + tk)
+        let bag = getNativeProps(st, Native.TypedArrayCtor(tk))
         objDefineProtoAttr(st, bag, "prototype", JSValue.Obj(sub))
         objSetFrozenOwn(st, bag, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64), false)
         objSetBuiltinAttr(st, bag, "name", JSValue.Str(taName(tk)))
@@ -8689,7 +8522,7 @@ fn setupTypedArrayProtos(st: &mut Interp) {
 // The prototype a freshly created view of this kind links to, or -1 before
 // setupTypedArrayProtos has run.
 fn typedArrayProtoFor(st: &mut Interp, kind: i64): i64 {
-    let bag = getNativeProps(st, NATIVE_TA_BASE + kind)
+    let bag = getNativeProps(st, Native.TypedArrayCtor(kind))
     return objHandle(objGet(st, bag, "prototype"))
 }
 
@@ -8719,10 +8552,10 @@ fn setupBufferProtos(st: &mut Interp) {
     let abLenGetter = makeBrandedMethod(st, "__abByteLength", 2)
     objDefineAccessor(st, abProto, "byteLength", abLenGetter, JSValue.Undefined)
     objSetNonEnumerable(st, abProto, "byteLength")
-    objSet(st, abProto, "constructor", JSValue.Native(NATIVE_ARRAYBUFFER))
+    objSet(st, abProto, "constructor", JSValue.Native(Native.Fn(Builtin.ArrayBuffer)))
     objSetNonEnumerable(st, abProto, "constructor")
-    let abBag = getNativeProps(st, NATIVE_ARRAYBUFFER)
-    objSet(st, abBag, "isView", JSValue.Native(NATIVE_ARRAYBUFFER_ISVIEW))
+    let abBag = getNativeProps(st, Native.Fn(Builtin.ArrayBuffer))
+    objSet(st, abBag, "isView", JSValue.Native(Native.Fn(Builtin.ArrayBufferIsView)))
     objSetNonEnumerable(st, abBag, "isView")
     objDefineProtoAttr(st, abBag, "prototype", JSValue.Obj(abProto))
 
@@ -8768,18 +8601,18 @@ fn setupBufferProtos(st: &mut Interp) {
         objSetNonEnumerable(st, dvProto, dvAcc[dq])
         dq = dq + 1
     }
-    objSet(st, dvProto, "constructor", JSValue.Native(NATIVE_DATAVIEW))
+    objSet(st, dvProto, "constructor", JSValue.Native(Native.Fn(Builtin.DataView)))
     objSetNonEnumerable(st, dvProto, "constructor")
-    let dvBag = getNativeProps(st, NATIVE_DATAVIEW)
+    let dvBag = getNativeProps(st, Native.Fn(Builtin.DataView))
     objDefineProtoAttr(st, dvBag, "prototype", JSValue.Obj(dvProto))
 }
 
 fn arrayBufferProto(st: &mut Interp): i64 {
-    return objHandle(objGet(st, getNativeProps(st, NATIVE_ARRAYBUFFER), "prototype"))
+    return objHandle(objGet(st, getNativeProps(st, Native.Fn(Builtin.ArrayBuffer)), "prototype"))
 }
 
 fn dataViewProto(st: &mut Interp): i64 {
-    return objHandle(objGet(st, getNativeProps(st, NATIVE_DATAVIEW), "prototype"))
+    return objHandle(objGet(st, getNativeProps(st, Native.Fn(Builtin.DataView)), "prototype"))
 }
 
 // RegExp.prototype. Like the buffer family and Date before it, this object did
@@ -8903,13 +8736,13 @@ fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>, st
 // buffer family, Date and RegExp each turned out to have. Anything that starts
 // from the prototype (every test262 property-descriptor case, and the common
 // `Map.prototype.get.call(m, k)` idiom) failed before doing anything.
-fn buildNativeProto(st: &mut Interp, nativeId: i64, names: &Vec<string>): i64 {
+fn buildNativeProto(st: &mut Interp, nativeId: Builtin, names: &Vec<string>): i64 {
     let proto = newObject(st)
     st.objects[proto].proto = st.objectProtoObj
     // the receiver is Undefined for a prototype method, so the brand cannot be
     // read off it; the constructor id names it instead
     var host = ""
-    if nativeId == NATIVE_MAP {
+    if nativeId == Builtin.Map {
         host = "Map"
     }
     // Every Map/Set prototype method brand-checks its receiver against the
@@ -8917,9 +8750,9 @@ fn buildNativeProto(st: &mut Interp, nativeId: i64, names: &Vec<string>): i64 {
     // a TypeError. Without a brand these methods accepted any receiver and did
     // nothing, which reads as a successful call.
     var brand: i64 = 0
-    if nativeId == NATIVE_MAP {
+    if nativeId == Builtin.Map {
         brand = BRAND_MAP
-    } else if nativeId == NATIVE_SET {
+    } else if nativeId == Builtin.Set {
         brand = BRAND_SET
     }
     var i: i64 = 0
@@ -8932,9 +8765,9 @@ fn buildNativeProto(st: &mut Interp, nativeId: i64, names: &Vec<string>): i64 {
         objSetNonEnumerable(st, proto, names[i])
         i = i + 1
     }
-    objSet(st, proto, "constructor", JSValue.Native(nativeId))
+    objSet(st, proto, "constructor", JSValue.Native(Native.Fn(nativeId)))
     objSetNonEnumerable(st, proto, "constructor")
-    let bag = getNativeProps(st, nativeId)
+    let bag = getNativeProps(st, Native.Fn(nativeId))
     objDefineProtoAttr(st, bag, "prototype", JSValue.Obj(proto))
     return proto
 }
@@ -8944,7 +8777,7 @@ fn setupRemainingProtos(st: &mut Interp) {
     bigNames.push("toString")
     bigNames.push("valueOf")
     bigNames.push("toLocaleString")
-    let gp = buildNativeProto(st, NATIVE_BIGINT, bigNames)
+    let gp = buildNativeProto(st, Builtin.BigInt, bigNames)
     var vt: Vec<string> = Vec.new()
     vt.push("valueOf")
     vt.push("toString")
@@ -8959,7 +8792,7 @@ fn setupRemainingProtos(st: &mut Interp) {
     numNames.push("toPrecision")
     numNames.push("toExponential")
     numNames.push("toLocaleString")
-    let np = buildNativeProto(st, NATIVE_NUMBER, numNames)
+    let np = buildNativeProto(st, Builtin.Number, numNames)
     var numBrand: Vec<string> = Vec.new()
     numBrand.push("valueOf")
     numBrand.push("toString")
@@ -8972,7 +8805,7 @@ fn setupRemainingProtos(st: &mut Interp) {
     var boolNames: Vec<string> = Vec.new()
     boolNames.push("toString")
     boolNames.push("valueOf")
-    let bp = buildNativeProto(st, NATIVE_BOOLEAN, boolNames)
+    let bp = buildNativeProto(st, Builtin.Boolean, boolNames)
     var boolBrand: Vec<string> = Vec.new()
     boolBrand.push("valueOf")
     boolBrand.push("toString")
@@ -8982,7 +8815,7 @@ fn setupRemainingProtos(st: &mut Interp) {
     var symNames: Vec<string> = Vec.new()
     symNames.push("toString")
     symNames.push("valueOf")
-    let sp = buildNativeProto(st, NATIVE_SYMBOL, symNames)
+    let sp = buildNativeProto(st, Builtin.Symbol, symNames)
     var symBrand: Vec<string> = Vec.new()
     symBrand.push("valueOf")
     symBrand.push("toString")
@@ -9000,7 +8833,7 @@ fn setupRemainingProtos(st: &mut Interp) {
     mapNames.push("keys")
     mapNames.push("values")
     mapNames.push("entries")
-    st.mapProtoObj = buildNativeProto(st, NATIVE_MAP, mapNames)
+    st.mapProtoObj = buildNativeProto(st, Builtin.Map, mapNames)
     // size is an accessor on Map.prototype/Set.prototype, and was answered by an
     // ad-hoc read on the instance instead — so the prototype carried no
     // descriptor for it and `Map.prototype.size` off a non-Map read as
@@ -9025,7 +8858,7 @@ fn setupRemainingProtos(st: &mut Interp) {
     setNames.push("isSubsetOf")
     setNames.push("isSupersetOf")
     setNames.push("isDisjointFrom")
-    st.setProtoObj = buildNativeProto(st, NATIVE_SET, setNames)
+    st.setProtoObj = buildNativeProto(st, Builtin.Set, setNames)
     let setSizeGetter = makeBrandedMethod(st, "__setSize", BRAND_SET)
     objDefineAccessor(st, st.setProtoObj, "size", setSizeGetter, JSValue.Undefined)
     objSetNonEnumerable(st, st.setProtoObj, "size")
@@ -9034,16 +8867,16 @@ fn setupRemainingProtos(st: &mut Interp) {
     promNames.push("then")
     promNames.push("catch")
     promNames.push("finally")
-    st.promiseProtoObj = buildNativeProto(st, NATIVE_PROMISE, promNames)
+    st.promiseProtoObj = buildNativeProto(st, Builtin.Promise, promNames)
     // Symbol.species is an accessor returning `this` on every constructor that
     // derives new objects from an existing one. ArraySpeciesCreate and friends
     // read it, and test262 checks the descriptor directly; it was absent
     // everywhere, so the read answered undefined.
     var speciesBags: Vec<i64> = Vec.new()
-    speciesBags.push(getNativeProps(st, NATIVE_ARRAYBUFFER))
-    speciesBags.push(getNativeProps(st, NATIVE_MAP))
-    speciesBags.push(getNativeProps(st, NATIVE_SET))
-    speciesBags.push(getNativeProps(st, NATIVE_REGEXP))
+    speciesBags.push(getNativeProps(st, Native.Fn(Builtin.ArrayBuffer)))
+    speciesBags.push(getNativeProps(st, Native.Fn(Builtin.Map)))
+    speciesBags.push(getNativeProps(st, Native.Fn(Builtin.Set)))
+    speciesBags.push(getNativeProps(st, Native.Fn(Builtin.RegExp)))
     if st.promiseCtorObj >= 0 {
         speciesBags.push(st.promiseCtorObj)
     }
@@ -9055,7 +8888,7 @@ fn setupRemainingProtos(st: &mut Interp) {
         sb = sb + 1
     }
     // Promise's global binding is a plain OBJECT, not a JSValue.Native, so the
-    // prototype hung off the NATIVE_PROMISE bag is unreachable from it — hang it
+    // prototype hung off the Builtin.Promise bag is unreachable from it — hang it
     // on the constructor object too. This runs after setupGlobals built that
     // object, which is why the link is made here rather than there.
     if st.promiseCtorObj >= 0 {
@@ -9110,9 +8943,9 @@ fn setupRegexProto(st: &mut Interp) {
         objSetNonEnumerable(st, rp, flagNames[f])
         f = f + 1
     }
-    objSet(st, rp, "constructor", JSValue.Native(NATIVE_REGEXP))
+    objSet(st, rp, "constructor", JSValue.Native(Native.Fn(Builtin.RegExp)))
     objSetNonEnumerable(st, rp, "constructor")
-    let rbag = getNativeProps(st, NATIVE_REGEXP)
+    let rbag = getNativeProps(st, Native.Fn(Builtin.RegExp))
     objDefineProtoAttr(st, rbag, "prototype", JSValue.Obj(rp))
     st.regexProtoObj = rp
 }
@@ -9121,48 +8954,47 @@ fn setupErrorProtos(st: &mut Interp) {
     let errorProto = newObject(st)
     objSet(st, errorProto, "name", JSValue.Str("Error"))
     objSet(st, errorProto, "message", JSValue.Str(""))
-    objSet(st, errorProto, "constructor", JSValue.Native(NATIVE_ERROR))
+    objSet(st, errorProto, "constructor", JSValue.Native(Native.Fn(Builtin.Error)))
     objSet(st, errorProto, "toString", makeBoundMethod(st, JSValue.Undefined, "toString"))
     for ep in ["name", "message", "constructor", "toString"] {
         objSetNonEnumerable(st, errorProto, ep)
     }
-    let errBag = getNativeProps(st, NATIVE_ERROR)
+    let errBag = getNativeProps(st, Native.Fn(Builtin.Error))
     objSet(st, errBag, "prototype", JSValue.Obj(errorProto))
     st.objects[errorProto].proto = st.objectProtoObj
 
-    var eid = NATIVE_ERROR + 1
-    while eid <= NATIVE_REFERENCE_ERROR {
-        setupOneErrorProto(st, eid, errorProto)
-        eid = eid + 1
-    }
-    setupOneErrorProto(st, NATIVE_EVAL_ERROR, errorProto)
-    setupOneErrorProto(st, NATIVE_URI_ERROR, errorProto)
+    setupOneErrorProto(st, Builtin.TypeError, errorProto)
+    setupOneErrorProto(st, Builtin.RangeError, errorProto)
+    setupOneErrorProto(st, Builtin.SyntaxError, errorProto)
+    setupOneErrorProto(st, Builtin.ReferenceError, errorProto)
+    setupOneErrorProto(st, Builtin.EvalError, errorProto)
+    setupOneErrorProto(st, Builtin.UriError, errorProto)
 }
 
-fn setupOneErrorProto(st: &mut Interp, eid: i64, errorProto: i64) {
+fn setupOneErrorProto(st: &mut Interp, eid: Builtin, errorProto: i64) {
     let sub = newObject(st)
     objSet(st, sub, "name", JSValue.Str(nativeErrorName(eid)))
     objSet(st, sub, "message", JSValue.Str(""))
-    objSet(st, sub, "constructor", JSValue.Native(eid))
+    objSet(st, sub, "constructor", JSValue.Native(Native.Fn(eid)))
     for sp in ["name", "message", "constructor"] {
         objSetNonEnumerable(st, sub, sp)
     }
     st.objects[sub].proto = errorProto
-    let bag = getNativeProps(st, eid)
+    let bag = getNativeProps(st, Native.Fn(eid))
     objSet(st, bag, "prototype", JSValue.Obj(sub))
 }
 
 // The prototype object a freshly constructed error of this kind should link to,
 // or -1 before setupErrorProtos has run (makeError is reachable during startup).
-fn errorProtoFor(st: &mut Interp, nativeId: i64): i64 {
-    let bag = getNativeProps(st, nativeId)
+fn errorProtoFor(st: &mut Interp, nativeId: Builtin): i64 {
+    let bag = getNativeProps(st, Native.Fn(nativeId))
     return objHandle(objGet(st, bag, "prototype"))
 }
 
 // Give every native reachable as a method of `owner` its own `name`, derived
-// from the key it is registered under. A native's properties live in a per-id
-// bag (getNativeProps), so there is nowhere to put a name at the ~145 individual
-// registration sites; one pass per namespace covers them all.
+// from the key it is registered under. A native's properties live in a bag of
+// their own (getNativeProps), so there is nowhere to put a name at the ~145
+// individual registration sites; one pass per namespace covers them all.
 fn nameNativesOf(st: &mut Interp, owner: i64) {
     var i: i64 = 0
     while i < st.objects[owner].props.len() {
@@ -9184,59 +9016,59 @@ fn nameNativesOf(st: &mut Interp, owner: i64) {
 pub // A global built-in constructor's own `name` and `length`. They are bound with
 // scopeDefine rather than hung off a namespace object, so nameNativesOf never
 // reaches them and `Date.length` / `Array.name` were undefined.
-fn nameGlobalCtor(st: &mut Interp, gname: string, nid: i64) {
-    let bag = getNativeProps(st, nid)
+fn nameGlobalCtor(st: &mut Interp, gname: string, nid: Builtin) {
+    let bag = getNativeProps(st, Native.Fn(nid))
     objDefineBuiltinAttr(st, bag, "length", JSValue.Number(builtinCtorArity(gname) as f64))
     objDefineBuiltinAttr(st, bag, "name", JSValue.Str(gname))
 }
 
 pub fn setupGlobals(st: &mut Interp) {
-    scopeDefine(st, 0, "Error", JSValue.Native(NATIVE_ERROR))
-    nameGlobalCtor(st, "Error", NATIVE_ERROR)
-    scopeDefine(st, 0, "TypeError", JSValue.Native(NATIVE_TYPE_ERROR))
-    nameGlobalCtor(st, "TypeError", NATIVE_TYPE_ERROR)
-    scopeDefine(st, 0, "RangeError", JSValue.Native(NATIVE_RANGE_ERROR))
-    nameGlobalCtor(st, "RangeError", NATIVE_RANGE_ERROR)
-    scopeDefine(st, 0, "SyntaxError", JSValue.Native(NATIVE_SYNTAX_ERROR))
-    nameGlobalCtor(st, "SyntaxError", NATIVE_SYNTAX_ERROR)
-    scopeDefine(st, 0, "ReferenceError", JSValue.Native(NATIVE_REFERENCE_ERROR))
-    nameGlobalCtor(st, "ReferenceError", NATIVE_REFERENCE_ERROR)
-    scopeDefine(st, 0, "EvalError", JSValue.Native(NATIVE_EVAL_ERROR))
-    nameGlobalCtor(st, "EvalError", NATIVE_EVAL_ERROR)
-    scopeDefine(st, 0, "URIError", JSValue.Native(NATIVE_URI_ERROR))
-    nameGlobalCtor(st, "URIError", NATIVE_URI_ERROR)
-    scopeDefine(st, 0, "eval", JSValue.Native(NATIVE_EVAL))
-    nameGlobalCtor(st, "eval", NATIVE_EVAL)
+    scopeDefine(st, 0, "Error", JSValue.Native(Native.Fn(Builtin.Error)))
+    nameGlobalCtor(st, "Error", Builtin.Error)
+    scopeDefine(st, 0, "TypeError", JSValue.Native(Native.Fn(Builtin.TypeError)))
+    nameGlobalCtor(st, "TypeError", Builtin.TypeError)
+    scopeDefine(st, 0, "RangeError", JSValue.Native(Native.Fn(Builtin.RangeError)))
+    nameGlobalCtor(st, "RangeError", Builtin.RangeError)
+    scopeDefine(st, 0, "SyntaxError", JSValue.Native(Native.Fn(Builtin.SyntaxError)))
+    nameGlobalCtor(st, "SyntaxError", Builtin.SyntaxError)
+    scopeDefine(st, 0, "ReferenceError", JSValue.Native(Native.Fn(Builtin.ReferenceError)))
+    nameGlobalCtor(st, "ReferenceError", Builtin.ReferenceError)
+    scopeDefine(st, 0, "EvalError", JSValue.Native(Native.Fn(Builtin.EvalError)))
+    nameGlobalCtor(st, "EvalError", Builtin.EvalError)
+    scopeDefine(st, 0, "URIError", JSValue.Native(Native.Fn(Builtin.UriError)))
+    nameGlobalCtor(st, "URIError", Builtin.UriError)
+    scopeDefine(st, 0, "eval", JSValue.Native(Native.Fn(Builtin.Eval)))
+    nameGlobalCtor(st, "eval", Builtin.Eval)
     // JSON is a plain object whose methods are native functions
     let json = newObject(st)
-    objSet(st, json, "stringify", JSValue.Native(NATIVE_JSON_STRINGIFY))
-    objSet(st, json, "parse", JSValue.Native(NATIVE_JSON_PARSE))
+    objSet(st, json, "stringify", JSValue.Native(Native.Fn(Builtin.JsonStringify)))
+    objSet(st, json, "parse", JSValue.Native(Native.Fn(Builtin.JsonParse)))
     nameNativesOf(st, json)
     scopeDefine(st, 0, "JSON", JSValue.Obj(json))
     // Math likewise: native-fn methods + numeric constants
     let math = newObject(st)
-    objSet(st, math, "floor", JSValue.Native(NATIVE_MATH_FLOOR))
-    objSet(st, math, "ceil", JSValue.Native(NATIVE_MATH_CEIL))
-    objSet(st, math, "round", JSValue.Native(NATIVE_MATH_ROUND))
-    objSet(st, math, "trunc", JSValue.Native(NATIVE_MATH_TRUNC))
-    objSet(st, math, "abs", JSValue.Native(NATIVE_MATH_ABS))
-    objSet(st, math, "sign", JSValue.Native(NATIVE_MATH_SIGN))
-    objSet(st, math, "sqrt", JSValue.Native(NATIVE_MATH_SQRT))
-    objSet(st, math, "pow", JSValue.Native(NATIVE_MATH_POW))
-    objSet(st, math, "min", JSValue.Native(NATIVE_MATH_MIN))
-    objSet(st, math, "max", JSValue.Native(NATIVE_MATH_MAX))
-    objSet(st, math, "random", JSValue.Native(NATIVE_MATH_RANDOM))
-    objSet(st, math, "exp", JSValue.Native(NATIVE_MATH_EXP))
-    objSet(st, math, "log", JSValue.Native(NATIVE_MATH_LOG))
-    objSet(st, math, "log2", JSValue.Native(NATIVE_MATH_LOG2))
-    objSet(st, math, "log10", JSValue.Native(NATIVE_MATH_LOG10))
-    objSet(st, math, "sin", JSValue.Native(NATIVE_MATH_SIN))
-    objSet(st, math, "cos", JSValue.Native(NATIVE_MATH_COS))
-    objSet(st, math, "tan", JSValue.Native(NATIVE_MATH_TAN))
-    objSet(st, math, "asin", JSValue.Native(NATIVE_MATH_ASIN))
-    objSet(st, math, "acos", JSValue.Native(NATIVE_MATH_ACOS))
-    objSet(st, math, "atan", JSValue.Native(NATIVE_MATH_ATAN))
-    objSet(st, math, "atan2", JSValue.Native(NATIVE_MATH_ATAN2))
+    objSet(st, math, "floor", JSValue.Native(Native.Fn(Builtin.MathFloor)))
+    objSet(st, math, "ceil", JSValue.Native(Native.Fn(Builtin.MathCeil)))
+    objSet(st, math, "round", JSValue.Native(Native.Fn(Builtin.MathRound)))
+    objSet(st, math, "trunc", JSValue.Native(Native.Fn(Builtin.MathTrunc)))
+    objSet(st, math, "abs", JSValue.Native(Native.Fn(Builtin.MathAbs)))
+    objSet(st, math, "sign", JSValue.Native(Native.Fn(Builtin.MathSign)))
+    objSet(st, math, "sqrt", JSValue.Native(Native.Fn(Builtin.MathSqrt)))
+    objSet(st, math, "pow", JSValue.Native(Native.Fn(Builtin.MathPow)))
+    objSet(st, math, "min", JSValue.Native(Native.Fn(Builtin.MathMin)))
+    objSet(st, math, "max", JSValue.Native(Native.Fn(Builtin.MathMax)))
+    objSet(st, math, "random", JSValue.Native(Native.Fn(Builtin.MathRandom)))
+    objSet(st, math, "exp", JSValue.Native(Native.Fn(Builtin.MathExp)))
+    objSet(st, math, "log", JSValue.Native(Native.Fn(Builtin.MathLog)))
+    objSet(st, math, "log2", JSValue.Native(Native.Fn(Builtin.MathLog2)))
+    objSet(st, math, "log10", JSValue.Native(Native.Fn(Builtin.MathLog10)))
+    objSet(st, math, "sin", JSValue.Native(Native.Fn(Builtin.MathSin)))
+    objSet(st, math, "cos", JSValue.Native(Native.Fn(Builtin.MathCos)))
+    objSet(st, math, "tan", JSValue.Native(Native.Fn(Builtin.MathTan)))
+    objSet(st, math, "asin", JSValue.Native(Native.Fn(Builtin.MathAsin)))
+    objSet(st, math, "acos", JSValue.Native(Native.Fn(Builtin.MathAcos)))
+    objSet(st, math, "atan", JSValue.Native(Native.Fn(Builtin.MathAtan)))
+    objSet(st, math, "atan2", JSValue.Native(Native.Fn(Builtin.MathAtan2)))
     objSet(st, math, "LN2", JSValue.Number(0.6931471805599453))
     objSet(st, math, "LN10", JSValue.Number(2.302585092994046))
     objSet(st, math, "LOG2E", JSValue.Number(1.4426950408889634))
@@ -9261,8 +9093,8 @@ pub fn setupGlobals(st: &mut Interp) {
         }
     }
     scopeDefine(st, 0, "Math", JSValue.Obj(math))
-    scopeDefine(st, 0, "RegExp", JSValue.Native(NATIVE_REGEXP))
-    nameGlobalCtor(st, "RegExp", NATIVE_REGEXP)
+    scopeDefine(st, 0, "RegExp", JSValue.Native(Native.Fn(Builtin.RegExp)))
+    nameGlobalCtor(st, "RegExp", Builtin.RegExp)
     let promiseCtor = newObject(st)
     nameNativesOf(st, promiseCtor)
     // Array and Promise are constructor OBJECTS here, not Natives, so the
@@ -9276,34 +9108,34 @@ pub fn setupGlobals(st: &mut Interp) {
     // Promise did not report as a constructor.
     st.objects[promiseCtor].isFunctionLike = true
     st.promiseCtorObj = promiseCtor
-    objSet(st, promiseCtor, "resolve", JSValue.Native(NATIVE_PROMISE_RESOLVE))
-    objSet(st, promiseCtor, "reject", JSValue.Native(NATIVE_PROMISE_REJECT))
+    objSet(st, promiseCtor, "resolve", JSValue.Native(Native.Fn(Builtin.PromiseResolve)))
+    objSet(st, promiseCtor, "reject", JSValue.Native(Native.Fn(Builtin.PromiseReject)))
     scopeDefine(st, 0, "Promise", JSValue.Obj(promiseCtor))
     // Object's statics live in the property bag that belongs to the native id,
     // so reading `Object.keys` as a value and calling `Object.keys(o)` both go
     // through the same place. A standalone object would only serve the call path.
-    let objectCtor = getNativeProps(st, NATIVE_OBJECT_CTOR)
-    objSet(st, objectCtor, "defineProperty", JSValue.Native(NATIVE_OBJECT_DEFINEPROPERTY))
-    objSet(st, objectCtor, "keys", JSValue.Native(NATIVE_OBJECT_KEYS))
-    objSet(st, objectCtor, "assign", JSValue.Native(NATIVE_OBJECT_ASSIGN))
-    objSet(st, objectCtor, "values", JSValue.Native(NATIVE_OBJECT_VALUES))
-    objSet(st, objectCtor, "entries", JSValue.Native(NATIVE_OBJECT_ENTRIES))
-    objSet(st, objectCtor, "freeze", JSValue.Native(NATIVE_OBJECT_FREEZE))
-    objSet(st, objectCtor, "isFrozen", JSValue.Native(NATIVE_OBJECT_ISFROZEN))
-    objSet(st, objectCtor, "preventExtensions", JSValue.Native(NATIVE_OBJECT_PREVENTEXT))
-    objSet(st, objectCtor, "isExtensible", JSValue.Native(NATIVE_OBJECT_ISEXT))
-    objSet(st, objectCtor, "seal", JSValue.Native(NATIVE_OBJECT_SEAL))
-    objSet(st, objectCtor, "isSealed", JSValue.Native(NATIVE_OBJECT_ISSEALED))
-    objSet(st, objectCtor, "create", JSValue.Native(NATIVE_OBJECT_CREATE))
-    objSet(st, objectCtor, "getPrototypeOf", JSValue.Native(NATIVE_OBJECT_GETPROTO))
-    objSet(st, objectCtor, "setPrototypeOf", JSValue.Native(NATIVE_OBJECT_SETPROTO))
-    objSet(st, objectCtor, "getOwnPropertyDescriptor", JSValue.Native(NATIVE_OBJECT_GETOWNPROPDESC))
-    objSet(st, objectCtor, "getOwnPropertyDescriptors", JSValue.Native(NATIVE_OBJECT_GETOWNPROPDESCS))
-    objSet(st, objectCtor, "defineProperties", JSValue.Native(NATIVE_OBJECT_DEFINEPROPERTIES))
-    objSet(st, objectCtor, "getOwnPropertyNames", JSValue.Native(NATIVE_OBJECT_GETOWNPROPNAMES))
-    objSet(st, objectCtor, "getOwnPropertySymbols", JSValue.Native(NATIVE_OBJECT_GETOWNPROPSYMBOLS))
-    objSet(st, objectCtor, "is", JSValue.Native(NATIVE_OBJECT_IS))
-    objSet(st, objectCtor, "hasOwn", JSValue.Native(NATIVE_OBJECT_HASOWN))
+    let objectCtor = getNativeProps(st, Native.Fn(Builtin.ObjectCtor))
+    objSet(st, objectCtor, "defineProperty", JSValue.Native(Native.Fn(Builtin.ObjectDefineProperty)))
+    objSet(st, objectCtor, "keys", JSValue.Native(Native.Fn(Builtin.ObjectKeys)))
+    objSet(st, objectCtor, "assign", JSValue.Native(Native.Fn(Builtin.ObjectAssign)))
+    objSet(st, objectCtor, "values", JSValue.Native(Native.Fn(Builtin.ObjectValues)))
+    objSet(st, objectCtor, "entries", JSValue.Native(Native.Fn(Builtin.ObjectEntries)))
+    objSet(st, objectCtor, "freeze", JSValue.Native(Native.Fn(Builtin.ObjectFreeze)))
+    objSet(st, objectCtor, "isFrozen", JSValue.Native(Native.Fn(Builtin.ObjectIsFrozen)))
+    objSet(st, objectCtor, "preventExtensions", JSValue.Native(Native.Fn(Builtin.ObjectPreventExt)))
+    objSet(st, objectCtor, "isExtensible", JSValue.Native(Native.Fn(Builtin.ObjectIsExt)))
+    objSet(st, objectCtor, "seal", JSValue.Native(Native.Fn(Builtin.ObjectSeal)))
+    objSet(st, objectCtor, "isSealed", JSValue.Native(Native.Fn(Builtin.ObjectIsSealed)))
+    objSet(st, objectCtor, "create", JSValue.Native(Native.Fn(Builtin.ObjectCreate)))
+    objSet(st, objectCtor, "getPrototypeOf", JSValue.Native(Native.Fn(Builtin.ObjectGetProto)))
+    objSet(st, objectCtor, "setPrototypeOf", JSValue.Native(Native.Fn(Builtin.ObjectSetProto)))
+    objSet(st, objectCtor, "getOwnPropertyDescriptor", JSValue.Native(Native.Fn(Builtin.ObjectGetOwnPropDesc)))
+    objSet(st, objectCtor, "getOwnPropertyDescriptors", JSValue.Native(Native.Fn(Builtin.ObjectGetOwnPropDescs)))
+    objSet(st, objectCtor, "defineProperties", JSValue.Native(Native.Fn(Builtin.ObjectDefineProperties)))
+    objSet(st, objectCtor, "getOwnPropertyNames", JSValue.Native(Native.Fn(Builtin.ObjectGetOwnPropNames)))
+    objSet(st, objectCtor, "getOwnPropertySymbols", JSValue.Native(Native.Fn(Builtin.ObjectGetOwnPropSymbols)))
+    objSet(st, objectCtor, "is", JSValue.Native(Native.Fn(Builtin.ObjectIs)))
+    objSet(st, objectCtor, "hasOwn", JSValue.Native(Native.Fn(Builtin.ObjectHasOwn)))
     let objectProto = newObject(st)
     objSet(st, objectProto, "hasOwnProperty", makeBoundMethod(st, JSValue.Undefined, "hasOwnProperty"))
     // Object.prototype.toString.call(x) is the standard type-detection idiom
@@ -9340,16 +9172,16 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, objectCtor, "toString", makeBoundMethod(st, JSValue.Undefined, "@@objProtoToString"))
     objSet(st, objectCtor, "valueOf", makeBoundMethod(st, JSValue.Undefined, "valueOf"))
     nameNativesOf(st, objectCtor)
-    scopeDefine(st, 0, "Object", JSValue.Native(NATIVE_OBJECT_CTOR))
-    nameGlobalCtor(st, "Object", NATIVE_OBJECT_CTOR)
-    scopeDefine(st, 0, "Number", JSValue.Native(NATIVE_NUMBER))
-    nameGlobalCtor(st, "Number", NATIVE_NUMBER)
-    scopeDefine(st, 0, "BigInt", JSValue.Native(NATIVE_BIGINT))
-    nameGlobalCtor(st, "BigInt", NATIVE_BIGINT)
-    let stringCtorObj = getNativeProps(st, NATIVE_STRING)
-    objSet(st, stringCtorObj, "fromCharCode", JSValue.Native(NATIVE_STRING_FROMCHARCODE))
-    objSet(st, stringCtorObj, "fromCodePoint", JSValue.Native(NATIVE_STRING_FROMCODEPOINT))
-    objSet(st, stringCtorObj, "raw", JSValue.Native(NATIVE_STRING_RAW))
+    scopeDefine(st, 0, "Object", JSValue.Native(Native.Fn(Builtin.ObjectCtor)))
+    nameGlobalCtor(st, "Object", Builtin.ObjectCtor)
+    scopeDefine(st, 0, "Number", JSValue.Native(Native.Fn(Builtin.Number)))
+    nameGlobalCtor(st, "Number", Builtin.Number)
+    scopeDefine(st, 0, "BigInt", JSValue.Native(Native.Fn(Builtin.BigInt)))
+    nameGlobalCtor(st, "BigInt", Builtin.BigInt)
+    let stringCtorObj = getNativeProps(st, Native.Fn(Builtin.String))
+    objSet(st, stringCtorObj, "fromCharCode", JSValue.Native(Native.Fn(Builtin.StringFromCharCode)))
+    objSet(st, stringCtorObj, "fromCodePoint", JSValue.Native(Native.Fn(Builtin.StringFromCodePoint)))
+    objSet(st, stringCtorObj, "raw", JSValue.Native(Native.Fn(Builtin.StringRaw)))
     // String.prototype methods as bound-method values, so
     // String.prototype.replace.call(str, ...) — the qs module's pattern — works
     let stringProto = newObject(st)
@@ -9377,7 +9209,7 @@ pub fn setupGlobals(st: &mut Interp) {
     brandProtoMethods(st, stringProto, BRAND_STRING, strBrand)
     boxProtoItself(st, stringProto, JSValue.Str(""))
     objSetFrozenOwn(st, stringProto, "length", JSValue.Number(0.0), false)
-    objSet(st, stringProto, "constructor", JSValue.Native(NATIVE_STRING))
+    objSet(st, stringProto, "constructor", JSValue.Native(Native.Fn(Builtin.String)))
     objSetNonEnumerable(st, stringProto, "constructor")
     st.objects[stringProto].proto = objectProto
     objSet(st, stringCtorObj, "prototype", JSValue.Obj(stringProto))
@@ -9385,17 +9217,17 @@ pub fn setupGlobals(st: &mut Interp) {
     st.stringCtorProps = stringCtorObj
     st.stringProtoObj = stringProto
     st.stringProtoPristine = true
-    scopeDefine(st, 0, "String", JSValue.Native(NATIVE_STRING))
-    nameGlobalCtor(st, "String", NATIVE_STRING)
-    scopeDefine(st, 0, "Boolean", JSValue.Native(NATIVE_BOOLEAN))
-    nameGlobalCtor(st, "Boolean", NATIVE_BOOLEAN)
+    scopeDefine(st, 0, "String", JSValue.Native(Native.Fn(Builtin.String)))
+    nameGlobalCtor(st, "String", Builtin.String)
+    scopeDefine(st, 0, "Boolean", JSValue.Native(Native.Fn(Builtin.Boolean)))
+    nameGlobalCtor(st, "Boolean", Builtin.Boolean)
     scopeDefine(st, 0, "NaN", JSValue.Number(jsNan()))
     scopeDefine(st, 0, "Infinity", JSValue.Number(jsInfinity()))
-    scopeDefine(st, 0, "isNaN", JSValue.Native(NATIVE_IS_NAN))
-    scopeDefine(st, 0, "gc", JSValue.Native(NATIVE_GC))
-    scopeDefine(st, 0, "isFinite", JSValue.Native(NATIVE_IS_FINITE))
-    scopeDefine(st, 0, "parseInt", JSValue.Native(NATIVE_PARSE_INT))
-    scopeDefine(st, 0, "parseFloat", JSValue.Native(NATIVE_PARSE_FLOAT))
+    scopeDefine(st, 0, "isNaN", JSValue.Native(Native.Fn(Builtin.IsNan)))
+    scopeDefine(st, 0, "gc", JSValue.Native(Native.Fn(Builtin.Gc)))
+    scopeDefine(st, 0, "isFinite", JSValue.Native(Native.Fn(Builtin.IsFinite)))
+    scopeDefine(st, 0, "parseInt", JSValue.Native(Native.Fn(Builtin.ParseInt)))
+    scopeDefine(st, 0, "parseFloat", JSValue.Native(Native.Fn(Builtin.ParseFloat)))
     // The shared iterator prototype. The prelude installs the helper methods
     // (map/filter/take/...) onto this one object; every iterator the engine
     // builds points its proto here, so helpers work on array iterators too.
@@ -9411,9 +9243,9 @@ pub fn setupGlobals(st: &mut Interp) {
     let globalObj = newObject(st)
     st.objects[globalObj].isGlobal = true
     scopeDefine(st, 0, "globalThis", JSValue.Obj(globalObj))
-    scopeDefine(st, 0, "Symbol", JSValue.Native(NATIVE_SYMBOL))
-    nameGlobalCtor(st, "Symbol", NATIVE_SYMBOL)
-    let symbolCtorObj = getNativeProps(st, NATIVE_SYMBOL)
+    scopeDefine(st, 0, "Symbol", JSValue.Native(Native.Fn(Builtin.Symbol)))
+    nameGlobalCtor(st, "Symbol", Builtin.Symbol)
+    let symbolCtorObj = getNativeProps(st, Native.Fn(Builtin.Symbol))
     objSet(st, symbolCtorObj, "iterator", JSValue.Str(symIteratorKey()))
     // other well-known symbols — interned keys like @@iterator, counter 0
     objSet(st, symbolCtorObj, "asyncIterator", JSValue.Str("@@sym:Symbol.asyncIterator:0"))
@@ -9431,10 +9263,10 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(st, symbolCtorObj, "unscopables", JSValue.Str("@@sym:Symbol.unscopables:0"))
     objSet(st, symbolCtorObj, "dispose", JSValue.Str("@@sym:Symbol.dispose:0"))
     objSet(st, symbolCtorObj, "asyncDispose", JSValue.Str("@@sym:Symbol.asyncDispose:0"))
-    let dateCtorObj = getNativeProps(st, NATIVE_DATE)
-    objSet(st, dateCtorObj, "now", JSValue.Native(NATIVE_DATE_NOW))
-    objSet(st, dateCtorObj, "UTC", JSValue.Native(NATIVE_DATE_UTC))
-    objSet(st, dateCtorObj, "parse", JSValue.Native(NATIVE_DATE_PARSE))
+    let dateCtorObj = getNativeProps(st, Native.Fn(Builtin.Date))
+    objSet(st, dateCtorObj, "now", JSValue.Native(Native.Fn(Builtin.DateNow)))
+    objSet(st, dateCtorObj, "UTC", JSValue.Native(Native.Fn(Builtin.DateUtc)))
+    objSet(st, dateCtorObj, "parse", JSValue.Native(Native.Fn(Builtin.DateParse)))
     // Date.prototype methods as bound-method values, so
     // Date.prototype.toISOString.call(d) — qs's pattern — works
     let dateProto = newObject(st)
@@ -9443,18 +9275,18 @@ pub fn setupGlobals(st: &mut Interp) {
         objSetNonEnumerable(st, dateProto, dm)
     }
     objDefineProtoAttr(st, dateCtorObj, "prototype", JSValue.Obj(dateProto))
-    objSet(st, dateProto, "constructor", JSValue.Native(NATIVE_DATE))
+    objSet(st, dateProto, "constructor", JSValue.Native(Native.Fn(Builtin.Date)))
     objSetNonEnumerable(st, dateProto, "constructor")
     st.objects[dateProto].proto = st.objectProtoObj
     nameNativesOf(st, dateCtorObj)
     // after nameNativesOf, which would otherwise overwrite it: Date.parse is the
     // one static whose name collides across namespaces (JSON.parse is 2), and
     // builtinStaticArity is keyed by name alone
-    objDefineBuiltinAttr(st, getNativeProps(st, NATIVE_DATE_PARSE), "length", JSValue.Number(1.0))
+    objDefineBuiltinAttr(st, getNativeProps(st, Native.Fn(Builtin.DateParse)), "length", JSValue.Number(1.0))
     st.dateProtoObj = dateProto
     st.dateCtorProps = dateCtorObj
-    scopeDefine(st, 0, "Date", JSValue.Native(NATIVE_DATE))
-    nameGlobalCtor(st, "Date", NATIVE_DATE)
+    scopeDefine(st, 0, "Date", JSValue.Native(Native.Fn(Builtin.Date)))
+    nameGlobalCtor(st, "Date", Builtin.Date)
     // Function.prototype.{call,apply,bind} are bound-method values: invoking
     // .call on them re-targets to whatever function is passed as the receiver,
     // which is how Function.prototype.apply.call(fn, ...) resolves
@@ -9476,50 +9308,50 @@ pub fn setupGlobals(st: &mut Interp) {
     objDefineBuiltinAttr(st, functionProto, "name", JSValue.Str(""))
     objDefineBuiltinAttr(st, functionProto, "length", JSValue.Number(0.0))
     st.functionProtoObj = functionProto
-    let functionCtorBag = getNativeProps(st, NATIVE_FUNCTION_CTOR)
+    let functionCtorBag = getNativeProps(st, Native.Fn(Builtin.FunctionCtor))
     objDefineProtoAttr(st, functionCtorBag, "prototype", JSValue.Obj(functionProto))
-    objSet(st, functionProto, "constructor", JSValue.Native(NATIVE_FUNCTION_CTOR))
+    objSet(st, functionProto, "constructor", JSValue.Native(Native.Fn(Builtin.FunctionCtor)))
     objSetNonEnumerable(st, functionProto, "constructor")
-    scopeDefine(st, 0, "Function", JSValue.Native(NATIVE_FUNCTION_CTOR))
-    nameGlobalCtor(st, "Function", NATIVE_FUNCTION_CTOR)
-    scopeDefine(st, 0, "setTimeout", JSValue.Native(NATIVE_SET_TIMEOUT))
-    scopeDefine(st, 0, "setInterval", JSValue.Native(NATIVE_SET_INTERVAL))
-    scopeDefine(st, 0, "clearTimeout", JSValue.Native(NATIVE_CLEAR_TIMER))
-    scopeDefine(st, 0, "clearInterval", JSValue.Native(NATIVE_CLEAR_TIMER))
-    scopeDefine(st, 0, "clearImmediate", JSValue.Native(NATIVE_CLEAR_TIMER))
-    scopeDefine(st, 0, "setImmediate", JSValue.Native(NATIVE_SET_IMMEDIATE))
-    scopeDefine(st, 0, "queueMicrotask", JSValue.Native(NATIVE_QUEUE_MICROTASK_JS))
+    scopeDefine(st, 0, "Function", JSValue.Native(Native.Fn(Builtin.FunctionCtor)))
+    nameGlobalCtor(st, "Function", Builtin.FunctionCtor)
+    scopeDefine(st, 0, "setTimeout", JSValue.Native(Native.Fn(Builtin.SetTimeout)))
+    scopeDefine(st, 0, "setInterval", JSValue.Native(Native.Fn(Builtin.SetInterval)))
+    scopeDefine(st, 0, "clearTimeout", JSValue.Native(Native.Fn(Builtin.ClearTimer)))
+    scopeDefine(st, 0, "clearInterval", JSValue.Native(Native.Fn(Builtin.ClearTimer)))
+    scopeDefine(st, 0, "clearImmediate", JSValue.Native(Native.Fn(Builtin.ClearTimer)))
+    scopeDefine(st, 0, "setImmediate", JSValue.Native(Native.Fn(Builtin.SetImmediate)))
+    scopeDefine(st, 0, "queueMicrotask", JSValue.Native(Native.Fn(Builtin.QueueMicrotaskJs)))
     // not a JS global in node; lib/util.js reads it off globalThis so util.inspect
     // and console.log render identically
-    scopeDefine(st, 0, "__inspect", JSValue.Native(NATIVE_INSPECT))
-    scopeDefine(st, 0, "__isConstructor", JSValue.Native(NATIVE_IS_CONSTRUCTOR))
-    scopeDefine(st, 0, "__markNotConstructor", JSValue.Native(NATIVE_MARK_NOT_CTOR))
+    scopeDefine(st, 0, "__inspect", JSValue.Native(Native.Fn(Builtin.Inspect)))
+    scopeDefine(st, 0, "__isConstructor", JSValue.Native(Native.Fn(Builtin.IsConstructor)))
+    scopeDefine(st, 0, "__markNotConstructor", JSValue.Native(Native.Fn(Builtin.MarkNotCtor)))
     // The raw "wrap a value in a resolved promise" primitive, exposed under its
     // own name so the prelude can build the public Promise.resolve on top of it.
     // Capturing `Promise.resolve` from JS does not work: reading a method off a
     // native constructor yields a late-bound dispatcher that looks the name up
     // again at call time, so a wrapper calling the captured value re-entered
     // itself forever.
-    scopeDefine(st, 0, "__promiseResolveValue", JSValue.Native(NATIVE_PROMISE_RESOLVE))
-    scopeDefine(st, 0, "encodeURIComponent", JSValue.Native(NATIVE_ENCODE_URI_COMPONENT))
-    scopeDefine(st, 0, "decodeURIComponent", JSValue.Native(NATIVE_DECODE_URI_COMPONENT))
-    scopeDefine(st, 0, "encodeURI", JSValue.Native(NATIVE_ENCODE_URI))
-    scopeDefine(st, 0, "decodeURI", JSValue.Native(NATIVE_DECODE_URI))
-    scopeDefine(st, 0, "ArrayBuffer", JSValue.Native(NATIVE_ARRAYBUFFER))
-    nameGlobalCtor(st, "ArrayBuffer", NATIVE_ARRAYBUFFER)
-    scopeDefine(st, 0, "DataView", JSValue.Native(NATIVE_DATAVIEW))
-    nameGlobalCtor(st, "DataView", NATIVE_DATAVIEW)
+    scopeDefine(st, 0, "__promiseResolveValue", JSValue.Native(Native.Fn(Builtin.PromiseResolve)))
+    scopeDefine(st, 0, "encodeURIComponent", JSValue.Native(Native.Fn(Builtin.EncodeUriComponent)))
+    scopeDefine(st, 0, "decodeURIComponent", JSValue.Native(Native.Fn(Builtin.DecodeUriComponent)))
+    scopeDefine(st, 0, "encodeURI", JSValue.Native(Native.Fn(Builtin.EncodeUri)))
+    scopeDefine(st, 0, "decodeURI", JSValue.Native(Native.Fn(Builtin.DecodeUri)))
+    scopeDefine(st, 0, "ArrayBuffer", JSValue.Native(Native.Fn(Builtin.ArrayBuffer)))
+    nameGlobalCtor(st, "ArrayBuffer", Builtin.ArrayBuffer)
+    scopeDefine(st, 0, "DataView", JSValue.Native(Native.Fn(Builtin.DataView)))
+    nameGlobalCtor(st, "DataView", Builtin.DataView)
     var tk: i64 = 0
     while tk <= TA_MAX {
-        scopeDefine(st, 0, taName(tk), JSValue.Native(NATIVE_TA_BASE + tk))
+        scopeDefine(st, 0, taName(tk), JSValue.Native(Native.TypedArrayCtor(tk)))
         tk = tk + 1
     }
-    scopeDefine(st, 0, "Map", JSValue.Native(NATIVE_MAP))
-    nameGlobalCtor(st, "Map", NATIVE_MAP)
-    scopeDefine(st, 0, "WeakMap", JSValue.Native(NATIVE_MAP))
-    scopeDefine(st, 0, "Set", JSValue.Native(NATIVE_SET))
-    nameGlobalCtor(st, "Set", NATIVE_SET)
-    scopeDefine(st, 0, "WeakSet", JSValue.Native(NATIVE_SET))
+    scopeDefine(st, 0, "Map", JSValue.Native(Native.Fn(Builtin.Map)))
+    nameGlobalCtor(st, "Map", Builtin.Map)
+    scopeDefine(st, 0, "WeakMap", JSValue.Native(Native.Fn(Builtin.Map)))
+    scopeDefine(st, 0, "Set", JSValue.Native(Native.Fn(Builtin.Set)))
+    nameGlobalCtor(st, "Set", Builtin.Set)
+    scopeDefine(st, 0, "WeakSet", JSValue.Native(Native.Fn(Builtin.Set)))
     // Array.prototype.<m> as a bound-method value, so the ES5 idiom
     // Array.prototype.slice.call(arguments) resolves
     let arrayProto = newObject(st)
@@ -9560,78 +9392,78 @@ pub fn setupGlobals(st: &mut Interp) {
     // Set only now that setup has finished writing the methods in, so the setup
     // writes themselves do not count as a user touch.
     st.arrayProtoPristine = true
-    objSet(st, arrayCtor, "isArray", JSValue.Native(NATIVE_ARRAY_ISARRAY))
-    objSet(st, arrayCtor, "from", JSValue.Native(NATIVE_ARRAY_FROM))
+    objSet(st, arrayCtor, "isArray", JSValue.Native(Native.Fn(Builtin.ArrayIsArray)))
+    objSet(st, arrayCtor, "from", JSValue.Native(Native.Fn(Builtin.ArrayFrom)))
     scopeDefine(st, 0, "Array", JSValue.Obj(arrayCtor))
     // file natives, named as minibun's runtime expects them
     // raw TCP, used by the http builtin; not part of the JS surface
-    scopeDefine(st, 0, "__tcpListen", JSValue.Native(NATIVE_TCP_LISTEN))
-    scopeDefine(st, 0, "__tcpAccept", JSValue.Native(NATIVE_TCP_ACCEPT))
-    scopeDefine(st, 0, "__tcpRecv", JSValue.Native(NATIVE_TCP_RECV))
-    scopeDefine(st, 0, "__tcpSend", JSValue.Native(NATIVE_TCP_SEND))
-    scopeDefine(st, 0, "__tcpClose", JSValue.Native(NATIVE_TCP_CLOSE))
-    scopeDefine(st, 0, "__tcpConnect", JSValue.Native(NATIVE_TCP_CONNECT))
-    scopeDefine(st, 0, "__tcpPort", JSValue.Native(NATIVE_TCP_PORT))
-    scopeDefine(st, 0, "__tcpRead", JSValue.Native(NATIVE_TCP_READ))
-    scopeDefine(st, 0, "__spawnSync", JSValue.Native(NATIVE_SPAWN_SYNC))
-    scopeDefine(st, 0, "__httpFetch", JSValue.Native(NATIVE_HTTP_FETCH))
-    scopeDefine(st, 0, "__sqliteOpen", JSValue.Native(NATIVE_SQLITE_OPEN))
-    scopeDefine(st, 0, "__sqliteClose", JSValue.Native(NATIVE_SQLITE_CLOSE))
-    scopeDefine(st, 0, "__sqliteExec", JSValue.Native(NATIVE_SQLITE_EXEC))
-    scopeDefine(st, 0, "__sqlitePrepare", JSValue.Native(NATIVE_SQLITE_PREPARE))
-    scopeDefine(st, 0, "__sqliteErrmsg", JSValue.Native(NATIVE_SQLITE_ERRMSG))
-    scopeDefine(st, 0, "__sqliteStep", JSValue.Native(NATIVE_SQLITE_STEP))
-    scopeDefine(st, 0, "__sqliteColumnCount", JSValue.Native(NATIVE_SQLITE_COLUMN_COUNT))
-    scopeDefine(st, 0, "__sqliteColumnName", JSValue.Native(NATIVE_SQLITE_COLUMN_NAME))
-    scopeDefine(st, 0, "__sqliteColumnValue", JSValue.Native(NATIVE_SQLITE_COLUMN_VALUE))
-    scopeDefine(st, 0, "__sqliteBind", JSValue.Native(NATIVE_SQLITE_BIND))
-    scopeDefine(st, 0, "__sqliteReset", JSValue.Native(NATIVE_SQLITE_RESET))
-    scopeDefine(st, 0, "__sqliteFinalize", JSValue.Native(NATIVE_SQLITE_FINALIZE))
-    scopeDefine(st, 0, "__sqliteChanges", JSValue.Native(NATIVE_SQLITE_CHANGES))
-    scopeDefine(st, 0, "__sqliteLastInsertId", JSValue.Native(NATIVE_SQLITE_LAST_INSERT_ID))
-    scopeDefine(st, 0, "__sqliteBindIndex", JSValue.Native(NATIVE_SQLITE_BIND_INDEX))
-    scopeDefine(st, 0, "__sqliteFilename", JSValue.Native(NATIVE_SQLITE_FILENAME))
-    scopeDefine(st, 0, "__httpRegister", JSValue.Native(NATIVE_HTTP_REGISTER))
-    scopeDefine(st, 0, "__httpUnregister", JSValue.Native(NATIVE_HTTP_UNREGISTER))
-    scopeDefine(st, 0, "__writeFileSync", JSValue.Native(NATIVE_WRITE_FILE))
-    scopeDefine(st, 0, "__readFileSync", JSValue.Native(NATIVE_READ_FILE_SYNC))
-    scopeDefine(st, 0, "__mkdirSync", JSValue.Native(NATIVE_MKDIR))
-    scopeDefine(st, 0, "__readdirSync", JSValue.Native(NATIVE_READDIR))
-    scopeDefine(st, 0, "__callFrames", JSValue.Native(NATIVE_CALL_FRAMES))
-    scopeDefine(st, 0, "__unlinkSync", JSValue.Native(NATIVE_UNLINK))
-    scopeDefine(st, 0, "__rmdirSync", JSValue.Native(NATIVE_RMDIR))
-    scopeDefine(st, 0, "__renameSync", JSValue.Native(NATIVE_RENAME))
-    scopeDefine(st, 0, "__isDir", JSValue.Native(NATIVE_IS_DIR))
-    scopeDefine(st, 0, "__fileExists", JSValue.Native(NATIVE_FILE_EXISTS))
-    scopeDefine(st, 0, "__byteLength", JSValue.Native(NATIVE_BYTE_LENGTH))
-    scopeDefine(st, 0, "__napiLoad", JSValue.Native(NATIVE_NAPI_LOAD))
-    scopeDefine(st, 0, "__httpFetchAsync", JSValue.Native(NATIVE_HTTP_FETCH_ASYNC))
+    scopeDefine(st, 0, "__tcpListen", JSValue.Native(Native.Fn(Builtin.TcpListen)))
+    scopeDefine(st, 0, "__tcpAccept", JSValue.Native(Native.Fn(Builtin.TcpAccept)))
+    scopeDefine(st, 0, "__tcpRecv", JSValue.Native(Native.Fn(Builtin.TcpRecv)))
+    scopeDefine(st, 0, "__tcpSend", JSValue.Native(Native.Fn(Builtin.TcpSend)))
+    scopeDefine(st, 0, "__tcpClose", JSValue.Native(Native.Fn(Builtin.TcpClose)))
+    scopeDefine(st, 0, "__tcpConnect", JSValue.Native(Native.Fn(Builtin.TcpConnect)))
+    scopeDefine(st, 0, "__tcpPort", JSValue.Native(Native.Fn(Builtin.TcpPort)))
+    scopeDefine(st, 0, "__tcpRead", JSValue.Native(Native.Fn(Builtin.TcpRead)))
+    scopeDefine(st, 0, "__spawnSync", JSValue.Native(Native.Fn(Builtin.SpawnSync)))
+    scopeDefine(st, 0, "__httpFetch", JSValue.Native(Native.Fn(Builtin.HttpFetch)))
+    scopeDefine(st, 0, "__sqliteOpen", JSValue.Native(Native.Fn(Builtin.SqliteOpen)))
+    scopeDefine(st, 0, "__sqliteClose", JSValue.Native(Native.Fn(Builtin.SqliteClose)))
+    scopeDefine(st, 0, "__sqliteExec", JSValue.Native(Native.Fn(Builtin.SqliteExec)))
+    scopeDefine(st, 0, "__sqlitePrepare", JSValue.Native(Native.Fn(Builtin.SqlitePrepare)))
+    scopeDefine(st, 0, "__sqliteErrmsg", JSValue.Native(Native.Fn(Builtin.SqliteErrmsg)))
+    scopeDefine(st, 0, "__sqliteStep", JSValue.Native(Native.Fn(Builtin.SqliteStep)))
+    scopeDefine(st, 0, "__sqliteColumnCount", JSValue.Native(Native.Fn(Builtin.SqliteColumnCount)))
+    scopeDefine(st, 0, "__sqliteColumnName", JSValue.Native(Native.Fn(Builtin.SqliteColumnName)))
+    scopeDefine(st, 0, "__sqliteColumnValue", JSValue.Native(Native.Fn(Builtin.SqliteColumnValue)))
+    scopeDefine(st, 0, "__sqliteBind", JSValue.Native(Native.Fn(Builtin.SqliteBind)))
+    scopeDefine(st, 0, "__sqliteReset", JSValue.Native(Native.Fn(Builtin.SqliteReset)))
+    scopeDefine(st, 0, "__sqliteFinalize", JSValue.Native(Native.Fn(Builtin.SqliteFinalize)))
+    scopeDefine(st, 0, "__sqliteChanges", JSValue.Native(Native.Fn(Builtin.SqliteChanges)))
+    scopeDefine(st, 0, "__sqliteLastInsertId", JSValue.Native(Native.Fn(Builtin.SqliteLastInsertId)))
+    scopeDefine(st, 0, "__sqliteBindIndex", JSValue.Native(Native.Fn(Builtin.SqliteBindIndex)))
+    scopeDefine(st, 0, "__sqliteFilename", JSValue.Native(Native.Fn(Builtin.SqliteFilename)))
+    scopeDefine(st, 0, "__httpRegister", JSValue.Native(Native.Fn(Builtin.HttpRegister)))
+    scopeDefine(st, 0, "__httpUnregister", JSValue.Native(Native.Fn(Builtin.HttpUnregister)))
+    scopeDefine(st, 0, "__writeFileSync", JSValue.Native(Native.Fn(Builtin.WriteFile)))
+    scopeDefine(st, 0, "__readFileSync", JSValue.Native(Native.Fn(Builtin.ReadFileSync)))
+    scopeDefine(st, 0, "__mkdirSync", JSValue.Native(Native.Fn(Builtin.Mkdir)))
+    scopeDefine(st, 0, "__readdirSync", JSValue.Native(Native.Fn(Builtin.Readdir)))
+    scopeDefine(st, 0, "__callFrames", JSValue.Native(Native.Fn(Builtin.CallFrames)))
+    scopeDefine(st, 0, "__unlinkSync", JSValue.Native(Native.Fn(Builtin.Unlink)))
+    scopeDefine(st, 0, "__rmdirSync", JSValue.Native(Native.Fn(Builtin.Rmdir)))
+    scopeDefine(st, 0, "__renameSync", JSValue.Native(Native.Fn(Builtin.Rename)))
+    scopeDefine(st, 0, "__isDir", JSValue.Native(Native.Fn(Builtin.IsDir)))
+    scopeDefine(st, 0, "__fileExists", JSValue.Native(Native.Fn(Builtin.FileExists)))
+    scopeDefine(st, 0, "__byteLength", JSValue.Native(Native.Fn(Builtin.ByteLength)))
+    scopeDefine(st, 0, "__napiLoad", JSValue.Native(Native.Fn(Builtin.NapiLoad)))
+    scopeDefine(st, 0, "__httpFetchAsync", JSValue.Native(Native.Fn(Builtin.HttpFetchAsync)))
     let consoleObj = newObject(st)
-    objSet(st, consoleObj, "log", JSValue.Native(NATIVE_CONSOLE_LOG))
-    objSet(st, consoleObj, "info", JSValue.Native(NATIVE_CONSOLE_LOG))
-    objSet(st, consoleObj, "debug", JSValue.Native(NATIVE_CONSOLE_LOG))
-    objSet(st, consoleObj, "trace", JSValue.Native(NATIVE_CONSOLE_LOG))
-    objSet(st, consoleObj, "dir", JSValue.Native(NATIVE_CONSOLE_LOG))
-    objSet(st, consoleObj, "warn", JSValue.Native(NATIVE_CONSOLE_ERROR))
-    objSet(st, consoleObj, "error", JSValue.Native(NATIVE_CONSOLE_ERROR))
+    objSet(st, consoleObj, "log", JSValue.Native(Native.Fn(Builtin.ConsoleLog)))
+    objSet(st, consoleObj, "info", JSValue.Native(Native.Fn(Builtin.ConsoleLog)))
+    objSet(st, consoleObj, "debug", JSValue.Native(Native.Fn(Builtin.ConsoleLog)))
+    objSet(st, consoleObj, "trace", JSValue.Native(Native.Fn(Builtin.ConsoleLog)))
+    objSet(st, consoleObj, "dir", JSValue.Native(Native.Fn(Builtin.ConsoleLog)))
+    objSet(st, consoleObj, "warn", JSValue.Native(Native.Fn(Builtin.ConsoleError)))
+    objSet(st, consoleObj, "error", JSValue.Native(Native.Fn(Builtin.ConsoleError)))
     scopeDefine(st, 0, "console", JSValue.Obj(consoleObj))
-    scopeDefine(st, 0, "Proxy", JSValue.Native(NATIVE_PROXY))
-    nameGlobalCtor(st, "Proxy", NATIVE_PROXY)
-    let proxyBag = getNativeProps(st, NATIVE_PROXY)
+    scopeDefine(st, 0, "Proxy", JSValue.Native(Native.Fn(Builtin.Proxy)))
+    nameGlobalCtor(st, "Proxy", Builtin.Proxy)
+    let proxyBag = getNativeProps(st, Native.Fn(Builtin.Proxy))
     // Proxy.revocable is writable, unlike the `length`/`name` that
     // objDefineBuiltinAttr installs, so its attributes are set by hand
-    objSet(st, proxyBag, "revocable", JSValue.Native(NATIVE_PROXY_REVOCABLE))
+    objSet(st, proxyBag, "revocable", JSValue.Native(Native.Fn(Builtin.ProxyRevocable)))
     objSetNonEnumerable(st, proxyBag, "revocable")
-    let revocableBag = getNativeProps(st, NATIVE_PROXY_REVOCABLE)
+    let revocableBag = getNativeProps(st, Native.Fn(Builtin.ProxyRevocable))
     objDefineBuiltinAttr(st, revocableBag, "length", JSValue.Number(2.0))
     objDefineBuiltinAttr(st, revocableBag, "name", JSValue.Str("revocable"))
-    scopeDefine(st, 0, "__reflectDefineProperty", JSValue.Native(NATIVE_REFLECT_DEFINEPROP))
-    scopeDefine(st, 0, "__reflectSet", JSValue.Native(NATIVE_REFLECT_SET))
-    scopeDefine(st, 0, "__reflectGet", JSValue.Native(NATIVE_REFLECT_GET))
-    scopeDefine(st, 0, "__reflectSetPrototypeOf", JSValue.Native(NATIVE_REFLECT_SETPROTO))
-    scopeDefine(st, 0, "__reflectPreventExtensions", JSValue.Native(NATIVE_REFLECT_PREVENTEXT))
-    scopeDefine(st, 0, "__construct", JSValue.Native(NATIVE_REFLECT_CONSTRUCT))
-    scopeDefine(st, 0, "__reflectOwnKeys", JSValue.Native(NATIVE_REFLECT_OWNKEYS))
+    scopeDefine(st, 0, "__reflectDefineProperty", JSValue.Native(Native.Fn(Builtin.ReflectDefineProp)))
+    scopeDefine(st, 0, "__reflectSet", JSValue.Native(Native.Fn(Builtin.ReflectSet)))
+    scopeDefine(st, 0, "__reflectGet", JSValue.Native(Native.Fn(Builtin.ReflectGet)))
+    scopeDefine(st, 0, "__reflectSetPrototypeOf", JSValue.Native(Native.Fn(Builtin.ReflectSetProto)))
+    scopeDefine(st, 0, "__reflectPreventExtensions", JSValue.Native(Native.Fn(Builtin.ReflectPreventExt)))
+    scopeDefine(st, 0, "__construct", JSValue.Native(Native.Fn(Builtin.ReflectConstruct)))
+    scopeDefine(st, 0, "__reflectOwnKeys", JSValue.Native(Native.Fn(Builtin.ReflectOwnKeys)))
 }
 
 // typeof: never throws, even for an unbound name (scopeLookup returns undefined).
@@ -9957,7 +9789,7 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Inter
         return evalBin(op, ea, eb)
     }
     let coerces = op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "<" || op == ">" || op == "<=" || op == ">="
-    if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0 || funcHandle(va) >= 0 || funcHandle(vb) >= 0 || nativeHandle(va) >= 0 || nativeHandle(vb) >= 0) {
+    if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0 || funcHandle(va) >= 0 || funcHandle(vb) >= 0 || isNativeValue(va) || isNativeValue(vb)) {
         pushTemp(st, cloneValue(va))
         pushTemp(st, cloneValue(vb))
         var pa = JSValue.Undefined
@@ -10138,7 +9970,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             // to keep the hot number/string path free of overhead. Equality
             // (==/!=/===/!==) is excluded — it has its own object rules.
             let coerces = op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "<" || op == ">" || op == "<=" || op == ">="
-            if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0 || funcHandle(va) >= 0 || funcHandle(vb) >= 0 || nativeHandle(va) >= 0 || nativeHandle(vb) >= 0) {
+            if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0 || funcHandle(va) >= 0 || funcHandle(vb) >= 0 || isNativeValue(va) || isNativeValue(vb)) {
                 pushTemp(st, cloneValue(va))
                 pushTemp(st, cloneValue(vb))
                 // `+` uses the default hint (Date -> string); the arithmetic and
@@ -10493,7 +10325,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     if name == "constructor" {
                         let statics1 = getFuncStatics(st, fIdx, fe)
                         if objOwnIndex(st, statics1, name) < 0 {
-                            return JSValue.Native(NATIVE_FUNCTION_CTOR)
+                            return JSValue.Native(Native.Fn(Builtin.FunctionCtor))
                         }
                     }
                     // fn.call / fn.apply / fn.bind as VALUES. They already work
@@ -10973,7 +10805,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     // Called as a function these three coerce; called with `new`
                     // they BOX. Ignoring `new` made `new Boolean(false)` falsy
                     // and `typeof new String("")` report "string".
-                    if nativeId == NATIVE_STRING || nativeId == NATIVE_NUMBER || nativeId == NATIVE_BOOLEAN {
+                    if nativeEq(nativeId, Native.Fn(Builtin.String)) || nativeEq(nativeId, Native.Fn(Builtin.Number)) || nativeEq(nativeId, Native.Fn(Builtin.Boolean)) {
                         let prim = callNativeProg(prog, nativeId, argVals, st)
                         if st.throwing {
                             return JSValue.Undefined
@@ -11321,7 +11153,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     if name == "constructor" {
                         let statics2 = getFuncStatics(st, fIdx, fe)
                         if objOwnIndex(st, statics2, name) < 0 {
-                            return JSValue.Native(NATIVE_FUNCTION_CTOR)
+                            return JSValue.Native(Native.Fn(Builtin.FunctionCtor))
                         }
                     }
                     // through the bag, so a REDEFINED length/name is honoured:
@@ -13095,8 +12927,8 @@ fn constructPromise(prog: &Prog, st: &mut Interp, argVals: &Vec<JSValue>): JSVal
     let pr = newPromise(st, 0, JSValue.Undefined)
     pushTemp(st, JSValue.Obj(pr))
     var exArgs: Vec<JSValue> = Vec.new()
-    exArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + pr * 2))
-    exArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + pr * 2 + 1))
+    exArgs.push(JSValue.Native(Native.Resolver(pr, false)))
+    exArgs.push(JSValue.Native(Native.Resolver(pr, true)))
     let _ = callValue(prog, argVals[0], exArgs, JSValue.Undefined, st)
     if st.throwing {
         let err = cloneValue(st.thrownValue)
@@ -14512,8 +14344,8 @@ pub fn awaitValue(prog: &Prog, va: &JSValue, st: &mut Interp): JSValue {
                         let adopted = newPromise(st, 0, JSValue.Undefined)
                         pushTemp(st, JSValue.Obj(adopted))
                         var thenArgs: Vec<JSValue> = Vec.new()
-                        thenArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + adopted * 2))
-                        thenArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + adopted * 2 + 1))
+                        thenArgs.push(JSValue.Native(Native.Resolver(adopted, false)))
+                        thenArgs.push(JSValue.Native(Native.Resolver(adopted, true)))
                         let _tr = callValue(prog, thenFn, thenArgs, JSValue.Obj(th), st)
                         popTemp(st)
                         if st.throwing {
@@ -14889,8 +14721,8 @@ fn resolvePromiseValue(prog: &Prog, st: &mut Interp, target: i64, v: JSValue) {
         // No prelude (a bare embedding evaluating source before it loads): fall
         // back to calling then inline. Wrong tick, right state.
         var inlineArgs: Vec<JSValue> = Vec.new()
-        inlineArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + target * 2))
-        inlineArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + target * 2 + 1))
+        inlineArgs.push(JSValue.Native(Native.Resolver(target, false)))
+        inlineArgs.push(JSValue.Native(Native.Resolver(target, true)))
         let _ = callValue(prog, thenFn, inlineArgs, cloneValue(v), st)
         if st.throwing {
             let err2 = cloneValue(st.thrownValue)
@@ -14912,8 +14744,8 @@ fn resolvePromiseValue(prog: &Prog, st: &mut Interp, target: i64, v: JSValue) {
     pushTemp(st, JSValue.Obj(box))
     arrPush(st, box, cloneValue(v))
     arrPush(st, box, cloneValue(thenFn))
-    arrPush(st, box, JSValue.Native(NATIVE_RESOLVER_BASE + inner * 2))
-    arrPush(st, box, JSValue.Native(NATIVE_RESOLVER_BASE + inner * 2 + 1))
+    arrPush(st, box, JSValue.Native(Native.Resolver(inner, false)))
+    arrPush(st, box, JSValue.Native(Native.Resolver(inner, true)))
     popTemp(st)
     popTemp(st)
     st.microtasks.push(Microtask {
@@ -15432,18 +15264,18 @@ fn primitiveProtoHandle(st: &mut Interp, v: &JSValue): i64 {
     match v {
         JSValue.Str(sv) => {
             if isSymbolStr(sv) {
-                return nativeProtoHandle(st, NATIVE_SYMBOL)
+                return nativeProtoHandle(st, Builtin.Symbol)
             }
             return st.stringProtoObj
         }
         JSValue.Number(_n) => {
-            return nativeProtoHandle(st, NATIVE_NUMBER)
+            return nativeProtoHandle(st, Builtin.Number)
         }
         JSValue.Bool(_b) => {
-            return nativeProtoHandle(st, NATIVE_BOOLEAN)
+            return nativeProtoHandle(st, Builtin.Boolean)
         }
         JSValue.BigInt(_g) => {
-            return nativeProtoHandle(st, NATIVE_BIGINT)
+            return nativeProtoHandle(st, Builtin.BigInt)
         }
         _ => {
             return -1
@@ -15498,9 +15330,12 @@ fn propertyBagOf(st: &mut Interp, v: &JSValue): i64 {
         }
         return bag
     }
-    let n = nativeHandle(v)
-    if n >= 0 {
-        return getNativeProps(st, n)
+    match nativeHandle(v) {
+        Option.Some(n) => {
+            return getNativeProps(st, n)
+        }
+        Option.None => {
+        }
     }
     return -1
 }
@@ -19778,7 +19613,7 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                 }
                 return callValue(prog, assigned, argVals, JSValue.Native(nid), st)
             }
-            if nid == NATIVE_DATE && st.dateCtorProps >= 0 {
+            if nativeEq(nid, Native.Fn(Builtin.Date)) && st.dateCtorProps >= 0 {
                 let m = getMember(st, st.dateCtorProps, name)
                 if isCallable(m) {
                     let argVals = evalArgs(prog, argsIdx, st, scope)
@@ -19792,7 +19627,7 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                     return callValue(prog, m, argVals, JSValue.Undefined, st)
                 }
             }
-            if nid == NATIVE_STRING && st.stringCtorProps >= 0 {
+            if nativeEq(nid, Native.Fn(Builtin.String)) && st.stringCtorProps >= 0 {
                 let m = getMember(st, st.stringCtorProps, name)
                 if isCallable(m) {
                     let argVals = evalArgs(prog, argsIdx, st, scope)
@@ -19976,11 +19811,11 @@ fn throwNullMember(st: &mut Interp, name: &string, base: &string): JSValue {
 // to tell a built-in from a user function, so every user function looked native.
 // A built-in's source text. Its own `name` property is authoritative: it is set
 // from node's own tables by nameNativesOf.
-pub fn nativeSourceText(st: &mut Interp, nid: i64): string {
-    let bag = getNativeProps(st, nid)
+pub fn nativeSourceText(st: &mut Interp, n: &Native): string {
+    let bag = getNativeProps(st, n)
     var nm = toStr(getMember(st, bag, "name"))
     if nm.len() == 0 {
-        nm = nativeCtorName(nid)
+        nm = nativeCtorName(n)
     }
     return "function " + nm + "() { [native code] }"
 }
@@ -20264,42 +20099,45 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                 // and return its own object, discarding `this`. Initialise the
                 // instance in place instead, so this.message is set and the
                 // instance is recognised by instanceof Error.
-                let baseNative = nativeHandle(baseVal)
-                if baseNative >= 0 && isErrorCtor(baseNative) {
-                    let selfObj = objHandle(thisVal)
-                    if selfObj >= 0 {
-                        st.objects[selfObj].isError = true
-                        // no own `name`, and `message` only when one was passed
-                        // — the same shape `new Error()` produces. A subclass
-                        // that means to override the name puts it on its own
-                        // prototype, and an own copy here would defeat that.
-                        var msg = ""
-                        var hasMsg = false
-                        if argVals.len() > 0 {
-                            match cloneValue(argVals[0]) {
-                                JSValue.Undefined => {
-                                }
-                                _ => {
-                                    msg = toStr(argVals[0])
-                                    hasMsg = true
+                match nativeErrorCtorOf(baseVal) {
+                    Option.Some(baseNative) => {
+                        let selfObj = objHandle(thisVal)
+                        if selfObj >= 0 {
+                            st.objects[selfObj].isError = true
+                            // no own `name`, and `message` only when one was passed
+                            // — the same shape `new Error()` produces. A subclass
+                            // that means to override the name puts it on its own
+                            // prototype, and an own copy here would defeat that.
+                            var msg = ""
+                            var hasMsg = false
+                            if argVals.len() > 0 {
+                                match cloneValue(argVals[0]) {
+                                    JSValue.Undefined => {
+                                    }
+                                    _ => {
+                                        msg = toStr(argVals[0])
+                                        hasMsg = true
+                                    }
                                 }
                             }
+                            if hasMsg {
+                                objSet(st, selfObj, "message", JSValue.Str(msg.clone()))
+                                objSetNonEnumerable(st, selfObj, "message")
+                            }
+                            // `class E extends Error {}` produced an instance with
+                            // NO stack at all, so the one thing a caller reaches for
+                            // when logging a custom error was undefined
+                            var subHead = nativeErrorName(baseNative)
+                            if msg.len() > 0 {
+                                subHead = subHead + ": " + msg
+                            }
+                            objSet(st, selfObj, "stack", JSValue.Str(subHead + errorStackFrames(st)))
+                            objSetNonEnumerable(st, selfObj, "stack")
                         }
-                        if hasMsg {
-                            objSet(st, selfObj, "message", JSValue.Str(msg.clone()))
-                            objSetNonEnumerable(st, selfObj, "message")
-                        }
-                        // `class E extends Error {}` produced an instance with
-                        // NO stack at all, so the one thing a caller reaches for
-                        // when logging a custom error was undefined
-                        var subHead = nativeErrorName(baseNative)
-                        if msg.len() > 0 {
-                            subHead = subHead + ": " + msg
-                        }
-                        objSet(st, selfObj, "stack", JSValue.Str(subHead + errorStackFrames(st)))
-                        objSetNonEnumerable(st, selfObj, "stack")
+                        return JSValue.Undefined
                     }
-                    return JSValue.Undefined
+                    Option.None => {
+                    }
                 }
                 // Any OTHER builtin base (Promise, Map, Set, Array, Date, ...)
                 // has to be CONSTRUCTED, not called: calling it as a function

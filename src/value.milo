@@ -17,6 +17,280 @@ from "std/math" import {
 // by asking libm for the adjacent double)
 extern fn nextafter(x: f64, y: f64): f64
 
+// What a JSValue.Native is: one of the engine's built-in functions or
+// constructors. Two variants carry a payload because each stands for a FAMILY
+// of built-ins, and a family used to be encoded as arithmetic on a raw integer
+// id: a block of consecutive ids carved out of the same space every other
+// built-in was hand-numbered from. That collided twice, and both times the
+// engine silently did something unrelated instead of reporting anything:
+//
+//   - adding the two BigInt typed-array kinds grew the constructor block onto
+//     __httpFetch's id, so `new BigInt64Array()` performed an HTTP fetch and
+//     evaluated to an error string rather than a view;
+//   - three built-ins added at the next free numbers landed on Int8Array,
+//     Uint8Array and Int16Array, so `new Int8Array(2)` evaluated to 2.
+//
+// A payload is not an address, so as variants the two families cannot land on
+// anything, and the discriminants are the compiler's to assign.
+pub enum Native {
+    Fn(Builtin),
+    // a typed-array constructor, by element kind: the TA_* values in
+    // runtime.milo, 0..TA_MAX
+    TypedArrayCtor(i64),
+    // the resolve/reject pair `new Promise(cb)` hands its executor, bound to one
+    // specific promise: (that promise's object handle, isReject)
+    Resolver(i64, bool),
+}
+
+// Every built-in function and constructor the engine implements natively.
+// callNative in eval.milo is the dispatch.
+pub enum Builtin {
+    // The Error family shares one path; the specific kind is carried in the
+    // object's `name` property.
+    Error,
+    TypeError,
+    RangeError,
+    SyntaxError,
+    ReferenceError,
+    JsonStringify,
+    JsonParse,
+    MathFloor,
+    MathCeil,
+    MathRound,
+    MathTrunc,
+    MathAbs,
+    MathSign,
+    MathLog2,
+    MathLog10,
+    MathExp,
+    MathLog,
+    MathSin,
+    MathCos,
+    MathTan,
+    MathAsin,
+    MathAcos,
+    MathAtan,
+    MathAtan2,
+    MathSqrt,
+    MathPow,
+    MathMin,
+    MathMax,
+    MathRandom,
+    RegExp,
+    ObjectDefineProperty,
+    ObjectKeys,
+    ObjectAssign,
+    Number,
+    String,
+    Boolean,
+    ReadFileSync,
+    FileExists,
+    ObjectValues,
+    ObjectEntries,
+    ObjectFreeze,
+    PromiseResolve,
+    PromiseReject,
+    // Promise.all/allSettled/race were natives once and are self-hosted in the
+    // prelude now: the native took a synchronous snapshot of each input's state
+    // instead of subscribing to it, and could not adopt a thenable at all
+    // (calling user .then needs the program, which a native does not have).
+    Promise,
+    IsNan,
+    IsFinite,
+    ArrayIsArray,
+    ObjectCreate,
+    ObjectGetProto,
+    ObjectSetProto,
+    ObjectGetOwnPropDesc,
+    ParseInt,
+    ParseFloat,
+    Symbol,
+    ObjectDefineProperties,
+    Map,
+    Set,
+    ObjectGetOwnPropNames,
+    ArrayFrom,
+    ProcessExit,
+    Noop,
+    ProcessHrtime,
+    ProcessCwd,
+    StringFromCharCode,
+    Date,
+    DateNow,
+    // Date.UTC(year, month[, day, hours, minutes, seconds, ms]) — the fields are
+    // interpreted as UTC and out-of-range values roll over (month 12 is January of
+    // the next year), which falls out of doing the arithmetic in days and seconds
+    // rather than validating each field.
+    DateUtc,
+    // The Object constructor itself. Registering the global as a plain object made
+    // `typeof Object` report "object" and `new Object()` fail outright — both used
+    // constantly, and by three of the QuickJS builtin tests.
+    ObjectCtor,
+    EncodeUriComponent,
+    DecodeUriComponent,
+    EncodeUri,
+    DecodeUri,
+    SetTimeout,
+    SetInterval,
+    ClearTimer,
+    SetImmediate,
+    QueueMicrotask,
+    // queueMicrotask has its own native (distinct from process.nextTick, which
+    // shares Builtin.QueueMicrotask) so it can call the callback with zero
+    // arguments per spec while nextTick's behaviour is left untouched.
+    QueueMicrotaskJs,
+    DataView,
+    ObjectHasOwn,
+    StringRaw,
+    StringFromCodePoint,
+    DateParse,
+    Mkdir,
+    Readdir,
+    Unlink,
+    Rmdir,
+    Rename,
+    IsDir,
+    BigInt,
+    ObjectGetOwnPropSymbols,
+    ObjectGetOwnPropDescs,
+    ArrayCtor,
+    TcpListen,
+    TcpAccept,
+    TcpRecv,
+    TcpSend,
+    TcpClose,
+    // The client half of the TCP surface. Only listen/accept existed, so a
+    // module could serve connections but never make one, which is why
+    // net.connect could not be written at all.
+    TcpConnect,
+    // The port a listener actually bound. Binding 0 asks the OS to choose, and
+    // without a way to read the result every server had to hardcode a port and
+    // hope it was free — which is exactly what node's tests do NOT do.
+    TcpPort,
+    // Read a connection, distinguishing "nothing yet" from "peer closed".
+    // recvOnce collapses both to an empty string, so a client could never tell
+    // that the other end had gone and never emitted 'end'/'close': the socket
+    // stayed live and the event loop with it. Answers -1 for would-block and
+    // the empty string for EOF.
+    TcpRead,
+    // Run a program to completion and hand back its output. The async spawn
+    // family is built on top of this in JS; nothing could spawn at all before.
+    SpawnSync,
+    HttpRegister,
+    HttpUnregister,
+    WriteFile,
+    Gc,
+    ObjectIsFrozen,
+    ObjectPreventExt,
+    ObjectIsExt,
+    ObjectSeal,
+    ObjectIsSealed,
+    // __byteLength(s): the raw UTF-8 byte count of an engine string. JS `.length`
+    // decodes to code points and charCodeAt is lossy on bytes that aren't valid
+    // UTF-8, so neither can measure file content read as a string. Content-Length
+    // must come from here or binary responses (fonts, images) get truncated.
+    ByteLength,
+    // __napiLoad(path): dlopen a .node addon, run napi_register_module_v1, return its
+    // exports. This is what require() resolves a .node file to.
+    NapiLoad,
+    // console.* as real functions. The identifier fast path above handles the common
+    // `console.log(x)` call shape, but code that passes the method around — prisma's
+    // runtime does `console.debug || console.log` — needs `console` to be a real
+    // object whose properties are callable values.
+    ConsoleLog,
+    // console.error/warn: same formatting, stderr instead of stdout
+    ConsoleError,
+    // new Proxy(target, handler)
+    Proxy,
+    // Object.is — SameValue: like ===, except NaN equals itself and +0 differs
+    // from -0. ts-pattern (bundled into prisma's runtime) matches literals with it.
+    ObjectIs,
+    // __httpFetchAsync(method, url, headersJson, body): runs the request on a worker
+    // OS thread and returns a promise the event loop settles with the raw response.
+    HttpFetchAsync,
+    ArrayBuffer,
+    // __httpFetch(method, url, headersJson, body): synchronous outbound
+    // HTTP/HTTPS. node-fetch is built on this.
+    HttpFetch,
+
+    // node:sqlite primitives (lib/sqlite.js wraps these into the Node API shape).
+    // Databases and statements are addressed by index into st.sqliteDbs/sqliteStmts;
+    // JS never sees a pointer.
+    SqliteOpen,
+    SqliteClose,
+    SqliteExec,
+    SqlitePrepare,
+    SqliteErrmsg,
+    SqliteStep,
+    SqliteColumnCount,
+    SqliteColumnName,
+    SqliteColumnValue,
+    SqliteBind,
+    SqliteReset,
+    SqliteFinalize,
+    SqliteChanges,
+    SqliteLastInsertId,
+    SqliteBindIndex,
+    SqliteFilename,
+    // The engine's console.log renderer, exposed to JS so lib/util.js does not have
+    // to keep a second, diverging copy of node's util.inspect.
+    Inspect,
+    // Exposed to the prelude as __isConstructor so Reflect.construct can validate
+    // its target and newTarget. There is no JS-level way to ask this question
+    // without side effects, and test262's isConstructor helper asks it of every
+    // builtin (one not-a-constructor.js per method).
+    IsConstructor,
+    // __markNotConstructor(fn): records that a JS-defined built-in method has no
+    // [[Construct]]. The prelude and lib/temporal.js implement real built-ins as
+    // ordinary JS functions, which the engine cannot otherwise tell from user code
+    // — and an ordinary function IS a constructor.
+    MarkNotCtor,
+    // Proxy.revocable(target, handler) → { proxy, revoke }.
+    ProxyRevocable,
+    // The Reflect entry points that cannot be expressed in the prelude's JS. Each
+    // reports a rejected operation as `false` where the Object.* spelling throws,
+    // and that distinction has to be made below the JS layer: wrapping the call in
+    // try/catch would also swallow a Test262Error thrown by user code inside a
+    // proxy trap, which must propagate.
+    ReflectDefineProp,
+    ReflectSet,
+    ReflectGet,
+    ReflectSetProto,
+    ReflectPreventExt,
+    // __reflectOwnKeys(target): [[OwnPropertyKeys]] verbatim. Composing it in JS as
+    // getOwnPropertyNames+getOwnPropertySymbols re-sorts the list, and a proxy's
+    // ownKeys trap result has to reach the caller in the order the trap chose.
+    ReflectOwnKeys,
+    // __construct(target, argsArray, newTarget): [[Construct]] with an explicit
+    // newTarget, which `new target(...args)` has no way to express.
+    ReflectConstruct,
+    // ArrayBuffer.isView(x): true for a typed-array view or a DataView, and
+    // crucially FALSE for an ArrayBuffer itself
+    ArrayBufferIsView,
+    // EvalError and URIError are core ECMAScript constructors that simply did not
+    // exist: `EvalError` was a ReferenceError at the first mention, and get-intrinsic
+    // (a dependency of a large slice of npm) reads all seven error constructors on
+    // its first line. isErrorCtor and friends name them alongside the five
+    // original error constructors.
+    EvalError,
+    UriError,
+    // `eval` as a VALUE. There is no runtime compiler, so calling this throws — but
+    // it has to EXIST, because get-intrinsic tabulates `'%eval%': eval` on its way
+    // to being required by a large slice of npm. The direct-call form
+    // `eval("bareIdent")` is handled at the call site and still works.
+    Eval,
+    // `Function(body)` / `new Function(a, b, body)`. Built on the same evaluator as
+    // eval: `Function("return this")()` is the classic globalThis probe, and
+    // es-get-iterator and function-bind both build their test subjects with it.
+    FunctionCtor,
+    // __callFrames() → the module paths currently executing, innermost first. This
+    // is what Error.captureStackTrace turns into V8 CallSite objects: `bindings`
+    // (under better-sqlite3 and most native addons) discovers the filename of its
+    // CALLER through Error.prepareStackTrace and CallSite#getFileName, and with no
+    // frames at all it read undefined and threw on `fileName.indexOf`.
+    CallFrames,
+}
+
 pub enum JSValue {
     Undefined,
     Null,
@@ -27,12 +301,64 @@ pub enum JSValue {
     Func(i64, i64),
     // heap object handle — index into Interp.objects (stable, GC-managed)
     Obj(i64),
-    // a built-in function/constructor, identified by a native id (see callNative)
-    Native(i64),
+    // a built-in function or constructor (see callNative)
+    Native(Native),
     // an arbitrary-precision integer (BigInt), stored as its canonical decimal
     // string: "0", "123", "-456" — no leading zeros, "-" only for negatives.
     // A primitive (by value), not an object.
     BigInt(string),
+}
+
+pub fn cloneNative(n: &Native): Native {
+    match n {
+        Native.Fn(b) => {
+            return Native.Fn(b)
+        }
+        Native.TypedArrayCtor(kind) => {
+            return Native.TypedArrayCtor(kind)
+        }
+        Native.Resolver(promise, isReject) => {
+            return Native.Resolver(promise, isReject)
+        }
+    }
+}
+
+// Two natives are the same built-in. Milo has no `==` on an enum with
+// payload-bearing variants, and the payload-free half (Builtin) is exactly the
+// half that can use it.
+pub fn nativeEq(a: &Native, b: &Native): bool {
+    match a {
+        Native.Fn(x) => {
+            match b {
+                Native.Fn(y) => {
+                    return x == y
+                }
+                _ => {
+                    return false
+                }
+            }
+        }
+        Native.TypedArrayCtor(k1) => {
+            match b {
+                Native.TypedArrayCtor(k2) => {
+                    return k1 == k2
+                }
+                _ => {
+                    return false
+                }
+            }
+        }
+        Native.Resolver(p1, r1) => {
+            match b {
+                Native.Resolver(p2, r2) => {
+                    return p1 == p2 && r1 == r2
+                }
+                _ => {
+                    return false
+                }
+            }
+        }
+    }
 }
 
 pub fn cloneValue(v: &JSValue): JSValue {
@@ -61,8 +387,8 @@ pub fn cloneValue(v: &JSValue): JSValue {
         JSValue.Obj(o) => {
             return JSValue.Obj(o)
         }
-        JSValue.Native(id) => {
-            return JSValue.Native(id)
+        JSValue.Native(n) => {
+            return JSValue.Native(cloneNative(n))
         }
     }
 }
@@ -321,14 +647,25 @@ pub fn jsInfinity(): f64 {
     return one / z
 }
 
-// native id if v is a builtin function/constructor, else -1
-pub fn nativeHandle(v: &JSValue): i64 {
+// which built-in v is, or None if it is not one
+pub fn nativeHandle(v: &JSValue): Option<Native> {
     match v {
-        JSValue.Native(id) => {
-            return id
+        JSValue.Native(n) => {
+            return Option.Some(cloneNative(n))
         }
         _ => {
-            return -1
+            return Option.None
+        }
+    }
+}
+
+pub fn isNativeValue(v: &JSValue): bool {
+    match v {
+        JSValue.Native(_n) => {
+            return true
+        }
+        _ => {
+            return false
         }
     }
 }
@@ -1477,7 +1814,7 @@ pub fn jsStrictEquals(a: &JSValue, b: &JSValue): bool {
         JSValue.Native(x) => {
             match b {
                 JSValue.Native(y) => {
-                    return x == y
+                    return nativeEq(x, y)
                 }
                 _ => {
                     return false
@@ -1552,10 +1889,10 @@ pub fn jsEquals(a: &JSValue, b: &JSValue): bool {
                 }
             }
         }
-        JSValue.Native(id1) => {
+        JSValue.Native(n1) => {
             match b {
-                JSValue.Native(id2) => {
-                    return id1 == id2
+                JSValue.Native(n2) => {
+                    return nativeEq(n1, n2)
                 }
                 _ => {
                     return false
