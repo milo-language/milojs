@@ -2666,12 +2666,39 @@ fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValue>):
             bufH = h
             // new T(buffer, byteOffset, length) — a window into the buffer, not
             // necessarily the whole thing
+            // ToIndex on the byte offset: a symbol is a TypeError and a
+            // negative value a RangeError. Clamping to 0 accepted both and built
+            // a view at offset 0, so every one of these cases read as success.
             var boff: i64 = 0
-            if args.len() > 1 {
-                boff = numToIndex(toNum(args[1]))
+            if args.len() > 1 && !isUndefinedValue(args[1]) {
+                let rawOff = toNumArg(prog, args[1], st)
+                if st.throwing {
+                    return JSValue.Undefined
+                }
+                if rawOff == rawOff && (rawOff < 0.0 || rawOff > 9007199254740991.0) {
+                    st.throwing = true
+                    st.thrownValue = makeError(st, "RangeError", "Invalid typed array offset" + currentModule(st))
+                    return JSValue.Undefined
+                }
+                boff = numToIndex(rawOff)
                 if boff < 0 {
                     boff = 0
                 }
+            }
+            // The offset must land on an element boundary, and the window must
+            // fit inside the buffer.
+            let bufLen = st.objExtras[st.objects[h].extra].bytes.len()
+            if boff % w != 0 || boff > bufLen {
+                st.throwing = true
+                st.thrownValue = makeError(st, "RangeError", "start offset of " + taName(kind) + " should be a multiple of " + i64ToStr(w) + currentModule(st))
+                return JSValue.Undefined
+            }
+            // With no explicit length the view spans the rest of the buffer, so
+            // the buffer itself has to divide evenly into elements.
+            if (args.len() <= 2 || isUndefinedValue(args[2])) && bufLen % w != 0 {
+                st.throwing = true
+                st.thrownValue = makeError(st, "RangeError", "byte length of " + taName(kind) + " should be a multiple of " + i64ToStr(w) + currentModule(st))
+                return JSValue.Undefined
             }
             let avail = st.objExtras[st.objects[h].extra].bytes.len() - boff
             var count = avail / w
@@ -2692,9 +2719,9 @@ fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValue>):
             }
             viewOffset = boff
             len = count
-            // A third argument fixes the length; without one the view tracks the
-            // buffer. Recorded on the view below.
-            tracks = args.len() <= 2
+            // A third argument fixes the length; without one (or with an
+            // explicit undefined) the view tracks the buffer.
+            tracks = args.len() <= 2 || isUndefinedValue(args[2])
         } else if h >= 0 && st.objects[h].isArray {
             var i: i64 = 0
             while i < arrLen(st, h) {
