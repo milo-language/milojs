@@ -224,6 +224,9 @@ fn builtinSource(name: &string): string {
     if name == "v8" {
         return @embedFile("../lib/v8.js")
     }
+    if name == "perf_hooks" {
+        return @embedFile("../lib/perf_hooks.js")
+    }
     if name == "tty" {
         return @embedFile("../lib/tty.js")
     }
