@@ -24,13 +24,26 @@ about the other.
 |---|---|---|
 | [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | `milojs-engine` — ECMAScript | <!--fact:t262-pct-->77.5%<!--/fact--> (<!--fact:t262-pass-->1139<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) |
 | [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | `milojs-engine` — ECMAScript | <!--fact:qjs-pct-->73.8%<!--/fact--> (<!--fact:qjs-pass-->110<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) |
-| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) (<!--fact:node-sample-->400<!--/fact-->-case sample of <!--fact:node-available-->3979<!--/fact-->) | `milojs` — Node compatibility | <!--fact:node-pct-->37.3%<!--/fact--> (<!--fact:node-pass-->149<!--/fact-->/<!--fact:node-total-->400<!--/fact-->) |
+| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) (<!--fact:node-sample-->400<!--/fact-->-case sample of <!--fact:node-available-->3373<!--/fact--> externally runnable) | `milojs` — Node compatibility | <!--fact:node-pct-->42.3%<!--/fact--> (<!--fact:node-pass-->169<!--/fact-->/<!--fact:node-total-->400<!--/fact-->) |
 
-The Node row runs Node's own tests through Node's own `test/common` harness, and
-the same harness scores any node-compatible binary. Measured the same way on the
-same sample: **node itself 89.5%**, **bun 44.8%**. Node's 89.5% rather than 100%
-is the harness ceiling — the rest need build flags or Node's official runner —
-so read the row against that, not against 100.
+The Node row runs Node's own tests, unmodified, through Node's own `test/common`
+harness, invoking each as a plain `<binary> test.js`. <!--fact:node-excluded-->606<!--/fact--> of Node's 3979
+parallel tests are excluded as not externally runnable: they declare
+`// Flags: --expose-internals` (Node's own runner re-execs with those flags) or
+`require("internal/...")`, Node's private module tree. Neither is implementable
+by a third party, so counting them scores every other runtime against a
+denominator it cannot reach.
+
+The same harness scores any node-compatible binary. On the identical sample:
+**node itself 87.5%**, **bun 45.5%**.
+
+Read both comparisons carefully. Node's 87.5% rather than 100% is this harness's
+ceiling. And bun's 45.5% is *not* bun's compatibility: Bun
+[reports 94-100% per module](https://bun.com/docs/runtime/nodejs-compat), measured
+on its own vendored copies of these tests run under `bun test`. This row measures
+something narrower — node's unmodified tests, launched as a plain script — which
+penalizes bun where its harness differs (it declines `node:test` outside
+`bun test`). The two numbers answer different questions.
 
 For more details, see [docs/status.md](docs/status.md).
 

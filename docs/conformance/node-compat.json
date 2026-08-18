@@ -6,7 +6,7 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "11e45952e0d5285aa5fc8ad6d17b2ce54fcaa47e",
+    "revision": "20cb351852b8843c3a2da8509b5af1c2db00a885",
     "dirty": false
   },
   "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
@@ -14,187 +14,188 @@
     "directory": null,
     "sample": 400,
     "seed": "0x5eed17",
-    "available": 3979
+    "available": 3373,
+    "excludedNodeInternal": 606
   },
   "totals": {
-    "pass": 149,
-    "fail": 251,
+    "pass": 169,
+    "fail": 231,
     "total": 400
   },
   "areas": [
     {
       "area": "http",
-      "pass": 2,
-      "fail": 39,
-      "total": 41
+      "pass": 4,
+      "fail": 38,
+      "total": 42
     },
     {
-      "area": "child",
-      "pass": 2,
-      "fail": 19,
-      "total": 21
+      "area": "fs",
+      "pass": 6,
+      "fail": 23,
+      "total": 29
+    },
+    {
+      "area": "worker",
+      "pass": 0,
+      "fail": 15,
+      "total": 15
     },
     {
       "area": "cluster",
       "pass": 1,
-      "fail": 16,
-      "total": 17
-    },
-    {
-      "area": "worker",
-      "pass": 2,
       "fail": 14,
-      "total": 16
-    },
-    {
-      "area": "dgram",
-      "pass": 0,
-      "fail": 11,
-      "total": 11
+      "total": 15
     },
     {
       "area": "net",
-      "pass": 2,
+      "pass": 1,
+      "fail": 13,
+      "total": 14
+    },
+    {
+      "area": "buffer",
+      "pass": 3,
       "fail": 11,
-      "total": 13
+      "total": 14
     },
     {
       "area": "async",
-      "pass": 7,
-      "fail": 10,
-      "total": 17
-    },
-    {
-      "area": "process",
-      "pass": 1,
-      "fail": 9,
-      "total": 10
-    },
-    {
-      "area": "stream",
       "pass": 4,
-      "fail": 9,
-      "total": 13
-    },
-    {
-      "area": "fs",
-      "pass": 7,
-      "fail": 7,
+      "fail": 10,
       "total": 14
     },
     {
       "area": "repl",
       "pass": 0,
-      "fail": 7,
-      "total": 7
-    },
-    {
-      "area": "diagnostics",
-      "pass": 2,
-      "fail": 6,
+      "fail": 8,
       "total": 8
     },
     {
-      "area": "event",
-      "pass": 0,
-      "fail": 6,
-      "total": 6
-    },
-    {
-      "area": "buffer",
-      "pass": 2,
-      "fail": 5,
-      "total": 7
-    },
-    {
-      "area": "module",
-      "pass": 0,
-      "fail": 5,
-      "total": 5
-    },
-    {
-      "area": "runner",
-      "pass": 0,
-      "fail": 5,
-      "total": 5
-    },
-    {
-      "area": "assert",
-      "pass": 0,
-      "fail": 4,
-      "total": 4
-    },
-    {
-      "area": "internal",
-      "pass": 0,
-      "fail": 4,
-      "total": 4
-    },
-    {
-      "area": "vm",
-      "pass": 0,
-      "fail": 4,
-      "total": 4
-    },
-    {
-      "area": "stream2",
-      "pass": 3,
-      "fail": 3,
-      "total": 6
-    },
-    {
-      "area": "timers",
-      "pass": 2,
-      "fail": 3,
-      "total": 5
-    },
-    {
-      "area": "util",
-      "pass": 0,
-      "fail": 3,
-      "total": 3
-    },
-    {
-      "area": "v8",
-      "pass": 0,
-      "fail": 3,
-      "total": 3
-    },
-    {
-      "area": "zlib",
-      "pass": 1,
-      "fail": 3,
-      "total": 4
-    },
-    {
-      "area": "cli",
-      "pass": 2,
-      "fail": 2,
-      "total": 4
-    },
-    {
-      "area": "common",
-      "pass": 0,
-      "fail": 2,
-      "total": 2
-    },
-    {
-      "area": "console",
-      "pass": 1,
-      "fail": 2,
-      "total": 3
-    },
-    {
-      "area": "domain",
-      "pass": 0,
-      "fail": 2,
-      "total": 2
+      "area": "child",
+      "pass": 11,
+      "fail": 7,
+      "total": 18
     },
     {
       "area": "fastutf8stream",
       "pass": 0,
+      "fail": 7,
+      "total": 7
+    },
+    {
+      "area": "dgram",
+      "pass": 2,
+      "fail": 5,
+      "total": 7
+    },
+    {
+      "area": "process",
+      "pass": 0,
+      "fail": 5,
+      "total": 5
+    },
+    {
+      "area": "stream",
+      "pass": 7,
+      "fail": 5,
+      "total": 12
+    },
+    {
+      "area": "console",
+      "pass": 1,
+      "fail": 4,
+      "total": 5
+    },
+    {
+      "area": "diagnostics",
+      "pass": 5,
+      "fail": 4,
+      "total": 9
+    },
+    {
+      "area": "timers",
+      "pass": 5,
+      "fail": 4,
+      "total": 9
+    },
+    {
+      "area": "vm",
+      "pass": 1,
+      "fail": 4,
+      "total": 5
+    },
+    {
+      "area": "cli",
+      "pass": 0,
+      "fail": 3,
+      "total": 3
+    },
+    {
+      "area": "compile",
+      "pass": 0,
+      "fail": 3,
+      "total": 3
+    },
+    {
+      "area": "domain",
+      "pass": 1,
+      "fail": 3,
+      "total": 4
+    },
+    {
+      "area": "runner",
+      "pass": 0,
+      "fail": 3,
+      "total": 3
+    },
+    {
+      "area": "dns",
+      "pass": 0,
       "fail": 2,
       "total": 2
+    },
+    {
+      "area": "event",
+      "pass": 0,
+      "fail": 2,
+      "total": 2
+    },
+    {
+      "area": "module",
+      "pass": 1,
+      "fail": 2,
+      "total": 3
+    },
+    {
+      "area": "promise",
+      "pass": 0,
+      "fail": 2,
+      "total": 2
+    },
+    {
+      "area": "readline",
+      "pass": 0,
+      "fail": 2,
+      "total": 2
+    },
+    {
+      "area": "snapshot",
+      "pass": 0,
+      "fail": 2,
+      "total": 2
+    },
+    {
+      "area": "url",
+      "pass": 0,
+      "fail": 2,
+      "total": 2
+    },
+    {
+      "area": "v8",
+      "pass": 1,
+      "fail": 2,
+      "total": 3
     },
     {
       "area": "whatwg",
@@ -203,22 +204,22 @@
       "total": 2
     },
     {
-      "area": "abortcontroller",
+      "area": "zlib",
+      "pass": 2,
+      "fail": 2,
+      "total": 4
+    },
+    {
+      "area": "abortsignal",
       "pass": 0,
       "fail": 1,
       "total": 1
     },
     {
-      "area": "accessor",
+      "area": "assert",
       "pass": 0,
       "fail": 1,
       "total": 1
-    },
-    {
-      "area": "blob",
-      "pass": 1,
-      "fail": 1,
-      "total": 2
     },
     {
       "area": "blocklist",
@@ -227,37 +228,31 @@
       "total": 1
     },
     {
-      "area": "code",
+      "area": "common",
+      "pass": 1,
+      "fail": 1,
+      "total": 2
+    },
+    {
+      "area": "diagnostic",
       "pass": 0,
       "fail": 1,
       "total": 1
     },
     {
-      "area": "corepack",
+      "area": "diff",
       "pass": 0,
       "fail": 1,
       "total": 1
     },
     {
-      "area": "disable",
+      "area": "dotenv",
       "pass": 0,
       "fail": 1,
       "total": 1
     },
     {
-      "area": "dns",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
-      "area": "domexception",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
-      "area": "errors",
+      "area": "duplex",
       "pass": 0,
       "fail": 1,
       "total": 1
@@ -269,37 +264,19 @@
       "total": 1
     },
     {
-      "area": "file",
-      "pass": 1,
-      "fail": 1,
-      "total": 2
-    },
-    {
-      "area": "freelist",
+      "area": "instanceof",
       "pass": 0,
       "fail": 1,
       "total": 1
     },
     {
-      "area": "global",
+      "area": "path",
       "pass": 0,
       "fail": 1,
       "total": 1
     },
     {
-      "area": "kill",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
-      "area": "mime",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
-      "area": "npm",
+      "area": "perf",
       "pass": 0,
       "fail": 1,
       "total": 1
@@ -311,85 +288,49 @@
       "total": 2
     },
     {
-      "area": "pipe",
-      "pass": 1,
-      "fail": 1,
-      "total": 2
-    },
-    {
-      "area": "preload",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
-      "area": "promise",
-      "pass": 1,
-      "fail": 1,
-      "total": 2
-    },
-    {
-      "area": "readable",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
-      "area": "readline",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
       "area": "require",
+      "pass": 2,
+      "fail": 1,
+      "total": 3
+    },
+    {
+      "area": "stdout",
+      "pass": 1,
+      "fail": 1,
+      "total": 2
+    },
+    {
+      "area": "stream2",
+      "pass": 1,
+      "fail": 1,
+      "total": 2
+    },
+    {
+      "area": "tls",
+      "pass": 15,
+      "fail": 1,
+      "total": 16
+    },
+    {
+      "area": "tty",
       "pass": 0,
       "fail": 1,
       "total": 1
     },
     {
-      "area": "setproctitle",
+      "area": "util",
       "pass": 0,
       "fail": 1,
       "total": 1
     },
     {
-      "area": "startup",
+      "area": "vfs",
       "pass": 0,
       "fail": 1,
       "total": 1
     },
     {
-      "area": "stdin",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
-      "area": "testpy",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
-      "area": "trace",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
-      "area": "url",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
-      "area": "urlpattern",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
-      "area": "websocket",
+      "area": "webstream",
       "pass": 0,
       "fail": 1,
       "total": 1
@@ -401,61 +342,79 @@
       "total": 1
     },
     {
-      "area": "benchmark",
-      "pass": 1,
-      "fail": 0,
-      "total": 1
-    },
-    {
-      "area": "compile",
-      "pass": 1,
-      "fail": 0,
-      "total": 1
-    },
-    {
       "area": "crypto",
-      "pass": 26,
+      "pass": 25,
       "fail": 0,
-      "total": 26
+      "total": 25
     },
     {
       "area": "debugger",
+      "pass": 9,
+      "fail": 0,
+      "total": 9
+    },
+    {
+      "area": "delayed",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "destroy",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "eslint",
+      "pass": 4,
+      "fail": 0,
+      "total": 4
+    },
+    {
+      "area": "global",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "handle",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "heap",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "http2",
+      "pass": 28,
+      "fail": 0,
+      "total": 28
+    },
+    {
+      "area": "https",
+      "pass": 4,
+      "fail": 0,
+      "total": 4
+    },
+    {
+      "area": "inspector",
       "pass": 5,
       "fail": 0,
       "total": 5
     },
     {
-      "area": "eslint",
-      "pass": 3,
+      "area": "pipe",
+      "pass": 2,
       "fail": 0,
-      "total": 3
+      "total": 2
     },
     {
-      "area": "http2",
-      "pass": 22,
-      "fail": 0,
-      "total": 22
-    },
-    {
-      "area": "https",
-      "pass": 8,
-      "fail": 0,
-      "total": 8
-    },
-    {
-      "area": "icu",
-      "pass": 1,
-      "fail": 0,
-      "total": 1
-    },
-    {
-      "area": "inspector",
-      "pass": 7,
-      "fail": 0,
-      "total": 7
-    },
-    {
-      "area": "regression",
+      "area": "shadow",
       "pass": 1,
       "fail": 0,
       "total": 1
@@ -467,16 +426,34 @@
       "total": 1
     },
     {
-      "area": "tls",
-      "pass": 19,
+      "area": "temporal",
+      "pass": 1,
       "fail": 0,
-      "total": 19
+      "total": 1
+    },
+    {
+      "area": "trace",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "warn",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
     },
     {
       "area": "webcrypto",
-      "pass": 8,
+      "pass": 4,
       "fail": 0,
-      "total": 8
+      "total": 4
+    },
+    {
+      "area": "webstorage",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
     }
   ]
 }
