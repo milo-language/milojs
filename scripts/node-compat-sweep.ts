@@ -16,7 +16,7 @@
 // This measures the RUNTIME (module loader, event loop, host bindings), which
 // is a different thing from test262: that measures the ENGINE, the language
 // itself. A high score on one says nothing about the other.
-import { readdirSync, readFileSync, writeFileSync, existsSync, statSync, writeSync } from "fs";
+import { readdirSync, readFileSync, writeFileSync, existsSync, statSync, writeSync, rmSync } from "fs";
 import { execFileSync, spawn } from "child_process";
 import { join, resolve, isAbsolute } from "path";
 import { homedir } from "node:os";
@@ -191,12 +191,27 @@ const CHILD_ENV = { ...process.env, NODE_TEST_DIR: NODE_TESTS, NODE_TEST_KNOWN_G
 // escaped the process-group kill keeps writing into it — the next case on that
 // slot then fails refresh() with EEXIST, which is exactly what 37 of the 38
 // mkdir failures were. A unique id per case cannot collide with anything.
-function clearTempDirs() {
-  try {
-    for (const d of readdirSync(NODE_TESTS)) {
-      if (d.startsWith(".tmp.")) rmSync(join(NODE_TESTS, d), { recursive: true, force: true });
-    }
-  } catch {}
+// Per-directory try/catch, not one around the loop: a single undeletable temp
+// directory used to abort the whole sweep and leave every later one behind,
+// silently, because the catch was outside the loop and empty. Failures are
+// counted and reported rather than swallowed — a cleanup that quietly does
+// nothing is how the previous run's debris fails the next run's cases.
+function clearTempDirs(label: string) {
+  let removed = 0;
+  const failed: string[] = [];
+  let entries: string[] = [];
+  try { entries = readdirSync(NODE_TESTS); } catch (e) {
+    diag(`  temp cleanup (${label}): cannot read ${NODE_TESTS}: ${e}`);
+    return;
+  }
+  for (const d of entries) {
+    if (!d.startsWith(".tmp.")) continue;
+    try { rmSync(join(NODE_TESTS, d), { recursive: true, force: true }); removed++; }
+    catch (e) { failed.push(`${d} (${(e as Error).message})`); }
+  }
+  if (failed.length) {
+    diag(`  temp cleanup (${label}): removed ${removed}, FAILED ${failed.length}: ${failed.slice(0, 3).join(", ")}`);
+  }
 }
 
 function envForTest(index: number): NodeJS.ProcessEnv {
@@ -315,7 +330,7 @@ widthSampler.unref?.();
 // then find `.tmp.N` already populated and fail refresh() with EEXIST through no
 // fault of the runtime. Cleaning up on the way out is not enough on its own,
 // because the runs that fail to clean up are exactly the ones that crashed.
-clearTempDirs();
+clearTempDirs("before");
 
 const rows: Row[] = new Array(selected.length);
 let next = 0;
@@ -329,7 +344,7 @@ async function worker() {
 await Promise.all(Array.from({ length: Math.max(1, jobs) }, () => worker()));
 
 // Swept again at the end so a normal run leaves the tree clean.
-clearTempDirs();
+clearTempDirs("after");
 process.stdout.write("\n");
 
 const pass = rows.filter((r) => r.ok).length;
