@@ -27,7 +27,10 @@ from "./modules" import {
     dirOf, resolveSpec, findModule, reportUnresolved, relativizeToCwd
 }
 from "std/os" import {
-    exit, readFd, read
+    exit, readFd, read, write, open, close, lseek, fsync, ftruncate, fchmod
+}
+from "std/platform" import {
+    oWriteCreateTrunc, oWriteCreateAppend
 }
 from "std/event" import {
     setNonblocking
@@ -5880,6 +5883,113 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
     }
+    if id == Builtin.OpenFlags {
+        // The O_* bits, DERIVED rather than hard-coded: only two combinations
+        // are exported portably (O_WRONLY|O_CREAT|O_TRUNC and
+        // O_WRONLY|O_CREAT|O_APPEND), and the individual bits differ between
+        // darwin and linux. Stripping O_WRONLY from each leaves CREAT|TRUNC and
+        // CREAT|APPEND, whose intersection is CREAT and whose remainders are
+        // TRUNC and APPEND. Writing the numbers in by hand would be a
+        // silently-wrong file mode on whichever platform was not checked.
+        let ct = (oWriteCreateTrunc() as i64) - 1
+        let ca = (oWriteCreateAppend() as i64) - 1
+        let creat = ct & ca
+        let o = newObject(st)
+        pushTemp(st, JSValue.Obj(o))
+        objSet(st, o, "rdonly", JSValue.Number(0.0))
+        objSet(st, o, "wronly", JSValue.Number(1.0))
+        objSet(st, o, "rdwr", JSValue.Number(2.0))
+        objSet(st, o, "creat", JSValue.Number(creat as f64))
+        objSet(st, o, "trunc", JSValue.Number((ct - creat) as f64))
+        objSet(st, o, "append", JSValue.Number((ca - creat) as f64))
+        popTemp(st)
+        return JSValue.Obj(o)
+    }
+    if id == Builtin.OpenFd {
+        if argVals.len() < 2 {
+            return JSValue.Number(-1.0)
+        }
+        var omode: i64 = 438
+        if argVals.len() > 2 {
+            omode = toNum(argVals[2]) as i64
+        }
+        let fd = open(toStr(argVals[0]), toNum(argVals[1]) as i32, omode as i32)
+        return JSValue.Number(fd as f64)
+    }
+    if id == Builtin.CloseFd {
+        if argVals.len() < 1 {
+            return JSValue.Bool(false)
+        }
+        return JSValue.Bool(close(toNum(argVals[0]) as i32) == 0 as i32)
+    }
+    if id == Builtin.ReadFdInto {
+        // __readFdInto(fd, u8array, offset, length, position) -> bytes read, or
+        // -1. Writes straight into the typed array's storage, which is what
+        // makes fs.read(fd, buffer, ...) fill the CALLER's buffer rather than a
+        // copy of it.
+        if argVals.len() < 5 {
+            return JSValue.Number(-1.0)
+        }
+        let base = typedArrayDataPtr(st, argVals[1])
+        if base == 0 {
+            return JSValue.Number(-1.0)
+        }
+        let off = toNum(argVals[2]) as i64
+        let len = toNum(argVals[3]) as i64
+        let pos = toNum(argVals[4]) as i64
+        let fdn = toNum(argVals[0]) as i32
+        if pos >= 0 {
+            lseek(fdn, pos, 0 as i32)
+        }
+        var n: i64 = -1
+        unsafe {
+            n = read(fdn, (base + off) as *u8, len)
+        }
+        return JSValue.Number(n as f64)
+    }
+    if id == Builtin.WriteFdFrom {
+        if argVals.len() < 5 {
+            return JSValue.Number(-1.0)
+        }
+        let base = typedArrayDataPtr(st, argVals[1])
+        if base == 0 {
+            return JSValue.Number(-1.0)
+        }
+        let off = toNum(argVals[2]) as i64
+        let len = toNum(argVals[3]) as i64
+        let pos = toNum(argVals[4]) as i64
+        let fdn = toNum(argVals[0]) as i32
+        if pos >= 0 {
+            lseek(fdn, pos, 0 as i32)
+        }
+        var n: i64 = -1
+        unsafe {
+            n = write(fdn, (base + off) as *u8, len)
+        }
+        return JSValue.Number(n as f64)
+    }
+    if id == Builtin.FsyncFd {
+        if argVals.len() < 1 {
+            return JSValue.Bool(false)
+        }
+        return JSValue.Bool(fsync(toNum(argVals[0]) as i32) == 0 as i32)
+    }
+    if id == Builtin.FtruncateFd {
+        if argVals.len() < 1 {
+            return JSValue.Bool(false)
+        }
+        var flen: i64 = 0
+        if argVals.len() > 1 {
+            flen = toNum(argVals[1]) as i64
+        }
+        return JSValue.Bool(ftruncate(toNum(argVals[0]) as i32, flen) == 0 as i32)
+    }
+    if id == Builtin.FchmodFd {
+        if argVals.len() < 2 {
+            return JSValue.Bool(false)
+        }
+        return JSValue.Bool(fchmod(toNum(argVals[0]) as i32, toNum(argVals[1]) as u32) == 0 as i32)
+    }
     if id == Builtin.StatInfo {
         // __statSync(path, lstat) -> { size, mode, isDir, isFile, isSymlink } or
         // null. One native for both stat and lstat: the only difference is
@@ -8791,6 +8901,29 @@ fn setupTypedArrayProtos(st: &mut Interp) {
 // question without creating anything — by the time an instance exists its
 // constructor's props bag does too, so the -1 arm is unreachable in practice and
 // falls back to the built-in, which is the pre-existing behaviour.
+// Address of a typed array's first byte, or 0 when the value is not one. The
+// read/write natives fill the CALLER's Buffer in place, which is the whole
+// contract of fs.read(fd, buffer, ...) — copying would silently drop the data.
+fn typedArrayDataPtr(st: &Interp, v: JSValue): i64 {
+    match v {
+        JSValue.Obj(o) => {
+            let ex = st.objects[o].extra
+            if ex < 0 {
+                return 0
+            }
+            let buf = st.objExtras[ex].taBuf
+            if buf < 0 || st.objects[o].isDataView {
+                return 0
+            }
+            let base = st.objExtras[st.objects[buf].extra].bytes.ptr() as i64
+            return base + st.objExtras[ex].taOffset
+        }
+        _ => {
+            return 0
+        }
+    }
+}
+
 fn typedArrayBuiltinProto(st: &Interp, kind: i64): i64 {
     let bag = nativePropsOf(st, Native.TypedArrayCtor(kind))
     if bag < 0 {
@@ -9730,6 +9863,14 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "__renameSync", JSValue.Native(Native.Fn(Builtin.Rename)))
     scopeDefine(st, 0, "__isDir", JSValue.Native(Native.Fn(Builtin.IsDir)))
     scopeDefine(st, 0, "__statSync", JSValue.Native(Native.Fn(Builtin.StatInfo)))
+    scopeDefine(st, 0, "__openFlags", JSValue.Native(Native.Fn(Builtin.OpenFlags)))
+    scopeDefine(st, 0, "__openSync", JSValue.Native(Native.Fn(Builtin.OpenFd)))
+    scopeDefine(st, 0, "__closeSync", JSValue.Native(Native.Fn(Builtin.CloseFd)))
+    scopeDefine(st, 0, "__readFdInto", JSValue.Native(Native.Fn(Builtin.ReadFdInto)))
+    scopeDefine(st, 0, "__writeFdFrom", JSValue.Native(Native.Fn(Builtin.WriteFdFrom)))
+    scopeDefine(st, 0, "__fsyncSync", JSValue.Native(Native.Fn(Builtin.FsyncFd)))
+    scopeDefine(st, 0, "__ftruncateSync", JSValue.Native(Native.Fn(Builtin.FtruncateFd)))
+    scopeDefine(st, 0, "__fchmodSync", JSValue.Native(Native.Fn(Builtin.FchmodFd)))
     scopeDefine(st, 0, "__fileSize", JSValue.Native(Native.Fn(Builtin.FileSize)))
     scopeDefine(st, 0, "__readlinkSync", JSValue.Native(Native.Fn(Builtin.Readlink)))
     scopeDefine(st, 0, "__symlinkSync", JSValue.Native(Native.Fn(Builtin.Symlink)))

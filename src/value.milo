@@ -163,6 +163,16 @@ pub enum Builtin {
     TruncateFile,
     Mkdtemp,
     CopyFile,
+    // Descriptor-level file IO. Everything above is path-based; node's fs is
+    // built on open/read/write/close and its tests exercise that layer directly.
+    OpenFlags,
+    OpenFd,
+    CloseFd,
+    ReadFdInto,
+    WriteFdFrom,
+    FsyncFd,
+    FtruncateFd,
+    FchmodFd,
     BigInt,
     ObjectGetOwnPropSymbols,
     ObjectGetOwnPropDescs,
