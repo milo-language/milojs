@@ -24,7 +24,7 @@ about the other.
 |---|---|---|
 | [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | `milojs-engine` — ECMAScript | <!--fact:t262-pct-->77.5%<!--/fact--> (<!--fact:t262-pass-->1139<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) |
 | [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | `milojs-engine` — ECMAScript | <!--fact:qjs-pct-->73.8%<!--/fact--> (<!--fact:qjs-pass-->110<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) |
-| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) (<!--fact:node-sample-->400<!--/fact-->-case sample of <!--fact:node-available-->3373<!--/fact--> externally runnable) | `milojs` — Node compatibility | <!--fact:node-pct-->42.3%<!--/fact--> (<!--fact:node-pass-->169<!--/fact-->/<!--fact:node-total-->400<!--/fact-->) |
+| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) (<!--fact:node-sample-->400<!--/fact-->-case sample of <!--fact:node-available-->3373<!--/fact--> externally runnable) | `milojs` — Node compatibility | <!--fact:node-pct-->43.3%<!--/fact--> (<!--fact:node-pass-->173<!--/fact-->/<!--fact:node-total-->400<!--/fact-->) |
 
 The Node row runs Node's own tests, unmodified, through Node's own `test/common`
 harness, invoking each as a plain `<binary> test.js`. <!--fact:node-excluded-->606<!--/fact--> of Node's 3979
