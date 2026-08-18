@@ -226,11 +226,7 @@ _Undocumented._
 pub fn getNativeProps(st: &mut Interp, nativeId: i64): i64
 ```
 
-The .prototype object for a function, created on first access and cached
-(a GC root via funcProtos). Grows the sparse map as needed.
-Property bag for a function's own (static) properties. Separate from
-funcProtos, which holds what instances inherit.
-Lazily created property bag for a native constructor.
+_Undocumented._
 
 ### `isPrivateKey`
 
@@ -348,6 +344,21 @@ pub fn nativeBufferSet(st: &mut Interp, o: i64, at: i64, value: f64): bool
 ```
 
 _Undocumented._
+
+### `nativePropsOf`
+
+```milo
+pub fn nativePropsOf(st: &Interp, nativeId: i64): i64
+```
+
+The .prototype object for a function, created on first access and cached
+(a GC root via funcProtos). Grows the sparse map as needed.
+Property bag for a function's own (static) properties. Separate from
+funcProtos, which holds what instances inherit.
+Lazily created property bag for a native constructor.
+The property bag a native already has, or -1. The read-only half of
+getNativeProps, for callers that hold an immutable Interp and must not
+materialise a bag as a side effect of asking.
 
 ### `newArray`
 

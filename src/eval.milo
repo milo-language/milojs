@@ -8089,6 +8089,29 @@ fn requireModuleFrom(prog: &Prog, spec: &string, st: &mut Interp, dirIn: string)
     return runModule(prog, idx, st)
 }
 
+// OrdinaryHasInstance against a NATIVE constructor: walk the object's prototype
+// chain looking for that constructor's `prototype`. The internal-kind checks in
+// instanceOf are shortcuts for the common case; this is the general rule they
+// stand in for, and the only thing that recognises a subclass instance.
+fn nativeProtoChainHas(st: &Interp, o: i64, id: i64): bool {
+    let bag = nativePropsOf(st, id)
+    if bag < 0 {
+        return false
+    }
+    let target = objHandle(objGet(st, bag, "prototype"))
+    if target < 0 {
+        return false
+    }
+    var p = st.objects[o].proto
+    while p >= 0 {
+        if p == target {
+            return true
+        }
+        p = st.objects[p].proto
+    }
+    return false
+}
+
 fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
     // `f instanceof Function` for a plain function value: functions are not Objs
     // here, so the object walk below never saw them and answered false.
@@ -8133,8 +8156,8 @@ fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
                     // the built-in exotic constructors are recognised by the
                     // object's internal kind (Date/Map/Set/RegExp/ArrayBuffer are
                     // Native values, so `x instanceof Date` reaches here)
-                    if id == NATIVE_DATE {
-                        return st.objects[o].isDate
+                    if id == NATIVE_DATE && st.objects[o].isDate {
+                        return true
                     }
                     // a wrapper is an instance of the constructor that boxed it
                     if id == NATIVE_STRING || id == NATIVE_NUMBER || id == NATIVE_BOOLEAN {
@@ -8153,26 +8176,35 @@ fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
                             }
                         }
                     }
-                    if id == NATIVE_MAP {
-                        return st.objects[o].isMap
+                    if id == NATIVE_MAP && st.objects[o].isMap {
+                        return true
                     }
-                    if id == NATIVE_SET {
-                        return st.objects[o].isSet
+                    if id == NATIVE_SET && st.objects[o].isSet {
+                        return true
                     }
-                    if id == NATIVE_REGEXP {
-                        return st.objExtras[st.objects[o].extra].regexId >= 0
+                    if id == NATIVE_REGEXP && st.objExtras[st.objects[o].extra].regexId >= 0 {
+                        return true
                     }
-                    if id == NATIVE_ARRAYBUFFER {
-                        return st.objects[o].isArrayBuffer
+                    if id == NATIVE_ARRAYBUFFER && st.objects[o].isArrayBuffer {
+                        return true
                     }
                     // a typed-array view instanceof its exact kind (Uint8Array,
                     // Float64Array, …): a view has taBuf >= 0 and its taKind is
                     // the ctor's offset from the base id
                     if id >= NATIVE_TA_BASE && id <= NATIVE_TA_BASE + TA_MAX {
-                        return st.objExtras[st.objects[o].extra].taBuf >= 0 && !st.objects[o].isDataView && st.objExtras[st.objects[o].extra].taKind == (id - NATIVE_TA_BASE)
+                        if st.objExtras[st.objects[o].extra].taBuf >= 0 && !st.objects[o].isDataView && st.objExtras[st.objects[o].extra].taKind == (id - NATIVE_TA_BASE) {
+                            return true
+                        }
+                        return nativeProtoChainHas(st, o, id)
                     }
                     if !st.objects[o].isError {
-                        return false
+                        // The internal-kind shortcuts above are exactly that: a
+                        // SUBCLASS instance carries the right prototype chain but
+                        // not the base's internal slot, so `new (class extends
+                        // Map {})() instanceof Map` answered false. Fall back to
+                        // OrdinaryHasInstance, which is what the shortcuts stand
+                        // in for.
+                        return nativeProtoChainHas(st, o, id)
                     }
                     if id == NATIVE_ERROR {
                         return true
@@ -8184,24 +8216,31 @@ fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
                     // `name` lives on each subtype's prototype, so the lookup
                     // has to walk the chain that already links them.
                     let nm = getMember(st, o, "name")
-                    return toStr(nm) == nativeErrorName(id)
+                    if toStr(nm) == nativeErrorName(id) {
+                        return true
+                    }
+                    return nativeProtoChainHas(st, o, id)
                 }
                 JSValue.Obj(c) => {
                     // Array is an object constructor (JSValue.Obj), not a Native,
                     // so `[] instanceof Array` reaches here — match by the array flag
-                    if c == st.arrayCtorObj {
-                        return st.objects[o].isArray
+                    if c == st.arrayCtorObj && st.objects[o].isArray {
+                        return true
                     }
                     // Promise's constructor is an Obj too; a promise is recognised
                     // by its settlement-state slot
-                    if st.promiseCtorObj >= 0 && c == st.promiseCtorObj {
-                        return st.objects[o].promiseState >= 0
+                    if st.promiseCtorObj >= 0 && c == st.promiseCtorObj && st.objects[o].promiseState >= 0 {
+                        return true
                     }
-                    // a constructor object with a .prototype linked into the
-                    // object's chain (user functions assigned as constructors)
+                    // The general rule the two shortcuts above stand in for: the
+                    // constructor's `prototype` somewhere in the object's chain.
+                    // A subclass instance reaches its base only this way, and the
+                    // walk compared against the CONSTRUCTOR object rather than its
+                    // prototype, so `class A extends Array {}` never matched.
+                    let ctorProto = objHandle(objGet(st, c, "prototype"))
                     var p = st.objects[o].proto
                     while p >= 0 {
-                        if p == c {
+                        if p == c || (ctorProto >= 0 && p == ctorProto) {
                             return true
                         }
                         p = st.objects[p].proto
@@ -16086,6 +16125,22 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
             let baseStatics = getFuncStatics(st, baseFn, baseEnv)
             let ownStatics = getFuncStatics(st, ctorFn, classScope)
             st.objects[ownStatics].proto = baseStatics
+        } else {
+            // A BUILT-IN base (class E extends TypeError, class A extends Array)
+            // is not a user function, so funcHandle answers -1 and neither chain
+            // was linked at all: `new E("x") instanceof TypeError` was false and
+            // the subclass inherited neither methods nor statics. Its prototype
+            // and its property bag are the two ends to hook up.
+            let baseBag = propertyBagOf(st, baseVal)
+            if baseBag >= 0 {
+                let baseProtoV = getMember(st, baseBag, "prototype")
+                let baseProtoH = objHandle(baseProtoV)
+                if baseProtoH >= 0 {
+                    st.objects[proto].proto = baseProtoH
+                }
+                let ownStatics = getFuncStatics(st, ctorFn, classScope)
+                st.objects[ownStatics].proto = baseBag
+            }
         }
         scopeDefine(st, classScope, "__super$" + prog.classes[classIdx].superKey.clone(), baseVal)
     }
