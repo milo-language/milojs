@@ -3,7 +3,7 @@ system: status
 purpose: canonical current capability, evidence, and next-milestone dashboard for milojs
 key-files: src/milojs-engine.milo, src/milojs.milo, tests/run.sh, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts
 update-when: a product gate lands, a conformance sweep is rerun, or the supported host surface changes
-last-verified: 2026-08-17 (property escapes, numeric regex escapes, runtime strict mode, null prototypes, iterator helpers on generators; the failing-area table re-measured)
+last-verified: 2026-08-18 (native id enum, node-compat sweep, and the socket read that was freezing the event loop) (property escapes, numeric regex escapes, runtime strict mode, null prototypes, iterator helpers on generators; the failing-area table re-measured)
 -->
 
 # milojs status

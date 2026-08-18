@@ -3,7 +3,7 @@ system: milojs-object-footprint
 purpose: measured per-object memory cost in milojs, and the JSObjExtra side table that shrank it
 key-files: src/runtime.milo
 update-when: JSObj gains or loses fields, or the side-table split lands
-last-verified: 2026-08-17 (JSObj gained `protoNull`, the bit that separates a null prototype from an absent link)
+last-verified: 2026-08-18 (re-read after the native id enum: object layout is unchanged, JSValue.Native carries a Native rather than an i64) (JSObj gained `protoNull`, the bit that separates a null prototype from an absent link)
 -->
 
 # milojs: object footprint

@@ -27,7 +27,13 @@ from "./modules" import {
     dirOf, resolveSpec, findModule, reportUnresolved, relativizeToCwd
 }
 from "std/os" import {
-    exit, readFd
+    exit, readFd, read
+}
+from "std/event" import {
+    setNonblocking
+}
+from "std/platform" import {
+    netErrno, netEagain
 }
 from "std/process" import {
     Child
@@ -5319,7 +5325,17 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         var buf: [u8; 65536] = [0; 65536]
         var n: i64 = 0
         unsafe {
-            n = readFd(st.conns[idx].rawFd(), buf, 65536)
+            let fd = st.conns[idx].rawFd()
+            // A raw read(2), NOT readFd: readFd sets O_NONBLOCK only inside a
+            // green task and otherwise blocks, and even in one it parks the task
+            // until data arrives. Either way the event loop stops. An accepted
+            // socket's fd is blocking, so a server whose client had connected
+            // and sent nothing froze the whole loop here: timers, microtasks and
+            // every other socket stopped with it. That was most of the net
+            // area's timeouts, and it is why http never showed the problem, its
+            // clients always send a request immediately.
+            let _nb = setNonblocking(fd)
+            n = read(fd, buf, 65536)
         }
         if n > 0 {
             var out = ""
@@ -5334,8 +5350,17 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             // a clean EOF: the peer closed its writing side
             return JSValue.Str("")
         }
-        // would-block, which is NOT end of stream
-        return JSValue.Number(0.0 - 1.0)
+        // Below zero splits two ways, and conflating them is what made an idle
+        // socket look closed: EAGAIN means nothing has arrived YET, anything
+        // else is a real error and ends the stream.
+        var wouldBlock = false
+        unsafe {
+            wouldBlock = netErrno() == netEagain()
+        }
+        if wouldBlock {
+            return JSValue.Number(0.0 - 1.0)
+        }
+        return JSValue.Str("")
     }
     if id == Builtin.TcpPort {
         var idx: i64 = 0
