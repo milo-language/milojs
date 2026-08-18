@@ -16,7 +16,7 @@
 // This measures the RUNTIME (module loader, event loop, host bindings), which
 // is a different thing from test262: that measures the ENGINE, the language
 // itself. A high score on one says nothing about the other.
-import { readdirSync, readFileSync, writeFileSync, existsSync, statSync } from "fs";
+import { readdirSync, readFileSync, writeFileSync, existsSync, statSync, writeSync } from "fs";
 import { execFileSync, spawn } from "child_process";
 import { join, resolve, isAbsolute } from "path";
 import { homedir } from "node:os";
@@ -70,6 +70,44 @@ const jobs = arg("--jobs") ? parseInt(arg("--jobs")!) : Math.min(8, memJobs);
 const isCanonical = !subDir;
 const jsonPath = arg("--json") ?? (isCanonical ? "docs/conformance/node-compat.json" : ".dev/node-compat-partial.json");
 const failsPath = arg("--fails");
+// --leaks names the cases that leave processes behind. A sweep that slowly eats
+// the machine is otherwise a whole-run symptom with no per-case attribution:
+// bisecting it by area costs hours and, when several areas are individually
+// clean, says nothing. Each case runs in its own process group, so "what is
+// still in that group after the case's own process exited" is exactly the set
+// it leaked, and it is one ps away.
+const trackLeaks = argv.includes("--leaks");
+const leaked: Array<{ file: string; n: number }> = [];
+// The per-case ceiling on live processes. This is the defence that matters:
+// tools/guard.sh only sees the whole run, so by the time it fires the machine
+// is already at 10 GB and swapping, and the run dies with no attribution. A
+// case that spawns past this cap is killed alone, named in the report, and the
+// other 3372 cases keep going. jobs * MAX_GROUP is the true process ceiling.
+const MAX_GROUP = arg("--max-group") ? parseInt(arg("--max-group")!) : 24;
+// Diagnostics go to fd 2 with writeSync, not console.log: a run wide enough to
+// be worth diagnosing is a run something SIGKILLs, and SIGKILL drops whatever
+// is sitting in stdout's buffer. Two earlier runs lost their whole leak table
+// exactly that way.
+const diag = (m: string) => { try { writeSync(2, m + "\n"); } catch {} };
+type Live = { file: string; bomb: (n: number) => void };
+const runningPgid = new Map<number, Live>();
+const widest = new Map<string, number>();
+
+// The group leader is excluded: it is the case's own process, which has just
+// exited and may still be sitting in the table as a zombie. Counting it would
+// report every single case as a leaker.
+function survivorsInGroup(pgid: number): number {
+  try {
+    const out = execFileSync("ps", ["-A", "-o", "pid=,pgid="], { encoding: "utf-8" });
+    let n = 0;
+    for (const line of out.split("\n")) {
+      const m = line.trim().split(/\s+/);
+      if (m.length < 2) continue;
+      if (parseInt(m[1], 10) === pgid && parseInt(m[0], 10) !== pgid) n++;
+    }
+    return n;
+  } catch { return 0; }
+}
 
 function gitRev(dir: string): string {
   try {
@@ -182,10 +220,34 @@ function runOne(f: string): Promise<Row> {
       setTimeout(() => killGroup("SIGKILL"), 2_000).unref();
     }, timeoutMs);
 
+    // detached:true made child.pid the process-group id, so the group is
+    // exactly this case's tree and killing it cannot touch a sibling case.
+    if (child.pid) runningPgid.set(child.pid, {
+      file: f,
+      bomb: (n) => {
+        diag(`  FORKBOMB ${n} proc(s) in ${f} - killing group`);
+        killGroup("SIGKILL");
+        finish({ file: f, ok: false, why: `forkbomb: ${n} processes` });
+      },
+    });
+
     const finish = (row: Row) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      // Counted BEFORE the reap, or there is nothing left to count.
+      if (child.pid) runningPgid.delete(child.pid);
+      if (trackLeaks && child.pid) {
+        const n = survivorsInGroup(child.pid);
+        if (n > 0) {
+          leaked.push({ file: f, n });
+          // Printed as it happens, not summarised at the end: a run that leaks
+          // badly enough to be worth diagnosing is a run the watchdog kills
+          // before any summary executes. The first attempt lost the whole table
+          // that way.
+          diag(`  LEAK ${n} proc(s) after ${f}`);
+        }
+      }
       killGroup("SIGKILL");   // reap anything the test left behind, pass or fail
       done++;
       if (done % 100 === 0) process.stdout.write(`  ${done}/${selected.length}`);
@@ -203,6 +265,25 @@ function runOne(f: string): Promise<Row> {
     });
   });
 }
+
+// One ps per second for the whole run, rather than per-case polling: the same
+// single snapshot answers "how wide is every running case right now", which is
+// 400x cheaper than asking each case separately.
+const widthSampler = setInterval(() => {
+  let out = "";
+  try { out = execFileSync("ps", ["-A", "-o", "pgid="], { encoding: "utf-8" }); } catch { return; }
+  const counts = new Map<number, number>();
+  for (const line of out.split("\n")) {
+    const g = parseInt(line.trim(), 10);
+    if (!isNaN(g)) counts.set(g, (counts.get(g) ?? 0) + 1);
+  }
+  for (const [pgid, live] of runningPgid) {
+    const n = counts.get(pgid) ?? 0;
+    if (n > (widest.get(live.file) ?? 0)) widest.set(live.file, n);
+    if (n > MAX_GROUP) { runningPgid.delete(pgid); live.bomb(n); }
+  }
+}, 1000);
+widthSampler.unref?.();
 
 // A fixed pool rather than one promise per case: 3979 concurrent processes would
 // thrash, and the servers these tests start would collide on ports.
@@ -240,6 +321,23 @@ for (const r of rows) {
   if (r.ok) continue;
   const key = r.why.replace(/\/[^ ]*\//g, "").replace(/[0-9]+/g, "N").slice(0, 90);
   buckets.set(key, (buckets.get(key) ?? 0) + 1);
+}
+
+clearInterval(widthSampler);
+{
+  const wide = [...widest].sort((a, b) => b[1] - a[1]).slice(0, 10).filter(([, n]) => n > 4);
+  if (wide.length) {
+    console.log("widest cases (live processes in the case's own group):");
+    wide.forEach(([f, n]) => console.log(`  ${String(n).padStart(4)}  ${f}`));
+    console.log("");
+  }
+}
+if (trackLeaks) {
+  const total = leaked.reduce((a, b) => a + b.n, 0);
+  console.log(`leaked processes: ${total} across ${leaked.length} case(s)`);
+  leaked.sort((a, b) => b.n - a.n).slice(0, 20)
+    .forEach((l) => console.log(`  ${String(l.n).padStart(4)}  ${l.file}`));
+  console.log("");
 }
 
 console.log(`runtime: ${tilde(RUNTIME)}\n`);
