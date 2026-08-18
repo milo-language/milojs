@@ -15784,9 +15784,16 @@ fn serveHttpOnce(prog: &Prog, st: &mut Interp): bool {
                 handled = true
             }
             if st.throwing {
-                eprint("Uncaught (in request handler) " + describeThrownValue(st, st.thrownValue))
-                st.throwing = false
-                st.thrownValue = JSValue.Undefined
+                // Same rule as runOneTimer: an uncaught exception ENDS the
+                // process, as it does in node. Swallowing it here left the loop
+                // running with the request half handled, so an assertion that
+                // failed inside a request or response callback printed its
+                // message and then hung until the harness killed it — reported
+                // as a timeout, with the real error buried in the output. That
+                // is why http supplied 39 of 64 timeouts while the timer path,
+                // which already exits, supplied none.
+                eprint("Uncaught " + describeThrownValue(st, st.thrownValue))
+                exit(1)
             }
         }
         i = i + 1
