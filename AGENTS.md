@@ -169,6 +169,19 @@ Three things have to hold, and only the third is obvious:
   that sets `this.killed = true` and returns is a runaway with no brakes: node's
   tests call it expecting the child to die.
 
+Sizing the caps: `guard.sh` reports `peak N processes, M MB rss` on every run,
+so set `GUARD_MAX_PROCS` from a measured peak rather than a guess. A 400-case
+node-compat sweep at `--jobs 8` legitimately peaks near 150 processes, because
+the cases spawn children of their own; a cap under that reads as a fork bomb
+when it is only the workload.
+
+What the memory cap actually caught, first run: **8562 MB resident across 150
+processes** on a 16 GB machine, mid-sweep. That is the freeze, reproduced and
+then killed at 1500 MB before the machine noticed. The leak underneath it is
+real and open — `lib/child_process.js` reports `pid: 0` for every child and its
+`kill()` only sets a flag, so nothing the runtime spawns can be signalled or
+reaped, by node's tests or by anything else.
+
 Cheap habit that catches the aftermath: `uptime` before believing any number
 that moved without a code change. A load average in the double digits on an idle
 machine means something from the last run is still going.

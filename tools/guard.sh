@@ -73,6 +73,12 @@ fi
 
 marker=$(mktemp -t guardtrip)
 rm -f "$marker"
+# The peak is what tells you whether a limit is sized right. Without it, tuning
+# GUARD_MAX_PROCS is guesswork: a sweep running N jobs whose cases each spawn
+# children legitimately reaches many times N, and a cap set below that reads as
+# a fork bomb when it is just the workload.
+peakfile=$(mktemp -t guardpeak)
+echo "0 0" > "$peakfile"
 
 note "watching pid $child pgid ${pgid:-none} (max ${GUARD_MAX_PROCS} procs, ${GUARD_MAX_RSS_MB} MB rss, ${GUARD_TIMEOUT}s)"
 
@@ -95,12 +101,34 @@ reap() {
 
 (
   elapsed=0
+  peak_n=0
+  peak_rss=0
   while kill -0 "$child" 2>/dev/null; do
     if [ -n "$pgid" ]; then
-      # One ps, two numbers: count of processes in the group and their summed RSS.
-      read -r n rss < <(ps -A -o pgid=,rss= 2>/dev/null | awk -v g="$pgid" \
-        '$1==g { n++; r+=$2 } END { printf "%d %d\n", n+0, (r+0)/1024 }')
-      [ "${n:-0}" -gt "$GUARD_MAX_PROCS" ] && reap "$n processes in group (limit $GUARD_MAX_PROCS) — looks like a fork bomb"
+      # Count the DESCENDANT TREE, not just the process group. A harness that
+      # spawns its cases `detached` (node-compat-sweep does, so it can kill each
+      # case's whole group on timeout) puts every child in its OWN group: pgid
+      # matching then sees one process and the caps go blind while the machine
+      # fills up. Walking pid/ppid catches those; the pgid match is kept as well,
+      # for anything that changed group without re-parenting.
+      read -r n rss < <(ps -A -o pid=,ppid=,pgid=,rss= 2>/dev/null | awk -v root="$child" -v g="$pgid" '
+        { pid[NR]=$1; ppid[NR]=$2; pgid[NR]=$3; rss[NR]=$4; N=NR }
+        END {
+          mine[root]=1
+          # Repeat until no new descendant appears: ps output is in no useful
+          # order, so one pass would miss a child listed before its parent.
+          do {
+            added=0
+            for (i=1; i<=N; i++)
+              if (!mine[pid[i]] && (mine[ppid[i]] || pgid[i]==g)) { mine[pid[i]]=1; added=1 }
+          } while (added)
+          for (i=1; i<=N; i++) if (mine[pid[i]]) { n++; r+=rss[i] }
+          printf "%d %d\n", n+0, (r+0)/1024
+        }')
+      [ "${n:-0}" -gt "$peak_n" ] && peak_n=$n
+      [ "${rss:-0}" -gt "$peak_rss" ] && peak_rss=$rss
+      echo "$peak_n $peak_rss" > "$peakfile"
+      [ "${n:-0}" -gt "$GUARD_MAX_PROCS" ] && reap "$n processes in the descendant tree (limit $GUARD_MAX_PROCS) - looks like a fork bomb"
       [ "${rss:-0}" -gt "$GUARD_MAX_RSS_MB" ] && reap "${rss} MB resident (limit $GUARD_MAX_RSS_MB)"
     fi
     # System-wide free memory floor: something outside the group can still be
@@ -120,6 +148,10 @@ watchdog=$!
 wait "$child"; status=$?
 kill "$watchdog" 2>/dev/null
 wait "$watchdog" 2>/dev/null
+read -r peak_n peak_rss < "$peakfile" 2>/dev/null || { peak_n=0; peak_rss=0; }
+note "peak ${peak_n} processes, ${peak_rss} MB rss"
+rm -f "$peakfile"
+
 if [ -f "$marker" ]; then
   note "command was killed by the watchdog: $(cat "$marker")"
   rm -f "$marker"

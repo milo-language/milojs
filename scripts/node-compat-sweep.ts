@@ -144,8 +144,13 @@ function runOne(f: string): Promise<Row> {
       cwd: PARALLEL,
       env: CHILD_ENV,
       detached: true,
-      stdio: ["ignore", "pipe", "pipe"],
+      // All three piped, then stdin closed immediately: this is what execFile
+      // does, and matching it matters. Handing the child no stdin at all
+      // (stdio "ignore") changes what node's tests observe about process.stdin
+      // and moved the score by 25 cases with no runtime change behind it.
+      stdio: ["pipe", "pipe", "pipe"],
     });
+    child.stdin?.end();
     let stderr = "";
     let timedOut = false;
     let settled = false;
