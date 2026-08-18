@@ -30,7 +30,7 @@ The project deliberately has two deliverables:
 Engine maturity comes first. Runtime compatibility cannot be credible while the
 language engine and embedding contract are unstable.
 
-About <!--fact:loc-total-->57.6k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
+About <!--fact:loc-total-->57.7k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
 program, with no V8, JavaScriptCore, or C JavaScript engine underneath.
 
 ## Evidence
@@ -43,8 +43,8 @@ reproducible release artifact.
 | measure | result | corpus |
 |---|---:|---|
 | deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->1139<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->77.5%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
-| QuickJS `tests/` | **<!--fact:qjs-pass-->110<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = <!--fact:qjs-pct-->73.8%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
-| QuickJS cases that never ran (parse gaps) | <!--fact:qjs-parsefail-->0<!--/fact--> | of those that ran, <!--fact:qjs-ran-pct-->73.8%<!--/fact--> of <!--fact:qjs-ran-->149<!--/fact--> pass |
+| QuickJS `tests/` | **<!--fact:qjs-pass-->81<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = <!--fact:qjs-pct-->54.4%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
+| QuickJS cases that never ran (parse gaps) | <!--fact:qjs-parsefail-->28<!--/fact--> | of those that ran, <!--fact:qjs-ran-pct-->66.9%<!--/fact--> of <!--fact:qjs-ran-->121<!--/fact--> pass |
 | locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->226<!--/fact--> | byte-exact differential output vs node |
 | locked runtime fixtures (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->35<!--/fact--> | module, async, fetch, HTTP, sqlite, host behavior |
 | Milo invariant fixtures (`tests/milo/`, `tests/milo-errors/`) | <!--fact:fixtures-milo-->3<!--/fact--> + <!--fact:fixtures-milo-errors-->8<!--/fact--> | scheduler/context and GC-root invariants |
