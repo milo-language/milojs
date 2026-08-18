@@ -8620,6 +8620,7 @@ fn setupRemainingProtos(st: &mut Interp) {
     setNames.push("union")
     setNames.push("intersection")
     setNames.push("difference")
+    setNames.push("symmetricDifference")
     setNames.push("isSubsetOf")
     setNames.push("isSupersetOf")
     setNames.push("isDisjointFrom")
@@ -15107,7 +15108,7 @@ fn stringPrimitiveMember(st: &mut Interp, value: &string, key: &string): JSValue
 }
 
 fn isMapSetMethodName(n: &string): bool {
-    return n == "get" || n == "set" || n == "add" || n == "has" || n == "delete" || n == "clear" || n == "forEach" || n == "keys" || n == "values" || n == "entries" || n == "isSupersetOf" || n == "isSubsetOf" || n == "isDisjointFrom" || n == "union" || n == "intersection" || n == "difference"
+    return n == "get" || n == "set" || n == "add" || n == "has" || n == "delete" || n == "clear" || n == "forEach" || n == "keys" || n == "values" || n == "entries" || n == "isSupersetOf" || n == "isSubsetOf" || n == "isDisjointFrom" || n == "union" || n == "intersection" || n == "difference" || n == "symmetricDifference"
 }
 
 fn isRegexMethodName(n: &string): bool {
@@ -16270,7 +16271,28 @@ fn callObjMethod(prog: &Prog, st: &mut Interp, recv: &JSValue, name: &string, ar
 // The set-methods proposal takes "set-like" objects: {size, has, keys}. `size` is
 // validated first and its diagnostics must name `.size`, which the suite checks.
 // Returns the size, or -1.0 after throwing.
-fn setLikeSize(_prog: &Prog, st: &mut Interp, other: &JSValue): f64 {
+// Drop one entry from a Map/Set's parallel key/value vectors. Only
+// symmetricDifference needs it: everything else builds its result by adding.
+fn setRemoveValue(st: &mut Interp, o: i64, v: &JSValue) {
+    let at = mapFind(st, o, cloneValue(v))
+    if at < 0 {
+        return
+    }
+    var nk: Vec<JSValue> = Vec.new()
+    var nv: Vec<JSValue> = Vec.new()
+    var i: i64 = 0
+    while i < st.objExtras[st.objects[o].extra].mapKeys.len() {
+        if i != at {
+            nk.push(cloneValue(st.objExtras[st.objects[o].extra].mapKeys[i]))
+            nv.push(cloneValue(st.objExtras[st.objects[o].extra].mapVals[i]))
+        }
+        i = i + 1
+    }
+    st.objExtras[st.objects[o].extra].mapKeys = nk
+    st.objExtras[st.objects[o].extra].mapVals = nv
+}
+
+fn setLikeSize(prog: &Prog, st: &mut Interp, other: &JSValue): f64 {
     let h = objHandle(other)
     if h < 0 {
         st.throwing = true
@@ -16281,8 +16303,18 @@ fn setLikeSize(_prog: &Prog, st: &mut Interp, other: &JSValue): f64 {
     if st.objects[h].isSet || st.objects[h].isMap {
         return st.objExtras[st.objects[h].extra].mapKeys.len() as f64
     }
-    let sv = getMember(st, h, "size")
-    let n = toNum(sv)
+    // getMemberDyn + toNumProg: GetSetRecord reads `size` as an ordinary Get and
+    // ToNumbers it, both observable. getMember skips accessors entirely, so a
+    // set-like exposing `get size()` read as undefined and every operation
+    // against it failed with "NaN .size".
+    let sv = getMemberDyn(prog, h, "size", st)
+    if st.throwing {
+        return 0.0 - 1.0
+    }
+    let n = toNumProg(prog, sv, st)
+    if st.throwing {
+        return 0.0 - 1.0
+    }
     if n != n {
         st.throwing = true
         st.thrownValue = makeError(st, "TypeError", "set-like argument has a NaN .size")
@@ -16432,7 +16464,7 @@ fn mapMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut I
         st.objExtras[st.objects[o].extra].mapVals = Vec.new()
         return JSValue.Undefined
     }
-    if name == "isSupersetOf" || name == "isSubsetOf" || name == "isDisjointFrom" || name == "union" || name == "intersection" || name == "difference" {
+    if name == "isSupersetOf" || name == "isSubsetOf" || name == "isDisjointFrom" || name == "union" || name == "intersection" || name == "difference" || name == "symmetricDifference" {
         var other = JSValue.Undefined
         if args.len() > 0 {
             other = cloneValue(args[0])
@@ -16513,6 +16545,32 @@ fn mapMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut I
         }
         let _re = ensureExtra(st, res)
         pushTemp(st, JSValue.Obj(res))
+        if name == "symmetricDifference" {
+            // Everything in exactly one of the two. The other side is walked by
+            // ITERATOR rather than by has(), because the spec fixes the call
+            // counts and the suite checks them.
+            var i: i64 = 0
+            while i < st.objExtras[st.objects[o].extra].mapKeys.len() {
+                mapPut(st, res, cloneValue(st.objExtras[st.objects[o].extra].mapKeys[i]), JSValue.Bool(true))
+                i = i + 1
+            }
+            let sdIter = setLikeKeys(prog, st, other)
+            pushTemp(st, cloneValue(sdIter))
+            var sdDone = false
+            while !sdDone && !st.throwing {
+                let v = iterStep(prog, st, sdIter, sdDone)
+                if !sdDone {
+                    if setHasValue(st, o, v) {
+                        setRemoveValue(st, res, v)
+                    } else {
+                        mapPut(st, res, v, JSValue.Bool(true))
+                    }
+                }
+            }
+            popTemp(st)
+            popTemp(st)
+            return JSValue.Obj(res)
+        }
         if name == "union" {
             var i: i64 = 0
             while i < st.objExtras[st.objects[o].extra].mapKeys.len() {
