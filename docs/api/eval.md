@@ -33,6 +33,25 @@ intercepted here — otherwise `String(obj)` reports "[object Object]" for an
 object whose toString says otherwise, while `${obj}` and `"" + obj` (both of
 which run the full ToPrimitive) disagree with it.
 
+### `constructValue`
+
+```milo
+pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec<JSValue>, newTarget: &JSValue): JSValue
+```
+
+[[Construct]] over any value. `new proxy(...)` with no construct trap has to
+reach the TARGET's [[Construct]], which may be another proxy's trap, and
+Reflect.construct has to be able to pass a newTarget that is not the callee —
+neither is expressible as "call the target with a fresh `this`".
+
+### `definePropOf`
+
+```milo
+pub fn definePropOf(prog: &Prog, st: &mut Interp, v: &JSValue, key: &string, d: i64): bool
+```
+
+_Undocumented._
+
 ### `evalExpr`
 
 ```milo
@@ -83,6 +102,22 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
 
 _Undocumented._
 
+### `getOwnPropDescOf`
+
+```milo
+pub fn getOwnPropDescOf(prog: &Prog, st: &mut Interp, v: &JSValue, key: &string): JSValue
+```
+
+_Undocumented._
+
+### `getProtoOf`
+
+```milo
+pub fn getProtoOf(prog: &Prog, st: &mut Interp, v: &JSValue): JSValue
+```
+
+_Undocumented._
+
 ### `hoistBlock`
 
 ```milo
@@ -95,6 +130,14 @@ _Undocumented._
 
 ```milo
 pub fn inspectTop(st: &Interp, v: &JSValue): string
+```
+
+_Undocumented._
+
+### `isExtensibleOf`
+
+```milo
+pub fn isExtensibleOf(prog: &Prog, st: &mut Interp, v: &JSValue): bool
 ```
 
 _Undocumented._
@@ -141,10 +184,28 @@ to tell a built-in from a user function, so every user function looked native.
 A built-in's source text. Its own `name` property is authoritative: it is set
 from node's own tables by nameNativesOf.
 
+### `ownKeysOf`
+
+```milo
+pub fn ownKeysOf(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string>
+```
+
+[[OwnPropertyKeys]] over any value, as raw keys — symbols included, in the
+"@@sym:" spelling they are stored under. A proxy consults its ownKeys trap
+and with no trap forwards to its target, which may itself be a proxy.
+
 ### `parkOnPromise`
 
 ```milo
 pub fn parkOnPromise(st: &mut Interp, p: i64): bool
+```
+
+_Undocumented._
+
+### `preventExtOf`
+
+```milo
+pub fn preventExtOf(prog: &Prog, st: &mut Interp, v: &JSValue, seal: bool): bool
 ```
 
 _Undocumented._
@@ -183,6 +244,14 @@ pub fn runModule(prog: &Prog, idx: i64, st: &mut Interp): JSValue
 Execute a pre-loaded module in a fresh CommonJS scope and cache its exports.
 A module already loading (a require cycle) returns its partial exports, which
 is what Node does.
+
+### `setProtoOf`
+
+```milo
+pub fn setProtoOf(prog: &Prog, st: &mut Interp, v: &JSValue, proto: &JSValue): bool
+```
+
+_Undocumented._
 
 ### `settlePromise`
 

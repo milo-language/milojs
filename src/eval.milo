@@ -630,18 +630,42 @@ fn privDisplay(key: &string): string {
 
 pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue {
     if st.objects[o].isProxy {
-        let trap = proxyTrap(st, o, "get")
-        let target = cloneValue(st.objExtras[st.objects[o].extra].proxyTarget)
-        if isCallableIn(st, trap) {
+        // A proxy carries no private state and does not forward it: `this.#x`
+        // where `this` is a proxy over the instance is a TypeError, which is what
+        // makes the brand check meaningful across a proxy at all.
+        if isPrivateKey(key) {
+            return throwTypeErr(st, "Cannot read private member " + privDisplay(key) + " from an object whose class did not declare it" + currentModule(st))
+        }
+        let trap = proxyTrapChecked(prog, st, o, "get")
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let target = proxyTargetOf(st, o)
+        if !isUndefinedValue(trap) {
             var args: Vec<JSValue> = Vec.new()
             args.push(cloneValue(target))
             args.push(JSValue.Str(key.clone()))
             args.push(JSValue.Obj(o))
-            return callValue(prog, trap, args, cloneValue(st.objExtras[st.objects[o].extra].proxyHandler), st)
+            let r = callTrap(prog, st, o, trap, args)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            checkProxyGetResult(prog, st, target, key, r)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            return r
         }
-        // no trap: forward to the target
-        let th = objHandle(target)
+        // no trap: forward to the target, which may itself be a proxy
+        let th = propertyBagOf(st, target)
         if th >= 0 {
+            // a proxy over a function answers to call/apply/bind, and the
+            // receiver has to be the PROXY: `p.call(x)` routes through the apply
+            // trap. Forwarding to the target's statics bag instead found nothing
+            // there, since those three are dispatched rather than stored.
+            if st.objects[o].isFunctionLike && (key == "call" || key == "apply" || key == "bind") && objOwnIndex(st, th, key) < 0 {
+                return makeBoundMethod(st, JSValue.Obj(o), key.clone())
+            }
             return getMemberDyn(prog, th, key, st)
         }
         return JSValue.Undefined
@@ -651,6 +675,17 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
     // `typeof x.then === "function"`, which that silently failed — hand back a
     // bound method instead.
     if objOwnIndex(st, o, key) < 0 {
+        // A PROXY in the prototype chain answers the read, with the ORIGINAL
+        // object as the receiver: `Object.create(proxy).x` fires the get trap.
+        if st.anyProxy && !(st.objects[o].isArray && asArrayIndex(key) >= 0) {
+            var gw = protoOfHandle(st, o)
+            while gw >= 0 {
+                if st.objects[gw].isProxy {
+                    return reflectGet(prog, st, JSValue.Obj(gw), key, JSValue.Obj(o))
+                }
+                gw = protoOfHandle(st, gw)
+            }
+        }
         // Reading a PRIVATE member from an object that does not carry it is a
         // TypeError, not undefined: the brand check is the whole point of
         // private state, and answering undefined let `other.#x` read as "absent
@@ -987,47 +1022,41 @@ fn applyArgsInto(prog: &Prog, st: &mut Interp, v: &JSValue, out: &mut Vec<JSValu
     }
 }
 
-// ValidateAndApplyPropertyDescriptor's rejection rules, as a check run before
-// the descriptor is applied. Returns false having set the throw.
-fn validDescriptor(st: &mut Interp, o: i64, key: &string, d: i64): bool {
+// ValidateAndApplyPropertyDescriptor's rejection rules. Answers "" when the
+// definition is legal, otherwise the message Object.defineProperty would throw.
+// Reported rather than thrown because Reflect.defineProperty has to turn the
+// same rejection into a plain `false` — and it cannot do that by catching, since
+// a Test262Error raised by user code inside a proxy trap must still propagate.
+fn descRejectReason(st: &mut Interp, o: i64, key: &string, d: i64): string {
     let hasGet = objHasInChain(st, d, "get")
     let hasSet = objHasInChain(st, d, "set")
     let hasValue = objHasInChain(st, d, "value")
     let hasWritable = objHasInChain(st, d, "writable")
+    let cannotRedefine = "Cannot redefine property: " + key.clone()
     // an accessor descriptor and a data descriptor cannot be combined
     if (hasGet || hasSet) && (hasValue || hasWritable) {
-        st.throwing = true
-        st.thrownValue = makeError(st, "TypeError", "Invalid property descriptor. Cannot both specify accessors and a value or writable attribute" + currentModule(st))
-        return false
+        return "Invalid property descriptor. Cannot both specify accessors and a value or writable attribute"
     }
     if hasGet {
         let g = getMember(st, d, "get")
         if !isCallableIn(st, g) && !isUndefinedValue(g) {
-            st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "Getter must be a function" + currentModule(st))
-            return false
+            return "Getter must be a function"
         }
     }
     if hasSet {
         let sv = getMember(st, d, "set")
         if !isCallableIn(st, sv) && !isUndefinedValue(sv) {
-            st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "Setter must be a function" + currentModule(st))
-            return false
+            return "Setter must be a function"
         }
     }
-    // adding a property to a non-extensible object is a TypeError; changing one
+    // adding a property to a non-extensible object is rejected; changing one
     // that is already there stays legal
     let existing = objOwnIndex(st, o, key)
     if existing < 0 && (st.objects[o].frozen || st.objects[o].sealed || st.objects[o].noExtend) {
-        st.throwing = true
-        st.thrownValue = makeError(st, "TypeError", "Cannot define property " + key.clone() + ", object is not extensible" + currentModule(st))
-        return false
+        return "Cannot define property " + key.clone() + ", object is not extensible"
     }
     if existing >= 0 && st.objects[o].frozen {
-        st.throwing = true
-        st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
-        return false
+        return cannotRedefine
     }
     if existing >= 0 && !st.objects[o].props[existing].configurable {
         var wantsConfigurable = false
@@ -1035,39 +1064,40 @@ fn validDescriptor(st: &mut Interp, o: i64, key: &string, d: i64): bool {
             wantsConfigurable = truthy(getMember(st, d, "configurable"))
         }
         if wantsConfigurable {
-            st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
-            return false
+            return cannotRedefine
         }
         // a non-configurable property cannot change KIND, and cannot change its
         // enumerability
         let wasAccessor = propIsAccessor(st, o, existing)
         if (hasGet || hasSet) != wasAccessor {
-            st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
-            return false
+            return cannotRedefine
         }
         if objHasInChain(st, d, "enumerable") && truthy(getMember(st, d, "enumerable")) != st.objects[o].props[existing].enumerable {
-            st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
-            return false
+            return cannotRedefine
         }
         if hasValue && !st.objects[o].props[existing].writable {
             let nv = getMember(st, d, "value")
             let cur = cloneValue(st.objects[o].props[existing].value)
             if !jsStrictEquals(nv, cur) {
-                st.throwing = true
-                st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
-                return false
+                return cannotRedefine
             }
         }
         if hasWritable && !st.objects[o].props[existing].writable && truthy(getMember(st, d, "writable")) {
-            st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
-            return false
+            return cannotRedefine
         }
     }
-    return true
+    return ""
+}
+
+// The throwing spelling, for Object.defineProperty and friends.
+fn validDescriptor(st: &mut Interp, o: i64, key: &string, d: i64): bool {
+    let reason = descRejectReason(st, o, key, d)
+    if reason.len() == 0 {
+        return true
+    }
+    st.throwing = true
+    st.thrownValue = makeError(st, "TypeError", reason + currentModule(st))
+    return false
 }
 
 // Which natives answer to `new`. Everything else — Math.max, JSON.parse, every
@@ -2906,6 +2936,18 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
         }
         return JSValue.Undefined
     }
+    // the function Proxy.revocable hands back. Clearing the handler is what
+    // marks the proxy revoked; a second call is a no-op that still answers
+    // undefined.
+    if name == "__proxyRevoke" {
+        let po = objHandle(recv)
+        if po >= 0 && st.objects[po].isProxy {
+            let ex = st.objects[po].extra
+            st.objExtras[ex].proxyTarget = JSValue.Null
+            st.objExtras[ex].proxyHandler = JSValue.Null
+        }
+        return JSValue.Undefined
+    }
     // a per-module `require` value: the receiver carries the directory it was
     // bound to, so resolution matches the module the reference came from
     if name == "__require" {
@@ -3002,7 +3044,9 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
             // Nothing handled it, so it returned undefined. test262's
             // propertyHelper.js is built entirely out of this, so EVERY
             // verifyProperty test failed regardless of the property involved.
-            if st.objects[o].isBound && (name == "call" || name == "apply" || name == "bind") {
+            // a callable proxy takes the same three the way a bound function
+            // does: the receiver is the proxy, so the call re-enters its [[Call]]
+            if (st.objects[o].isBound || (st.objects[o].isProxy && st.objects[o].isFunctionLike)) && (name == "call" || name == "apply" || name == "bind") {
                 var uThis = JSValue.Undefined
                 if args.len() > 0 {
                     uThis = cloneValue(args[0])
@@ -3188,6 +3232,15 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 if args.len() > 0 {
                     key = toStr(args[0])
                 }
+                // a proxy's own properties are whatever its
+                // getOwnPropertyDescriptor trap reports, not what its slots hold
+                if st.objects[o].isProxy {
+                    let pd = getOwnPropDescOf(prog, st, JSValue.Obj(o), key)
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
+                    return JSValue.Bool(objHandle(pd) >= 0)
+                }
                 return JSValue.Bool(objHas(st, o, key) || (st.objects[o].isArray && asArrayIndex(key) >= 0 && asArrayIndex(key) < arrLen(st, o) && !arrIsHole(st, o, asArrayIndex(key))))
             }
             if name == "toString" {
@@ -3263,6 +3316,16 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 var key = ""
                 if args.len() > 0 {
                     key = toStr(args[0])
+                }
+                // a proxy's own properties are whatever its
+                // getOwnPropertyDescriptor trap reports
+                if st.objects[o].isProxy {
+                    let pd = getOwnPropDescOf(prog, st, JSValue.Obj(o), key)
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
+                    let pdh = objHandle(pd)
+                    return JSValue.Bool(pdh >= 0 && truthy(getMember(st, pdh, "enumerable")))
                 }
                 // own AND enumerable — a non-enumerable own prop is still `false`
                 let pi = objOwnIndex(st, o, key)
@@ -3586,18 +3649,34 @@ fn setMemberDyn(prog: &Prog, o: i64, key: string, v: JSValue, st: &mut Interp) {
     // rejects every field initialiser. Distinguishing the two needs the field
     // installation to use a definition path of its own; see docs/backlog.md.
     if st.objects[o].isProxy {
-        let trap = proxyTrap(st, o, "set")
-        let target = cloneValue(st.objExtras[st.objects[o].extra].proxyTarget)
-        if isCallableIn(st, trap) {
+        // as on the read side: a proxy has no private state of its own
+        if isPrivateKey(key) {
+            let _t = throwTypeErr(st, "Cannot write private member " + privDisplay(key) + " to an object whose class did not declare it" + currentModule(st))
+            return
+        }
+        let trap = proxyTrapChecked(prog, st, o, "set")
+        if st.throwing {
+            return
+        }
+        let target = proxyTargetOf(st, o)
+        if !isUndefinedValue(trap) {
             var args: Vec<JSValue> = Vec.new()
             args.push(cloneValue(target))
             args.push(JSValue.Str(key.clone()))
             args.push(cloneValue(v))
             args.push(JSValue.Obj(o))
-            let _r = callValue(prog, trap, args, cloneValue(st.objExtras[st.objects[o].extra].proxyHandler), st)
+            let r = callTrap(prog, st, o, trap, args)
+            if st.throwing {
+                return
+            }
+            if truthy(r) {
+                checkProxySetResult(prog, st, target, key, v)
+            } else if st.strict {
+                throwWriteFailure(st, "'set' on proxy: trap returned falsish for property '" + key.clone() + "'")
+            }
             return
         }
-        let th = objHandle(target)
+        let th = propertyBagOf(st, target)
         if th >= 0 {
             setMemberDyn(prog, th, key, v, st)
         }
@@ -3639,6 +3718,19 @@ fn setMemberDyn(prog: &Prog, o: i64, key: string, v: JSValue, st: &mut Interp) {
             throwWriteFailure(st, "Cannot set property " + key.clone() + " of #<Object> which has only a getter")
         }
         return
+    }
+    // A PROXY in the prototype chain owns the write, with the ORIGINAL object as
+    // the receiver: `Object.create(proxy).x = 1` fires the set trap. Only when
+    // the object has no own property of its own — an own one is written in place.
+    if st.anyProxy && own < 0 && !(st.objects[o].isArray && asArrayIndex(key) >= 0) {
+        var pw = protoOfHandle(st, o)
+        while pw >= 0 {
+            if st.objects[pw].isProxy {
+                let _s = reflectSet(prog, st, JSValue.Obj(pw), key, v, JSValue.Obj(o))
+                return
+            }
+            pw = protoOfHandle(st, pw)
+        }
     }
     setMember(st, o, key, v)
 }
@@ -4276,6 +4368,25 @@ let NATIVE_IS_CONSTRUCTOR: i64 = 154
 // ordinary JS functions, which the engine cannot otherwise tell from user code
 // — and an ordinary function IS a constructor.
 let NATIVE_MARK_NOT_CTOR: i64 = 155
+// Proxy.revocable(target, handler) → { proxy, revoke }.
+let NATIVE_PROXY_REVOCABLE: i64 = 156
+// The Reflect entry points that cannot be expressed in the prelude's JS. Each
+// reports a rejected operation as `false` where the Object.* spelling throws,
+// and that distinction has to be made below the JS layer: wrapping the call in
+// try/catch would also swallow a Test262Error thrown by user code inside a
+// proxy trap, which must propagate.
+let NATIVE_REFLECT_DEFINEPROP: i64 = 157
+let NATIVE_REFLECT_SET: i64 = 158
+let NATIVE_REFLECT_GET: i64 = 159
+let NATIVE_REFLECT_SETPROTO: i64 = 127
+let NATIVE_REFLECT_PREVENTEXT: i64 = 128
+// __reflectOwnKeys(target): [[OwnPropertyKeys]] verbatim. Composing it in JS as
+// getOwnPropertyNames+getOwnPropertySymbols re-sorts the list, and a proxy's
+// ownKeys trap result has to reach the caller in the order the trap chose.
+let NATIVE_REFLECT_OWNKEYS: i64 = 32
+// __construct(target, argsArray, newTarget): [[Construct]] with an explicit
+// newTarget, which `new target(...args)` has no way to express.
+let NATIVE_REFLECT_CONSTRUCT: i64 = 129
 // ArrayBuffer.isView(x): true for a typed-array view or a DataView, and
 // crucially FALSE for an ArrayBuffer itself
 let NATIVE_ARRAYBUFFER_ISVIEW: i64 = 147
@@ -4828,6 +4939,18 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             st.thrownValue = makeError(st, "TypeError", "Property description must be an object" + currentModule(st))
             return JSValue.Undefined
         }
+        if st.objects[o].isProxy {
+            let pok = definePropOf(gProg, st, target, key, d)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            if !pok {
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", "'defineProperty' on proxy: trap returned falsish for property '" + key + "'" + currentModule(st))
+                return JSValue.Undefined
+            }
+            return cloneValue(target)
+        }
         if !validDescriptor(st, o, key, d) {
             return JSValue.Undefined
         }
@@ -4998,51 +5121,27 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         popTemp(st)
         return JSValue.Obj(o)
     }
-    if id == NATIVE_OBJECT_GETOWNPROPNAMES {
+    if id == NATIVE_OBJECT_GETOWNPROPNAMES || id == NATIVE_OBJECT_GETOWNPROPSYMBOLS {
+        // Two views of the same [[OwnPropertyKeys]] list: symbols are stored as
+        // "@@sym:"-prefixed string keys, and a symbol value IS that string, so
+        // the two differ only in which half of the list they keep.
+        let wantSymbols = id == NATIVE_OBJECT_GETOWNPROPSYMBOLS
         let arr = newArray(st)
         if argVals.len() > 0 {
-            let h = propertyBagOf(st, argVals[0])
-            if h >= 0 {
-                pushTemp(st, JSValue.Obj(arr))
-                if st.objects[h].isArray {
-                    var e: i64 = 0
-                    while e < arrLen(st, h) {
-                        arrPush(st, arr, JSValue.Str(i64ToStr(e)))
-                        e = e + 1
-                    }
-                    arrPush(st, arr, JSValue.Str("length"))
-                }
-                let order = enumOrder(st, h)
-                var oi: i64 = 0
-                while oi < order.len() {
-                    let k = order[oi]
-                    arrPush(st, arr, JSValue.Str(st.objects[h].props[k].key.clone()))
-                    oi = oi + 1
-                }
+            pushTemp(st, JSValue.Obj(arr))
+            let keys = ownKeysOf(gProg, st, argVals[0])
+            if st.throwing {
                 popTemp(st)
+                return JSValue.Undefined
             }
-        }
-        return JSValue.Obj(arr)
-    }
-    if id == NATIVE_OBJECT_GETOWNPROPSYMBOLS {
-        // the mirror of getOwnPropertyNames: the symbol-valued own keys, which
-        // enumOrder / getOwnPropertyNames deliberately skip. symbols are stored
-        // as "@@sym:..."-prefixed string keys, and a symbol value IS that string.
-        let arr = newArray(st)
-        if argVals.len() > 0 {
-            let h = propertyBagOf(st, argVals[0])
-            if h >= 0 {
-                pushTemp(st, JSValue.Obj(arr))
-                var pi: i64 = 0
-                while pi < st.objects[h].props.len() {
-                    let k = st.objects[h].props[pi].key.clone()
-                    if isSymbolStr(k) {
-                        arrPush(st, arr, JSValue.Str(k))
-                    }
-                    pi = pi + 1
+            var ki: i64 = 0
+            while ki < keys.len() {
+                if isSymbolStr(keys[ki]) == wantSymbols {
+                    arrPush(st, arr, JSValue.Str(keys[ki].clone()))
                 }
-                popTemp(st)
+                ki = ki + 1
             }
+            popTemp(st)
         }
         return JSValue.Obj(arr)
     }
@@ -6118,35 +6217,7 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             st.thrownValue = makeError(st, "TypeError", "Object.getPrototypeOf called on null or undefined" + currentModule(st))
             return JSValue.Undefined
         }
-        // A function's prototype is Function.prototype. Its property BAG is an
-        // ordinary object linked to Object.prototype, so asking the bag answered
-        // Object.prototype for every function value. A bag with a DELIBERATE
-        // proto still wins — `Object.getPrototypeOf(Int8Array)` is the
-        // %TypedArray% intrinsic, and test262's whole TypedArray tree opens with
-        // exactly that read.
-        if isCallableIn(st, argVals[0]) && st.functionProtoObj >= 0 {
-            var bagProto: i64 = -1
-            let bh0 = propertyBagOf(st, argVals[0])
-            if bh0 >= 0 {
-                bagProto = protoOfHandle(st, bh0)
-            }
-            if bagProto < 0 || bagProto == st.objectProtoObj {
-                return JSValue.Obj(st.functionProtoObj)
-            }
-        }
-        let h = propertyBagOf(st, argVals[0])
-        if h < 0 {
-            let pp = primitiveProtoHandle(st, argVals[0])
-            if pp >= 0 {
-                return JSValue.Obj(pp)
-            }
-            return JSValue.Null
-        }
-        let p = protoOfHandle(st, h)
-        if p >= 0 {
-            return JSValue.Obj(p)
-        }
-        return JSValue.Null
+        return getProtoOf(gProg, st, argVals[0])
     }
     if id == NATIVE_FUNCTION_CTOR {
         // node's exact source layout, because Function.prototype.toString on the
@@ -6193,75 +6264,30 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             // express's Router is a function whose prototype chain is set to the
             // router proto object, so the bag a function's properties live in is
             // what has to inherit
-            let h = propertyBagOf(st, argVals[0])
-            // %Object.prototype% is an immutable prototype exotic object: its
-            // [[Prototype]] is already null and setting it to anything else is a
-            // TypeError, not a silent no-op. Nothing else in the language has
-            // this rule, which is why it is stated here rather than as a flag.
-            if h >= 0 && h == st.objectProtoObj {
-                let np = propertyBagOf(st, argVals[1])
-                if np >= 0 {
-                    st.throwing = true
-                    st.thrownValue = makeError(st, "TypeError", "Immutable prototype object '#<Object>' cannot have their prototype set" + currentModule(st))
-                    return JSValue.Undefined
-                }
-                return cloneValue(argVals[0])
+            let ok = setProtoOf(gProg, st, argVals[0], argVals[1])
+            if st.throwing {
+                return JSValue.Undefined
             }
-            // an object that has had preventExtensions/freeze/seal applied to it
-            // cannot have its prototype replaced either
-            if h >= 0 && st.objects[h].noExtend {
-                let ep = propertyBagOf(st, argVals[1])
-                let cur = st.objects[h].proto
-                if ep != cur {
-                    st.throwing = true
-                    st.thrownValue = makeError(st, "TypeError", "#<Object> is not extensible" + currentModule(st))
-                    return JSValue.Undefined
+            if !ok {
+                st.throwing = true
+                // %Object.prototype% rejects for a different reason than an
+                // ordinary object does, and node words the two differently
+                var why = "#<Object> is not extensible"
+                if propertyBagOf(st, argVals[0]) == st.objectProtoObj {
+                    why = "Immutable prototype object '#<Object>' cannot have their prototype set"
                 }
-            }
-            if h >= 0 {
-                let p = propertyBagOf(st, argVals[1])
-                st.objects[h].proto = p
-                // setPrototypeOf(o, null) must sever the chain, not fall back
-                // to the default Object.prototype that proto == -1 means
-                st.objects[h].protoNull = p < 0
+                st.thrownValue = makeError(st, "TypeError", why + currentModule(st))
+                return JSValue.Undefined
             }
         }
-        if argVals.len() > 0 {
-            return cloneValue(argVals[0])
-        }
-        return JSValue.Undefined
+        return cloneValue(argVals[0])
     }
     if id == NATIVE_OBJECT_GETOWNPROPDESC {
         if argVals.len() < 2 {
             return JSValue.Undefined
         }
-        let h = propertyBagOf(st, argVals[0])
-        if h < 0 {
-            return JSValue.Undefined
-        }
         let key = toStr(argVals[1])
-        let ad = arrayOwnDescriptor(st, h, key)
-        if ad >= 0 {
-            return JSValue.Obj(ad)
-        }
-        let idx = objOwnIndex(st, h, key)
-        if idx < 0 {
-            // a top-level binding is a property of the global object even though
-            // it lives in scope 0; it is writable and enumerable but, like a
-            // `var` declaration, not configurable
-            if st.objects[h].isGlobal && scopeHasOwn(st, 0, key) {
-                let gd = newObject(st)
-                pushTemp(st, JSValue.Obj(gd))
-                objSet(st, gd, "value", scopeLookup(st, 0, key))
-                objSet(st, gd, "writable", JSValue.Bool(true))
-                objSet(st, gd, "enumerable", JSValue.Bool(true))
-                objSet(st, gd, "configurable", JSValue.Bool(false))
-                popTemp(st)
-                return JSValue.Obj(gd)
-            }
-            return JSValue.Undefined
-        }
-        return JSValue.Obj(buildPropDescriptor(st, h, idx))
+        return getOwnPropDescOf(gProg, st, argVals[0], key)
     }
     if id == NATIVE_OBJECT_GETOWNPROPDESCS {
         let out = newObject(st)
@@ -6286,8 +6312,12 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     }
     if id == NATIVE_OBJECT_FREEZE {
         if argVals.len() > 0 {
+            let _ok = preventExtOf(gProg, st, argVals[0], true)
+            if st.throwing {
+                return JSValue.Undefined
+            }
             let fh = propertyBagOf(st, argVals[0])
-            if fh >= 0 {
+            if fh >= 0 && !st.objects[fh].isProxy {
                 st.objects[fh].frozen = true
                 // The object-level flag is what the write paths consult, but a
                 // DESCRIPTOR is built per property, so freezing has to stamp each
@@ -6390,20 +6420,14 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     }
     if id == NATIVE_OBJECT_PREVENTEXT || id == NATIVE_OBJECT_SEAL {
         if argVals.len() > 0 {
-            let h = propertyBagOf(st, argVals[0])
-            if h >= 0 {
-                st.objects[h].noExtend = true
-                if id == NATIVE_OBJECT_SEAL {
-                    st.objects[h].sealed = true
-                    // Sealing makes every existing property non-configurable and
-                    // leaves writability alone; the per-property stamp is what
-                    // getOwnPropertyDescriptor reports. See the note in FREEZE.
-                    var si: i64 = 0
-                    while si < st.objects[h].props.len() {
-                        st.objects[h].props[si].configurable = false
-                        si = si + 1
-                    }
-                }
+            let ok = preventExtOf(gProg, st, argVals[0], id == NATIVE_OBJECT_SEAL)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            if !ok {
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", "Cannot prevent extensions" + currentModule(st))
+                return JSValue.Undefined
             }
             return cloneValue(argVals[0])
         }
@@ -6411,36 +6435,110 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     }
     if id == NATIVE_OBJECT_ISEXT {
         if argVals.len() > 0 {
-            // a function is an ordinary extensible object; objHandle answers -1
-            // for one, so every builtin used to report itself non-extensible
-            let h = propertyBagOf(st, argVals[0])
-            if h >= 0 {
-                return JSValue.Bool(!st.objects[h].noExtend && !st.objects[h].frozen)
-            }
+            return JSValue.Bool(isExtensibleOf(gProg, st, argVals[0]))
         }
         // primitives are never extensible
         return JSValue.Bool(false)
     }
     if id == NATIVE_PROXY {
-        if argVals.len() < 2 {
-            return throwTypeErr(st, "Cannot create proxy with a non-object as target or handler")
+        return makeProxy(st, argVals)
+    }
+    if id == NATIVE_REFLECT_DEFINEPROP {
+        if argVals.len() < 3 {
+            return throwTypeErr(st, "Reflect.defineProperty requires 3 arguments")
         }
-        let t = cloneValue(argVals[0])
-        let h = cloneValue(argVals[1])
-        // a function target is legal and common — `new Proxy(fn, {apply})`
-        if (objHandle(t) < 0 && !isCallable(t)) || objHandle(h) < 0 {
-            return throwTypeErr(st, "Cannot create proxy with a non-object as target or handler")
+        let key = toStrProg(gProg, argVals[1], st)
+        if st.throwing {
+            return JSValue.Undefined
         }
-        let o = newObject(st)
-        st.objects[o].isProxy = true
-        let ex = ensureExtra(st, o)
-        st.objExtras[ex].proxyTarget = t
-        st.objExtras[ex].proxyHandler = h
-        // a proxy over a callable must itself report as callable
-        if isCallableIn(st, st.objExtras[ex].proxyTarget) {
-            st.objects[o].isFunctionLike = true
+        let d = objHandle(argVals[2])
+        if d < 0 {
+            return throwTypeErr(st, "Property description must be an object" + currentModule(st))
         }
-        return JSValue.Obj(o)
+        let nd = toPropertyDescriptor(gProg, st, d)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        return JSValue.Bool(definePropOf(gProg, st, argVals[0], key, nd))
+    }
+    if id == NATIVE_REFLECT_SETPROTO {
+        var proto = JSValue.Undefined
+        if argVals.len() > 1 {
+            proto = cloneValue(argVals[1])
+        }
+        return JSValue.Bool(setProtoOf(gProg, st, argVals[0], proto))
+    }
+    if id == NATIVE_REFLECT_PREVENTEXT {
+        return JSValue.Bool(preventExtOf(gProg, st, argVals[0], false))
+    }
+    if id == NATIVE_REFLECT_OWNKEYS {
+        let arr = newArray(st)
+        pushTemp(st, JSValue.Obj(arr))
+        let keys = ownKeysOf(gProg, st, argVals[0])
+        if st.throwing {
+            popTemp(st)
+            return JSValue.Undefined
+        }
+        var ki: i64 = 0
+        while ki < keys.len() {
+            arrPush(st, arr, JSValue.Str(keys[ki].clone()))
+            ki = ki + 1
+        }
+        popTemp(st)
+        return JSValue.Obj(arr)
+    }
+    if id == NATIVE_REFLECT_CONSTRUCT {
+        var cargs: Vec<JSValue> = Vec.new()
+        if argVals.len() > 1 {
+            applyArgsInto(gProg, st, argVals[1], cargs)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+        }
+        var nt = cloneValue(argVals[0])
+        if argVals.len() > 2 {
+            nt = cloneValue(argVals[2])
+        }
+        return constructValue(gProg, st, argVals[0], cargs, nt)
+    }
+    if id == NATIVE_REFLECT_GET {
+        // ToPropertyKey runs a user toString, and it runs BEFORE the read
+        let key = toStrProg(gProg, argVals[1], st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        var receiver = cloneValue(argVals[0])
+        if argVals.len() > 2 {
+            receiver = cloneValue(argVals[2])
+        }
+        return reflectGet(gProg, st, argVals[0], key, receiver)
+    }
+    if id == NATIVE_REFLECT_SET {
+        let key = toStrProg(gProg, argVals[1], st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        var v = JSValue.Undefined
+        if argVals.len() > 2 {
+            v = cloneValue(argVals[2])
+        }
+        var receiver = cloneValue(argVals[0])
+        if argVals.len() > 3 {
+            receiver = cloneValue(argVals[3])
+        }
+        return JSValue.Bool(reflectSet(gProg, st, argVals[0], key, v, receiver))
+    }
+    if id == NATIVE_PROXY_REVOCABLE {
+        let pv = makeProxy(st, argVals)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let out = newObject(st)
+        pushTemp(st, JSValue.Obj(out))
+        objSet(st, out, "proxy", cloneValue(pv))
+        objSet(st, out, "revoke", makeRevokeFn(st, objHandle(pv)))
+        popTemp(st)
+        return JSValue.Obj(out)
     }
     if id == NATIVE_CONSOLE_LOG || id == NATIVE_CONSOLE_ERROR {
         var line = ""
@@ -7151,16 +7249,22 @@ fn arrayDefineOwn(prog: &Prog, st: &mut Interp, o: i64, key: &string, d: i64): A
 }
 
 fn applyDescriptor(st: &mut Interp, o: i64, key: &string, d: i64) {
+    if !applyDescriptorQuiet(st, o, key, d) && !st.throwing {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
+    }
+}
+
+// Answers false for a rejected definition instead of throwing, so
+// Reflect.defineProperty can report it as `false`. A RangeError from an invalid
+// array length is a real throw in both spellings and still propagates.
+fn applyDescriptorQuiet(st: &mut Interp, o: i64, key: &string, d: i64): bool {
     // An array's indices and `length` are not Prop entries — arrayDefineOwn owns
     // them. It reports `handled: false` for any other key so the ordinary path
     // below still runs, and `ok: false` when the definition must be rejected.
     let ar = arrayDefineOwn(gProg, st, o, key, d)
     if ar.handled {
-        if !ar.ok && !st.throwing {
-            st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "Cannot redefine property: " + key.clone() + currentModule(st))
-        }
-        return
+        return ar.ok
     }
     let existed = objOwnIndex(st, o, key) >= 0
     // objSet/objDefineAccessor write through the ordinary property path, which
@@ -7205,6 +7309,7 @@ fn applyDescriptor(st: &mut Interp, o: i64, key: &string, d: i64) {
             st.objects[o].props[at].writable = existed && prevWrit
         }
     }
+    return true
 }
 
 // Build a property-descriptor object { value, writable | get, set }+enumerable+
@@ -9072,6 +9177,21 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "console", JSValue.Obj(consoleObj))
     scopeDefine(st, 0, "Proxy", JSValue.Native(NATIVE_PROXY))
     nameGlobalCtor(st, "Proxy", NATIVE_PROXY)
+    let proxyBag = getNativeProps(st, NATIVE_PROXY)
+    // Proxy.revocable is writable, unlike the `length`/`name` that
+    // objDefineBuiltinAttr installs, so its attributes are set by hand
+    objSet(st, proxyBag, "revocable", JSValue.Native(NATIVE_PROXY_REVOCABLE))
+    objSetNonEnumerable(st, proxyBag, "revocable")
+    let revocableBag = getNativeProps(st, NATIVE_PROXY_REVOCABLE)
+    objDefineBuiltinAttr(st, revocableBag, "length", JSValue.Number(2.0))
+    objDefineBuiltinAttr(st, revocableBag, "name", JSValue.Str("revocable"))
+    scopeDefine(st, 0, "__reflectDefineProperty", JSValue.Native(NATIVE_REFLECT_DEFINEPROP))
+    scopeDefine(st, 0, "__reflectSet", JSValue.Native(NATIVE_REFLECT_SET))
+    scopeDefine(st, 0, "__reflectGet", JSValue.Native(NATIVE_REFLECT_GET))
+    scopeDefine(st, 0, "__reflectSetPrototypeOf", JSValue.Native(NATIVE_REFLECT_SETPROTO))
+    scopeDefine(st, 0, "__reflectPreventExtensions", JSValue.Native(NATIVE_REFLECT_PREVENTEXT))
+    scopeDefine(st, 0, "__construct", JSValue.Native(NATIVE_REFLECT_CONSTRUCT))
+    scopeDefine(st, 0, "__reflectOwnKeys", JSValue.Native(NATIVE_REFLECT_OWNKEYS))
 }
 
 // typeof: never throws, even for an unbound name (scopeLookup returns undefined).
@@ -10329,33 +10449,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                 if st.throwing {
                     return JSValue.Undefined
                 }
-                // `new Promise(1)` is a TypeError before the promise exists: the
-                // executor is validated first, so a non-callable one produced a
-                // permanently pending promise instead of throwing.
-                if argVals.len() == 0 || !isCallableIn(st, argVals[0]) {
-                    st.throwing = true
-                    st.thrownValue = makeError(st, "TypeError", "Promise resolver is not a function")
-                    return JSValue.Undefined
-                }
-                let pr = newPromise(st, 0, JSValue.Undefined)
-                pushTemp(st, JSValue.Obj(pr))
-                if argVals.len() > 0 {
-                    var exArgs: Vec<JSValue> = Vec.new()
-                    exArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + pr * 2))
-                    exArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + pr * 2 + 1))
-                    let _ = callValue(prog, argVals[0], exArgs, JSValue.Undefined, st)
-                    if st.throwing {
-                        let err = cloneValue(st.thrownValue)
-                        st.throwing = false
-                        st.thrownValue = JSValue.Undefined
-                        if st.objects[pr].promiseState == 0 {
-                            st.objects[pr].promiseState = 2
-                            st.objExtras[st.objects[pr].extra].promiseValue = err
-                        }
-                    }
-                }
-                popTemp(st)
-                return JSValue.Obj(pr)
+                return constructPromise(prog, st, argVals)
             }
             match calleeVal {
                 JSValue.Func(fIdx, envIdx) => {
@@ -10437,8 +10531,6 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                 }
                 JSValue.Obj(co) => {
                     if st.objects[co].isProxy {
-                        let trap = proxyTrap(st, co, "construct")
-                        let target = cloneValue(st.objExtras[st.objects[co].extra].proxyTarget)
                         let argVals = evalArgs(prog, argsIdx, st, scope)
                         // An argument expression that threw ABORTS the call: without this the
                         // callee still ran with the arguments evaluated so far, so
@@ -10447,44 +10539,8 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                         if st.throwing {
                             return JSValue.Undefined
                         }
-                        if isCallableIn(st, trap) {
-                            // construct(target, argsArray, newTarget)
-                            let arr = newArray(st)
-                            var ai: i64 = 0
-                            while ai < argVals.len() {
-                                st.objects[arr].elems.push(cloneValue(argVals[ai]))
-                                ai = ai + 1
-                            }
-                            var targs: Vec<JSValue> = Vec.new()
-                            targs.push(cloneValue(target))
-                            targs.push(JSValue.Obj(arr))
-                            targs.push(JSValue.Obj(co))
-                            return callValue(prog, trap, targs, cloneValue(st.objExtras[st.objects[co].extra].proxyHandler), st)
-                        }
-                        // no construct trap: build the instance ourselves and run
-                        // the target as its constructor, matching `new target()`
-                        let inst = newObject(st)
-                        let th = objHandle(target)
-                        if th >= 0 {
-                            match objGet(st, th, "prototype") {
-                                JSValue.Obj(pr) => {
-                                    st.objects[inst].proto = pr
-                                }
-                                _ => {
-                                }
-                            }
-                        }
-                        pushTemp(st, JSValue.Obj(inst))
-                        let cr = callValue(prog, target, argVals, JSValue.Obj(inst), st)
-                        popTemp(st)
-                        match cr {
-                            JSValue.Obj(ro) => {
-                                return JSValue.Obj(ro)
-                            }
-                            _ => {
-                                return JSValue.Obj(inst)
-                            }
-                        }
+                        // newTarget is the proxy itself for a plain `new p()`
+                        return constructValue(prog, st, JSValue.Obj(co), argVals, JSValue.Obj(co))
                     }
                     // a class defined by a node-api addon (napi_define_class): build
                     // the instance here and link its prototype, then let the addon's
@@ -11927,13 +11983,1164 @@ fn throwTypeErr(st: &mut Interp, msg: string): JSValue {
     return JSValue.Undefined
 }
 
-// The handler trap `name`, or undefined when the handler does not define it.
-fn proxyTrap(st: &Interp, o: i64, name: &string): JSValue {
+// ProxyCreate, shared by `new Proxy(t, h)` and Proxy.revocable(t, h).
+fn makeProxy(st: &mut Interp, argVals: &Vec<JSValue>): JSValue {
+    if argVals.len() < 2 {
+        return throwTypeErr(st, "Cannot create proxy with a non-object as target or handler")
+    }
+    let t = cloneValue(argVals[0])
+    let h = cloneValue(argVals[1])
+    // a function target is legal and common — `new Proxy(fn, {apply})`
+    if (objHandle(t) < 0 && !isCallable(t)) || objHandle(h) < 0 {
+        return throwTypeErr(st, "Cannot create proxy with a non-object as target or handler")
+    }
+    let callable = isCallableIn(st, t)
+    let o = newObject(st)
+    st.anyProxy = true
+    st.objects[o].isProxy = true
+    let ex = ensureExtra(st, o)
+    st.objExtras[ex].proxyTarget = t
+    st.objExtras[ex].proxyHandler = h
+    // a proxy over a callable must itself report as callable. Decided once, at
+    // creation: a revoked target still leaves `typeof proxy` as "function".
+    st.objects[o].isFunctionLike = callable
+    return JSValue.Obj(o)
+}
+
+// Proxy.revocable's revoke function. A bound-method object rather than a
+// native, because a native parameterised by the proxy handle would need a
+// property bag keyed by that id and the bag table is a vector indexed by id.
+// Bound methods also happen to be exactly what the spec asks for here: callable,
+// never constructable, and carrying no `prototype` own property.
+fn makeRevokeFn(st: &mut Interp, proxyObj: i64): JSValue {
+    let bo = newObject(st)
+    st.objects[bo].isBound = true
+    let ex = ensureExtra(st, bo)
+    st.objExtras[ex].boundThis = JSValue.Obj(proxyObj)
+    st.objExtras[ex].boundMethod = "__proxyRevoke"
+    objDefineBuiltinAttr(st, bo, "length", JSValue.Number(0.0))
+    // the revoker is anonymous: its `name` is the empty string, not "revoke"
+    objDefineBuiltinAttr(st, bo, "name", JSValue.Str(""))
+    return JSValue.Obj(bo)
+}
+
+// A revoked proxy has both its target and handler cleared, and every internal
+// method on it must throw rather than forward. A live proxy's handler is always
+// an object, so its absence is what records the revocation.
+fn proxyRevoked(st: &Interp, o: i64): bool {
+    return objHandle(st.objExtras[st.objects[o].extra].proxyHandler) < 0
+}
+
+fn proxyTargetOf(st: &Interp, o: i64): JSValue {
+    return cloneValue(st.objExtras[st.objects[o].extra].proxyTarget)
+}
+
+fn proxyHandlerOf(st: &Interp, o: i64): JSValue {
+    return cloneValue(st.objExtras[st.objects[o].extra].proxyHandler)
+}
+
+// GetMethod for a proxy trap. undefined and null both mean "no trap"; any other
+// non-callable value is a TypeError. Reading the handler property raw let every
+// caller silently fall through to the target instead, which is the difference
+// between `new Proxy(t, {get: 1})` throwing and quietly behaving like `t`.
+// Callers must check st.throwing before using the result.
+fn proxyTrapChecked(prog: &Prog, st: &mut Interp, o: i64, name: &string): JSValue {
+    if proxyRevoked(st, o) {
+        return throwTypeErr(st, "Cannot perform '" + name.clone() + "' on a proxy that has been revoked")
+    }
     let h = objHandle(st.objExtras[st.objects[o].extra].proxyHandler)
+    // the handler may itself be a proxy, so this read has to go through the
+    // dynamic member path rather than reading its slots
+    let t = getMemberDyn(prog, h, name, st)
+    if st.throwing {
+        return JSValue.Undefined
+    }
+    if isNullish(t) {
+        return JSValue.Undefined
+    }
+    if !isCallableIn(st, t) {
+        return throwTypeErr(st, "'" + name.clone() + "' trap must be a function")
+    }
+    return t
+}
+
+// Invoke a proxy trap with the handler as `this`, which is the receiver every
+// trap is called with.
+fn callTrap(prog: &Prog, st: &mut Interp, o: i64, trap: &JSValue, args: Vec<JSValue>): JSValue {
+    return callValue(prog, trap, args, proxyHandlerOf(st, o), st)
+}
+
+// CompletePropertyDescriptor. A getOwnPropertyDescriptor trap may answer a
+// partial descriptor, but what Object.getOwnPropertyDescriptor hands back must
+// still carry every field, in node's field order.
+fn completeDescriptor(prog: &Prog, st: &mut Interp, dh: i64): JSValue {
+    let isAcc = objHasInChain(st, dh, "get") || objHasInChain(st, dh, "set")
+    let out = newObject(st)
+    pushTemp(st, JSValue.Obj(out))
+    if isAcc {
+        objSet(st, out, "get", getMemberDyn(prog, dh, "get", st))
+        objSet(st, out, "set", getMemberDyn(prog, dh, "set", st))
+    } else {
+        objSet(st, out, "value", getMemberDyn(prog, dh, "value", st))
+        objSet(st, out, "writable", JSValue.Bool(truthy(getMemberDyn(prog, dh, "writable", st))))
+    }
+    objSet(st, out, "enumerable", JSValue.Bool(truthy(getMemberDyn(prog, dh, "enumerable", st))))
+    objSet(st, out, "configurable", JSValue.Bool(truthy(getMemberDyn(prog, dh, "configurable", st))))
+    popTemp(st)
+    return JSValue.Obj(out)
+}
+
+fn vecHasStr(v: &Vec<string>, s: &string): bool {
+    var i: i64 = 0
+    while i < v.len() {
+        if v[i] == s {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// IsCompatiblePropertyDescriptor: may `d` be applied over the existing
+// descriptor `tdh`? Both are descriptor OBJECTS here, which is why this cannot
+// reuse descRejectReason — that one answers about a live property slot.
+fn descCompatible(st: &mut Interp, extensible: bool, d: i64, tdh: i64): bool {
+    if tdh < 0 {
+        return extensible
+    }
+    if truthy(getMember(st, tdh, "configurable")) {
+        return true
+    }
+    if objHasInChain(st, d, "configurable") && truthy(getMember(st, d, "configurable")) {
+        return false
+    }
+    if objHasInChain(st, d, "enumerable") && truthy(getMember(st, d, "enumerable")) != truthy(getMember(st, tdh, "enumerable")) {
+        return false
+    }
+    let dAcc = objHasInChain(st, d, "get") || objHasInChain(st, d, "set")
+    let tAcc = objHasInChain(st, tdh, "get") || objHasInChain(st, tdh, "set")
+    let dData = objHasInChain(st, d, "value") || objHasInChain(st, d, "writable")
+    // a non-configurable property cannot change kind
+    if dAcc && !tAcc {
+        return false
+    }
+    if dData && tAcc {
+        return false
+    }
+    if tAcc {
+        if objHasInChain(st, d, "get") && !jsStrictEquals(getMember(st, d, "get"), getMember(st, tdh, "get")) {
+            return false
+        }
+        if objHasInChain(st, d, "set") && !jsStrictEquals(getMember(st, d, "set"), getMember(st, tdh, "set")) {
+            return false
+        }
+        return true
+    }
+    if !truthy(getMember(st, tdh, "writable")) {
+        if objHasInChain(st, d, "writable") && truthy(getMember(st, d, "writable")) {
+            return false
+        }
+        if objHasInChain(st, d, "value") && !sameValue(getMember(st, d, "value"), getMember(st, tdh, "value")) {
+            return false
+        }
+    }
+    return true
+}
+
+// ToPropertyDescriptor. The fields are READ, so an accessor on the descriptor
+// object runs — once, before anything is defined, in the spec's field order.
+// Consulting the raw descriptor at each use instead ran such a getter several
+// times over, and missed it entirely when it was inherited.
+fn toPropertyDescriptor(prog: &Prog, st: &mut Interp, dh: i64): i64 {
+    let out = newObject(st)
+    pushTemp(st, JSValue.Obj(out))
+    for f in ["enumerable", "configurable", "value", "writable", "get", "set"] {
+        if objHasInChain(st, dh, f) {
+            let v = getMemberDyn(prog, dh, f, st)
+            if st.throwing {
+                popTemp(st)
+                return out
+            }
+            objSet(st, out, f.clone(), v)
+        }
+    }
+    popTemp(st)
+    return out
+}
+
+// ── the object internal methods, over any value ──────────────────────────────
+//
+// Each pair below is one ordinary implementation plus one dispatcher. The
+// dispatcher is what every caller should use: it routes a proxy through the
+// matching trap and, when the handler defines no trap, forwards to the target
+// by calling ITSELF — so a proxy whose target is another proxy still consults
+// the inner proxy's traps instead of reading its raw slots.
+
+fn ordinaryGetOwnPropDesc(st: &mut Interp, v: &JSValue, key: &string): JSValue {
+    let h = propertyBagOf(st, v)
     if h < 0 {
         return JSValue.Undefined
     }
-    return getMember(st, h, name)
+    let ad = arrayOwnDescriptor(st, h, key)
+    if ad >= 0 {
+        return JSValue.Obj(ad)
+    }
+    let idx = objOwnIndex(st, h, key)
+    if idx < 0 {
+        // a top-level binding is a property of the global object even though
+        // it lives in scope 0; it is writable and enumerable but, like a
+        // `var` declaration, not configurable
+        if st.objects[h].isGlobal && scopeHasOwn(st, 0, key) {
+            let gd = newObject(st)
+            pushTemp(st, JSValue.Obj(gd))
+            objSet(st, gd, "value", scopeLookup(st, 0, key))
+            objSet(st, gd, "writable", JSValue.Bool(true))
+            objSet(st, gd, "enumerable", JSValue.Bool(true))
+            objSet(st, gd, "configurable", JSValue.Bool(false))
+            popTemp(st)
+            return JSValue.Obj(gd)
+        }
+        return JSValue.Undefined
+    }
+    return JSValue.Obj(buildPropDescriptor(st, h, idx))
+}
+
+pub fn getOwnPropDescOf(prog: &Prog, st: &mut Interp, v: &JSValue, key: &string): JSValue {
+    let o = objHandle(v)
+    if o >= 0 && st.objects[o].isProxy {
+        let trap = proxyTrapChecked(prog, st, o, "getOwnPropertyDescriptor")
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let target = proxyTargetOf(st, o)
+        if isUndefinedValue(trap) {
+            return getOwnPropDescOf(prog, st, target, key)
+        }
+        var args: Vec<JSValue> = Vec.new()
+        args.push(cloneValue(target))
+        args.push(JSValue.Str(key.clone()))
+        let r = callTrap(prog, st, o, trap, args)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let rh = objHandle(r)
+        if rh < 0 {
+            if !isUndefinedValue(r) {
+                return throwTypeErr(st, "'getOwnPropertyDescriptor' on proxy: trap returned neither object nor undefined")
+            }
+            // the target cannot lose a non-configurable own property behind the
+            // proxy's back, nor gain the absence of one it cannot delete
+            let td = getOwnPropDescOf(prog, st, target, key)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            let tdh = objHandle(td)
+            if tdh >= 0 && !truthy(getMember(st, tdh, "configurable")) {
+                return throwTypeErr(st, "'getOwnPropertyDescriptor' on proxy: trap returned undefined for property '" + key.clone() + "' which is non-configurable in the proxy target")
+            }
+            if tdh >= 0 && !isExtensibleOf(prog, st, target) {
+                return throwTypeErr(st, "'getOwnPropertyDescriptor' on proxy: trap returned undefined for property '" + key.clone() + "' which exists in the non-extensible proxy target")
+            }
+            return JSValue.Undefined
+        }
+        let done = completeDescriptor(prog, st, rh)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let dh = objHandle(done)
+        if !truthy(getMember(st, dh, "configurable")) {
+            let td = getOwnPropDescOf(prog, st, target, key)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            let tdh = objHandle(td)
+            if tdh < 0 || truthy(getMember(st, tdh, "configurable")) {
+                return throwTypeErr(st, "'getOwnPropertyDescriptor' on proxy: trap reported non-configurability for property '" + key.clone() + "' which is either non-existent or configurable in the proxy target")
+            }
+        }
+        return done
+    }
+    return ordinaryGetOwnPropDesc(st, v, key)
+}
+
+fn ordinaryGetProto(st: &mut Interp, v: &JSValue): JSValue {
+    // A function's prototype is Function.prototype. Its property BAG is an
+    // ordinary object linked to Object.prototype, so asking the bag answered
+    // Object.prototype for every function value. A bag with a DELIBERATE
+    // proto still wins — `Object.getPrototypeOf(Int8Array)` is the
+    // %TypedArray% intrinsic, and test262's whole TypedArray tree opens with
+    // exactly that read.
+    if isCallableIn(st, v) && st.functionProtoObj >= 0 {
+        var bagProto: i64 = -1
+        let bh0 = propertyBagOf(st, v)
+        if bh0 >= 0 {
+            bagProto = protoOfHandle(st, bh0)
+        }
+        if bagProto < 0 || bagProto == st.objectProtoObj {
+            return JSValue.Obj(st.functionProtoObj)
+        }
+    }
+    let h = propertyBagOf(st, v)
+    if h < 0 {
+        let pp = primitiveProtoHandle(st, v)
+        if pp >= 0 {
+            return JSValue.Obj(pp)
+        }
+        return JSValue.Null
+    }
+    let p = protoOfHandle(st, h)
+    if p >= 0 {
+        return JSValue.Obj(p)
+    }
+    return JSValue.Null
+}
+
+pub fn getProtoOf(prog: &Prog, st: &mut Interp, v: &JSValue): JSValue {
+    let o = objHandle(v)
+    if o >= 0 && st.objects[o].isProxy {
+        let trap = proxyTrapChecked(prog, st, o, "getPrototypeOf")
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let target = proxyTargetOf(st, o)
+        if isUndefinedValue(trap) {
+            return getProtoOf(prog, st, target)
+        }
+        var args: Vec<JSValue> = Vec.new()
+        args.push(cloneValue(target))
+        let r = callTrap(prog, st, o, trap, args)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        if !isObjectValue(st, r) && !isNullValue(r) {
+            return throwTypeErr(st, "'getPrototypeOf' on proxy: trap returned neither object nor null")
+        }
+        // a non-extensible target's prototype is fixed, so the trap may not
+        // report a different one
+        if !isExtensibleOf(prog, st, target) {
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            let tp = getProtoOf(prog, st, target)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            if !jsStrictEquals(r, tp) {
+                return throwTypeErr(st, "'getPrototypeOf' on proxy: proxy target is non-extensible but the trap did not return its actual prototype")
+            }
+        }
+        return r
+    }
+    return ordinaryGetProto(st, v)
+}
+
+// The ordinary [[SetPrototypeOf]], reported as a boolean. The spec's rejection
+// cases are `false` here rather than a throw, because Reflect.setPrototypeOf
+// has to report them as false while a Test262Error raised by user code inside
+// a trap still has to propagate; Object.setPrototypeOf turns the false back
+// into its TypeError.
+fn ordinarySetProto(st: &mut Interp, v: &JSValue, proto: &JSValue): bool {
+    let h = propertyBagOf(st, v)
+    if h < 0 {
+        return true
+    }
+    let p = propertyBagOf(st, proto)
+    // %Object.prototype% is an immutable prototype exotic object: its
+    // [[Prototype]] is already null and setting it to anything else is
+    // rejected, not a silent no-op. Nothing else in the language has this rule,
+    // which is why it is stated here rather than as a flag.
+    if h == st.objectProtoObj {
+        return p < 0
+    }
+    // an object that has had preventExtensions/freeze/seal applied to it cannot
+    // have its prototype replaced either
+    if st.objects[h].noExtend || st.objects[h].frozen {
+        // setting the prototype it already has is still legal. protoOfHandle,
+        // not the raw slot: an object that never had one explicitly set stores
+        // -1 and inherits Object.prototype, which is what the caller reads back
+        // from getPrototypeOf and hands straight back here.
+        return p == protoOfHandle(st, h)
+    }
+    // a prototype chain may not become a cycle
+    var walk = p
+    while walk >= 0 {
+        if walk == h {
+            return false
+        }
+        // a proxy in the chain makes the walk unbounded: the spec stops there
+        // and accepts the assignment
+        if st.objects[walk].isProxy {
+            walk = -1
+        } else {
+            walk = protoOfHandle(st, walk)
+        }
+    }
+    st.objects[h].proto = p
+    // setPrototypeOf(o, null) must sever the chain, not fall back to the
+    // default Object.prototype that proto == -1 means
+    st.objects[h].protoNull = p < 0
+    return true
+}
+
+pub fn setProtoOf(prog: &Prog, st: &mut Interp, v: &JSValue, proto: &JSValue): bool {
+    let o = objHandle(v)
+    if o >= 0 && st.objects[o].isProxy {
+        let trap = proxyTrapChecked(prog, st, o, "setPrototypeOf")
+        if st.throwing {
+            return false
+        }
+        let target = proxyTargetOf(st, o)
+        if isUndefinedValue(trap) {
+            return setProtoOf(prog, st, target, proto)
+        }
+        var args: Vec<JSValue> = Vec.new()
+        args.push(cloneValue(target))
+        args.push(cloneValue(proto))
+        let r = callTrap(prog, st, o, trap, args)
+        if st.throwing {
+            return false
+        }
+        if !truthy(r) {
+            return false
+        }
+        if !isExtensibleOf(prog, st, target) {
+            if st.throwing {
+                return false
+            }
+            let tp = getProtoOf(prog, st, target)
+            if st.throwing {
+                return false
+            }
+            if !jsStrictEquals(proto, tp) {
+                let _t = throwTypeErr(st, "'setPrototypeOf' on proxy: trap returned truish for setting a new prototype on the non-extensible proxy target")
+                return false
+            }
+        }
+        return true
+    }
+    return ordinarySetProto(st, v, proto)
+}
+
+pub fn isExtensibleOf(prog: &Prog, st: &mut Interp, v: &JSValue): bool {
+    let o = objHandle(v)
+    if o >= 0 && st.objects[o].isProxy {
+        let trap = proxyTrapChecked(prog, st, o, "isExtensible")
+        if st.throwing {
+            return false
+        }
+        let target = proxyTargetOf(st, o)
+        if isUndefinedValue(trap) {
+            return isExtensibleOf(prog, st, target)
+        }
+        var args: Vec<JSValue> = Vec.new()
+        args.push(cloneValue(target))
+        let r = callTrap(prog, st, o, trap, args)
+        if st.throwing {
+            return false
+        }
+        let want = isExtensibleOf(prog, st, target)
+        if st.throwing {
+            return false
+        }
+        // extensibility is not something a proxy may lie about
+        if truthy(r) != want {
+            let _t = throwTypeErr(st, "'isExtensible' on proxy: trap result does not reflect extensibility of proxy target")
+            return false
+        }
+        return want
+    }
+    // a function is an ordinary extensible object; objHandle answers -1 for
+    // one, so every builtin used to report itself non-extensible
+    let h = propertyBagOf(st, v)
+    if h >= 0 {
+        return !st.objects[h].noExtend && !st.objects[h].frozen
+    }
+    // primitives are never extensible
+    return false
+}
+
+pub fn preventExtOf(prog: &Prog, st: &mut Interp, v: &JSValue, seal: bool): bool {
+    let o = objHandle(v)
+    if o >= 0 && st.objects[o].isProxy {
+        let trap = proxyTrapChecked(prog, st, o, "preventExtensions")
+        if st.throwing {
+            return false
+        }
+        let target = proxyTargetOf(st, o)
+        if isUndefinedValue(trap) {
+            return preventExtOf(prog, st, target, seal)
+        }
+        var args: Vec<JSValue> = Vec.new()
+        args.push(cloneValue(target))
+        let r = callTrap(prog, st, o, trap, args)
+        if st.throwing {
+            return false
+        }
+        if !truthy(r) {
+            return false
+        }
+        if isExtensibleOf(prog, st, target) {
+            if st.throwing {
+                return false
+            }
+            let _t = throwTypeErr(st, "'preventExtensions' on proxy: trap returned truish but the proxy target is extensible")
+            return false
+        }
+        return true
+    }
+    let h = propertyBagOf(st, v)
+    if h >= 0 {
+        st.objects[h].noExtend = true
+        if seal {
+            st.objects[h].sealed = true
+            // Sealing makes every existing property non-configurable and leaves
+            // writability alone; the per-property stamp is what
+            // getOwnPropertyDescriptor reports. See the note in FREEZE.
+            var si: i64 = 0
+            while si < st.objects[h].props.len() {
+                st.objects[h].props[si].configurable = false
+                si = si + 1
+            }
+        }
+    }
+    return true
+}
+
+// The ordinary [[DefineOwnProperty]], reported as a boolean for the same reason
+// ordinarySetProto is: a rejected definition must surface as `false` from
+// Reflect.defineProperty. A RangeError from an invalid array length is a real
+// throw in both spellings and still propagates.
+fn ordinaryDefineOwn(st: &mut Interp, v: &JSValue, key: &string, d: i64): bool {
+    let o = propertyBagOf(st, v)
+    if o < 0 {
+        return false
+    }
+    let reason = descRejectReason(st, o, key, d)
+    if st.throwing {
+        return false
+    }
+    if reason.len() > 0 {
+        return false
+    }
+    return applyDescriptorQuiet(st, o, key, d)
+}
+
+pub fn definePropOf(prog: &Prog, st: &mut Interp, v: &JSValue, key: &string, d: i64): bool {
+    let o = objHandle(v)
+    if o >= 0 && st.objects[o].isProxy {
+        let trap = proxyTrapChecked(prog, st, o, "defineProperty")
+        if st.throwing {
+            return false
+        }
+        let target = proxyTargetOf(st, o)
+        if isUndefinedValue(trap) {
+            return definePropOf(prog, st, target, key, d)
+        }
+        var args: Vec<JSValue> = Vec.new()
+        args.push(cloneValue(target))
+        args.push(JSValue.Str(key.clone()))
+        args.push(JSValue.Obj(d))
+        let r = callTrap(prog, st, o, trap, args)
+        if st.throwing {
+            return false
+        }
+        if !truthy(r) {
+            return false
+        }
+        // a trap that reported success may not have left the target in a state
+        // the definition could not legally have produced
+        let td = getOwnPropDescOf(prog, st, target, key)
+        if st.throwing {
+            return false
+        }
+        let tdh = objHandle(td)
+        let ext = isExtensibleOf(prog, st, target)
+        if st.throwing {
+            return false
+        }
+        let settingConfigFalse = objHasInChain(st, d, "configurable") && !truthy(getMember(st, d, "configurable"))
+        var bad = false
+        if tdh < 0 {
+            bad = !ext || settingConfigFalse
+        } else {
+            bad = !descCompatible(st, ext, d, tdh)
+            if !bad && settingConfigFalse && truthy(getMember(st, tdh, "configurable")) {
+                bad = true
+            }
+            if !bad && !truthy(getMember(st, tdh, "configurable")) && objHasInChain(st, tdh, "writable") && truthy(getMember(st, tdh, "writable")) && objHasInChain(st, d, "writable") && !truthy(getMember(st, d, "writable")) {
+                bad = true
+            }
+        }
+        if bad {
+            let _t = throwTypeErr(st, "'defineProperty' on proxy: trap returned truish for property '" + key.clone() + "' which is either non-existent or configurable in the proxy target")
+            return false
+        }
+        return true
+    }
+    return ordinaryDefineOwn(st, v, key, d)
+}
+
+// A get trap may not disagree with a target property the target cannot change:
+// a non-configurable non-writable data property has to be reported by value, and
+// a non-configurable accessor with no getter has to be reported as undefined.
+fn checkProxyGetResult(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, r: &JSValue) {
+    let td = getOwnPropDescOf(prog, st, target, key)
+    if st.throwing {
+        return
+    }
+    let tdh = objHandle(td)
+    if tdh < 0 || truthy(getMember(st, tdh, "configurable")) {
+        return
+    }
+    if objHasInChain(st, tdh, "get") {
+        if isUndefinedValue(getMember(st, tdh, "get")) && !isUndefinedValue(r) {
+            let _t = throwTypeErr(st, "'get' on proxy: property '" + key.clone() + "' is a non-configurable accessor property on the proxy target and does not have a getter function, but the trap did not return 'undefined'")
+        }
+        return
+    }
+    if !truthy(getMember(st, tdh, "writable")) && !sameValue(r, getMember(st, tdh, "value")) {
+        let _t = throwTypeErr(st, "'get' on proxy: property '" + key.clone() + "' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value")
+    }
+}
+
+// The mirror for a set trap that reported success: a target property that
+// cannot be written may not be reported as written.
+fn checkProxySetResult(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, v: &JSValue) {
+    let td = getOwnPropDescOf(prog, st, target, key)
+    if st.throwing {
+        return
+    }
+    let tdh = objHandle(td)
+    if tdh < 0 || truthy(getMember(st, tdh, "configurable")) {
+        return
+    }
+    if objHasInChain(st, tdh, "set") {
+        if isUndefinedValue(getMember(st, tdh, "set")) {
+            let _t = throwTypeErr(st, "'set' on proxy: trap returned truish for property '" + key.clone() + "' which exists in the proxy target as a non-configurable and non-writable accessor property without a setter")
+        }
+        return
+    }
+    if objHasInChain(st, tdh, "get") {
+        return
+    }
+    if !truthy(getMember(st, tdh, "writable")) && !sameValue(v, getMember(st, tdh, "value")) {
+        let _t = throwTypeErr(st, "'set' on proxy: trap returned truish for property '" + key.clone() + "' which exists in the proxy target as a non-configurable and non-writable data property with a different value")
+    }
+}
+
+// `new Promise(executor)`. Shared by the `new` path and by [[Construct]] with an
+// explicit newTarget, which reaches the constructor through Reflect.construct.
+fn constructPromise(prog: &Prog, st: &mut Interp, argVals: &Vec<JSValue>): JSValue {
+    // `new Promise(1)` is a TypeError before the promise exists: the executor is
+    // validated first, so a non-callable one produced a permanently pending
+    // promise instead of throwing.
+    if argVals.len() == 0 || !isCallableIn(st, argVals[0]) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Promise resolver is not a function")
+        return JSValue.Undefined
+    }
+    let pr = newPromise(st, 0, JSValue.Undefined)
+    pushTemp(st, JSValue.Obj(pr))
+    var exArgs: Vec<JSValue> = Vec.new()
+    exArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + pr * 2))
+    exArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + pr * 2 + 1))
+    let _ = callValue(prog, argVals[0], exArgs, JSValue.Undefined, st)
+    if st.throwing {
+        let err = cloneValue(st.thrownValue)
+        st.throwing = false
+        st.thrownValue = JSValue.Undefined
+        if st.objects[pr].promiseState == 0 {
+            st.objects[pr].promiseState = 2
+            st.objExtras[st.objects[pr].extra].promiseValue = err
+        }
+    }
+    popTemp(st)
+    return JSValue.Obj(pr)
+}
+
+// The [[Prototype]] a differing newTarget imposes, or -1 for "use the
+// constructor's own". Reading `newTarget.prototype` can run a getter, so WHEN it
+// happens is observable and each caller below picks its own moment.
+fn newTargetProto(prog: &Prog, st: &mut Interp, ctor: &JSValue, newTarget: &JSValue): i64 {
+    if jsStrictEquals(ctor, newTarget) {
+        return -1
+    }
+    let ntBag = propertyBagOf(st, newTarget)
+    if ntBag < 0 {
+        return -1
+    }
+    return objHandle(getMemberDyn(prog, ntBag, "prototype", st))
+}
+
+// [[Construct]] over any value. `new proxy(...)` with no construct trap has to
+// reach the TARGET's [[Construct]], which may be another proxy's trap, and
+// Reflect.construct has to be able to pass a newTarget that is not the callee —
+// neither is expressible as "call the target with a fresh `this`".
+pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec<JSValue>, newTarget: &JSValue): JSValue {
+    let co = objHandle(ctor)
+    if co >= 0 && st.objects[co].isProxy {
+        if !valueIsConstructor(prog, st, ctor) {
+            return throwTypeErr(st, "proxy is not a constructor" + currentModule(st))
+        }
+        let trap = proxyTrapChecked(prog, st, co, "construct")
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let target = proxyTargetOf(st, co)
+        if isUndefinedValue(trap) {
+            return constructValue(prog, st, target, argVals, newTarget)
+        }
+        let arr = newArray(st)
+        pushTemp(st, JSValue.Obj(arr))
+        var ai: i64 = 0
+        while ai < argVals.len() {
+            st.objects[arr].elems.push(cloneValue(argVals[ai]))
+            ai = ai + 1
+        }
+        var targs: Vec<JSValue> = Vec.new()
+        targs.push(cloneValue(target))
+        targs.push(JSValue.Obj(arr))
+        targs.push(cloneValue(newTarget))
+        let cr = callTrap(prog, st, co, trap, targs)
+        popTemp(st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        // a construct trap must answer an object; returning a primitive is a
+        // TypeError rather than a silent `this`
+        if !isObjectValue(st, cr) {
+            return throwTypeErr(st, "'construct' on proxy: trap returned non-object")
+        }
+        return cr
+    }
+    match ctor {
+        JSValue.Func(tf, te) => {
+            // OrdinaryCreateFromConstructor takes the prototype from newTarget,
+            // which is the only thing a differing newTarget changes. For an
+            // ordinary function it is read BEFORE the body runs, so a `prototype`
+            // getter that throws beats anything the body would have done.
+            let protoFromNewTarget = newTargetProto(prog, st, ctor, newTarget)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            let inst = newObject(st)
+            st.objects[inst].ctor = tf
+            let fproto = getFuncProto(st, tf)
+            linkProtoConstructor(st, fproto, tf, te)
+            if protoFromNewTarget >= 0 {
+                st.objects[inst].proto = protoFromNewTarget
+            } else {
+                st.objects[inst].proto = fproto
+            }
+            pushTemp(st, JSValue.Obj(inst))
+            let saved = cloneValue(st.newTarget)
+            st.newTarget = cloneValue(newTarget)
+            let res = callFunction(prog, tf, te, argVals, JSValue.Obj(inst), st)
+            st.newTarget = saved
+            popTemp(st)
+            match res {
+                JSValue.Obj(ro) => {
+                    return JSValue.Obj(ro)
+                }
+                _ => {
+                    return JSValue.Obj(inst)
+                }
+            }
+        }
+        JSValue.Native(nid) => {
+            // a builtin constructor makes its OWN instance (an Array, a Date, a
+            // wrapper); handing it a fresh plain object as `this` would produce
+            // an ordinary object wearing the right prototype and nothing else
+            let r = callNativeProg(prog, nid, argVals, st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            var out = r
+            if !isObjectValue(st, out) {
+                out = makeWrapper(st, out)
+            }
+            // AFTER the builtin ran: a built-in constructor validates its
+            // arguments before OrdinaryCreateFromConstructor, so
+            // `Reflect.construct(Promise, [], badNewTarget)` reports the missing
+            // executor rather than whatever the newTarget's `prototype` getter throws
+            let protoFromNewTarget = newTargetProto(prog, st, ctor, newTarget)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            let rh = objHandle(out)
+            if rh >= 0 && protoFromNewTarget >= 0 {
+                st.objects[rh].proto = protoFromNewTarget
+            }
+            return out
+        }
+        _ => {
+        }
+    }
+    // Everything left is a built-in constructor object (Array, Promise, a napi
+    // class). Like the Native branch above, they validate their arguments before
+    // OrdinaryCreateFromConstructor, so the newTarget `prototype` read comes
+    // AFTER the construction rather than before it.
+    if co >= 0 && isPromiseCtor(st, co) {
+        let pv = constructPromise(prog, st, argVals)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        pushTemp(st, cloneValue(pv))
+        let pp = newTargetProto(prog, st, ctor, newTarget)
+        popTemp(st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let pvh = objHandle(pv)
+        if pvh >= 0 && pp >= 0 {
+            st.objects[pvh].proto = pp
+        }
+        return pv
+    }
+    if co >= 0 && co == st.arrayCtorObj {
+        let av = makeArrayFromCtor(st, argVals)
+        pushTemp(st, cloneValue(av))
+        let ap = newTargetProto(prog, st, ctor, newTarget)
+        popTemp(st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let ah = objHandle(av)
+        if ah >= 0 && ap >= 0 {
+            st.objects[ah].proto = ap
+        }
+        return av
+    }
+    let inst = newObject(st)
+    let th = propertyBagOf(st, ctor)
+    if th >= 0 {
+        match getMemberDyn(prog, th, "prototype", st) {
+            JSValue.Obj(pr) => {
+                st.objects[inst].proto = pr
+            }
+            _ => {
+            }
+        }
+    }
+    if st.throwing {
+        return JSValue.Undefined
+    }
+    pushTemp(st, JSValue.Obj(inst))
+    let saved = cloneValue(st.newTarget)
+    st.newTarget = cloneValue(newTarget)
+    let cr = callValue(prog, ctor, argVals, JSValue.Obj(inst), st)
+    st.newTarget = saved
+    var out = JSValue.Obj(inst)
+    match cr {
+        JSValue.Obj(ro) => {
+            out = JSValue.Obj(ro)
+        }
+        _ => {
+        }
+    }
+    popTemp(st)
+    if st.throwing {
+        return JSValue.Undefined
+    }
+    pushTemp(st, cloneValue(out))
+    let protoFromNewTarget = newTargetProto(prog, st, ctor, newTarget)
+    popTemp(st)
+    if st.throwing {
+        return JSValue.Undefined
+    }
+    let oh = objHandle(out)
+    if oh >= 0 && protoFromNewTarget >= 0 {
+        st.objects[oh].proto = protoFromNewTarget
+    }
+    return out
+}
+
+// Reflect.get's third argument: the receiver a getter runs with. Plain member
+// access always passes the object it read through, so this cannot go through
+// getMemberDyn — the whole point of the argument is to differ from the target.
+fn reflectGet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, receiver: &JSValue): JSValue {
+    let o = objHandle(target)
+    if o >= 0 && st.objects[o].isProxy {
+        let trap = proxyTrapChecked(prog, st, o, "get")
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let tv = proxyTargetOf(st, o)
+        if isUndefinedValue(trap) {
+            return reflectGet(prog, st, tv, key, receiver)
+        }
+        var args: Vec<JSValue> = Vec.new()
+        args.push(cloneValue(tv))
+        args.push(JSValue.Str(key.clone()))
+        args.push(cloneValue(receiver))
+        let r = callTrap(prog, st, o, trap, args)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        checkProxyGetResult(prog, st, tv, key, r)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        return r
+    }
+    var cur = propertyBagOf(st, target)
+    while cur >= 0 {
+        let pi = objOwnIndex(st, cur, key)
+        if pi >= 0 {
+            if propIsAccessor(st, cur, pi) {
+                let getter = accGetter(st, st.objects[cur].props[pi].acc)
+                if !isCallableIn(st, getter) {
+                    return JSValue.Undefined
+                }
+                var gargs: Vec<JSValue> = Vec.new()
+                return callValue(prog, getter, gargs, cloneValue(receiver), st)
+            }
+            return cloneValue(st.objects[cur].props[pi].value)
+        }
+        cur = protoOfHandle(st, cur)
+    }
+    // no ordinary property found: the exotic reads (a string's length, a
+    // builtin method) still live behind the member path
+    let bag = propertyBagOf(st, target)
+    if bag >= 0 {
+        return getMemberDyn(prog, bag, key, st)
+    }
+    return JSValue.Undefined
+}
+
+// Reflect.set. Two things plain assignment cannot express: the write lands on
+// `receiver` rather than on the target, and a rejected write is reported as
+// `false` instead of being silently dropped or thrown.
+fn reflectSet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, v: &JSValue, receiver: &JSValue): bool {
+    let o = objHandle(target)
+    if o >= 0 && st.objects[o].isProxy {
+        let trap = proxyTrapChecked(prog, st, o, "set")
+        if st.throwing {
+            return false
+        }
+        let tv = proxyTargetOf(st, o)
+        if isUndefinedValue(trap) {
+            return reflectSet(prog, st, tv, key, v, receiver)
+        }
+        var args: Vec<JSValue> = Vec.new()
+        args.push(cloneValue(tv))
+        args.push(JSValue.Str(key.clone()))
+        args.push(cloneValue(v))
+        args.push(cloneValue(receiver))
+        let r = callTrap(prog, st, o, trap, args)
+        if st.throwing {
+            return false
+        }
+        if !truthy(r) {
+            return false
+        }
+        checkProxySetResult(prog, st, tv, key, v)
+        return !st.throwing
+    }
+    var cur = propertyBagOf(st, target)
+    while cur >= 0 {
+        let pi = objOwnIndex(st, cur, key)
+        if pi >= 0 {
+            if propIsAccessor(st, cur, pi) {
+                let setter = accSetter(st, st.objects[cur].props[pi].acc)
+                if !isCallableIn(st, setter) {
+                    return false
+                }
+                var sargs: Vec<JSValue> = Vec.new()
+                sargs.push(cloneValue(v))
+                let _r = callValue(prog, setter, sargs, cloneValue(receiver), st)
+                return !st.throwing
+            }
+            if !st.objects[cur].props[pi].writable || st.objects[cur].frozen {
+                return false
+            }
+            // a data property found on the chain does NOT get written in place:
+            // the write always lands on the receiver as its own property
+            cur = -1
+        } else {
+            cur = protoOfHandle(st, cur)
+        }
+    }
+    let rh = propertyBagOf(st, receiver)
+    if rh < 0 {
+        return false
+    }
+    // A proxy receiver takes the write as a [[DefineOwnProperty]], not as
+    // another [[Set]]: re-entering [[Set]] here would loop forever whenever the
+    // receiver is the proxy the write started from.
+    if st.objects[rh].isProxy {
+        let ed = getOwnPropDescOf(prog, st, receiver, key)
+        if st.throwing {
+            return false
+        }
+        let edh = objHandle(ed)
+        if edh >= 0 {
+            if objHasInChain(st, edh, "get") || objHasInChain(st, edh, "set") {
+                return false
+            }
+            if !truthy(getMember(st, edh, "writable")) {
+                return false
+            }
+        }
+        let nd = newObject(st)
+        pushTemp(st, JSValue.Obj(nd))
+        objSet(st, nd, "value", cloneValue(v))
+        if edh < 0 {
+            objSet(st, nd, "writable", JSValue.Bool(true))
+            objSet(st, nd, "enumerable", JSValue.Bool(true))
+            objSet(st, nd, "configurable", JSValue.Bool(true))
+        }
+        popTemp(st)
+        return definePropOf(prog, st, receiver, key, nd)
+    }
+    if st.objects[rh].frozen {
+        return false
+    }
+    let ri = objOwnIndex(st, rh, key)
+    if ri >= 0 {
+        if propIsAccessor(st, rh, ri) || !st.objects[rh].props[ri].writable {
+            return false
+        }
+    } else if st.objects[rh].noExtend || st.objects[rh].sealed {
+        // the array fast path below still has to honour non-extensibility
+        if !(st.objects[rh].isArray && asArrayIndex(key) >= 0 && asArrayIndex(key) < arrLen(st, rh)) {
+            return false
+        }
+    }
+    if st.objects[rh].isArray {
+        let ai = asArrayIndex(key)
+        if ai >= 0 {
+            arrSet(st, rh, ai, cloneValue(v))
+            return true
+        }
+    }
+    setMemberDyn(prog, rh, key.clone(), cloneValue(v), st)
+    return !st.throwing
+}
+
+// [[OwnPropertyKeys]] over any value, as raw keys — symbols included, in the
+// "@@sym:" spelling they are stored under. A proxy consults its ownKeys trap
+// and with no trap forwards to its target, which may itself be a proxy.
+pub fn ownKeysOf(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string> {
+    var out: Vec<string> = Vec.new()
+    let o = objHandle(v)
+    if o >= 0 && st.objects[o].isProxy {
+        let trap = proxyTrapChecked(prog, st, o, "ownKeys")
+        if st.throwing {
+            return out
+        }
+        let target = proxyTargetOf(st, o)
+        if isUndefinedValue(trap) {
+            return ownKeysOf(prog, st, target)
+        }
+        var args: Vec<JSValue> = Vec.new()
+        args.push(cloneValue(target))
+        let res = callTrap(prog, st, o, trap, args)
+        if st.throwing {
+            return out
+        }
+        let rh = objHandle(res)
+        if rh < 0 || !st.objects[rh].isArray {
+            let _t = throwTypeErr(st, "CreateListFromArrayLike called on non-object")
+            return out
+        }
+        var i: i64 = 0
+        while i < arrLen(st, rh) {
+            let kv = arrGet(st, rh, i)
+            // a symbol IS a "@@sym:"-prefixed string here, so the only legal
+            // trap-result element type is Str
+            match cloneValue(kv) {
+                JSValue.Str(s) => {
+                    out.push(s)
+                }
+                _ => {
+                    let _t = throwTypeErr(st, "'ownKeys' on proxy: trap result must contain only string and symbol keys")
+                    return out
+                }
+            }
+            i = i + 1
+        }
+        var di: i64 = 0
+        while di < out.len() {
+            var dj = di + 1
+            while dj < out.len() {
+                if out[di] == out[dj] {
+                    let _t = throwTypeErr(st, "'ownKeys' on proxy: trap returned duplicate entries")
+                    return out
+                }
+                dj = dj + 1
+            }
+            di = di + 1
+        }
+        // the trap may not hide a key the target cannot lose, nor invent one a
+        // non-extensible target cannot gain
+        let tkeys = ownKeysOf(prog, st, target)
+        if st.throwing {
+            return out
+        }
+        let ext = isExtensibleOf(prog, st, target)
+        if st.throwing {
+            return out
+        }
+        var ki: i64 = 0
+        while ki < tkeys.len() {
+            var required = !ext
+            if !required {
+                let td = getOwnPropDescOf(prog, st, target, tkeys[ki])
+                if st.throwing {
+                    return out
+                }
+                let tdh = objHandle(td)
+                required = tdh >= 0 && !truthy(getMember(st, tdh, "configurable"))
+            }
+            if required && !vecHasStr(out, tkeys[ki]) {
+                let _t = throwTypeErr(st, "'ownKeys' on proxy: trap result did not include '" + tkeys[ki].clone() + "'")
+                return out
+            }
+            ki = ki + 1
+        }
+        if !ext {
+            var oi2: i64 = 0
+            while oi2 < out.len() {
+                if !vecHasStr(tkeys, out[oi2]) {
+                    let _t = throwTypeErr(st, "'ownKeys' on proxy: trap returned extra keys but the proxy target is non-extensible")
+                    return out
+                }
+                oi2 = oi2 + 1
+            }
+        }
+        return out
+    }
+    let h = propertyBagOf(st, v)
+    if h >= 0 {
+        if st.objects[h].isArray {
+            var e: i64 = 0
+            while e < arrLen(st, h) {
+                if !arrIsHole(st, h, e) {
+                    out.push(i64ToStr(e))
+                }
+                e = e + 1
+            }
+            out.push("length")
+        }
+        let order = enumOrder(st, h)
+        var oi: i64 = 0
+        while oi < order.len() {
+            out.push(st.objects[h].props[order[oi]].key.clone())
+            oi = oi + 1
+        }
+        // enumOrder deliberately skips symbol keys; [[OwnPropertyKeys]] lists
+        // them, after every string key
+        var pi: i64 = 0
+        while pi < st.objects[h].props.len() {
+            let k = st.objects[h].props[pi].key.clone()
+            if isSymbolStr(k) {
+                out.push(k)
+            }
+            pi = pi + 1
+        }
+    }
+    return out
 }
 
 // Enumerable own string keys of a proxy: the ownKeys trap supplies the list,
@@ -11942,78 +13149,21 @@ fn proxyTrap(st: &Interp, o: i64, name: &string): JSValue {
 // forwards to the target. Feeds for-in and Object.keys.
 fn proxyOwnEnumKeys(prog: &Prog, st: &mut Interp, o: i64): Vec<string> {
     var out: Vec<string> = Vec.new()
-    let target = cloneValue(st.objExtras[st.objects[o].extra].proxyTarget)
-    let trap = proxyTrap(st, o, "ownKeys")
-    var keyList: Vec<string> = Vec.new()
-    if isCallableIn(st, trap) {
-        var args: Vec<JSValue> = Vec.new()
-        args.push(cloneValue(target))
-        let res = callValue(prog, trap, args, cloneValue(st.objExtras[st.objects[o].extra].proxyHandler), st)
-        if st.throwing {
-            return out
-        }
-        let rh = objHandle(res)
-        if rh >= 0 && st.objects[rh].isArray {
-            var i: i64 = 0
-            while i < arrLen(st, rh) {
-                let kv = arrGet(st, rh, i)
-                keyList.push(toStr(kv))
-                i = i + 1
-            }
-        }
-    } else {
-        let th = objHandle(target)
-        if th >= 0 {
-            if st.objects[th].isArray {
-                var e: i64 = 0
-                while e < st.objects[th].elems.len() {
-                    if !arrIsHole(st, th, e) {
-                        out.push(i64ToStr(e))
-                    }
-                    e = e + 1
-                }
-            }
-            let order = enumOrder(st, th)
-            var oi: i64 = 0
-            while oi < order.len() {
-                let k = order[oi]
-                if st.objects[th].props[k].enumerable {
-                    out.push(st.objects[th].props[k].key.clone())
-                }
-                oi = oi + 1
-            }
-        }
+    let self = JSValue.Obj(o)
+    let keyList = ownKeysOf(prog, st, self)
+    if st.throwing {
         return out
     }
-    let dtrap = proxyTrap(st, o, "getOwnPropertyDescriptor")
     var i: i64 = 0
     while i < keyList.len() {
-        if isCallableIn(st, dtrap) {
-            var dargs: Vec<JSValue> = Vec.new()
-            dargs.push(cloneValue(target))
-            dargs.push(JSValue.Str(keyList[i].clone()))
-            let d = callValue(prog, dtrap, dargs, cloneValue(st.objExtras[st.objects[o].extra].proxyHandler), st)
+        if !isSymbolStr(keyList[i]) {
+            let d = getOwnPropDescOf(prog, st, self, keyList[i])
             if st.throwing {
                 return out
             }
             let dh = objHandle(d)
             if dh >= 0 && truthy(getMember(st, dh, "enumerable")) {
                 out.push(keyList[i].clone())
-            }
-        } else {
-            let th = objHandle(target)
-            if th >= 0 {
-                let pi = objOwnIndex(st, th, keyList[i])
-                if pi >= 0 {
-                    if st.objects[th].props[pi].enumerable {
-                        out.push(keyList[i].clone())
-                    }
-                } else if st.objects[th].isArray {
-                    let ai = asArrayIndex(keyList[i])
-                    if ai >= 0 && ai < arrLen(st, th) && !arrIsHole(st, th, ai) {
-                        out.push(keyList[i].clone())
-                    }
-                }
             }
         }
         i = i + 1
@@ -13597,15 +14747,52 @@ fn compactTimers(st: &mut Interp) {
 // here; the non-configurable cases the spec reports false for do not arise.
 // `delete proxy[key]`: the deleteProperty trap, else delete on the target.
 fn proxyDelete(prog: &Prog, o: i64, key: string, st: &mut Interp): JSValue {
-    let trap = proxyTrap(st, o, "deleteProperty")
-    if isCallableIn(st, trap) {
-        var dargs: Vec<JSValue> = Vec.new()
-        dargs.push(cloneValue(st.objExtras[st.objects[o].extra].proxyTarget))
-        dargs.push(JSValue.Str(key.clone()))
-        return JSValue.Bool(truthy(callValue(prog, trap, dargs, cloneValue(st.objExtras[st.objects[o].extra].proxyHandler), st)))
+    let trap = proxyTrapChecked(prog, st, o, "deleteProperty")
+    if st.throwing {
+        return JSValue.Undefined
     }
-    let th = objHandle(st.objExtras[st.objects[o].extra].proxyTarget)
+    let target = proxyTargetOf(st, o)
+    if !isUndefinedValue(trap) {
+        var dargs: Vec<JSValue> = Vec.new()
+        dargs.push(cloneValue(target))
+        dargs.push(JSValue.Str(key.clone()))
+        let r = callTrap(prog, st, o, trap, dargs)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        if !truthy(r) {
+            return JSValue.Bool(false)
+        }
+        // a property the target cannot actually lose may not be reported deleted
+        let td = getOwnPropDescOf(prog, st, target, key)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let tdh = objHandle(td)
+        if tdh >= 0 {
+            if !truthy(getMember(st, tdh, "configurable")) {
+                return throwTypeErr(st, "'deleteProperty' on proxy: trap returned truish for property '" + key.clone() + "' which is non-configurable in the proxy target")
+            }
+            if !isExtensibleOf(prog, st, target) {
+                if st.throwing {
+                    return JSValue.Undefined
+                }
+                return throwTypeErr(st, "'deleteProperty' on proxy: trap returned truish for property '" + key.clone() + "' but the proxy target is non-extensible")
+            }
+            if st.throwing {
+                return JSValue.Undefined
+            }
+        }
+        return JSValue.Bool(true)
+    }
+    let th = propertyBagOf(st, target)
     if th >= 0 {
+        if st.objects[th].isProxy {
+            return proxyDelete(prog, th, key, st)
+        }
+        if st.objects[th].frozen || st.objects[th].sealed {
+            return JSValue.Bool(false)
+        }
         return JSValue.Bool(objDeleteKey(st, th, key))
     }
     return JSValue.Bool(true)
@@ -13800,6 +14987,23 @@ fn isUndefinedValue(v: &JSValue): bool {
             return false
         }
     }
+}
+
+fn isNullValue(v: &JSValue): bool {
+    match v {
+        JSValue.Null => {
+            return true
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+// Type(v) is Object. Functions and natives are objects too, so this is
+// propertyBagOf rather than objHandle; it is -1 only for a genuine primitive.
+fn isObjectValue(st: &mut Interp, v: &JSValue): bool {
+    return propertyBagOf(st, v) >= 0
 }
 
 // SameValue: strict equality with the two exceptions the spec carves out —
@@ -14892,9 +16096,17 @@ fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSValue,
         }
         JSValue.Obj(o) => {
             if st.objects[o].isProxy {
-                let trap = proxyTrap(st, o, "apply")
-                let target = cloneValue(st.objExtras[st.objects[o].extra].proxyTarget)
-                if isCallableIn(st, trap) {
+                // a proxy over a non-callable target has no [[Call]] of its own,
+                // whatever the handler defines
+                if !st.objects[o].isFunctionLike {
+                    return throwTypeErr(st, "proxy is not a function" + currentModule(st))
+                }
+                let trap = proxyTrapChecked(prog, st, o, "apply")
+                if st.throwing {
+                    return JSValue.Undefined
+                }
+                let target = proxyTargetOf(st, o)
+                if !isUndefinedValue(trap) {
                     // apply(target, thisArg, argsArray)
                     let arr = newArray(st)
                     var i: i64 = 0
@@ -14906,7 +16118,7 @@ fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSValue,
                     targs.push(cloneValue(target))
                     targs.push(cloneValue(thisVal))
                     targs.push(JSValue.Obj(arr))
-                    return callValue(prog, trap, targs, cloneValue(st.objExtras[st.objects[o].extra].proxyHandler), st)
+                    return callTrap(prog, st, o, trap, targs)
                 }
                 return callValue(prog, target, args, thisVal, st)
             }
@@ -15887,7 +17099,9 @@ fn isCallableIn(st: &Interp, v: &JSValue): bool {
         // napiFn objects are functions implemented by a loaded addon; a proxy is
         // callable when whatever it wraps is
         if st.objects[h].isProxy {
-            return isCallableIn(st, st.objExtras[st.objects[h].extra].proxyTarget)
+            // decided at creation and recorded inline, so revoking a proxy over
+            // a function does not change `typeof` out from under a caller
+            return st.objects[h].isFunctionLike
         }
         return st.objects[h].isBound || st.objExtras[st.objects[h].extra].napiFn >= 0
     }
@@ -18243,21 +19457,47 @@ fn evalInOperator(prog: &Prog, key: string, ov: JSValue, st: &mut Interp): JSVal
     match cloneValue(ov) {
         JSValue.Obj(o) => {
             if st.objects[o].isProxy {
-                let trap = proxyTrap(st, o, "has")
-                if isCallableIn(st, trap) {
-                    var hargs: Vec<JSValue> = Vec.new()
-                    hargs.push(cloneValue(st.objExtras[st.objects[o].extra].proxyTarget))
-                    hargs.push(JSValue.Str(key.clone()))
-                    return JSValue.Bool(truthy(callValue(prog, trap, hargs, cloneValue(st.objExtras[st.objects[o].extra].proxyHandler), st)))
+                let trap = proxyTrapChecked(prog, st, o, "has")
+                if st.throwing {
+                    return JSValue.Undefined
                 }
-                var pcur = objHandle(st.objExtras[st.objects[o].extra].proxyTarget)
-                while pcur >= 0 {
-                    if objHas(st, pcur, key) {
+                let target = proxyTargetOf(st, o)
+                if !isUndefinedValue(trap) {
+                    var hargs: Vec<JSValue> = Vec.new()
+                    hargs.push(cloneValue(target))
+                    hargs.push(JSValue.Str(key.clone()))
+                    let r = callTrap(prog, st, o, trap, hargs)
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
+                    if truthy(r) {
                         return JSValue.Bool(true)
                     }
-                    pcur = protoOfHandle(st, pcur)
+                    // a property the target cannot hide may not be denied
+                    let td = getOwnPropDescOf(prog, st, target, key)
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
+                    let tdh = objHandle(td)
+                    if tdh >= 0 {
+                        if !truthy(getMember(st, tdh, "configurable")) {
+                            return throwTypeErr(st, "'has' on proxy: trap returned falsish for property '" + key.clone() + "' which exists in the proxy target as non-configurable")
+                        }
+                        let hext = isExtensibleOf(prog, st, target)
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
+                        if !hext {
+                            return throwTypeErr(st, "'has' on proxy: trap returned falsish for property '" + key.clone() + "' but the proxy target is not extensible")
+                        }
+                    }
+                    return JSValue.Bool(false)
                 }
-                return JSValue.Bool(false)
+                // no trap: the target answers, and it may be a proxy, a
+                // function or an array-shaped object whose own keys live
+                // outside the property list — so this has to re-enter here
+                // rather than walk the chain by hand
+                return evalInOperator(prog, key, target, st)
             }
             if st.objects[o].isArray {
                 let ai = asArrayIndex(key)
@@ -18270,6 +19510,12 @@ fn evalInOperator(prog: &Prog, key: string, ov: JSValue, st: &mut Interp): JSVal
             }
             var cur = o
             while cur >= 0 {
+                // a PROXY reached by walking the chain answers with its own
+                // [[HasProperty]]: `key in Object.create(proxy)` must fire the
+                // has trap, not read the proxy's slots
+                if cur != o && st.objects[cur].isProxy {
+                    return evalInOperator(prog, key, JSValue.Obj(cur), st)
+                }
                 if objHas(st, cur, key) {
                     return JSValue.Bool(true)
                 }
