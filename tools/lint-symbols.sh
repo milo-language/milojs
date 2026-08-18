@@ -84,6 +84,31 @@ for prefix in RE T NATIVE; do
     done
 done
 
+# The duplicate check above compares DECLARED values, which misses the range a
+# base constant reserves: NATIVE_TA_BASE is 160 and the typed-array kinds occupy
+# 160..160+TA_MAX, so 161 reads as free in the list of `let NATIVE_*` lines while
+# actually being Int8Array. That has now bitten twice — once when the BigInt
+# kinds pushed the block onto NATIVE_HTTP_FETCH and `new BigInt64Array()`
+# performed an HTTP fetch, and once when three new natives landed on 161..163
+# and `new Int8Array(2)` answered the number 2. Both were silent.
+ta_base=$(grep -hoE "^let NATIVE_TA_BASE: i64 = [0-9]+" src/*.milo | grep -oE "[0-9]+$")
+ta_max=$(grep -hoE "^pub let TA_MAX: i64 = [0-9]+" src/*.milo | grep -oE "[0-9]+$")
+if [ -n "$ta_base" ] && [ -n "$ta_max" ]; then
+    ta_end=$((ta_base + ta_max))
+    while read -r line; do
+        name=$(echo "$line" | sed -E 's/^let (NATIVE_[A-Z0-9_]*).*/\1/')
+        value=$(echo "$line" | sed -E 's/.*= (-?[0-9]+)$/\1/')
+        [ "$name" = "NATIVE_TA_BASE" ] && continue
+        if [ "$value" -ge "$ta_base" ] && [ "$value" -le "$ta_end" ]; then
+            status=1
+            echo "$name = $value falls inside the typed-array id block ($ta_base..$ta_end)"
+            echo "    that id IS a typed-array constructor; use 200 or above"
+        fi
+    done <<EOF
+$(grep -hoE "^let NATIVE_[A-Z0-9_]*: i[0-9]+ = -?[0-9]+" src/*.milo)
+EOF
+fi
+
 if [ "$status" -eq 0 ] && [ "$quiet" -eq 0 ]; then
     echo "lint-symbols: no duplicate or std-shadowing definitions, no colliding constants"
 fi

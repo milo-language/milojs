@@ -17,7 +17,7 @@
 // is a different thing from test262: that measures the ENGINE, the language
 // itself. A high score on one says nothing about the other.
 import { readdirSync, readFileSync, writeFileSync, existsSync, statSync } from "fs";
-import { execFileSync } from "child_process";
+import { execFileSync, execFile } from "child_process";
 import { join, resolve, isAbsolute } from "path";
 import { homedir } from "node:os";
 
@@ -48,6 +48,11 @@ const verbose = argv.includes("-v");
 const sampleN = arg("--sample") ? parseInt(arg("--sample")!) : null;
 const subDir = arg("--dir") ?? "";
 const timeoutMs = arg("--timeout") ? parseInt(arg("--timeout")!) : 10_000;
+// Each case is a separate process that mostly waits, and ~7% of them hang until
+// the timeout kills them, so a serial run spends most of its wall clock asleep:
+// 400 cases took about eight minutes, four and a half of which were the hangs.
+// Running them concurrently makes the hangs overlap instead of queue.
+const jobs = arg("--jobs") ? parseInt(arg("--jobs")!) : 8;
 // A --dir run is a DIAGNOSTIC, not the published number: the same rule the
 // test262 sweep follows, and for the same reason. Only a whole-suite run may
 // write the committed report.
@@ -92,43 +97,53 @@ const areaOf = (f: string) => {
 };
 
 type Row = { file: string; ok: boolean; why: string };
-const rows: Row[] = [];
 let done = 0;
 
-for (const f of selected) {
-  const full = join(PARALLEL, f);
-  let ok = false;
-  let why = "";
-  try {
-    execFileSync(RUNTIME, [full], {
+// Node's harness asserts that no unexpected globals exist, which fails EVERY
+// test on any runtime that adds its own (bun exposes Bun, HTMLRewriter and ~40
+// more). That is a property of the runtime's global surface, not of the
+// behaviour each test checks, and leaving it on scored bun at 7.5% while milojs,
+// which happens to add fewer globals, slipped through. Node supports switching
+// it off; without that the comparison measures the wrong thing.
+const CHILD_ENV = { ...process.env, NODE_TEST_DIR: NODE_TESTS, NODE_TEST_KNOWN_GLOBALS: "0" };
+
+function runOne(f: string): Promise<Row> {
+  return new Promise((resolve) => {
+    execFile(RUNTIME, [join(PARALLEL, f)], {
       cwd: PARALLEL,
       encoding: "utf-8",
       timeout: timeoutMs,
-      stdio: ["ignore", "pipe", "pipe"],
-      // Node's harness asserts that no unexpected globals exist, which fails
-      // EVERY test on any runtime that adds its own (bun exposes Bun,
-      // HTMLRewriter and ~40 more). That is a property of the runtime's global
-      // surface, not of the behaviour each test checks, and leaving it on scored
-      // bun at 7.5% while milojs, which happens to add fewer globals, slipped
-      // through. Node supports switching it off; without that the comparison
-      // measures the wrong thing.
-      env: { ...process.env, NODE_TEST_DIR: NODE_TESTS, NODE_TEST_KNOWN_GLOBALS: "0" },
+      env: CHILD_ENV,
+    }, (e: any, _stdout, stderr) => {
+      done++;
+      if (done % 100 === 0) process.stdout.write(`  ${done}/${selected.length}`);
+      if (!e) { resolve({ file: f, ok: true, why: "" }); return; }
+      // A timeout is its own category: a hang is not the same failure as a
+      // throw, and lumping them together hides an event-loop bug behind an API
+      // gap.
+      if (e.signal === "SIGTERM" || e.killed) {
+        resolve({ file: f, ok: false, why: "timeout" });
+        return;
+      }
+      const err = String(stderr ?? e.message ?? "").trim();
+      const why = err.split("\n").filter((l) => l.trim().length > 0).slice(0, 1).join(" ").slice(0, 200) || `exit ${e.code}`;
+      resolve({ file: f, ok: false, why });
     });
-    ok = true;
-  } catch (e: any) {
-    // A timeout is its own category: a hang is not the same failure as a throw,
-    // and lumping them together hides an event-loop bug behind an API gap.
-    if (e?.signal === "SIGTERM" || e?.killed) {
-      why = "timeout";
-    } else {
-      const err = String(e?.stderr ?? e?.message ?? "").trim();
-      why = err.split("\n").filter((l) => l.trim().length > 0).slice(0, 1).join(" ").slice(0, 200) || `exit ${e?.status}`;
-    }
-  }
-  rows.push({ file: f, ok, why });
-  done++;
-  if (done % 100 === 0) process.stdout.write(`  ${done}/${selected.length}`);
+  });
 }
+
+// A fixed pool rather than one promise per case: 3979 concurrent processes would
+// thrash, and the servers these tests start would collide on ports.
+const rows: Row[] = new Array(selected.length);
+let next = 0;
+async function worker() {
+  while (true) {
+    const i = next++;
+    if (i >= selected.length) return;
+    rows[i] = await runOne(selected[i]);
+  }
+}
+await Promise.all(Array.from({ length: Math.max(1, jobs) }, () => worker()));
 process.stdout.write("\n");
 
 const pass = rows.filter((r) => r.ok).length;

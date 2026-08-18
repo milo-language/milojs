@@ -215,6 +215,15 @@ fn builtinSource(name: &string): string {
     if name == "diagnostics_channel" {
         return @embedFile("../lib/diagnostics_channel.js")
     }
+    if name == "vm" {
+        return @embedFile("../lib/vm.js")
+    }
+    if name == "dns" {
+        return @embedFile("../lib/dns.js")
+    }
+    if name == "v8" {
+        return @embedFile("../lib/v8.js")
+    }
     if name == "tty" {
         return @embedFile("../lib/tty.js")
     }

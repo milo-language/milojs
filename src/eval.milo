@@ -29,6 +29,9 @@ from "./modules" import {
 from "std/os" import {
     exit
 }
+from "std/process" import {
+    Child
+}
 from "std/env" import {
     Env
 }
@@ -4334,6 +4337,17 @@ let NATIVE_TCP_ACCEPT: i64 = 69
 let NATIVE_TCP_RECV: i64 = 70
 let NATIVE_TCP_SEND: i64 = 71
 let NATIVE_TCP_CLOSE: i64 = 72
+// The client half of the TCP surface. Only listen/accept existed, so a module
+// could serve connections but never make one, which is why net.connect could not
+// be written at all.
+let NATIVE_TCP_CONNECT: i64 = 200
+// The port a listener actually bound. Binding 0 asks the OS to choose, and
+// without a way to read the result every server had to hardcode a port and hope
+// it was free — which is exactly what node's tests do NOT do.
+let NATIVE_TCP_PORT: i64 = 201
+// Run a program to completion and hand back its output. The async spawn family
+// is built on top of this in JS; nothing could spawn at all before.
+let NATIVE_SPAWN_SYNC: i64 = 202
 let NATIVE_HTTP_REGISTER: i64 = 73
 let NATIVE_HTTP_UNREGISTER: i64 = 74
 let NATIVE_WRITE_FILE: i64 = 75
@@ -4374,7 +4388,12 @@ let NATIVE_ARRAYBUFFER: i64 = 78
 // NATIVE_HTTP_FETCH (88) and NATIVE_MATH_EXP (89). A new BigInt64Array
 // therefore constructed a fetch, which returned an error STRING rather than a
 // view — silent, and exactly as confusing as it sounds. 160 is above every id
-// in use (highest is 153).
+// in use at the time (highest was 153).
+//
+// It happened AGAIN with 161/162/163, which look free in the list of `let
+// NATIVE_*` lines but are Int8Array/Uint8Array/Int16Array here: `new Int8Array(2)`
+// answered the number 2. Anything added now goes at 200 and up, above the whole
+// block, and tools/lint-symbols.sh knows this range is reserved.
 let NATIVE_TA_BASE: i64 = 160
 // __httpFetch(method, url, headersJson, body): synchronous outbound HTTP/HTTPS.
 // Above the TA block (79..87). node-fetch is built on this.
@@ -5389,6 +5408,104 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
         match st.listeners[idx].acceptNb() {
+            Result.Ok(conn) => {
+                st.conns.push(conn)
+                st.connOpen.push(true)
+                return JSValue.Number((st.conns.len() - 1) as f64)
+            }
+            Result.Err(_e) => {
+                return JSValue.Number(0.0 - 1.0)
+            }
+        }
+    }
+    if id == NATIVE_SPAWN_SYNC {
+        var program = ""
+        if argVals.len() > 0 {
+            program = toStr(argVals[0])
+        }
+        var sargs: Vec<string> = Vec.new()
+        if argVals.len() > 1 {
+            let ah = objHandle(argVals[1])
+            if ah >= 0 && st.objects[ah].isArray {
+                var ai: i64 = 0
+                while ai < arrLen(st, ah) {
+                    sargs.push(toStr(arrGet(st, ah, ai)))
+                    ai = ai + 1
+                }
+            }
+        }
+        // stderr is merged into stdout: keeping them apart needs two pipes and a
+        // select loop, and every caller here either wants the combined text or
+        // only reads status. Recorded rather than hidden — the JS side reports
+        // the same text for both streams and says so.
+        let res = Child.spawn(program, sargs, true)
+        let out = newObject(st)
+        pushTemp(st, JSValue.Obj(out))
+        match res {
+            Result.Ok(child) => {
+                var text = ""
+                var buf: [u8; 4096] = [0; 4096]
+                var reading = true
+                while reading {
+                    // The raw-buffer read is the only shape Child exposes for
+                    // streaming, and taking a pointer to a stack array is what
+                    // it wants; the buffer outlives the call.
+                    var n: i64 = 0
+                    unsafe {
+                        n = child.readStdout(buf as *u8, 4096)
+                    }
+                    if n <= 0 {
+                        reading = false
+                    } else {
+                        var bi: i64 = 0
+                        while bi < n {
+                            text.push(buf[bi])
+                            bi = bi + 1
+                        }
+                    }
+                }
+                var code: i64 = 0
+                match child.wait() {
+                    Result.Ok(c) => {
+                        code = c as i64
+                    }
+                    Result.Err(_w) => {
+                        code = 0 - 1
+                    }
+                }
+                objSet(st, out, "status", JSValue.Number(code as f64))
+                objSet(st, out, "stdout", JSValue.Str(text))
+                objSet(st, out, "error", JSValue.Bool(false))
+            }
+            Result.Err(_e) => {
+                objSet(st, out, "status", JSValue.Number(0.0 - 1.0))
+                objSet(st, out, "stdout", JSValue.Str(""))
+                objSet(st, out, "error", JSValue.Bool(true))
+            }
+        }
+        popTemp(st)
+        return JSValue.Obj(out)
+    }
+    if id == NATIVE_TCP_PORT {
+        var idx: i64 = 0
+        if argVals.len() > 0 {
+            idx = numToIndex(toNum(argVals[0]))
+        }
+        if idx < 0 || idx >= st.listeners.len() {
+            return JSValue.Number(0.0 - 1.0)
+        }
+        return JSValue.Number(st.listeners[idx].port() as f64)
+    }
+    if id == NATIVE_TCP_CONNECT {
+        var host = "127.0.0.1"
+        if argVals.len() > 0 {
+            host = toStr(argVals[0])
+        }
+        var port: i64 = 0
+        if argVals.len() > 1 {
+            port = numToIndex(toNum(argVals[1]))
+        }
+        match TcpStream.connect(parseDottedQuad(host), port as u16) {
             Result.Ok(conn) => {
                 st.conns.push(conn)
                 st.connOpen.push(true)
@@ -9419,6 +9536,9 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "__tcpRecv", JSValue.Native(NATIVE_TCP_RECV))
     scopeDefine(st, 0, "__tcpSend", JSValue.Native(NATIVE_TCP_SEND))
     scopeDefine(st, 0, "__tcpClose", JSValue.Native(NATIVE_TCP_CLOSE))
+    scopeDefine(st, 0, "__tcpConnect", JSValue.Native(NATIVE_TCP_CONNECT))
+    scopeDefine(st, 0, "__tcpPort", JSValue.Native(NATIVE_TCP_PORT))
+    scopeDefine(st, 0, "__spawnSync", JSValue.Native(NATIVE_SPAWN_SYNC))
     scopeDefine(st, 0, "__httpFetch", JSValue.Native(NATIVE_HTTP_FETCH))
     scopeDefine(st, 0, "__sqliteOpen", JSValue.Native(NATIVE_SQLITE_OPEN))
     scopeDefine(st, 0, "__sqliteClose", JSValue.Native(NATIVE_SQLITE_CLOSE))
@@ -12991,6 +13111,38 @@ fn taIntegrityBlocked(st: &Interp, v: &JSValue): bool {
         return false
     }
     return taCurrentLen(st, h) > 0
+}
+
+// A dotted-quad host as the packed u32 TcpStream.connect wants. There is no
+// resolver here, so a name that is not four numbers falls back to loopback,
+// which is what "localhost" means and what every test that connects to a server
+// it just started is asking for.
+fn parseDottedQuad(host: &string): u32 {
+    var parts: Vec<i64> = Vec.new()
+    var cur: i64 = 0
+    var digits: i64 = 0
+    var i: i64 = 0
+    while i < host.len() {
+        let c = host[i]
+        if c >= '0' && c <= '9' {
+            cur = cur * 10 + (c as i64 - 48)
+            digits = digits + 1
+        } else if c == '.' {
+            parts.push(cur)
+            cur = 0
+            digits = 0
+        } else {
+            return ip4(127 as u8, 0 as u8, 0 as u8, 1 as u8)
+        }
+        i = i + 1
+    }
+    if digits > 0 {
+        parts.push(cur)
+    }
+    if parts.len() != 4 {
+        return ip4(127 as u8, 0 as u8, 0 as u8, 1 as u8)
+    }
+    return ip4(parts[0] as u8, parts[1] as u8, parts[2] as u8, parts[3] as u8)
 }
 
 fn adoptBuiltinSlots(st: &mut Interp, dst: i64, src: i64) {
