@@ -166,6 +166,9 @@ fn builtinSource(name: &string): string {
     }
     // milojs's own shared validators. Not a node module name, so it cannot
     // shadow one; see the _http_* convention immediately below.
+    if name == "test" || name == "node:test" || name == "test/reporters" {
+        return @embedFile("../lib/test.js")
+    }
     if name == "domain" {
         return @embedFile("../lib/domain.js")
     }
