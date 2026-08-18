@@ -611,10 +611,11 @@ pub fn scopeAssign(st: &mut Interp, scope: i64, name: &string, value: JSValue)
 
 Assignment walks the chain; if unbound, creates a global (sloppy JS).
 `name` is borrowed, not owned: this runs on every assignment, and taking it by
-value made each caller clone the identifier string (a malloc/free pair per
-`x = ...`). Writing only the `value` field for the same reason — replacing the
-whole Binding dropped the old name string and moved a new one in, when the
-name is by definition already correct.
+value made each caller clone the identifier string, a malloc/free pair per
+`x = ...`. Only the `value` field is written for the same reason: replacing
+the whole Binding dropped the old name string and moved an identical one back
+in, when a match on `name` already proves the stored name is correct.
+Worth ~5-10% on every bench in bench/ (measured against 5b377bd).
 
 ### `scopeDefine`
 

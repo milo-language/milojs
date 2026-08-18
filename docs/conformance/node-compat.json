@@ -6,8 +6,8 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "2974659b45d64f5dcc3c6ff2b78131609eb113e2",
-    "dirty": true
+    "revision": "5b377bdc83d3cd76b33656f999030826804141da",
+    "dirty": false
   },
   "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
   "selection": {
@@ -18,8 +18,8 @@
     "excludedNodeInternal": 606
   },
   "totals": {
-    "pass": 1542,
-    "fail": 1831,
+    "pass": 1513,
+    "fail": 1860,
     "total": 3373
   },
   "areas": [
@@ -31,32 +31,32 @@
     },
     {
       "area": "fs",
-      "pass": 75,
-      "fail": 152,
+      "pass": 62,
+      "fail": 165,
       "total": 227
     },
     {
       "area": "stream",
-      "pass": 48,
-      "fail": 117,
+      "pass": 49,
+      "fail": 116,
       "total": 165
     },
     {
       "area": "net",
-      "pass": 30,
-      "fail": 106,
+      "pass": 27,
+      "fail": 109,
       "total": 136
     },
     {
       "area": "worker",
-      "pass": 23,
-      "fail": 102,
+      "pass": 21,
+      "fail": 104,
       "total": 125
     },
     {
       "area": "repl",
-      "pass": 25,
-      "fail": 65,
+      "pass": 23,
+      "fail": 67,
       "total": 90
     },
     {
@@ -67,14 +67,14 @@
     },
     {
       "area": "process",
-      "pass": 27,
-      "fail": 54,
+      "pass": 23,
+      "fail": 58,
       "total": 81
     },
     {
       "area": "zlib",
-      "pass": 7,
-      "fail": 52,
+      "pass": 5,
+      "fail": 54,
       "total": 59
     },
     {
@@ -102,16 +102,16 @@
       "total": 100
     },
     {
+      "area": "buffer",
+      "pass": 19,
+      "fail": 38,
+      "total": 57
+    },
+    {
       "area": "cluster",
       "pass": 43,
       "fail": 38,
       "total": 81
-    },
-    {
-      "area": "buffer",
-      "pass": 20,
-      "fail": 37,
-      "total": 57
     },
     {
       "area": "whatwg",
@@ -120,28 +120,28 @@
       "total": 43
     },
     {
+      "area": "diagnostics",
+      "pass": 33,
+      "fail": 31,
+      "total": 64
+    },
+    {
       "area": "timers",
       "pass": 17,
       "fail": 31,
       "total": 48
     },
     {
-      "area": "diagnostics",
-      "pass": 34,
-      "fail": 30,
-      "total": 64
-    },
-    {
-      "area": "async",
-      "pass": 20,
-      "fail": 25,
-      "total": 45
-    },
-    {
       "area": "snapshot",
       "pass": 2,
       "fail": 25,
       "total": 27
+    },
+    {
+      "area": "async",
+      "pass": 22,
+      "fail": 23,
+      "total": 45
     },
     {
       "area": "module",
@@ -157,27 +157,33 @@
     },
     {
       "area": "compile",
-      "pass": 4,
-      "fail": 18,
+      "pass": 3,
+      "fail": 19,
       "total": 22
     },
     {
       "area": "dns",
-      "pass": 1,
-      "fail": 18,
+      "pass": 0,
+      "fail": 19,
       "total": 19
     },
     {
-      "area": "path",
-      "pass": 1,
+      "area": "require",
+      "pass": 5,
       "fail": 16,
-      "total": 17
+      "total": 21
     },
     {
       "area": "stream2",
       "pass": 10,
       "fail": 16,
       "total": 26
+    },
+    {
+      "area": "path",
+      "pass": 2,
+      "fail": 15,
+      "total": 17
     },
     {
       "area": "readline",
@@ -204,22 +210,16 @@
       "total": 17
     },
     {
-      "area": "assert",
-      "pass": 0,
-      "fail": 13,
-      "total": 13
-    },
-    {
-      "area": "require",
-      "pass": 8,
-      "fail": 13,
-      "total": 21
-    },
-    {
       "area": "url",
-      "pass": 2,
-      "fail": 12,
+      "pass": 1,
+      "fail": 13,
       "total": 14
+    },
+    {
+      "area": "assert",
+      "pass": 1,
+      "fail": 12,
+      "total": 13
     },
     {
       "area": "v8",
@@ -258,16 +258,16 @@
       "total": 11
     },
     {
-      "area": "file",
-      "pass": 2,
-      "fail": 6,
-      "total": 8
-    },
-    {
       "area": "tls",
       "pass": 182,
       "fail": 6,
       "total": 188
+    },
+    {
+      "area": "file",
+      "pass": 3,
+      "fail": 5,
+      "total": 8
     },
     {
       "area": "global",
@@ -342,7 +342,19 @@
       "total": 5
     },
     {
+      "area": "socket",
+      "pass": 2,
+      "fail": 3,
+      "total": 5
+    },
+    {
       "area": "string",
+      "pass": 0,
+      "fail": 3,
+      "total": 3
+    },
+    {
+      "area": "urlpattern",
       "pass": 0,
       "fail": 3,
       "total": 3
@@ -420,12 +432,6 @@
       "total": 4
     },
     {
-      "area": "socket",
-      "pass": 3,
-      "fail": 2,
-      "total": 5
-    },
-    {
       "area": "stream3",
       "pass": 2,
       "fail": 2,
@@ -448,12 +454,6 @@
       "pass": 0,
       "fail": 2,
       "total": 2
-    },
-    {
-      "area": "urlpattern",
-      "pass": 1,
-      "fail": 2,
-      "total": 3
     },
     {
       "area": "abort",
@@ -558,12 +558,6 @@
       "total": 1
     },
     {
-      "area": "directory",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
       "area": "disable",
       "pass": 0,
       "fail": 1,
@@ -586,6 +580,12 @@
       "pass": 1,
       "fail": 1,
       "total": 2
+    },
+    {
+      "area": "eventemitter",
+      "pass": 0,
+      "fail": 1,
+      "total": 1
     },
     {
       "area": "experimental",
@@ -786,12 +786,6 @@
       "total": 1
     },
     {
-      "area": "utf8",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
       "area": "vfs",
       "pass": 0,
       "fail": 1,
@@ -870,6 +864,12 @@
       "total": 2
     },
     {
+      "area": "directory",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
       "area": "double",
       "pass": 2,
       "fail": 0,
@@ -904,12 +904,6 @@
       "pass": 2,
       "fail": 0,
       "total": 2
-    },
-    {
-      "area": "eventemitter",
-      "pass": 1,
-      "fail": 0,
-      "total": 1
     },
     {
       "area": "eventsource",
@@ -1096,6 +1090,12 @@
       "pass": 2,
       "fail": 0,
       "total": 2
+    },
+    {
+      "area": "utf8",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
     },
     {
       "area": "warn",
