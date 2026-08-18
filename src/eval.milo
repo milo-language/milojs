@@ -21589,19 +21589,39 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                             e = e + 1
                         }
                     }
-                    // own properties, then inherited ones (JS enumerates the chain)
+                    // Own properties, then inherited ones (JS enumerates the chain).
+                    // `seen` is what makes the chain walk correct, in two ways that
+                    // both showed up as wrong output:
+                    //   - a name already emitted must not repeat, so an own property
+                    //     shadowing an enumerable one on the prototype yields ONE key
+                    //     (`{p:1}` under `Object.create({p:1})` gave "p,p");
+                    //   - a NON-enumerable own property still shadows an enumerable
+                    //     one of the same name further up, so it has to be recorded
+                    //     even though it is never emitted (the QuickJS case gave
+                    //     "1,y,x" where the inherited enumerable `x` must stay hidden
+                    //     behind a non-enumerable own `x`).
+                    // Only names are tracked, not dense array indices: nothing on
+                    // Array.prototype is an enumerable index, and seeding every index
+                    // would make `for (i in bigArray)` quadratic.
+                    var seen: Vec<string> = Vec.new()
                     var cur = o
+                    var level: i64 = 0
                     while cur >= 0 {
                         let order = enumOrder(st, cur)
                         var oi: i64 = 0
                         while oi < order.len() {
                             let k = order[oi]
-                            if st.objects[cur].props[k].enumerable {
-                                keys.push(st.objects[cur].props[k].key.clone())
+                            let nm = st.objects[cur].props[k].key.clone()
+                            if level == 0 || !nameInList(seen, nm) {
+                                seen.push(nm.clone())
+                                if st.objects[cur].props[k].enumerable {
+                                    keys.push(nm)
+                                }
                             }
                             oi = oi + 1
                         }
                         cur = st.objects[cur].proto
+                        level = level + 1
                     }
                 }
                 _ => {

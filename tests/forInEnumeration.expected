@@ -1,0 +1,8 @@
+chain-order: 1,x,y,4
+nonenum-shadow: 1,y
+own-shadows-proto: p
+mixed: r,s,q
+array: 0,1,extra
+nullproto: 
+all-nonenum:  0
+deep-shadow: 

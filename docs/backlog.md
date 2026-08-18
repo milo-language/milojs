@@ -43,6 +43,28 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## for-in enumerated shadowed and duplicate names
+
+Two rules of the prototype-chain walk were missing, both visible as wrong output:
+
+- A name already emitted must not repeat. `Object.create({p:1})` with an own
+  `p` enumerated `p,p`.
+- A NON-enumerable own property still SHADOWS an enumerable one of the same name
+  further up the chain, so it has to be recorded even though it is never itself
+  emitted. This is the QuickJS case: an own non-enumerable `x` over an inherited
+  enumerable `x` enumerated `1,y,x` where node gives `1,y`.
+
+Both come from the same omission, a set of names seen so far, now threaded
+through the walk. Dense array indices are deliberately NOT seeded into it:
+nothing on `Array.prototype` is an enumerable index, and seeding every index
+would make `for (i in bigArray)` quadratic.
+
+`tests/forInEnumeration.js` pins eight shapes against node, including chain
+ordering, an all-non-enumerable object, and a null prototype.
+
+**`test_loop.js` now passes in full** (exit 0, no output). It began this session
+failing to parse at line 121.
+
 ## break and continue were swallowed by `finally` (HANG)
 
 `execTry` captured what try/catch left pending so it could re-raise it after the
