@@ -280,6 +280,18 @@ pub fn setupGlobals(st: &mut Interp)
 
 _Undocumented._
 
+### `timeClip`
+
+```milo
+pub fn timeClip(t: f64): f64
+```
+
+The spec's TimeClip. A time value outside +/-8.64e15 ms (about 273790 years
+either side of the epoch) is not representable as a Date and becomes NaN, and
+so does a non-finite one. milojs had no clamp anywhere, so `new Date(9e15)`,
+`Date.UTC(275760, 8, 14)` and `d.setFullYear(400000)` all produced a Date that
+answers out-of-range milliseconds instead of Invalid Date.
+
 ### `toNumArg`
 
 ```milo

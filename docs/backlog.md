@@ -43,6 +43,38 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## Date had no TimeClip, and could not read or write an extended year
+
+Three bugs at the ends of the representable range, found from one QuickJS
+assertion.
+
+**No TimeClip anywhere.** A time value outside +/-8.64e15 ms is not representable
+and becomes NaN. milojs clamped nothing, so `new Date(9e15)`,
+`Date.UTC(275760, 8, 14)` and `d.setFullYear(400000)` all produced a Date that
+answers impossible milliseconds instead of Invalid Date. `timeClip` now guards the
+four paths that write `dateMs`, and also truncates a fractional millisecond toward
+zero the way ToIntegerOrInfinity does.
+
+**Extended years could not be parsed.** The ISO year is either four digits or a
+SIGN plus six (`+275760`, `-271820`), which is how the spec reaches those ends.
+`parseIsoDate` assumed four digits and read every field at an absolute offset, so
+every extended-year string was NaN. It now computes the year first and works from
+an offset. `-000000` is rejected, as the spec requires.
+
+**Extended years could not be printed.** `toISOString` wrote the year with
+`i64ToStr`, so a NEGATIVE year got its sign by accident but a large positive one
+came out bare: `275760-09-13T00:00:00.000Z`, which parses back as NaN. Found by
+the round-trip case in the fixture, not by the original test.
+
+`tests/dateRangeAndIso.js` covers all three against node.
+
+**Not fixed, and larger than it looks: milojs has no local timezone.**
+`getTimezoneOffset()` is always 0, so local time is UTC engine-wide. One visible
+consequence is that a date-TIME string with no offset (`2020-05-17T10:20:30`) is
+local time per spec and milojs reads it as UTC. The fixture uses only forms
+carrying an explicit `Z`, because anything else would compare against the machine
+node runs on.
+
 ## Comma operator in a computed key and a for-in head, and `using` in a for init
 
 The last of the test262 parse-failure buckets, and all four causes are the same

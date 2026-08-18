@@ -1278,44 +1278,69 @@ pub fn pad3(n: i64): string {
 // Parse the ISO-8601 forms JS accepts from a string: YYYY-MM-DD with an optional
 // THH:MM:SS(.mmm)(Z). Anything else is NaN, matching Invalid Date.
 pub fn parseIsoDate(s: &string): f64 {
-    // The date-only ISO forms are YYYY, YYYY-MM and YYYY-MM-DD, all read as UTC.
-    // Requiring ten characters rejected the first two, so Date.parse("2000") and
-    // Date.parse("2000-01") were NaN where node gives the start of that year and
-    // month.
-    if s.len() == 4 {
-        let y4 = isoNum(s, 0, 4)
-        if y4 < 0 {
+    // Year field: either four digits, or the EXTENDED form of a sign followed by
+    // six (`+275760`, `-271820`), which is how the spec reaches the ends of the
+    // representable range. Everything after it sits at a fixed offset from the end
+    // of the year, so the rest of the parse works off `off` rather than absolute
+    // positions; assuming four digits is why every extended-year string was NaN.
+    var year: i64 = 0
+    var off: i64 = 4
+    if s.len() > 0 && (s[0] == '+' || s[0] == '-') {
+        if s.len() < 7 {
             return jsNan()
         }
-        return (daysFromCivil(y4, 1, 1) * 86400000) as f64
-    }
-    if s.len() == 7 && s[4] == '-' {
-        let y7 = isoNum(s, 0, 4)
-        let m7 = isoNum(s, 5, 7)
-        if y7 < 0 || m7 < 1 || m7 > 12 {
+        let mag = isoNum(s, 1, 7)
+        if mag < 0 {
             return jsNan()
         }
-        return (daysFromCivil(y7, m7, 1) * 86400000) as f64
+        // "-000000" is explicitly not a valid year: negative zero has no meaning
+        // here and the spec rejects it rather than reading it as year 0.
+        if s[0] == '-' && mag == 0 {
+            return jsNan()
+        }
+        year = mag
+        if s[0] == '-' {
+            year = -mag
+        }
+        off = 7
+    } else {
+        if s.len() < 4 {
+            return jsNan()
+        }
+        year = isoNum(s, 0, 4)
+        if year < 0 {
+            return jsNan()
+        }
     }
-    if s.len() < 10 {
+    // date-only forms: YYYY, YYYY-MM, YYYY-MM-DD, all read as UTC
+    if s.len() == off {
+        return (daysFromCivil(year, 1, 1) * 86400000) as f64
+    }
+    if s.len() == off + 3 && s[off] == '-' {
+        let m7 = isoNum(s, off + 1, off + 3)
+        if m7 < 1 || m7 > 12 {
+            return jsNan()
+        }
+        return (daysFromCivil(year, m7, 1) * 86400000) as f64
+    }
+    if s.len() < off + 6 {
         return jsNan()
     }
-    let year = isoNum(s, 0, 4)
-    let month = isoNum(s, 5, 7)
-    let day = isoNum(s, 8, 10)
-    if year < 0 || month < 1 || month > 12 || day < 1 || day > 31 {
+    let month = isoNum(s, off + 1, off + 3)
+    let day = isoNum(s, off + 4, off + 6)
+    if month < 1 || month > 12 || day < 1 || day > 31 {
         return jsNan()
     }
     var hour: i64 = 0
     var minute: i64 = 0
     var second: i64 = 0
     var millis: i64 = 0
-    if s.len() >= 19 {
-        hour = isoNum(s, 11, 13)
-        minute = isoNum(s, 14, 16)
-        second = isoNum(s, 17, 19)
-        if s.len() >= 23 && s[19] == '.' {
-            millis = isoNum(s, 20, 23)
+    if s.len() >= off + 15 {
+        hour = isoNum(s, off + 7, off + 9)
+        minute = isoNum(s, off + 10, off + 12)
+        second = isoNum(s, off + 13, off + 15)
+        if s.len() >= off + 19 && s[off + 15] == '.' {
+            millis = isoNum(s, off + 16, off + 19)
         }
     }
     if hour < 0 || minute < 0 || second < 0 {
@@ -1324,7 +1349,6 @@ pub fn parseIsoDate(s: &string): f64 {
     let days = daysFromCivil(year, month, day)
     return ((days * 86400 + hour * 3600 + minute * 60 + second) * 1000 + millis) as f64
 }
-
 fn isoNum(s: &string, from: i64, to: i64): i64 {
     if to > s.len() {
         return -1

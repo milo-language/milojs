@@ -6762,7 +6762,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         let days = daysFromCivil(y, m + 1, day)
         let total = (days * 86400 + hour * 3600 + minute * 60 + second) * 1000 + millis
-        return JSValue.Number(total as f64)
+        return JSValue.Number(timeClip(total as f64))
     }
     if id == Builtin.Date {
         let o = newObject(st)
@@ -6778,10 +6778,10 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             // new Date(ms) or new Date(isoString); anything else is Invalid Date
             match cloneValue(argVals[0]) {
                 JSValue.Str(sv) => {
-                    st.objExtras[st.objects[o].extra].dateMs = parseIsoDate(sv)
+                    st.objExtras[st.objects[o].extra].dateMs = timeClip(parseIsoDate(sv))
                 }
                 _ => {
-                    st.objExtras[st.objects[o].extra].dateMs = toNum(argVals[0])
+                    st.objExtras[st.objects[o].extra].dateMs = timeClip(toNum(argVals[0]))
                 }
             }
         }
@@ -18160,7 +18160,32 @@ fn isoFromMillis(ms: f64): string {
     if frac < 0 {
         frac = frac + 1000
     }
-    return i64ToStr(dt.year as i64) + "-" + pad2(dt.month as i64) + "-" + pad2(dt.day as i64) + "T" + pad2(dt.hour as i64) + ":" + pad2(dt.minute as i64) + ":" + pad2(dt.second as i64) + "." + pad3(frac) + "Z"
+    // A year outside 0..9999 is written in the EXTENDED form, a sign followed by
+    // six digits, which is what makes the string round-trip through Date.parse.
+    // A negative year got its sign from i64ToStr by accident, but a large positive
+    // one came out bare (`275760-09-13...`), which parses back as NaN.
+    return isoYear(dt.year as i64) + "-" + pad2(dt.month as i64) + "-" + pad2(dt.day as i64) + "T" + pad2(dt.hour as i64) + ":" + pad2(dt.minute as i64) + ":" + pad2(dt.second as i64) + "." + pad3(frac) + "Z"
+}
+
+fn isoYear(y: i64): string {
+    if y >= 0 && y <= 9999 {
+        var y4 = i64ToStr(y)
+        while y4.len() < 4 {
+            y4 = "0" + y4
+        }
+        return y4
+    }
+    var mag = y
+    var sign = "+"
+    if y < 0 {
+        mag = -y
+        sign = "-"
+    }
+    var out = i64ToStr(mag)
+    while out.len() < 6 {
+        out = "0" + out
+    }
+    return sign + out
 }
 
 fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSValue {
@@ -18171,7 +18196,7 @@ fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSVa
     if name == "setTime" {
         var v = 0.0
         if args.len() > 0 {
-            v = toNum(args[0])
+            v = timeClip(toNum(args[0]))
         }
         st.objExtras[st.objects[o].extra].dateMs = v
         return JSValue.Number(v)
@@ -18258,7 +18283,7 @@ fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSVa
             }
         }
         let days = daysFromCivil(year, month, day)
-        let newMs = ((days * 86400 + hour * 3600 + minute * 60 + second) * 1000 + millis) as f64
+        let newMs = timeClip(((days * 86400 + hour * 3600 + minute * 60 + second) * 1000 + millis) as f64)
         st.objExtras[st.objects[o].extra].dateMs = newMs
         return JSValue.Number(newMs)
     }
@@ -21652,6 +21677,26 @@ fn makeSuppressed(prog: &Prog, st: &mut Interp, err: JSValue, suppressed: JSValu
     args.push(err)
     args.push(suppressed)
     return callValue(prog, ctor, args, JSValue.Undefined, st)
+}
+
+// The spec's TimeClip. A time value outside +/-8.64e15 ms (about 273790 years
+// either side of the epoch) is not representable as a Date and becomes NaN, and
+// so does a non-finite one. milojs had no clamp anywhere, so `new Date(9e15)`,
+// `Date.UTC(275760, 8, 14)` and `d.setFullYear(400000)` all produced a Date that
+// answers out-of-range milliseconds instead of Invalid Date.
+pub fn timeClip(t: f64): f64 {
+    if t != t {
+        return jsNan()
+    }
+    // an infinity fails the magnitude test below too, but naming it is clearer
+    if t > 8640000000000000.0 || t < -8640000000000000.0 {
+        return jsNan()
+    }
+    // ToIntegerOrInfinity: a fractional millisecond truncates toward zero
+    if t < 0.0 {
+        return -Math.floor(-t)
+    }
+    return Math.floor(t)
 }
 
 pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
