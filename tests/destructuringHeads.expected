@@ -1,0 +1,16 @@
+ary-catch: 1 2
+obj-catch: 1 2
+catch-default: 1 9
+catch-elision: 3
+catch-nested: 5
+catch-rest: 1 2,3
+catch-obj-default: 7
+catch-no-param: ok
+catch-var-hoist: 9
+for-init-obj: ok
+for-init-ary: 1 2
+for-init-mixed: 7
+for-init-trailing-comma: ok
+for-of-ary: 1 2
+for-of-obj: 3
+for-of-elision: 1 3

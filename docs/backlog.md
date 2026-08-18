@@ -43,6 +43,28 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## Binding patterns in a catch parameter and a C-style for init
+
+Two of the three parse-failure buckets in the test262 sample, ~18 cases, and two
+different causes.
+
+**`catch ([a, b])` could not be represented.** `Stmt.Try` stores the catch
+parameter as a NAME, so a pattern has nowhere to go. Desugared rather than given a
+new AST shape, the same move the for-of head already uses: bind the caught value
+to a temp and prepend the unpacking declaration to the catch block. `var` in the
+catch body still hoists past the block that adds, which the fixture checks.
+
+**`for (const {x:[y]} = o; ...)` was a parser assumption.** A pattern at the head
+of a `for` was taken to mean for-in/of, so after parsing the pattern the code
+called `parseExpr` unconditionally and choked on the `=`. It now rewinds to the
+head and falls through to the C-style path, which already knew how to parse a
+destructuring declaration.
+
+`tests/destructuringHeads.js` covers both, plus the for-in/of pattern heads that
+had to keep working.
+
+Sweep 101/149 to 102/149; the test262 effect lands on the next sample run.
+
 ## `delete null.a` silently succeeded
 
 `delete base.k` on a nullish base returned true and deleted nothing, where the

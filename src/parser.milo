@@ -2138,12 +2138,24 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
             var pat: Vec<DeclItem> = Vec.new()
             patternDecls(p, prog, tmp.clone(), pat)
             var patIsOf = false
+            var patIsForInOf = false
             if peekKind(p) == T_IN {
                 advance(p)
+                patIsForInOf = true
             } else if peekKind(p) == T_IDENT && p.toks[p.pos].text == "of" {
                 advance(p)
                 patIsOf = true
+                patIsForInOf = true
             }
+            // A pattern head is NOT necessarily for-in/of: `for (const {x:[y]} = o; ...)`
+            // is an ordinary C-style loop whose init happens to destructure. This
+            // branch used to parse the object expression unconditionally and choke
+            // on the `=`. Rewind and let the C-style path below handle it, which
+            // already knows how to parse a destructuring declaration.
+            if !patIsForInOf {
+                p.pos = savedPos
+            }
+            if patIsForInOf {
             let objExpr = parseExpr(p, prog)
             expect(p, T_RPAREN)
             let inner = parseStmt(p, prog)
@@ -2157,6 +2169,7 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
                 return addStmt(prog, Stmt.ForOf(tmp, objExpr, body, isForAwait, 2))
             }
             return addStmt(prog, Stmt.ForIn(tmp, objExpr, body, 2))
+            }
         }
         // Annex B `for (var k = 2 in obj)`: legal in sloppy code, and quickjs's
         // test_loop.js depends on it. The initializer really does run, so it is
@@ -2370,15 +2383,35 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
         var catchB: Option<BlockId> = Option.None
         if peekKind(p) == T_CATCH {
             advance(p)
+            // A destructuring catch parameter, `catch ([a, b])` or `catch ({x})`.
+            // Stmt.Try stores the parameter as a NAME, so a pattern cannot be
+            // represented there; it is desugared instead, the way the for-of head
+            // already is: bind the caught value to a temp and unpack it in a
+            // declaration prepended to the catch block.
+            var catchPat: Vec<DeclItem> = Vec.new()
+            var catchDestructures = false
             if peekKind(p) == T_LPAREN {
                 advance(p)
-                if isBindingName(p) {
+                if isPatternStart(p) {
+                    let ctmp = "__c" + i64ToStr(p.pos)
+                    patternDecls(p, prog, ctmp.clone(), catchPat)
+                    param = ctmp
+                    catchDestructures = true
+                } else if isBindingName(p) {
                     param = p.toks[p.pos].text.clone()
                     advance(p)
                 }
                 expect(p, T_RPAREN)
             }
-            catchB = Option.Some(parseBraceBlock(p, prog))
+            let cbody = parseBraceBlock(p, prog)
+            if catchDestructures {
+                var cseq: Vec<StmtId> = Vec.new()
+                cseq.push(declsToStmt(prog, catchPat))
+                cseq.push(addStmt(prog, Stmt.Block(cbody)))
+                catchB = Option.Some(addBlock(prog, cseq))
+            } else {
+                catchB = Option.Some(cbody)
+            }
         }
         var finallyB: Option<BlockId> = Option.None
         if peekKind(p) == T_FINALLY {
