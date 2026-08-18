@@ -461,15 +461,27 @@ pub fn objSet(st: &mut Interp, obj: i64, key: string, value: JSValue)
 
 _Undocumented._
 
+### `objSetBuiltinAttr`
+
+```milo
+pub fn objSetBuiltinAttr(st: &mut Interp, obj: i64, key: string, value: JSValue)
+```
+
+A String wrapper's own index and length properties: readable and enumerable
+(the indices) but frozen, matching the descriptors node reports. They are
+materialised eagerly because the string behind them can never change.
+The shape every built-in function's own `name` and `length` carry: readable,
+not writable, not enumerable, but CONFIGURABLE — which is what lets a shim
+redefine them. objSetFrozenOwn is the wrong shape for these (it also clears
+configurable), and a plain objSet leaves them writable.
+
 ### `objSetFrozenOwn`
 
 ```milo
 pub fn objSetFrozenOwn(st: &mut Interp, obj: i64, key: string, value: JSValue, enumerable: bool)
 ```
 
-A String wrapper's own index and length properties: readable and enumerable
-(the indices) but frozen, matching the descriptors node reports. They are
-materialised eagerly because the string behind them can never change.
+_Undocumented._
 
 ### `objSetNonConfigurable`
 

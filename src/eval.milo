@@ -8276,14 +8276,17 @@ fn setupTypedArrayProtos(st: &mut Interp) {
         st.objects[sub].proto = taProto
         objSet(st, sub, "constructor", JSValue.Native(NATIVE_TA_BASE + tk))
         objSetNonEnumerable(st, sub, "constructor")
-        objSet(st, sub, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64))
-        objSetNonEnumerable(st, sub, "BYTES_PER_ELEMENT")
+        // BYTES_PER_ELEMENT is { writable: false, enumerable: false,
+        // configurable: false } on both the constructor and its prototype;
+        // objSet left it writable and configurable, so every test262 case that
+        // verifies the descriptor failed regardless of the value.
+        objSetFrozenOwn(st, sub, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64), false)
         let bag = getNativeProps(st, NATIVE_TA_BASE + tk)
         objDefineProtoAttr(st, bag, "prototype", JSValue.Obj(sub))
-        objSet(st, bag, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64))
-        objSetNonEnumerable(st, bag, "BYTES_PER_ELEMENT")
-        objSet(st, bag, "name", JSValue.Str(taName(tk)))
-        objSetNonEnumerable(st, bag, "name")
+        objSetFrozenOwn(st, bag, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64), false)
+        objSetBuiltinAttr(st, bag, "name", JSValue.Str(taName(tk)))
+        // the constructor's own length: (buffer, byteOffset, length)
+        objSetBuiltinAttr(st, bag, "length", JSValue.Number(3.0))
         // this is what makes Object.getPrototypeOf(Int8Array) === %TypedArray%:
         // getPrototypeOf reads the proto of the native's property bag
         st.objects[bag].proto = taCtor
