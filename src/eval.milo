@@ -487,6 +487,18 @@ pub fn toNumProg(prog: &Prog, v: &JSValue, st: &mut Interp): f64 {
     return toNum(p)
 }
 
+// ToNumber for an ARGUMENT position, where a symbol is a TypeError rather than
+// NaN. toNumProg cannot do this for every caller: loose equality reaches it too,
+// and `Symbol() == 1` is false rather than an exception.
+pub fn toNumArg(prog: &Prog, v: &JSValue, st: &mut Interp): f64 {
+    if isSymbolValue(v) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a number" + currentModule(st))
+        return jsNan()
+    }
+    return toNumProg(prog, v, st)
+}
+
 // Which argument positions of a String.prototype method the spec ToStrings, and
 // which it ToNumbers.
 //
@@ -3055,7 +3067,7 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                 return regexMethod(st, o, name, args)
             }
             if st.objects[o].isDataView && isDataViewMethodName(name) {
-                return dataViewMethod(o, name, args, st)
+                return dataViewMethod(prog, o, name, args, st)
             }
             if st.objects[o].isGenerator {
                 var gmode: i64 = -1
@@ -14308,10 +14320,27 @@ fn isDataViewMethodName(n: &string): bool {
     return n == "getInt8" || n == "getUint8" || n == "getInt16" || n == "getUint16" || n == "getInt32" || n == "getUint32" || n == "getFloat32" || n == "getFloat64" || n == "setInt8" || n == "setUint8" || n == "setInt16" || n == "setUint16" || n == "setInt32" || n == "setUint32" || n == "setFloat32" || n == "setFloat64"
 }
 
+// A DataView's byte length right now. One constructed without an explicit
+// length tracks its buffer, so the stored taLen goes stale on every resize.
+fn dataViewByteLen(st: &Interp, o: i64): i64 {
+    let buf = st.objExtras[st.objects[o].extra].taBuf
+    if buf < 0 || st.objects[buf].abDetached || taOutOfBounds(st, o) {
+        return 0
+    }
+    if !st.objExtras[st.objects[o].extra].taTracking {
+        return st.objExtras[st.objects[o].extra].taLen
+    }
+    var n = st.objExtras[st.objects[buf].extra].bytes.len() - st.objExtras[st.objects[o].extra].taOffset
+    if n < 0 {
+        n = 0
+    }
+    return n
+}
+
 // DataView get/set. Default endianness is BIG-endian (the littleEndian arg
 // defaults false), unlike typed arrays which store host/little-endian. taLen is
 // the view's byte length here; taBuf/taOffset locate it in the backing buffer.
-fn dataViewMethod(o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+fn dataViewMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     var width: i64 = 1
     var isFloat = false
     var signed = false
@@ -14333,7 +14362,13 @@ fn dataViewMethod(o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): 
     let isSet = name.len() > 0 && name[0] == 115
     var byteOffset: i64 = 0
     if args.len() > 0 {
-        let rawOffset = toNum(args[0])
+        // toNumArg, not toNum: the offset is ToIndex'd, which runs a user
+        // valueOf and rejects a symbol. toNum consulted neither, so an object
+        // argument silently read as NaN (offset 0) and a symbol as NaN too.
+        let rawOffset = toNumArg(prog, args[0], st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
         // ToIndex, and the range check has to happen on the FLOAT. Casting first
         // overflowed i64 for an argument like Number.MAX_VALUE, and the addition
         // below then TRAPPED — `dv.getFloat64(1e308)` killed the process with
@@ -14350,7 +14385,31 @@ fn dataViewMethod(o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): 
             byteOffset = rawOffset as i64
         }
     }
-    if byteOffset < 0 || byteOffset + width > st.objExtras[st.objects[o].extra].taLen {
+    // The stored value is coerced BEFORE the buffer is inspected, so a valueOf
+    // that detaches the buffer is observed by the detach check below rather than
+    // running after it. Reading the argument only at the store site put the two
+    // in the wrong order.
+    var value: f64 = 0.0
+    if isSet && args.len() > 1 {
+        value = toNumArg(prog, args[1], st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+    }
+    // Detached and out-of-bounds are TypeErrors and they come BEFORE the range
+    // check. Without them a shrunk buffer either produced a RangeError (the
+    // wrong error) or indexed past the byte vector and took the engine out.
+    if taIsDetached(st, o) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a detached ArrayBuffer" + currentModule(st))
+        return JSValue.Undefined
+    }
+    if taOutOfBounds(st, o) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a DataView whose buffer has shrunk out of bounds" + currentModule(st))
+        return JSValue.Undefined
+    }
+    if byteOffset < 0 || byteOffset + width > dataViewByteLen(st, o) {
         st.throwing = true
         st.thrownValue = makeError(st, "RangeError", "Offset is outside the bounds of the DataView")
         return JSValue.Undefined
@@ -14358,10 +14417,6 @@ fn dataViewMethod(o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): 
     let buf = st.objExtras[st.objects[o].extra].taBuf
     let absPos = st.objExtras[st.objects[o].extra].taOffset + byteOffset
     if isSet {
-        var value: f64 = 0.0
-        if args.len() > 1 {
-            value = toNum(args[1])
-        }
         var littleEndian = false
         if args.len() > 2 {
             littleEndian = truthy(args[2])
