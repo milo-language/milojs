@@ -42,8 +42,8 @@ reproducible release artifact.
 
 | measure | result | corpus |
 |---|---:|---|
-| deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->1039<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->70.7%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
-| QuickJS `tests/` | **<!--fact:qjs-pass-->107<!--/fact-->/<!--fact:qjs-total-->150<!--/fact--> = <!--fact:qjs-pct-->71.3%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
+| deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->1094<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->74.4%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
+| QuickJS `tests/` | **<!--fact:qjs-pass-->109<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = <!--fact:qjs-pct-->73.2%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
 | locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->220<!--/fact--> | byte-exact differential output vs node |
 | locked runtime fixtures (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->35<!--/fact--> | module, async, fetch, HTTP, sqlite, host behavior |
 | Milo invariant fixtures (`tests/milo/`, `tests/milo-errors/`) | <!--fact:fixtures-milo-->3<!--/fact--> + <!--fact:fixtures-milo-errors-->8<!--/fact--> | scheduler/context and GC-root invariants |
@@ -88,45 +88,30 @@ Not every remaining difference is milojs's: `/api/v2/roads` hangs under node too
 (it needs a live upstream), and `analytics/middleware` keeps both runtimes alive
 because it installs a `setInterval` at module scope.
 
-**test262 moved 34.6% to <!--fact:t262-pct-->70.7%<!--/fact--> over 2026-08-15**, from one structural finding
-repeated across the whole builtin surface: constructors that had no `prototype`
-object at all. See the backlog for the per-change attribution, including the two
-places where the harness rather than the engine was at fault, and the one area
-(`built-ins/Boolean`) that legitimately went down.
+test262 stands at <!--fact:t262-pass-->1094<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = **<!--fact:t262-pct-->74.4%<!--/fact-->** on the deterministic sample. The
+backlog carries the per-change attribution.
 
-Where the remaining failures are, by absolute count in the sample:
+Where the remaining failures are, compiled from the committed report rather than
+typed in, because a hand-kept version of this table went stale the moment any
+sweep moved:
 
-| area | failing | note |
-|---|---:|---|
-| `language/statements` + `language/expressions` | 138 | class members, generator parameter binding, declaration edges |
-| `built-ins/Temporal` | 69 | implemented but partial; failures are ISO-8601 parsing and range validation, 1-3 per cause |
-| `built-ins/Array/prototype` | 37 | species creation, coercion ordering |
-| `built-ins/Object` | 44 | property-descriptor fidelity |
-| `built-ins/TypedArray` | 17 | resizable buffers, species |
-| `annexB` + `dynamic-import` + `with` | 27 | legacy eval scoping, and two unimplemented features |
+<!--fact-block:t262-areas-->
+| area | failing | passing |
+|---|---:|---:|
+| `language/statements` | 55 | 227/282 |
+| `built-ins/Temporal` | 44 | 87/131 |
+| `language/expressions` | 43 | 291/334 |
+| `built-ins/Object` | 39 | 88/127 |
+| `built-ins/Array` | 26 | 65/91 |
+| `built-ins/RegExp` | 25 | 48/73 |
+| `built-ins/TypedArray` | 14 | 24/38 |
+| `built-ins/Iterator` | 14 | 10/24 |
+<!--/fact-block-->
 
-Temporal is no longer "not implemented at all" — it is implemented and partial,
-and its 69 remaining failures are spread ~1-3 per cause across string parsing and
-range checks rather than concentrated behind one gap. That makes it grind rather
-than a lever, which is the opposite of how it read when it was absent.
-
-The reverse also holds and is worth stating: `built-ins/RegExp` was 49 failures
-and is now the area with the largest single WIN behind it, because `\p{...}` was
-one addressable feature rather than a spread. Measured on its own with
-`--dir built-ins/RegExp/property-escapes`: 0% to **86.0%** (527/613).
-
-The top two failure buckets are now assertion shapes rather than crashes:
-48 cases of "Expected a TypeError to be thrown but no exception was thrown at
-all" and 31 of the same for `Test262Error`. Both are dominated by destructuring
-(`*/dstr/*` across 15 directories) and by generator PARAMETER binding, which this
-engine still performs lazily: the parser desugars patterns and defaults into a
-body prologue, so `function* f([[x]] = [null]) {}` does not throw until the first
-`next()`, where the spec throws at the call. That one mechanism is the largest
-identified remaining lever.
-
-`TypeError: cannot read property '…' of undefined` — previously the top bucket at
-154 cases, the signature of a harness read failing before any test ran — is no
-longer in the top two.
+Reading it: the two `language/` rows are one area split in the corpus, and
+together they are the largest remaining block. `built-ins/Temporal` is the
+largest single area in the corpus by file count, so its rate moves the headline
+more than its failure count suggests.
 
 ### Native stack status
 

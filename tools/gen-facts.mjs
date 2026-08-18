@@ -151,6 +151,31 @@ const DOCS = [
 
 const RE = /<!--fact:([a-z0-9-]+)-->([\s\S]*?)<!--\/fact-->/g;
 
+// A fact BLOCK is the same idea for content that is a table rather than a
+// number: the whole body between the markers is regenerated. The failing-area
+// table in status.md was hand-kept and went stale the moment any sweep moved,
+// which is the drift this file exists to end.
+const BLOCK_RE = /<!--fact-block:([a-z0-9-]+)-->([\s\S]*?)<!--\/fact-block-->/g;
+
+// Where the remaining failures are, straight out of the committed report.
+function areaTable() {
+  const r = report("test262");
+  const areas = (r.areas || []).filter((a) => a.fail > 0);
+  areas.sort((a, b) => b.fail - a.fail);
+  const rows = areas.slice(0, 8).map(
+    (a) => `| \`${a.area}\` | ${a.fail} | ${a.pass}/${a.total} |`
+  );
+  return [
+    "",
+    "| area | failing | passing |",
+    "|---|---:|---:|",
+    ...rows,
+    "",
+  ].join("\n");
+}
+
+const BLOCKS = { "t262-areas": areaTable };
+
 const argv = process.argv.slice(2);
 if (argv.includes("--list")) {
   for (const [name, fn] of Object.entries(FACTS)) {
@@ -168,7 +193,31 @@ for (const rel of DOCS) {
   const file = p(rel);
   if (!existsSync(file)) continue;
   const before = readFileSync(file, "utf8");
-  const after = before.replace(RE, (whole, name, current) => {
+  const withBlocks = before.replace(BLOCK_RE, (whole, name, current) => {
+    marked++;
+    const fn = BLOCKS[name];
+    if (!fn) {
+      console.error(`UNKNOWN  ${rel}: no fact block named "${name}"`);
+      unknown++;
+      return whole;
+    }
+    let want;
+    try {
+      want = fn();
+    } catch (e) {
+      console.error(`ERROR    ${rel}: ${name}: ${e.message}`);
+      unknown++;
+      return whole;
+    }
+    if (current === want) return whole;
+    if (CHECK) {
+      console.error(`STALE    ${rel}: fact block ${name} disagrees with the report`);
+      stale++;
+      return whole;
+    }
+    return `<!--fact-block:${name}-->${want}<!--/fact-block-->`;
+  });
+  const after = withBlocks.replace(RE, (whole, name, current) => {
     marked++;
     const fn = FACTS[name];
     if (!fn) {

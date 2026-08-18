@@ -6,10 +6,10 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "0dca583c4c295c0c7fa0a079a811af26cf4457cd",
+    "revision": "30ef3dd59acd927031d2d16d8f05eff5f6ac45e7",
     "dirty": false
   },
-  "engine": "/tmp/milojs-engine",
+  "engine": ".dev/mj-engine",
   "selection": {
     "filter": null,
     "skippedFiles": [
@@ -25,18 +25,16 @@
     ]
   },
   "totals": {
-    "pass": 107,
-    "fail": 43,
-    "total": 150,
-    "files": 59
+    "pass": 109,
+    "fail": 40,
+    "total": 149,
+    "files": 58
   },
   "failureBuckets": [
     {
       "reason": "Uncaught Error: assertion failed: got |…|, expected |…|",
-      "count": 22,
+      "count": 20,
       "cases": [
-        "bug1301.js:<whole>",
-        "bug1302.js:<whole>",
         "bug1498.js:<whole>",
         "bug492.js:test_resize_shrink",
         "bug492.js:test_detach",
@@ -70,21 +68,20 @@
       ]
     },
     {
-      "reason": "timeout/crash (SIGTERM)",
-      "count": 3,
-      "cases": [
-        "bug1355.js:<whole>",
-        "bug1571.js:<whole>",
-        "test_builtin.js:test_proxy_is_array"
-      ]
-    },
-    {
       "reason": "Uncaught TypeError: concat is not a function (in /case.js)",
       "count": 3,
       "cases": [
         "bug1368.js:test_symbol_iterator_reentry",
         "bug1368.js:test_next_getter_reentry",
         "bug1368.js:test_value_getter_reentry"
+      ]
+    },
+    {
+      "reason": "timeout/crash (SIGTERM)",
+      "count": 2,
+      "cases": [
+        "bug1355.js:<whole>",
+        "bug1571.js:<whole>"
       ]
     },
     {
@@ -130,13 +127,6 @@
       ]
     },
     {
-      "reason": "PASS test",
-      "count": 1,
-      "cases": [
-        "tbeach.js:<whole>"
-      ]
-    },
-    {
       "reason": "Uncaught Error: assertion failed: got |…|, expected |…| (unicode)",
       "count": 1,
       "cases": [
@@ -148,6 +138,13 @@
       "count": 1,
       "cases": [
         "test_builtin.js:test_typed_array"
+      ]
+    },
+    {
+      "reason": "timeout/crash (SIGUSR1)",
+      "count": 1,
+      "cases": [
+        "test_builtin.js:test_proxy_is_array"
       ]
     },
     {
