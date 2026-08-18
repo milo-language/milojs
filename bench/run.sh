@@ -17,7 +17,7 @@ ENGINE="${1:?usage: run.sh <path-to-milojs-binary>}"
 DIR="$(dirname "$0")"
 REPS=3
 
-BENCHES="noop numRead strRead localRead deepRead propFew propMany protoDeep callFn callArrow arith objChurn"
+BENCHES="noop numRead strRead localRead deepRead propFew propMany propWrite propWriteNew protoDeep callFn callArrow arith objChurn"
 
 # Best-of-N wall milliseconds for "$@".
 best_ms() {

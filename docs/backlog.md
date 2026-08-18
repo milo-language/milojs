@@ -23,6 +23,45 @@ Gate 0 suite is green without `ulimit` changes. A differential fixture now also
 requires 100 successful recursive calls before checking that runaway recursion
 still becomes a catchable `RangeError`; the engine guard is 104 frames.
 
+## Interpreter allocation churn: what a profile says, and one dead end
+
+A `sample`-based profile of `bench/arith.js` (pure arithmetic, no property access,
+no strings) attributes roughly a third of samples to malloc/free/`drop`/`cloneValue`
+and only about a tenth to the string compares in scope lookup. The 30-400x gap to
+bun in `bench/run.sh` is not one mechanism; it is per-node dispatch plus allocator
+traffic on owned values. Reproduce with:
+
+```sh
+tools/dev.sh                                    # build .dev/mj-engine
+.dev/mj-engine bench/arith.js & sample $! 6 1 -mayDie
+```
+
+**Landed:** `scopeAssign` took its `name` by value, so every caller cloned the
+identifier string, and the hit path replaced the whole `Binding` (dropping the old
+name and moving an identical one back in). Borrowing the name and writing only the
+`value` field is worth 5-10% on every bench in `bench/`.
+
+**Tried and rejected: the same change to `objSet`/`setMember`.** Borrowing `key`
+forces the overwrite path to assign fields individually rather than store one
+`Prop`, because a borrowed key cannot be moved into a struct literal. That is
+SLOWER: measured +1.5% on `propWrite` and +3.5% on `propWriteNew`. The cause is
+that `&mut` is second-class in Milo to the point of being ungrammatical in a `let`
+
+```milo
+let p = &mut h.ps[0]    // error: unexpected token 'mut'
+```
+
+so there is no way to hoist a reference to the element, and each field write
+re-walks `st.objects[obj].props[i]`. One struct store beats four field stores.
+Do not retry this shape as written.
+
+The version that would work is interning property keys to an integer id: with a
+scalar key there is no string to clone, the single struct store stays, and the
+call sites stop cloning. Note the win is the ALLOCATION, not the lookup, since
+`propFew` vs `propMany` prices ~27 extra string compares per read at only ~120 ms
+per million reads. `bench/propWrite.js` and `bench/propWriteNew.js` were added to
+cover the write path, which the suite previously did not exercise at all.
+
 ## Measured conformance
 
 Both sweeps need a local corpus (`TEST262=`, `~/git/quickjs/tests`), so these are
