@@ -591,6 +591,11 @@ struct JSObjExtra {
     // -1 when not a view (its own discriminator, so it lives here too).
     bytes: Vec<u8>,
     abMaxLen: i64,
+    // A view constructed over a buffer with NO explicit length tracks that
+    // buffer's size; one given a length is fixed and goes OUT OF BOUNDS when a
+    // resizable buffer shrinks under it. The two cases behave oppositely on
+    // resize, so the flag has to be recorded at construction.
+    taTracking: bool,
     taBuf: i64,
     taKind: i64,
     taOffset: i64,
@@ -638,6 +643,7 @@ pub fn defaultExtra(): JSObjExtra {
         promiseResolved: false,
         bytes: Vec.new(),
         abMaxLen: -1,
+        taTracking: false,
         taBuf: -1,
         taKind: 0,
         taOffset: 0,

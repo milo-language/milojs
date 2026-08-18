@@ -2535,6 +2535,47 @@ fn taIsDetached(st: &Interp, o: i64): bool {
     return st.objects[buf].abDetached
 }
 
+// A fixed-length view whose window no longer fits its buffer. Only a RESIZABLE
+// buffer can shrink under a view, and the spec then treats the view as out of
+// bounds: its length reads 0, its elements read undefined, and every prototype
+// method throws (ValidateTypedArray). A tracking view is never out of bounds by
+// length — it just gets shorter — but its OFFSET can fall off the end.
+fn taOutOfBounds(st: &Interp, o: i64): bool {
+    let buf = st.objExtras[st.objects[o].extra].taBuf
+    if buf < 0 || st.objects[buf].abDetached {
+        return false
+    }
+    let have = st.objExtras[st.objects[buf].extra].bytes.len()
+    let off = st.objExtras[st.objects[o].extra].taOffset
+    if st.objExtras[st.objects[o].extra].taTracking {
+        return off > have
+    }
+    var w = 1
+    if !st.objects[o].isDataView {
+        w = taWidth(st.objExtras[st.objects[o].extra].taKind)
+    }
+    return off + st.objExtras[st.objects[o].extra].taLen * w > have
+}
+
+// The view's element count RIGHT NOW. A tracking view over a resizable buffer
+// answers a different number after every resize, so nothing may read the stored
+// taLen directly.
+fn taCurrentLen(st: &Interp, o: i64): i64 {
+    let buf = st.objExtras[st.objects[o].extra].taBuf
+    if buf < 0 || st.objects[buf].abDetached || taOutOfBounds(st, o) {
+        return 0
+    }
+    if !st.objExtras[st.objects[o].extra].taTracking {
+        return st.objExtras[st.objects[o].extra].taLen
+    }
+    let w = taWidth(st.objExtras[st.objects[o].extra].taKind)
+    var n = (st.objExtras[st.objects[buf].extra].bytes.len() - st.objExtras[st.objects[o].extra].taOffset) / w
+    if n < 0 {
+        n = 0
+    }
+    return n
+}
+
 // A relative index argument (negative counts from the end), clamped to [0, n].
 fn relIndex(raw: f64, n: i64): i64 {
     var i = raw as i64
@@ -2555,6 +2596,7 @@ fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValue>):
     var bufH: i64 = -1
     var viewOffset: i64 = 0
     var len: i64 = 0
+    var tracks = false
     var seed: Vec<f64> = Vec.new()
     if args.len() > 0 {
         let h = objHandle(args[0])
@@ -2582,6 +2624,9 @@ fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValue>):
             }
             viewOffset = boff
             len = count
+            // A third argument fixes the length; without one the view tracks the
+            // buffer. Recorded on the view below.
+            tracks = args.len() <= 2
         } else if h >= 0 && st.objects[h].isArray {
             var i: i64 = 0
             while i < arrLen(st, h) {
@@ -2665,6 +2710,7 @@ fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValue>):
     st.objects[view].proto = typedArrayProtoFor(st, kind)
     st.objExtras[st.objects[view].extra].taOffset = viewOffset
     st.objExtras[st.objects[view].extra].taLen = len
+    st.objExtras[st.objects[view].extra].taTracking = tracks
     var k: i64 = 0
     while k < seed.len() {
         taSetElem(st, view, k, seed[k])
@@ -2683,7 +2729,7 @@ fn taElemValue(st: &Interp, view: i64, i: i64): JSValue {
         return JSValue.Number(taElem(st, view, i))
     }
     let buf = st.objExtras[st.objects[view].extra].taBuf
-    if buf < 0 || i < 0 || i >= st.objExtras[st.objects[view].extra].taLen {
+    if buf < 0 || i < 0 || i >= taCurrentLen(st, view) {
         return JSValue.Undefined
     }
     let at = st.objExtras[st.objects[view].extra].taOffset + i * 8
@@ -2700,7 +2746,7 @@ fn taSetElemValue(st: &mut Interp, view: i64, i: i64, v: &JSValue) {
         return
     }
     let buf = st.objExtras[st.objects[view].extra].taBuf
-    if buf < 0 || i < 0 || i >= st.objExtras[st.objects[view].extra].taLen {
+    if buf < 0 || i < 0 || i >= taCurrentLen(st, view) {
         return
     }
     let at = st.objExtras[st.objects[view].extra].taOffset + i * 8
@@ -2720,7 +2766,7 @@ fn taSetElemValue(st: &mut Interp, view: i64, i: i64, v: &JSValue) {
 
 fn taElem(st: &Interp, view: i64, i: i64): f64 {
     let buf = st.objExtras[st.objects[view].extra].taBuf
-    if buf < 0 || i < 0 || i >= st.objExtras[st.objects[view].extra].taLen {
+    if buf < 0 || i < 0 || i >= taCurrentLen(st, view) {
         return 0.0
     }
     let w = taWidth(st.objExtras[st.objects[view].extra].taKind)
@@ -2735,7 +2781,7 @@ fn taElem(st: &Interp, view: i64, i: i64): f64 {
 
 fn taSetElem(st: &mut Interp, view: i64, i: i64, v: f64) {
     let buf = st.objExtras[st.objects[view].extra].taBuf
-    if buf < 0 || i < 0 || i >= st.objExtras[st.objects[view].extra].taLen {
+    if buf < 0 || i < 0 || i >= taCurrentLen(st, view) {
         return
     }
     let kind = st.objExtras[st.objects[view].extra].taKind
@@ -3536,15 +3582,16 @@ pub fn getMember(st: &Interp, o: i64, key: &string): JSValue {
         }
     }
     if st.objExtras[st.objects[o].extra].taBuf >= 0 && !st.objects[o].isDataView {
-        // a detached view reports zeroes rather than its stale extent
-        if taIsDetached(st, o) && (key == "length" || key == "byteLength" || key == "byteOffset") {
+        // a detached view reports zeroes rather than its stale extent, and so
+        // does one whose resizable buffer shrank out from under it
+        if (taIsDetached(st, o) || taOutOfBounds(st, o)) && (key == "length" || key == "byteLength" || key == "byteOffset") {
             return JSValue.Number(0.0)
         }
         if key == "length" {
-            return JSValue.Number(st.objExtras[st.objects[o].extra].taLen as f64)
+            return JSValue.Number(taCurrentLen(st, o) as f64)
         }
         if key == "byteLength" {
-            return JSValue.Number((st.objExtras[st.objects[o].extra].taLen * taWidth(st.objExtras[st.objects[o].extra].taKind)) as f64)
+            return JSValue.Number((taCurrentLen(st, o) * taWidth(st.objExtras[st.objects[o].extra].taKind)) as f64)
         }
         if key == "byteOffset" {
             return JSValue.Number(st.objExtras[st.objects[o].extra].taOffset as f64)
@@ -3561,7 +3608,7 @@ pub fn getMember(st: &Interp, o: i64, key: &string): JSValue {
             if taIsDetached(st, o) {
                 return JSValue.Undefined
             }
-            if ti >= st.objExtras[st.objects[o].extra].taLen {
+            if ti >= taCurrentLen(st, o) {
                 return JSValue.Undefined
             }
             return taElemValue(st, o, ti)
@@ -13728,7 +13775,17 @@ fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st:
         st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a detached ArrayBuffer" + currentModule(st))
         return JSValue.Undefined
     }
-    let n = st.objExtras[st.objects[o].extra].taLen
+    // ValidateTypedArray also rejects a view left OUT OF BOUNDS by a resizable
+    // buffer that shrank. Without it the method walked the stale extent and read
+    // zeroes off the end of the buffer, which reads as a successful call.
+    if taOutOfBounds(st, o) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a typed array whose buffer has shrunk out of bounds" + currentModule(st))
+        return JSValue.Undefined
+    }
+    // taCurrentLen, not the stored taLen: a tracking view over a resizable
+    // buffer has a different element count after every resize.
+    let n = taCurrentLen(st, o)
     let kind = st.objExtras[st.objects[o].extra].taKind
     let w = taWidth(kind)
 
