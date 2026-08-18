@@ -1201,10 +1201,51 @@ pub fn napi_create_buffer_copy(_env: *u8, length: i64, source: *u8, data: *u8, r
     return NAPI_OK
 }
 
+// A JavaScript Buffer is a real Uint8Array subclass now, so its bytes live in
+// the engine's ArrayBuffer rather than in a `.bytes` native view. Returns the
+// address of the view's first byte and its length, or -1 when `o` is not a
+// typed array at all.
+fn napiTypedArrayBytes(o: i64): i64 {
+    let ex = gInterp.objects[o].extra
+    if ex < 0 {
+        return -1
+    }
+    let buf = gInterp.objExtras[ex].taBuf
+    if buf < 0 || gInterp.objects[o].isDataView {
+        return -1
+    }
+    let base = gInterp.objExtras[gInterp.objects[buf].extra].bytes.ptr() as i64
+    return base + gInterp.objExtras[ex].taOffset
+}
+
+fn napiTypedArrayLen(o: i64): i64 {
+    let ex = gInterp.objects[o].extra
+    if ex < 0 {
+        return -1
+    }
+    if gInterp.objExtras[ex].taBuf < 0 || gInterp.objects[o].isDataView {
+        return -1
+    }
+    return gInterp.objExtras[ex].taLen
+}
+
 @externalLinkage
 pub fn napi_get_buffer_info(_env: *u8, value: i64, data: *u8, length: *u8): i32 {
     match napiValueOf(value) {
         JSValue.Obj(buf) => {
+            // The engine's own storage is already stable and shared, so a
+            // typed-array Buffer needs no promotion to a native view: handing
+            // back a copy here would make C mutations invisible to JS.
+            let taPtr = napiTypedArrayBytes(buf)
+            if taPtr >= 0 {
+                if (data as i64) != 0 {
+                    napiWriteHandle(data, taPtr)
+                }
+                if (length as i64) != 0 {
+                    napiWriteHandle(length, napiTypedArrayLen(buf))
+                }
+                return NAPI_OK
+            }
             let view = napiEnsureBufferView(buf)
             if view < 0 {
                 return NAPI_INVALID_ARG
@@ -1237,7 +1278,9 @@ pub fn napi_is_buffer(_env: *u8, value: i64, result: *u8): i32 {
     }
     match napiValueOf(value) {
         JSValue.Obj(o) => {
-            napiWriteBool(result, bufferBytesHandle(gInterp, o) >= 0 || bufferNativeViewHandle(gInterp, o) >= 0)
+            napiWriteBool(result, bufferBytesHandle(gInterp, o) >= 0
+                || bufferNativeViewHandle(gInterp, o) >= 0
+                || napiTypedArrayBytes(o) >= 0)
         }
         _ => {
             napiWriteBool(result, false)

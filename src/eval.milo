@@ -752,7 +752,8 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
         if st.objects[o].isGenerator && (key == "next" || key == "throw" || key == "return" || key == symIteratorKey()) {
             return makeBoundMethod(st, JSValue.Obj(o), key.clone())
         }
-        if st.objExtras[st.objects[o].extra].taBuf >= 0 && isTypedArrayMethodName(key) {
+        if st.objExtras[st.objects[o].extra].taBuf >= 0 && isTypedArrayMethodName(key)
+            && !typedArrayOverride(st, o, key) {
             return makeBoundMethod(st, JSValue.Obj(o), key.clone())
         }
         // NB: no array-method arm here. Arrays link Array.prototype as a real
@@ -3279,7 +3280,8 @@ fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSVal
                     return JSValue.Obj(o)
                 }
             }
-            if st.objExtras[st.objects[o].extra].taBuf >= 0 && isTypedArrayMethodName(name) {
+            if st.objExtras[st.objects[o].extra].taBuf >= 0 && isTypedArrayMethodName(name)
+                && !typedArrayOverride(st, o, name) {
                 return typedArrayMethod(prog, o, name, args, st)
             }
             // A Node-API Buffer's `.bytes` is an array-like native view with
@@ -8612,6 +8614,25 @@ fn setupTypedArrayProtos(st: &mut Interp) {
 
 // The prototype a freshly created view of this kind links to, or -1 before
 // setupTypedArrayProtos has run.
+// True when the prototype chain BELOW the built-in %TypedArray% prototype
+// supplies `key` itself. A subclass that overrides a typed-array method (node's
+// Buffer overrides toString, slice, fill, indexOf, …) installs it on its own
+// prototype, which sits under Uint8Array.prototype in the chain — so the
+// built-in must only win when nothing down there claims the name. Dispatching
+// to the built-in unconditionally made every override unreachable through
+// `buf.toString()` while `Buffer.prototype.toString.call(buf)` still worked.
+fn typedArrayOverride(st: &mut Interp, o: i64, key: &string): bool {
+    let builtin = typedArrayProtoFor(st, st.objExtras[st.objects[o].extra].taKind)
+    var cur = st.objects[o].proto
+    while cur >= 0 && cur != builtin {
+        if objHas(st, cur, key) {
+            return true
+        }
+        cur = st.objects[cur].proto
+    }
+    return false
+}
+
 fn typedArrayProtoFor(st: &mut Interp, kind: i64): i64 {
     let bag = getNativeProps(st, Native.TypedArrayCtor(kind))
     return objHandle(objGet(st, bag, "prototype"))
