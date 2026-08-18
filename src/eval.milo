@@ -4698,14 +4698,16 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if argVals.len() > 0 {
             v = cloneValue(argVals[0])
         }
-        // first settle wins, as in JS. resolve(p) where p is a promise adopts it.
-        if st.objects[target].promiseState == 0 {
-            let state = 1 + (off % 2)
-            let vp = objHandle(v)
-            if state == 1 && vp >= 0 && isPromise(st, vp) {
-                adoptPromise(st, target, vp)
+        // A promise's resolve/reject pair fires at most once between them, and
+        // the flag is set the moment either runs — not when the promise settles.
+        // Resolving with a thenable leaves it pending while the adoption job is
+        // queued, and a resolve/reject arriving in that window is ignored.
+        if !st.objExtras[st.objects[target].extra].promiseResolved {
+            st.objExtras[st.objects[target].extra].promiseResolved = true
+            if off % 2 == 1 {
+                settlePromise(st, target, 2, v)
             } else {
-                settlePromise(st, target, state, v)
+                resolvePromiseValue(gProg, st, target, v)
             }
         }
         return JSValue.Undefined
@@ -4721,7 +4723,15 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             if h >= 0 && isPromise(st, h) {
                 return v
             }
-            return JSValue.Obj(newPromise(st, 1, v))
+            // Anything else goes through full resolution: a thenable is FOLLOWED,
+            // not wrapped. Fulfilling with the thenable made
+            // `Promise.resolve({then(r){r(42)}})` deliver the object to .then.
+            let np = newPromise(st, 0, JSValue.Undefined)
+            pushTemp(st, JSValue.Obj(np))
+            st.objExtras[st.objects[np].extra].promiseResolved = true
+            resolvePromiseValue(gProg, st, np, v)
+            popTemp(st)
+            return JSValue.Obj(np)
         }
         return JSValue.Obj(newPromise(st, 2, v))
     }
@@ -10100,6 +10110,14 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                 if st.throwing {
                     return JSValue.Undefined
                 }
+                // `new Promise(1)` is a TypeError before the promise exists: the
+                // executor is validated first, so a non-callable one produced a
+                // permanently pending promise instead of throwing.
+                if argVals.len() == 0 || !isCallableIn(st, argVals[0]) {
+                    st.throwing = true
+                    st.thrownValue = makeError(st, "TypeError", "Promise resolver is not a function")
+                    return JSValue.Undefined
+                }
                 let pr = newPromise(st, 0, JSValue.Undefined)
                 pushTemp(st, JSValue.Obj(pr))
                 if argVals.len() > 0 {
@@ -12903,6 +12921,85 @@ fn markRejectHandled(st: &mut Interp, p: i64) {
         ki = ki + 1
     }
     st.unhandledRejects = kept
+}
+
+// The spec's ResolvePromise. The resolver native used to do only the two easy
+// cases — a primitive fulfilled, a real promise adopted — and fulfilled with
+// ANY other thenable instead of following it, so `new Promise(r => r({then(res)
+// {res(42)}}))` handed the object itself to .then. Everything that awaits a
+// non-promise thenable (and every test262 async case that self-resolves) hung on
+// that.
+fn resolvePromiseValue(prog: &Prog, st: &mut Interp, target: i64, v: JSValue) {
+    let vh = objHandle(v)
+    // Resolving a promise with ITSELF is a cycle. The spec rejects; doing nothing
+    // left the promise pending forever, which is why those cases reported "no
+    // completion marker" rather than a wrong value.
+    if vh >= 0 && vh == target {
+        let err = makeError(st, "TypeError", "Chaining cycle detected for promise #<Promise>")
+        settlePromise(st, target, 2, err)
+        return
+    }
+    if vh < 0 {
+        settlePromise(st, target, 1, v)
+        return
+    }
+    if isPromise(st, vh) {
+        adoptPromise(st, target, vh)
+        return
+    }
+    // Reading `.then` is part of resolution, so a getter that throws rejects the
+    // promise rather than propagating out of resolve().
+    let thenFn = getMemberDyn(prog, vh, "then", st)
+    if st.throwing {
+        let err = cloneValue(st.thrownValue)
+        st.throwing = false
+        st.thrownValue = JSValue.Undefined
+        settlePromise(st, target, 2, err)
+        return
+    }
+    if !isCallableIn(st, thenFn) {
+        settlePromise(st, target, 1, v)
+        return
+    }
+    // The CALL is a job, not part of resolve(). __thenJob (engine-prelude) is the
+    // wrapper; it takes the four values as one array because a microtask with no
+    // derived promise calls its callback with exactly one argument.
+    let job = scopeLookup(st, 0, "__thenJob")
+    if !isCallableIn(st, job) {
+        // No prelude (a bare embedding evaluating source before it loads): fall
+        // back to calling then inline. Wrong tick, right state.
+        var inlineArgs: Vec<JSValue> = Vec.new()
+        inlineArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + target * 2))
+        inlineArgs.push(JSValue.Native(NATIVE_RESOLVER_BASE + target * 2 + 1))
+        let _ = callValue(prog, thenFn, inlineArgs, cloneValue(v), st)
+        if st.throwing {
+            let err2 = cloneValue(st.thrownValue)
+            st.throwing = false
+            st.thrownValue = JSValue.Undefined
+            settlePromise(st, target, 2, err2)
+        }
+        return
+    }
+    // The job gets a FRESH resolver pair, as the spec's
+    // NewPromiseResolveThenableJob does: `target`'s own pair has already fired
+    // (that is what queued this job), so handing the thenable those functions
+    // would hit the already-resolved guard and the promise would never settle.
+    // A pending inner promise that `target` follows is that fresh pair.
+    let inner = newPromise(st, 0, JSValue.Undefined)
+    pushTemp(st, JSValue.Obj(inner))
+    adoptPromise(st, target, inner)
+    let box = newArray(st)
+    pushTemp(st, JSValue.Obj(box))
+    arrPush(st, box, cloneValue(v))
+    arrPush(st, box, cloneValue(thenFn))
+    arrPush(st, box, JSValue.Native(NATIVE_RESOLVER_BASE + inner * 2))
+    arrPush(st, box, JSValue.Native(NATIVE_RESOLVER_BASE + inner * 2 + 1))
+    popTemp(st)
+    popTemp(st)
+    st.microtasks.push(Microtask {
+        cb: cloneValue(job), arg: JSValue.Obj(box), derived: -1, passthroughReject: false, isFinally: false, noArgs: false
+    }
+    )
 }
 
 // Make `derived` follow `source`: settle now if it already has, else register.

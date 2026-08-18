@@ -581,6 +581,11 @@ struct JSObjExtra {
     // -1/0/1/2 discriminator is read on every await/then without needing payload)
     promiseValue: JSValue,
     reactions: Vec<Reaction>,
+    // The spec's alreadyResolved flag, shared by a promise's resolve/reject pair.
+    // promiseState cannot stand in for it: resolving with a thenable leaves the
+    // promise PENDING while the adoption job is queued, and a second
+    // resolve/reject in that window must be ignored rather than win the race.
+    promiseResolved: bool,
     // ArrayBuffer bytes + resizable cap; typed-array/DataView view geometry.
     // isArrayBuffer/abDetached/isDataView stay inline as discriminators; taBuf is
     // -1 when not a view (its own discriminator, so it lives here too).
@@ -630,6 +635,7 @@ pub fn defaultExtra(): JSObjExtra {
         mapVals: Vec.new(),
         promiseValue: JSValue.Undefined,
         reactions: Vec.new(),
+        promiseResolved: false,
         bytes: Vec.new(),
         abMaxLen: -1,
         taBuf: -1,

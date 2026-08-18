@@ -25,6 +25,11 @@
 #   With a pattern, only fixtures whose basename contains it run (both passes).
 set -u
 cd "$(dirname "$0")/.." || exit 1
+# Binaries this script built, removed on exit. A caller-supplied
+# MILOJS_ENGINE_BIN/MILOJS_RUNTIME_BIN never joins the list: the trap used to
+# name $ENGINE_BIN unconditionally and deleted the cached .dev/mj-engine that
+# every local dev loop reuses, so the next sweep reported "engine not found".
+CLEANUP=""
 DIR="tests"
 RUNTIME_DIR="$DIR/runtime"
 PATTERN="${1:-}"
@@ -184,7 +189,8 @@ if [ -n "${MILOJS_ENGINE_BIN:-}" ]; then
   fi
 else
   ENGINE_BIN="$(mktemp -t milojs-engine)"
-  trap 'rm -f "$ENGINE_BIN"' EXIT
+  CLEANUP="$CLEANUP $ENGINE_BIN"
+  trap 'rm -f $CLEANUP' EXIT
   if ! $MILO_RUN build src/milojs-engine.milo -o "$ENGINE_BIN" >/dev/null; then
     echo "FAIL: engine did not build"
     exit 1
@@ -205,7 +211,8 @@ if compgen -G "$RUNTIME_DIR/*.js" >/dev/null; then
     fi
   else
     RUNTIME_BIN="$(mktemp -t milojs-runtime)"
-    trap 'rm -f "$ENGINE_BIN" "$RUNTIME_BIN"' EXIT
+    CLEANUP="$CLEANUP $RUNTIME_BIN"
+    trap 'rm -f $CLEANUP' EXIT
     if ! $MILO_RUN build src/milojs.milo -o "$RUNTIME_BIN" >/dev/null; then
       echo "FAIL: runtime did not build"
       exit 1
