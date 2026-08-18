@@ -30,7 +30,7 @@ The project deliberately has two deliverables:
 Engine maturity comes first. Runtime compatibility cannot be credible while the
 language engine and embedding contract are unstable.
 
-About <!--fact:loc-total-->52.6k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
+About <!--fact:loc-total-->52.7k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
 program, with no V8, JavaScriptCore, or C JavaScript engine underneath.
 
 ## Evidence
@@ -42,8 +42,8 @@ reproducible release artifact.
 
 | measure | result | corpus |
 |---|---:|---|
-| deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->1094<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->74.4%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
-| QuickJS `tests/` | **<!--fact:qjs-pass-->109<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = <!--fact:qjs-pct-->73.2%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
+| deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->1134<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->77.1%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
+| QuickJS `tests/` | **<!--fact:qjs-pass-->110<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = <!--fact:qjs-pct-->73.8%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
 | locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->220<!--/fact--> | byte-exact differential output vs node |
 | locked runtime fixtures (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->35<!--/fact--> | module, async, fetch, HTTP, sqlite, host behavior |
 | Milo invariant fixtures (`tests/milo/`, `tests/milo-errors/`) | <!--fact:fixtures-milo-->3<!--/fact--> + <!--fact:fixtures-milo-errors-->8<!--/fact--> | scheduler/context and GC-root invariants |
@@ -88,7 +88,7 @@ Not every remaining difference is milojs's: `/api/v2/roads` hangs under node too
 (it needs a live upstream), and `analytics/middleware` keeps both runtimes alive
 because it installs a `setInterval` at module scope.
 
-test262 stands at <!--fact:t262-pass-->1094<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = **<!--fact:t262-pct-->74.4%<!--/fact-->** on the deterministic sample. The
+test262 stands at <!--fact:t262-pass-->1134<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = **<!--fact:t262-pct-->77.1%<!--/fact-->** on the deterministic sample. The
 backlog carries the per-change attribution.
 
 Where the remaining failures are, compiled from the committed report rather than
@@ -99,13 +99,13 @@ sweep moved:
 | area | failing | passing |
 |---|---:|---:|
 | `language/statements` | 55 | 227/282 |
-| `built-ins/Temporal` | 44 | 87/131 |
 | `language/expressions` | 43 | 291/334 |
-| `built-ins/Object` | 39 | 88/127 |
+| `built-ins/Object` | 37 | 90/127 |
 | `built-ins/Array` | 26 | 65/91 |
-| `built-ins/RegExp` | 25 | 48/73 |
+| `built-ins/RegExp` | 19 | 54/73 |
+| `built-ins/Temporal` | 17 | 114/131 |
 | `built-ins/TypedArray` | 14 | 24/38 |
-| `built-ins/Iterator` | 14 | 10/24 |
+| `built-ins/String` | 12 | 27/39 |
 <!--/fact-block-->
 
 Reading it: the two `language/` rows are one area split in the corpus, and

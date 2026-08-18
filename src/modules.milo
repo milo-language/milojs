@@ -209,6 +209,9 @@ fn builtinSource(name: &string): string {
     if name == "async_hooks" {
         return @embedFile("../lib/async_hooks.js")
     }
+    if name == "worker_threads" {
+        return @embedFile("../lib/worker_threads.js")
+    }
     if name == "tty" {
         return @embedFile("../lib/tty.js")
     }

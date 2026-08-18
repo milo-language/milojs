@@ -17,8 +17,8 @@ Experimental, not yet a drop-in replacement for either.
 
 | suite | score |
 |---|---|
-| [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | <!--fact:t262-pct-->74.4%<!--/fact--> (<!--fact:t262-pass-->1094<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) |
-| [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | <!--fact:qjs-pct-->73.2%<!--/fact--> (<!--fact:qjs-pass-->109<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) |
+| [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | <!--fact:t262-pct-->77.1%<!--/fact--> (<!--fact:t262-pass-->1134<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) |
+| [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | <!--fact:qjs-pct-->73.8%<!--/fact--> (<!--fact:qjs-pass-->110<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) |
 
 Every number is generated from a committed report, never typed by hand. Full breakdown by area, known gaps and how to reproduce: [docs/status.md](docs/status.md).
 

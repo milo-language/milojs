@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "30ef3dd59acd927031d2d16d8f05eff5f6ac45e7",
+    "revision": "6f9088004a8d910184938bcde6a615c6371ff396",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 1094,
-    "fail": 376,
+    "pass": 1134,
+    "fail": 336,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -38,14 +38,14 @@
     },
     {
       "area": "built-ins/Temporal",
-      "pass": 87,
-      "fail": 44,
+      "pass": 114,
+      "fail": 17,
       "total": 131
     },
     {
       "area": "built-ins/Object",
-      "pass": 88,
-      "fail": 39,
+      "pass": 90,
+      "fail": 37,
       "total": 127
     },
     {
@@ -56,8 +56,8 @@
     },
     {
       "area": "built-ins/RegExp",
-      "pass": 48,
-      "fail": 25,
+      "pass": 54,
+      "fail": 19,
       "total": 73
     },
     {
@@ -80,8 +80,8 @@
     },
     {
       "area": "built-ins/Iterator",
-      "pass": 10,
-      "fail": 14,
+      "pass": 15,
+      "fail": 9,
       "total": 24
     },
     {
@@ -485,7 +485,7 @@
     },
     {
       "reason": "Uncaught TypeError: cannot read property '…' of undefined",
-      "count": 15,
+      "count": 14,
       "cases": [
         "built-ins/ThrowTypeError/extensible.js",
         "built-ins/Array/prototype/filter/15.4.4.20-1-9.js",
@@ -496,7 +496,6 @@
         "annexB/built-ins/RegExp/legacy-accessors/lastParen/prop-desc.js",
         "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-5.js",
         "language/function-code/block-decl-onlystrict.js",
-        "built-ins/Temporal/ZonedDateTime/prototype/weekOfYear/branding.js",
         "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-47.js",
         "built-ins/Object/S15.2_A1.js",
         "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-178.js",
@@ -506,9 +505,8 @@
     },
     {
       "reason": "Uncaught undefined: Expected a Test262Error to be thrown but no exception was thrown at al",
-      "count": 14,
+      "count": 13,
       "cases": [
-        "built-ins/RegExp/prototype/Symbol.replace/arg-2-coerce-err.js",
         "language/expressions/class/dstr/async-gen-meth-obj-ptrn-prop-eval-err.js",
         "built-ins/Promise/reject/ctx-ctor-throws.js",
         "language/expressions/async-generator/dstr/obj-ptrn-prop-eval-err.js",
@@ -615,16 +613,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: The result of evaluating (e instanceof SyntaxError) is expected to be ",
-      "count": 4,
-      "cases": [
-        "built-ins/RegExp/S15.10.1_A1_T15.js",
-        "built-ins/RegExp/S15.10.2.15_A1_T14.js",
-        "built-ins/RegExp/S15.10.1_A1_T11.js",
-        "built-ins/RegExp/S15.10.3.1_A2_T2.js"
-      ]
-    },
-    {
       "reason": "Test262:AsyncTestFailure:TypeError: [object Object] is not iterable",
       "count": 3,
       "cases": [
@@ -652,12 +640,12 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: cannot read property '…' of a non-object (in /var/folders/zc/m2tbb4v54",
+      "reason": "Uncaught undefined",
       "count": 3,
       "cases": [
-        "built-ins/Temporal/PlainYearMonth/prototype/add/options-object.js",
-        "built-ins/String/prototype/toUpperCase/S15.5.4.18_A1_T8.js",
-        "built-ins/Date/prototype/Symbol.toPrimitive/hint-default-first-invalid.js"
+        "language/statements/for-of/dstr/array-elem-trlg-iter-list-rtrn-close-err.js",
+        "language/statements/class/elements/public-class-field-initialization-on-super-class-with-setter.js",
+        "built-ins/Iterator/prototype/windows/return-is-not-forwarded-after-exhaustion.js"
       ]
     },
     {
@@ -736,14 +724,6 @@
       ]
     },
     {
-      "reason": "Uncaught RangeError: roundingIncrement must be a positive integer",
-      "count": 2,
-      "cases": [
-        "built-ins/Temporal/Instant/prototype/until/roundingincrement-non-integer.js",
-        "built-ins/Temporal/PlainTime/prototype/until/roundingincrement-non-integer.js"
-      ]
-    },
-    {
       "reason": "Uncaught ReferenceError: p1 is not defined",
       "count": 2,
       "cases": [
@@ -784,35 +764,11 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: concat is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh0",
+      "reason": "Uncaught TypeError: cannot read property '…' of a non-object (in /var/folders/zc/m2tbb4v54",
       "count": 2,
       "cases": [
-        "built-ins/Iterator/concat/throws-typeerror-when-iterator-not-an-object.js",
-        "built-ins/Iterator/concat/get-iterator-method-only-once.js"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: includes is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcm",
-      "count": 2,
-      "cases": [
-        "built-ins/Iterator/prototype/includes/exhaustion-does-not-call-return.js",
-        "built-ins/Iterator/prototype/includes/basic-match-and-miss.js"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: windows is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh",
-      "count": 2,
-      "cases": [
-        "built-ins/Iterator/prototype/windows/return-is-not-forwarded-after-exhaustion.js",
-        "built-ins/Iterator/prototype/windows/next-method-returns-throwing-value.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined",
-      "count": 2,
-      "cases": [
-        "language/statements/for-of/dstr/array-elem-trlg-iter-list-rtrn-close-err.js",
-        "language/statements/class/elements/public-class-field-initialization-on-super-class-with-setter.js"
+        "built-ins/String/prototype/toUpperCase/S15.5.4.18_A1_T8.js",
+        "built-ins/Date/prototype/Symbol.toPrimitive/hint-default-first-invalid.js"
       ]
     },
     {
@@ -901,6 +857,14 @@
       "cases": [
         "built-ins/ArrayBuffer/prototype/transferToFixedLength/from-fixed-to-larger-no-resizable.js",
         "built-ins/ArrayBuffer/prototype/transferToFixedLength/from-resizable-to-same.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: The result of evaluating (e instanceof SyntaxError) is expected to be ",
+      "count": 2,
+      "cases": [
+        "built-ins/RegExp/S15.10.1_A1_T15.js",
+        "built-ins/RegExp/S15.10.3.1_A2_T2.js"
       ]
     },
     {
@@ -1024,20 +988,6 @@
       ]
     },
     {
-      "reason": "Uncaught RangeError: invalid instant string: N-N-01T00Z",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/Instant/prototype/since/argument-string-date-with-utc-offset.js"
-      ]
-    },
-    {
-      "reason": "Uncaught RangeError: invalid instant string: N-N-09T01:N:N.N+N:N[UTC]",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/Instant/from/argument-zoneddatetime.js"
-      ]
-    },
-    {
       "reason": "Uncaught RangeError: Maximum call stack size exceeded",
       "count": 1,
       "cases": [
@@ -1045,17 +995,10 @@
       ]
     },
     {
-      "reason": "Uncaught RangeError: unsupported calendar in PlainTime string: hebrew",
+      "reason": "Uncaught RangeError: unsupported calendar in Instant string: hebrew",
       "count": 1,
       "cases": [
-        "built-ins/Temporal/PlainDateTime/prototype/withPlainTime/argument-string-calendar-annotation.js"
-      ]
-    },
-    {
-      "reason": "Uncaught RangeError: unsupported time zone: N-N-31T23:N:N+N:N[UTC] (only UTC and fixed off",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-propertybag-timezone-string-leap-second.js"
+        "built-ins/Temporal/Instant/prototype/since/instant-string.js"
       ]
     },
     {
@@ -1108,6 +1051,27 @@
       ]
     },
     {
+      "reason": "Uncaught SyntaxError: Invalid regular expression: /(?-s:.es$)/: Invalid regular expression",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/regexp-modifiers/remove-dotAll-does-not-affect-multiline-flag.js"
+      ]
+    },
+    {
+      "reason": "Uncaught SyntaxError: Invalid regular expression: /(?i:(?i:))/: Invalid regular expression",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/regexp-modifiers/syntax/valid/add-modifiers-when-nested.js"
+      ]
+    },
+    {
+      "reason": "Uncaught SyntaxError: Invalid regular expression: /(?i:\\x61)b/: Invalid regular expression",
+      "count": 1,
+      "cases": [
+        "built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-characterEscapes.js"
+      ]
+    },
+    {
       "reason": "Uncaught SyntaxError: Invalid regular expression: /^\\p{Script_Extensions=Tolong_Siki}+$/: ",
       "count": 1,
       "cases": [
@@ -1119,13 +1083,6 @@
       "count": 1,
       "cases": [
         "built-ins/RegExp/property-escapes/generated/Script_-_Tai_Yo.js"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: __lookupGetter__ is not a function (in /var/folders/zc/m2tbb4v542b9c11",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/prototype/__lookupGetter__/lookup-not-found.js"
       ]
     },
     {
@@ -1171,6 +1128,13 @@
       ]
     },
     {
+      "reason": "Uncaught TypeError: includes is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcm",
+      "count": 1,
+      "cases": [
+        "built-ins/Iterator/prototype/includes/exhaustion-does-not-call-return.js"
+      ]
+    },
+    {
       "reason": "Uncaught TypeError: iterator.next is not a function",
       "count": 1,
       "cases": [
@@ -1192,13 +1156,6 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: Property description must be an object (in /var/folders/zc/m2tbb4v542b",
-      "count": 1,
-      "cases": [
-        "built-ins/Object/defineProperties/15.2.3.7-5-b-246.js"
-      ]
-    },
-    {
       "reason": "Uncaught TypeError: static is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh0",
       "count": 1,
       "cases": [
@@ -1213,31 +1170,10 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: zipKeyed is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcm",
-      "count": 1,
-      "cases": [
-        "built-ins/Iterator/zipKeyed/iterables-iteration-symbol-key.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: -N:N:N.N is not a valid time zone string Expected a RangeError to be t",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/Now/plainDateISO/timezone-string-sub-minute-offset.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: -N.N Expected SameValue(«N», «-N») to be true",
       "count": 1,
       "cases": [
         "built-ins/Math/ceil/S15.8.2.6_A6.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: . should match a in modified group",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/regexp-modifiers/remove-dotAll-does-not-affect-multiline-flag.js"
       ]
     },
     {
@@ -1266,13 +1202,6 @@
       "count": 1,
       "cases": [
         "annexB/built-ins/escape/escape-above.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: \\x61 should match a",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-characterEscapes.js"
       ]
     },
     {
@@ -1402,20 +1331,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: −∞ is out of range for fractionalSecondDigits Expected a RangeError to",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainDateTime/prototype/toString/fractionalseconddigits-out-of-range.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: A number (N) is not a valid ISO string for PlainTime Expected a TypeEr",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainTime/prototype/since/argument-number.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Actual [] and expected [method] should have the same contents. ",
       "count": 1,
       "cases": [
@@ -1437,31 +1352,10 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Actual [get fields[Symbol('…')], get fields.years, get fields.months",
+      "reason": "Uncaught undefined: Actual [get fields[Symbol('…')], get fields.days, get fields.hours, ",
       "count": 1,
       "cases": [
         "built-ins/Temporal/Instant/prototype/subtract/order-of-operations.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Actual [get largestUnit.toString, call largestUnit.toString, get large",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainDateTime/prototype/since/largestunit-wrong-type.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Actual [get options.largestUnit, get options.largestUnit.toString, cal",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainTime/prototype/until/options-read-before-algorithmic-validation.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Actual [get options.overflow, get options.overflow.toString, call opti",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainMonthDay/prototype/with/order-of-operations.js"
       ]
     },
     {
@@ -1472,10 +1366,17 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Actual [get other[Symbol('…')], get other[Symbol('…')], ",
+      "reason": "Uncaught undefined: Actual [get other[Symbol('…')], get other.calendar, get other.day, g",
       "count": 1,
       "cases": [
         "built-ins/Temporal/PlainDate/prototype/until/order-of-operations.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Actual [has fields.calendar, has fields.timeZone, get fields.day, get ",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/PlainMonthDay/prototype/with/order-of-operations.js"
       ]
     },
     {
@@ -1556,45 +1457,10 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: auto largestUnit is year (pos): years result: Expected SameValue(«N», ",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainYearMonth/prototype/since/largestunit-auto.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: bare date-time string is not a time zone Expected a RangeError to be t",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/Now/plainDateISO/timezone-string-datetime.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: calendar annotation (without time or time zone): referenceISOYear resu",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainMonthDay/from/argument-string-calendar-annotation.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: date-time + IANA annotation preserves wall time in the time zone: hour",
       "count": 1,
       "cases": [
         "built-ins/Temporal/ZonedDateTime/prototype/since/zoneddatetime-string.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: date-time + offset preserves exact time with offset: hours result: Exp",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/Instant/prototype/since/instant-string.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: date-time + Z without an IANA annotation Expected a RangeError to be t",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/Duration/prototype/round/relativeto-string-invalid.js"
       ]
     },
     {
@@ -1609,13 +1475,6 @@
       "count": 1,
       "cases": [
         "built-ins/Temporal/Duration/prototype/round/relativeto-duration-out-of-range-added-to-relative-date.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: default smallestUnit is nanosecond: nanoseconds result Expected SameVa",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/ZonedDateTime/prototype/until/smallestunit-undefined.js"
       ]
     },
     {
@@ -1672,13 +1531,6 @@
       "count": 1,
       "cases": [
         "built-ins/Iterator/prototype/includes/skipped-elements-negative-integral-rangeerror.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Expected a RangeError to be thrown but no exception was thrown at all",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/Duration/prototype/round/invalid-increments.js"
       ]
     },
     {
@@ -1899,13 +1751,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Invalid string processed before throwing TypeError Expected a RangeErr",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainDate/from/options-wrong-type.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: invoked exactly once Expected SameValue(«N», «N») to be true",
       "count": 1,
       "cases": [
@@ -1924,6 +1769,13 @@
       "count": 1,
       "cases": [
         "built-ins/Atomics/and/not-a-constructor.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: ISO string N-N-19T17:N-N:N:N with a sub-minute offset is not a valid t",
+      "count": 1,
+      "cases": [
+        "built-ins/Temporal/Now/plainDateISO/timezone-string-datetime.js"
       ]
     },
     {
@@ -2025,13 +1877,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: null does not convert to a valid ISO string Expected a TypeError to be",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/Duration/prototype/round/relativeto-propertybag-timezone-wrong-type.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: null on an object whose '…' throws Expected a TypeError but got a Test",
       "count": 1,
       "cases": [
@@ -2109,73 +1954,10 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: referenceISOYear result: Expected SameValue(«N», «N») to be true",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainMonthDay/prototype/with/subclassing-ignored.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: RegExp(\"(?-:a)\", \"\"):  Expected a SyntaxError to be thrown but no exce",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/syntax-err-arithmetic-modifiers-both-empty.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: RegExp(\"(?s",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/syntax-err-arithmetic-modifiers-reverse-other-code-point-non-display-1.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: RegExp(\"(?ſ:a)\", \"u\"):  Expected a SyntaxError to be thrown but no exc",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/early-err-modifiers-should-not-unicode-case-fold-s.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: RegExp(\"(?y:a)\", \"\"):  Expected a SyntaxError to be thrown but no exce",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/early-err-modifiers-other-code-point-y.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: reject minus zero as extended year Expected a RangeError to be thrown ",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/Duration/compare/relativeto-propertybag-timezone-string-year-zero.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: results[N][N] - kValue Expected SameValue(«N», «42n») to be true (Test",
       "count": 1,
       "cases": [
         "built-ins/TypedArray/prototype/map/BigInt/callbackfn-arguments-without-thisarg.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Rounding down is towards the Big Bang, not the epoch or N BCE (roundin",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainDateTime/prototype/round/rounding-direction.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: roundingMode is halfExpand (with N digits from smallestUnit) Expected ",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainTime/prototype/toString/roundingmode-halfExpand.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: rounds to microsecond (roundingMode = halfTrunc) Expected SameValue(«N",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/Instant/prototype/round/roundingmode-halfTrunc.js"
       ]
     },
     {
@@ -2190,13 +1972,6 @@
       "count": 1,
       "cases": [
         "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/key-is-numericindex-desc-configurable.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: string with years > max is out of range Expected a RangeError to be th",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/PlainDateTime/prototype/subtract/argument-duration-out-of-range.js"
       ]
     },
     {
@@ -2288,13 +2063,6 @@
       "count": 1,
       "cases": [
         "built-ins/AsyncFunction/AsyncFunctionPrototype-to-string.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: undefined does not convert to a valid ISO string Expected a TypeError ",
-      "count": 1,
-      "cases": [
-        "built-ins/Temporal/ZonedDateTime/prototype/until/argument-wrong-type.js"
       ]
     },
     {
