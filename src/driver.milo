@@ -20,8 +20,11 @@ from "./value" import {
 from "./runtime" import {
     Interp, newScope, collect, pushTemp, popTemp
 }
+from "./bootstrap" import {
+    setupGlobals
+}
 from "./eval" import {
-    execBlock, execStmt, evalExpr, hoistBlock, makeError, runEventLoop, setupGlobals
+    execBlock, execStmt, evalExpr, hoistBlock, makeError, runEventLoop
 }
 
 // gcThreshold is the allocation count that triggers a collection. Lowering it to

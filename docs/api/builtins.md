@@ -31,6 +31,57 @@ beside stringMethod because the by-name dispatch is what makes them reachable:
 assigning them onto String.prototype from JS would mark it touched and turn
 that dispatch off for every other method.
 
+### `isPrimitiveMethodName`
+
+```milo
+pub fn isPrimitiveMethodName(n: &string): bool
+```
+
+Builtin methods dispatch natively by name; they are not properties. Reading one
+as a VALUE therefore used to yield undefined even though calling it worked, which
+breaks two very common patterns: feature detection (`typeof x.test === "function"`)
+and method extraction (`Array.prototype.slice.call(args)`). These predicates say
+whether a receiver answers to a name, so the member paths can hand back a bound
+method instead of undefined.
+
+### `isRegexMethodName`
+
+```milo
+pub fn isRegexMethodName(n: &string): bool
+```
+
+_Undocumented._
+
+### `isStringMethodName`
+
+```milo
+pub fn isStringMethodName(n: &string): bool
+```
+
+_Undocumented._
+
+### `isStringRegexOp`
+
+```milo
+pub fn isStringRegexOp(st: &Interp, name: &string, args: &Vec<JSValue>): bool
+```
+
+RegExp.prototype. Like the buffer family and Date before it, this object did
+not exist: `RegExp.prototype` read as undefined, so every test262 case that
+starts from the prototype — and there are many, since the flag accessors and
+the @@match/@@replace/@@split family all live there — failed before testing
+anything. Instances now link it, which is also what makes
+`Object.getPrototypeOf(/x/) === RegExp.prototype` hold.
+
+The flag properties stay OWN properties of each instance (that is where this
+engine resolves them); the prototype carries the methods.
+The regex-taking String operations. These used to live only on evalExpr's
+method-call path, so `s.match(/re/)` worked while
+`String.prototype.match.call(s, /re/)` returned undefined and
+`String.prototype.split.call(s, /,/)` returned the string unsplit —
+callBuiltinByName goes straight to stringMethod, which knows nothing about
+regexes. Both paths call this now.
+
 ### `jsIndexOf`
 
 ```milo
@@ -51,6 +102,14 @@ _Undocumented._
 
 ```milo
 pub fn jsTrim(s: &string): string
+```
+
+_Undocumented._
+
+### `makeRegex`
+
+```milo
+pub fn makeRegex(st: &mut Interp, pattern: string, flags: string): JSValue
 ```
 
 _Undocumented._
@@ -155,6 +214,31 @@ buffer or string) and makes the arithmetic downstream unable to overflow.
 
 NaN answers 0, which is ToIntegerOrInfinity's rule.
 
+### `primitiveMethod`
+
+```milo
+pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>): JSValue
+```
+
+_Undocumented._
+
+### `regexArgFor`
+
+```milo
+pub fn regexArgFor(st: &mut Interp, name: &string, args: &Vec<JSValue>): Vec<JSValue>
+```
+
+The argument re-made as a RegExp, with matchAll keeping the /g the spec
+requires of it.
+
+### `regexMethod`
+
+```milo
+pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSValue
+```
+
+_Undocumented._
+
 ### `strCodePoints`
 
 ```milo
@@ -183,6 +267,25 @@ U+00FF was destroyed.
 
 ```milo
 pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue
+```
+
+_Undocumented._
+
+### `stringOpNeedsRegexArg`
+
+```milo
+pub fn stringOpNeedsRegexArg(st: &Interp, name: &string, args: &Vec<JSValue>): bool
+```
+
+match/matchAll/search have NO non-regex form: the spec builds a RegExp from
+whatever it is handed. `"a1b".match("\\d")` is ["1"], not undefined, and
+passing a plain string is the common way to write it. replace/split do have
+literal-string forms, so they are deliberately absent here.
+
+### `stringRegexOp`
+
+```milo
+pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue
 ```
 
 _Undocumented._

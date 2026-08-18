@@ -1,0 +1,293 @@
+// Host bindings the evaluator reaches for but does not own: an HTTP fetch, a
+// child process, a sqlite handle, a DNS-style dotted quad, a path made
+// absolute. None of them are the ECMAScript language, and none belong in
+// src/eval.milo, which is the evaluator. `milojs-engine` links this file and
+// never calls into it; only the `milojs` runtime does.
+
+from "./value" import {
+    JSValue
+}
+from "./runtime" import {
+    Interp
+}
+// A live index into st.sqliteDbs, or -1 when the handle is closed or bogus. Every
+// sqlite native funnels through this so a use-after-close is a JS-level error
+// rather than a call on a freed sqlite3*.
+pub fn sqliteDbIdx(st: &Interp, v: &JSValue): i64 {
+    let i = toNum(v) as i64
+    if i < 0 || i >= st.sqliteDbs.len() || !st.sqliteDbLive[i] {
+        return 0 - 1
+    }
+    return i
+}
+
+pub fn sqliteStmtIdx(st: &Interp, v: &JSValue): i64 {
+    let i = toNum(v) as i64
+    if i < 0 || i >= st.sqliteStmts.len() || !st.sqliteStmtLive[i] {
+        return 0 - 1
+    }
+    return i
+}
+
+// Invoke a native function/constructor. Error(msg) and new Error(msg) behave the
+// same (both mint an error object), matching JS.
+// Synchronous outbound HTTP/HTTPS. Milo has no coroutines and the event loop is
+// drained in place on await, so a blocking request is consistent with the rest of
+// the runtime (the server side blocks on accept too). Returns the raw HTTP
+// response text prefixed with 'O', or 'E' + message on any failure — the JS side
+// (lib/node-fetch.js) strips the sentinel and parses the response.
+pub fn doHttpFetch(method: &string, url: &string, headersRaw: &string, body: &string): string {
+    // parse scheme://host[:port]/path
+    var rest = url.clone()
+    var tls = true
+    var defPort: i64 = 443
+    if jsStartsWith(rest, "https://") {
+        rest = strSlice(rest, 8, rest.len())
+    } else if jsStartsWith(rest, "http://") {
+        tls = false
+        defPort = 80
+        rest = strSlice(rest, 7, rest.len())
+    } else {
+        return "Eunsupported URL scheme: " + url.clone()
+    }
+    // host[:port] is up to the first '/'
+    var slash = jsIndexOf(rest, "/", 0)
+    var authority = rest.clone()
+    var path = "/"
+    if slash >= 0 {
+        authority = strSlice(rest, 0, slash)
+        path = strSlice(rest, slash, rest.len())
+    }
+    var host = authority.clone()
+    var port = defPort
+    let colon = jsIndexOf(authority, ":", 0)
+    if colon >= 0 {
+        host = strSlice(authority, 0, colon)
+        let portStr = strSlice(authority, colon + 1, authority.len())
+        port = toNum(JSValue.Str(portStr)) as i64
+        if port <= 0 {
+            port = defPort
+        }
+    }
+    // DNS
+    var ip: u32 = 0
+    match resolve(host) {
+        Result.Ok(a) => {
+            ip = a
+        }
+        Result.Err(_e) => {
+            return "Ecannot resolve host: " + host.clone()
+        }
+    }
+    // build the request. HTTP/1.1 with Connection: close so the read loop ends at
+    // EOF instead of needing to parse content-length/chunked to know when to stop.
+    var req = method.clone() + " " + path.clone() + " HTTP/1.1\r\n"
+    req = req + "Host: " + host.clone() + "\r\n"
+    req = req + headersRaw.clone()
+    req = req + "Connection: close\r\n"
+    if body.len() > 0 {
+        req = req + "Content-Length: " + i64ToStr(body.len()) + "\r\n"
+    }
+    req = req + "\r\n" + body.clone()
+
+    if tls {
+        match TlsStream.connect(ip, port as u16, host) {
+            Result.Ok(conn) => {
+                match conn.send(req) {
+                    Result.Ok(_n) => {
+                    }
+                    Result.Err(_e) => {
+                        return "Esend failed"
+                    }
+                }
+                var resp = ""
+                var reading = true
+                while reading {
+                    match conn.recv() {
+                        Result.Ok(chunk) => {
+                            if chunk.len() == 0 {
+                                reading = false
+                            } else {
+                                resp = resp + chunk
+                            }
+                        }
+                        Result.Err(_e) => {
+                            reading = false
+                        }
+                    }
+                }
+                return "O" + resp
+            }
+            Result.Err(_e) => {
+                return "ETLS connect failed to " + host.clone()
+            }
+        }
+    }
+    match TcpStream.connect(ip, port as u16) {
+        Result.Ok(conn) => {
+            match conn.send(req) {
+                Result.Ok(_n) => {
+                }
+                Result.Err(_e) => {
+                    return "Esend failed"
+                }
+            }
+            var resp = ""
+            var reading = true
+            while reading {
+                match conn.recv() {
+                    Result.Ok(chunk) => {
+                        if chunk.len() == 0 {
+                            reading = false
+                        } else {
+                            resp = resp + chunk
+                        }
+                    }
+                    Result.Err(_e) => {
+                        reading = false
+                    }
+                }
+            }
+            return "O" + resp
+        }
+        Result.Err(_e) => {
+            return "ETCP connect failed to " + host.clone()
+        }
+    }
+}
+
+// require(spec) — resolved against the directory of the module the call SITE
+// belongs to, which is not always the module currently running.
+//
+// `st.modDirStack` is dynamic: it is popped when a module body finishes. A lazy
+// require inside a closure runs long after that, so it saw whoever triggered it.
+// body-parser's `Object.defineProperty(exports, 'json', {get: … require('./lib/types/json')})`
+// is exactly this shape, and express reaching for `bodyParser.json` resolved it
+// as `node_modules/express/lib/lib/types/json` — express 4 could not load at all.
+// The lexical `__dirname` binding is per module scope, so looking it up through
+// the closure's own env chain names the right module.
+// Make a path absolute against the process working directory. Module paths are
+// stored relative internally; what escapes to JS must not be.
+pub fn absolutePathOf(p: string): string {
+    if p.len() > 0 && p[0] == '/' {
+        return p
+    }
+    // a builtin module is not a filesystem path and must not acquire one
+    if p.len() >= 8 && strSlice(p, 0, 8) == "builtin:" {
+        return p
+    }
+    let base = match currentDir() {
+        Result.Ok(d) => d
+        Result.Err(_e) => {
+            return p
+        }
+    }
+    if p.len() == 0 {
+        return base
+    }
+    if p == "." {
+        return base
+    }
+    return base + "/" + p
+}
+
+// A dotted-quad host as the packed u32 TcpStream.connect wants. There is no
+// resolver here, so a name that is not four numbers falls back to loopback,
+// which is what "localhost" means and what every test that connects to a server
+// it just started is asking for.
+pub fn parseDottedQuad(host: &string): u32 {
+    var parts: Vec<i64> = Vec.new()
+    var cur: i64 = 0
+    var digits: i64 = 0
+    var i: i64 = 0
+    while i < host.len() {
+        let c = host[i]
+        if c >= '0' && c <= '9' {
+            cur = cur * 10 + (c as i64 - 48)
+            digits = digits + 1
+        } else if c == '.' {
+            parts.push(cur)
+            cur = 0
+            digits = 0
+        } else {
+            return ip4(127 as u8, 0 as u8, 0 as u8, 1 as u8)
+        }
+        i = i + 1
+    }
+    if digits > 0 {
+        parts.push(cur)
+    }
+    if parts.len() != 4 {
+        return ip4(127 as u8, 0 as u8, 0 as u8, 1 as u8)
+    }
+    return ip4(parts[0] as u8, parts[1] as u8, parts[2] as u8, parts[3] as u8)
+}
+
+// Drain every queued microtask. Microtasks may enqueue more, which is correct:
+// JS runs the queue to exhaustion before the next timer.
+// Settle a promise and queue every reaction that was waiting on it. Settling
+// twice is ignored, as in JS.
+// Run threadsafe-function calls queued by an addon's own threads, then apply any
+// promise settlements they made. This is the only place a foreign thread's work
+// crosses into the interpreter.
+// Settle any fetch whose worker thread has finished. Called from the event loop
+// and from a blocked await, the same way node-api work is serviced.
+// Run a child to completion off the interpreter thread and encode the result as
+// one string, because that is what the pending-work channel carries. The format
+// is "<status>|<output>": a status and the combined stdout/stderr, with the
+// first pipe separating them so output containing pipes survives intact.
+// Read to EOF then reap. Runs on the worker thread: both halves block, and the
+// interpreter loop owns the OS main thread and never parks.
+pub fn readChildToCompletion(child: Child): string {
+    var text = ""
+    var buf: [u8; 4096] = [0; 4096]
+    var reading = true
+    while reading {
+        var n: i64 = 0
+        unsafe {
+            n = child.readStdout(buf as *u8, 4096)
+        }
+        if n <= 0 {
+            reading = false
+        } else {
+            var bi: i64 = 0
+            while bi < n {
+                text.push(buf[bi])
+                bi = bi + 1
+            }
+        }
+    }
+    var code: i64 = 0
+    match child.wait() {
+        Result.Ok(c) => {
+            code = c as i64
+        }
+        Result.Err(_w) => {
+            code = 0 - 1
+        }
+    }
+    return i64ToStr(code) + "|" + text
+}
+
+pub fn buildChildCommand(program: string, args: Vec<string>, envPairs: Vec<string>): Command {
+    var cmd = Command.new(program).args(args).stderr(Stdio.Merge)
+    var ei: i64 = 0
+    while ei < envPairs.len() {
+        let pair = envPairs[ei].clone()
+        var eq: i64 = 0 - 1
+        var ci: i64 = 0
+        while ci < pair.len() {
+            if pair[ci] == '=' && eq < 0 {
+                eq = ci
+            }
+            ci = ci + 1
+        }
+        if eq > 0 {
+            let ename = pair.slice(0, eq).clone()
+            let eval_ = pair.slice(eq + 1, pair.len()).clone()
+            cmd = cmd.env(ename, eval_)
+        }
+        ei = ei + 1
+    }
+    return cmd
+}

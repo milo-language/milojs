@@ -4,13 +4,22 @@
 // node-compat shims on top of this engine.
 //
 // Pipeline (in the imported modules):
-//   lexer.milo    source text → tokens
-//   ast.milo      AST node types + the index-addressed Prog arena
-//   parser.milo   tokens → AST
-//   value.milo    the JSValue type + JS coercion rules
-//   runtime.milo  the scope arena, object heap, and mark-sweep GC
-//   eval.milo     the tree-walking evaluator
-//   driver.milo   makeInterp / bootInterp / runSource (shared with the runtime)
+//   lexer.milo      source text → tokens
+//   ast.milo        AST node types + the index-addressed Prog arena
+//   parser.milo     tokens → AST
+//   value.milo      the JSValue type + JS coercion rules
+//   runtime.milo    the scope arena, object heap, and mark-sweep GC
+//   eval.milo       the tree-walking evaluator
+//   bytecode.milo   a bytecode path for numeric `for` loops (falls back here)
+//   bootstrap.milo  builds the global object once, before any user JS runs
+//   builtins.milo   String and RegExp methods
+//   methods.milo    Array, TypedArray, DataView, Date and Map/Set methods
+//   host.milo       fetch, child processes, sqlite: host, not language
+//   driver.milo     makeInterp / bootInterp / runSource (shared with the runtime)
+//
+// The middle five import eval.milo and eval.milo imports them back. Milo permits
+// circular imports, which is what lets a leaf call the evaluator services it
+// needs instead of reimplementing them.
 
 from "std/fs" import {
     readFile

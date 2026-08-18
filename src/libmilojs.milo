@@ -4,6 +4,9 @@
 // this preview exposes one live context at a time. Handles are generation tokens,
 // not pointers to Milo-managed data. See docs/milojs-embedding.md.
 
+from "./bytecode" import {
+    resetLoopCache
+}
 from "./runtime" import {
     gInterp
 }
@@ -98,12 +101,14 @@ pub fn milojs_context_new(outContext: *i64): i32 {
     }
     gInterp = makeInterp(false, 1024, 2)
     gProg = newProg()
+    resetLoopCache()
     bootInterp(gInterp)
     let _prelude = evalSourceValue(@embedFile("../lib/engine-prelude.js"), gProg, gInterp)
     if gInterp.throwing {
         mjEmbedException = describeThrown(gInterp, gInterp.thrownValue)
         gInterp = makeInterp(false, 1024, 2)
         gProg = newProg()
+    resetLoopCache()
         return MILOJS_STATUS_INIT_FAILED
     }
     mjEmbedActive = true
@@ -122,6 +127,7 @@ pub fn milojs_context_free(context: i64): i32 {
     // Keep a valid empty value in the global because Milo globals cannot be null.
     gInterp = makeInterp(false, 1024, 2)
     gProg = newProg()
+    resetLoopCache()
     mjEmbedActive = false
     mjEmbedException = ""
     return MILOJS_STATUS_OK

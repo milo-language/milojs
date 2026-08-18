@@ -1,0 +1,595 @@
+// A bytecode path for numeric `for` loops. This is an EXPERIMENT, not the VM:
+// it exists to price a dispatch loop against the tree walker on identical work
+// before anyone commits to rewriting the evaluator.
+//
+// The repo's own paired benches already showed that every mechanism-level fix
+// is worth 1.2-1.8x (localRead 462x vs deepRead 570x isolates the scope-chain
+// walk; propFew 653x vs propMany 768x isolates the property scan). What they
+// cannot price is the tree walk itself. This can.
+//
+// Scope: a `for` statement whose init, condition, update and body mention only
+// numbers, arithmetic, comparisons, `if`, `while` and nested blocks. No calls,
+// no property access, no strings, no closures, no break/continue/return/throw.
+// Anything else compiles to None and the tree walker runs the loop exactly as
+// before, so no conformance number can move.
+//
+// The subset allocates nothing, so no value on this stack is ever a heap value:
+// the collector cannot see this stack and does not need to. That is the only
+// reason a partial VM is safe to run ahead of the rooting work in
+// docs/milojs-arena-safety.md.
+//
+// It also means skipping the per-statement `maybeGc` safepoint is not a
+// deferral but a no-op: `maybeGc` collects on `allocSinceGc >= gcThreshold`, and
+// a compiled loop never allocates, so the counter it reads cannot move while
+// one runs. There is no interrupt or deadline check riding on that safepoint.
+
+from "./ast" import {
+    Prog, Expr, Stmt, ExprId, StmtId
+}
+from "./value" import {
+    JSValue
+}
+from "./runtime" import {
+    Interp, scopeTryLookup, scopeAssign
+}
+
+// An enum rather than integer opcodes so the dispatch `match` lowers to a jump
+// table. (Checked: milo compiles a 200-arm match on a dense enum to an offset
+// table plus one indirect branch.)
+enum Op {
+    Const,
+    Load,
+    Store,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Neg,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+    Eq,
+    Ne,
+    Jmp,
+    Jmpf,
+    Pop,
+    Halt,
+}
+
+pub struct Chunk {
+    ops: Vec<Op>,
+    args: Vec<i64>,
+    consts: Vec<f64>,
+    // slot -> the name it stands for. Outer slots are seeded from the enclosing
+    // scope on entry and written back on exit; slots the loop declares itself
+    // are neither, because nothing outside can observe them.
+    slotNames: Vec<string>,
+    slotOuter: Vec<bool>,
+}
+
+struct Comp {
+    ops: Vec<Op>,
+    args: Vec<i64>,
+    consts: Vec<f64>,
+    slotNames: Vec<string>,
+    slotOuter: Vec<bool>,
+    ok: bool,
+}
+
+fn emitOp(c: &mut Comp, op: Op, a: i64): i64 {
+    let at = c.ops.len()
+    c.ops.push(op)
+    c.args.push(a)
+    return at
+}
+
+fn constSlot(c: &mut Comp, v: f64): i64 {
+    var i: i64 = 0
+    while i < c.consts.len() {
+        if c.consts[i] == v {
+            return i
+        }
+        i = i + 1
+    }
+    c.consts.push(v)
+    return c.consts.len() - 1
+}
+
+// Find the slot for `name`, adding one if this is its first mention. `declared`
+// marks a name the loop itself binds, which is what makes it not-outer.
+fn slotOf(c: &mut Comp, name: &string, declared: bool): i64 {
+    var i: i64 = 0
+    while i < c.slotNames.len() {
+        if c.slotNames[i] == name {
+            return i
+        }
+        i = i + 1
+    }
+    c.slotNames.push(name.clone())
+    c.slotOuter.push(!declared)
+    return c.slotNames.len() - 1
+}
+
+fn binOpFor(op: &string): Op {
+    if op == "+" {
+        return Op.Add
+    }
+    if op == "-" {
+        return Op.Sub
+    }
+    if op == "*" {
+        return Op.Mul
+    }
+    if op == "/" {
+        return Op.Div
+    }
+    if op == "%" {
+        return Op.Mod
+    }
+    if op == "<" {
+        return Op.Lt
+    }
+    if op == ">" {
+        return Op.Gt
+    }
+    if op == "<=" {
+        return Op.Le
+    }
+    if op == ">=" {
+        return Op.Ge
+    }
+    if op == "===" {
+        return Op.Eq
+    }
+    if op == "!==" {
+        return Op.Ne
+    }
+    return Op.Halt
+}
+
+// Compile one expression, leaving its value on the stack. Sets c.ok false for
+// anything outside the subset; callers keep walking but the result is discarded.
+fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
+    if !c.ok {
+        return
+    }
+    match prog.exprs[id.index] {
+        Expr.Num(n) => {
+            let k = constSlot(c, n)
+            emitOp(c, Op.Const, k)
+        }
+        Expr.Ident(name) => {
+            let s = slotOf(c, name, false)
+            emitOp(c, Op.Load, s)
+        }
+        Expr.Bin(op, a, b) => {
+            let o = binOpFor(op)
+            match o {
+                Op.Halt => {
+                    c.ok = false
+                }
+                _ => {
+                    compExpr(prog, c, a)
+                    compExpr(prog, c, b)
+                    emitOp(c, o, 0)
+                }
+            }
+        }
+        Expr.Un(op, a) => {
+            if op == "-" {
+                compExpr(prog, c, a)
+                emitOp(c, Op.Neg, 0)
+            } else {
+                c.ok = false
+            }
+        }
+        Expr.Assign(name, rhs) => {
+            compExpr(prog, c, rhs)
+            let s = slotOf(c, name, false)
+            emitOp(c, Op.Store, s)
+            emitOp(c, Op.Load, s)
+        }
+        Expr.CompoundAssign(target, op, rhs) => {
+            match prog.exprs[target.index] {
+                Expr.Ident(name) => {
+                    let s = slotOf(c, name, false)
+                    emitOp(c, Op.Load, s)
+                    compExpr(prog, c, rhs)
+                    let o = binOpFor(op)
+                    match o {
+                        Op.Halt => {
+                            c.ok = false
+                        }
+                        _ => {
+                            emitOp(c, o, 0)
+                            emitOp(c, Op.Store, s)
+                            emitOp(c, Op.Load, s)
+                        }
+                    }
+                }
+                _ => {
+                    c.ok = false
+                }
+            }
+        }
+        Expr.Update(target, isInc, isPrefix) => {
+            match prog.exprs[target.index] {
+                Expr.Ident(name) => {
+                    let s = slotOf(c, name, false)
+                    let one = constSlot(c, 1.0)
+                    if isPrefix {
+                        emitOp(c, Op.Load, s)
+                        emitOp(c, Op.Const, one)
+                        if isInc {
+                            emitOp(c, Op.Add, 0)
+                        } else {
+                            emitOp(c, Op.Sub, 0)
+                        }
+                        emitOp(c, Op.Store, s)
+                        emitOp(c, Op.Load, s)
+                    } else {
+                        emitOp(c, Op.Load, s)
+                        emitOp(c, Op.Load, s)
+                        emitOp(c, Op.Const, one)
+                        if isInc {
+                            emitOp(c, Op.Add, 0)
+                        } else {
+                            emitOp(c, Op.Sub, 0)
+                        }
+                        emitOp(c, Op.Store, s)
+                    }
+                }
+                _ => {
+                    c.ok = false
+                }
+            }
+        }
+        _ => {
+            c.ok = false
+        }
+    }
+}
+
+fn compStmt(prog: &Prog, c: &mut Comp, id: StmtId) {
+    if !c.ok {
+        return
+    }
+    match prog.stmts[id.index] {
+        Stmt.Empty => {
+        }
+        Stmt.ExprStmt(e) => {
+            compExpr(prog, c, e)
+            emitOp(c, Op.Pop, 0)
+        }
+        Stmt.Block(b) => {
+            var i: i64 = 0
+            while i < prog.blocks[b.index].len() {
+                compStmt(prog, c, prog.blocks[b.index][i])
+                i = i + 1
+            }
+        }
+        Stmt.MultiDecl(listIdx) => {
+            var i: i64 = 0
+            while i < prog.declLists[listIdx.index].len() {
+                // `var` escapes the loop to the enclosing function scope, so a
+                // slot that is never written back would lose it. Rejected rather
+                // than handled: the subset does not need it.
+                if prog.declLists[listIdx.index][i].isVar {
+                    c.ok = false
+                    return
+                }
+                compExpr(prog, c, prog.declLists[listIdx.index][i].init)
+                let s = slotOf(c, prog.declLists[listIdx.index][i].name, true)
+                emitOp(c, Op.Store, s)
+                i = i + 1
+            }
+        }
+        Stmt.If(cond, then, els) => {
+            compExpr(prog, c, cond)
+            let jf = emitOp(c, Op.Jmpf, 0)
+            compStmt(prog, c, then)
+            match els {
+                Option.Some(e) => {
+                    let jend = emitOp(c, Op.Jmp, 0)
+                    c.args[jf] = c.ops.len()
+                    compStmt(prog, c, e)
+                    c.args[jend] = c.ops.len()
+                }
+                Option.None => {
+                    c.args[jf] = c.ops.len()
+                }
+            }
+        }
+        Stmt.While(cond, body) => {
+            let top = c.ops.len()
+            compExpr(prog, c, cond)
+            let jf = emitOp(c, Op.Jmpf, 0)
+            compStmt(prog, c, body)
+            emitOp(c, Op.Jmp, top)
+            c.args[jf] = c.ops.len()
+        }
+        _ => {
+            c.ok = false
+        }
+    }
+}
+
+// Compile a `for` statement, or answer None when any part of it falls outside
+// the subset.
+pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
+    match prog.stmts[id.index] {
+        Stmt.For(init, cond, update, body) => {
+            var c = Comp {
+                ops: Vec.new(), args: Vec.new(), consts: Vec.new(),
+                slotNames: Vec.new(), slotOuter: Vec.new(), ok: true,
+            }
+            match init {
+                Option.Some(s) => {
+                    compStmt(prog, c, s)
+                }
+                Option.None => {
+                }
+            }
+            let top = c.ops.len()
+            match cond {
+                Option.Some(e) => {
+                    compExpr(prog, c, e)
+                }
+                Option.None => {
+                    let k = constSlot(c, 1.0)
+                    emitOp(c, Op.Const, k)
+                }
+            }
+            let jf = emitOp(c, Op.Jmpf, 0)
+            compStmt(prog, c, body)
+            match update {
+                Option.Some(e) => {
+                    compExpr(prog, c, e)
+                    emitOp(c, Op.Pop, 0)
+                }
+                Option.None => {
+                }
+            }
+            emitOp(c, Op.Jmp, top)
+            c.args[jf] = c.ops.len()
+            emitOp(c, Op.Halt, 0)
+            if !c.ok {
+                return Option.None
+            }
+            return Option.Some(Chunk {
+                ops: c.ops, args: c.args, consts: c.consts,
+                slotNames: c.slotNames, slotOuter: c.slotOuter,
+            })
+        }
+        _ => {
+            return Option.None
+        }
+    }
+}
+
+// Run a compiled loop. Answers false without touching anything when an outer
+// name the loop reads is missing or is not a number, in which case the caller
+// must run the tree walker instead.
+pub fn runChunk(ch: &Chunk, st: &mut Interp, scope: i64): bool {
+    var locals: Vec<f64> = Vec.new()
+    var i: i64 = 0
+    while i < ch.slotNames.len() {
+        if ch.slotOuter[i] {
+            match scopeTryLookup(st, scope, ch.slotNames[i]) {
+                Option.Some(v) => {
+                    match v {
+                        JSValue.Number(n) => {
+                            locals.push(n)
+                        }
+                        _ => {
+                            return false
+                        }
+                    }
+                }
+                Option.None => {
+                    return false
+                }
+            }
+        } else {
+            locals.push(0.0)
+        }
+        i = i + 1
+    }
+
+    // The value stack is a plain Vec with an explicit pointer rather than
+    // push/pop, so a pop is an index read instead of an Option unwrap. It grows
+    // on demand: the branch is taken once per depth and never again.
+    var stack: Vec<f64> = Vec.new()
+    var sp: i64 = 0
+    var pc: i64 = 0
+    while pc < ch.ops.len() {
+        let a = ch.args[pc]
+        match ch.ops[pc] {
+            Op.Const => {
+            if sp >= stack.len() {
+                stack.push(ch.consts[a])
+            } else {
+                stack[sp] = ch.consts[a]
+            }
+            sp = sp + 1
+                pc = pc + 1
+            }
+            Op.Load => {
+            if sp >= stack.len() {
+                stack.push(locals[a])
+            } else {
+                stack[sp] = locals[a]
+            }
+            sp = sp + 1
+                pc = pc + 1
+            }
+            Op.Store => {
+                sp = sp - 1
+                locals[a] = stack[sp]
+                pc = pc + 1
+            }
+            Op.Add => {
+                sp = sp - 1
+                let y = stack[sp]
+                stack[sp - 1] = stack[sp - 1] + y
+                pc = pc + 1
+            }
+            Op.Sub => {
+                sp = sp - 1
+                let y = stack[sp]
+                stack[sp - 1] = stack[sp - 1] - y
+                pc = pc + 1
+            }
+            Op.Mul => {
+                sp = sp - 1
+                let y = stack[sp]
+                stack[sp - 1] = stack[sp - 1] * y
+                pc = pc + 1
+            }
+            Op.Div => {
+                sp = sp - 1
+                let y = stack[sp]
+                stack[sp - 1] = stack[sp - 1] / y
+                pc = pc + 1
+            }
+            Op.Mod => {
+                sp = sp - 1
+                let y = stack[sp]
+                stack[sp - 1] = stack[sp - 1] % y
+                pc = pc + 1
+            }
+            Op.Neg => {
+                stack[sp - 1] = -stack[sp - 1]
+                pc = pc + 1
+            }
+            Op.Lt => {
+                sp = sp - 1
+                let y = stack[sp]
+                if stack[sp - 1] < y {
+                    stack[sp - 1] = 1.0
+                } else {
+                    stack[sp - 1] = 0.0
+                }
+                pc = pc + 1
+            }
+            Op.Gt => {
+                sp = sp - 1
+                let y = stack[sp]
+                if stack[sp - 1] > y {
+                    stack[sp - 1] = 1.0
+                } else {
+                    stack[sp - 1] = 0.0
+                }
+                pc = pc + 1
+            }
+            Op.Le => {
+                sp = sp - 1
+                let y = stack[sp]
+                if stack[sp - 1] <= y {
+                    stack[sp - 1] = 1.0
+                } else {
+                    stack[sp - 1] = 0.0
+                }
+                pc = pc + 1
+            }
+            Op.Ge => {
+                sp = sp - 1
+                let y = stack[sp]
+                if stack[sp - 1] >= y {
+                    stack[sp - 1] = 1.0
+                } else {
+                    stack[sp - 1] = 0.0
+                }
+                pc = pc + 1
+            }
+            Op.Eq => {
+                sp = sp - 1
+                let y = stack[sp]
+                if stack[sp - 1] == y {
+                    stack[sp - 1] = 1.0
+                } else {
+                    stack[sp - 1] = 0.0
+                }
+                pc = pc + 1
+            }
+            Op.Ne => {
+                sp = sp - 1
+                let y = stack[sp]
+                if stack[sp - 1] != y {
+                    stack[sp - 1] = 1.0
+                } else {
+                    stack[sp - 1] = 0.0
+                }
+                pc = pc + 1
+            }
+            Op.Jmp => {
+                pc = a
+            }
+            Op.Jmpf => {
+                sp = sp - 1
+                if stack[sp] == 0.0 {
+                    pc = a
+                } else {
+                    pc = pc + 1
+                }
+            }
+            Op.Pop => {
+                sp = sp - 1
+                pc = pc + 1
+            }
+            Op.Halt => {
+                pc = ch.ops.len()
+            }
+        }
+    }
+
+    var k: i64 = 0
+    while k < ch.slotNames.len() {
+        if ch.slotOuter[k] {
+            scopeAssign(st, scope, ch.slotNames[k], JSValue.Number(locals[k]))
+        }
+        k = k + 1
+    }
+    return true
+}
+
+// One compiled chunk per `for` statement, keyed by its StmtId index.
+// gLoopIdx[i] is 0 before the statement has been looked at, -1 once it has been
+// rejected, and chunk index + 1 once it compiled.
+var gLoopChunks: Vec<Chunk> = Vec.new()
+var gLoopIdx: Vec<i64> = Vec.new()
+
+// Run this `for` through the compiled path, or answer false to say the tree
+// walker still has to run it. Compilation happens once per statement.
+pub fn tryRunFor(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): bool {
+    while gLoopIdx.len() <= id.index {
+        gLoopIdx.push(0)
+    }
+    var slot = gLoopIdx[id.index]
+    if slot == 0 {
+        match compileFor(prog, id) {
+            Option.Some(ch) => {
+                gLoopChunks.push(ch)
+                slot = gLoopChunks.len()
+            }
+            Option.None => {
+                slot = -1
+            }
+        }
+        gLoopIdx[id.index] = slot
+    }
+    if slot < 0 {
+        return false
+    }
+    return runChunk(gLoopChunks[slot - 1], st, scope)
+}
+
+// Drop every cached chunk. The cache is keyed by an index into the program
+// arena, so a fresh program reusing those indices would otherwise run another
+// statement's code.
+pub fn resetLoopCache() {
+    gLoopChunks.clear()
+    gLoopIdx.clear()
+}

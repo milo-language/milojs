@@ -11,6 +11,28 @@ task is parked forever. Such a task keeps the scheduler's task count > 0, which
 would block main's final -1 poll and hang the process at exit — Node instead
 drops an unfinished generator, so the entry point exits directly when this holds.
 
+### `arityLookup`
+
+```milo
+pub fn arityLookup(data: &string, name: &string): i64
+```
+
+Find `name` in "n:a,n:a,..." and answer its arity, or 0 when it is absent
+(which is what every one of these tables returned for an unlisted name).
+
+A scan rather than a HashMap: a global map cannot be initialized in the
+embeddable build, which is compiled with --no-entry and so runs no global
+initializers. At a few hundred boot-time lookups over 4KB the scan does not
+show up, and it keeps these three fns stateless.
+
+### `arrayBufferProto`
+
+```milo
+pub fn arrayBufferProto(st: &mut Interp): i64
+```
+
+_Undocumented._
+
 ### `awaitValue`
 
 ```milo
@@ -20,6 +42,63 @@ pub fn awaitValue(prog: &Prog, va: &JSValue, st: &mut Interp): JSValue
 `await v`, factored out of the Unary branch so `for await (… of …)` can reuse
 it verbatim rather than growing a second, drifting copy of the thenable
 unwrapping, the activation park, and the main-task drain.
+
+### `bigStrOf`
+
+```milo
+pub fn bigStrOf(v: &JSValue): string
+```
+
+the decimal string of a BigInt, or "" for anything else
+
+### `builtinArityOn`
+
+```milo
+pub fn builtinArityOn(host: &string, n: &string): i64
+```
+
+A few method NAMES are shared by builtins whose arities differ, so a table
+keyed by the name alone is necessarily wrong for one of them. `set` is the
+live case: Map.prototype.set and WeakMap.prototype.set take (key, value) and
+report 2, while %TypedArray%.prototype.set takes (array, offset) and reports
+1. builtinArity holds the TypedArray value, so the host is passed in at the
+sites that know it rather than the constant being flipped (which would only
+move the failure onto TypedArray).
+
+### `builtinCtorArity`
+
+```milo
+pub fn builtinCtorArity(n: &string): i64
+```
+
+_Undocumented._
+
+### `builtinStaticArity`
+
+```milo
+pub fn builtinStaticArity(n: &string): i64
+```
+
+_Undocumented._
+
+### `callBuiltinByName`
+
+```milo
+pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSValue>, st: &mut Interp): JSValue
+```
+
+Invoke a builtin method by name against an already-evaluated receiver+args.
+
+### `callFunction`
+
+```milo
+pub fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue
+```
+
+Records the called function's source file for the duration of the call, so a
+V8-style stack trace can name the file each frame belongs to. Wrapping rather
+than editing callFunctionBody's many early returns keeps the push and pop
+paired without touching its control flow.
 
 ### `callNativeProg`
 
@@ -33,10 +112,72 @@ intercepted here — otherwise `String(obj)` reports "[object Object]" for an
 object whose toString says otherwise, while `${obj}` and `"" + obj` (both of
 which run the full ToPrimitive) disagree with it.
 
+### `callValue`
+
+```milo
+pub fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue
+```
+
+_Undocumented._
+
 ### `constructValue`
 
 ```milo
 pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec<JSValue>, newTarget: &JSValue): JSValue
+```
+
+_Undocumented._
+
+### `ctorArityData`
+
+```milo
+pub fn ctorArityData(): string
+```
+
+GENERATED from node (see docs/backlog.md): the `length` every built-in
+function carries. test262 has a length.js per method asserting it exactly.
+
+Three names disagree across prototypes: constructor (excluded), toString
+(Number.prototype.toString is 1, everything else 0) and set
+(Map.prototype.set is 2, %TypedArray%.prototype.set is 1). `set` is no longer
+resolved from this table alone: builtinArityOn(host, name) takes the receiver
+brand and this table holds only its fallback. `toString` still uses the
+commoner value.
+GENERATED from node: the `length` of a built-in STATIC. Kept separate from
+builtinArity because the same name can differ — Object.keys is 1 while
+Array.prototype.keys is 0.
+GENERATED from node: a built-in CONSTRUCTOR own `length`.
+
+All three are DATA. They used to be 1,184 lines of `if n == "x" { return N }`,
+a linear string-compare chain per table walked on every lookup. Same 402
+values, one comma-separated string each, decoded once into a HashMap on first
+use. tools/check-arity.mjs parses these strings and still holds every value
+against node, which is what makes it safe to keep them as data.
+The table, embedded at compile time. A fn rather than a global because a
+global string needs an initializer that runs, and the embeddable library is
+built with --no-entry (same reason src/uniprops.milo spells its data upData()).
+
+### `currentModule`
+
+```milo
+pub fn currentModule(st: &Interp): string
+```
+
+_Undocumented._
+
+### `dataViewByteLen`
+
+```milo
+pub fn dataViewByteLen(st: &Interp, o: i64): i64
+```
+
+A DataView's byte length right now. One constructed without an explicit
+length tracks its buffer, so the stored taLen goes stale on every resize.
+
+### `dateProtoMethodNames`
+
+```milo
+pub fn dateProtoMethodNames(): Vec<string>
 ```
 
 _Undocumented._
@@ -56,6 +197,19 @@ pub fn evalExpr(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue
 ```
 
 _Undocumented._
+
+### `evalInOperator`
+
+```milo
+pub fn evalInOperator(prog: &Prog, key: string, ov: JSValue, st: &mut Interp): JSValue
+```
+
+The `in` operator. Extracted because it existed twice, and both copies fell
+through to `false` for a NATIVE or a FUNCTION right-hand side: `"prototype" in
+String` answered false while `String.prototype` read fine. get-intrinsic walks
+`%String.prototype.indexOf%` with exactly that test, so every package that
+depends on it (a large slice of npm) died on "base intrinsic for
+%String.prototype.indexOf% exists, but the property is not available".
 
 ### `execBlock`
 
@@ -129,6 +283,32 @@ pub fn inspectTop(st: &Interp, v: &JSValue): string
 
 _Undocumented._
 
+### `isBigIntVal`
+
+```milo
+pub fn isBigIntVal(v: &JSValue): bool
+```
+
+_Undocumented._
+
+### `isCallable`
+
+```milo
+pub fn isCallable(v: &JSValue): bool
+```
+
+_Undocumented._
+
+### `isCallableIn`
+
+```milo
+pub fn isCallableIn(st: &Interp, v: &JSValue): bool
+```
+
+isCallable, but also true for bound-method objects (Function.prototype.bind
+results and the builtin bound methods). They are ordinary JSObjs, so the
+JSValue-only test above cannot see them — typeof already reports "function".
+
 ### `isExtensibleOf`
 
 ```milo
@@ -136,6 +316,41 @@ pub fn isExtensibleOf(prog: &Prog, st: &mut Interp, v: &JSValue): bool
 ```
 
 _Undocumented._
+
+### `isoFromMillis`
+
+```milo
+pub fn isoFromMillis(ms: f64): string
+```
+
+_Undocumented._
+
+### `isSymbolStr`
+
+```milo
+pub fn isSymbolStr(s: &string): bool
+```
+
+Symbol test on the raw string. The JSValue-level isSymbolValue cannot be used
+from inside a `match` arm on that same value: matching moves it, so reading the
+original binding afterwards sees a zeroed slot and the test silently fails.
+
+### `isUndefinedValue`
+
+```milo
+pub fn isUndefinedValue(v: &JSValue): bool
+```
+
+_Undocumented._
+
+### `joinArrayProg`
+
+```milo
+pub fn joinArrayProg(prog: &Prog, st: &mut Interp, o: i64, sep: &string): string
+```
+
+join with each element converted through `prog`. The prog-free joinArray
+remains for the coercion paths that have no Prog to re-enter user code with.
 
 ### `localOffsetSecAt`
 
@@ -145,10 +360,42 @@ pub fn localOffsetSecAt(epochSec: i64): i64
 
 _Undocumented._
 
+### `makeArrayIterator`
+
+```milo
+pub fn makeArrayIterator(st: &mut Interp, arr: i64, kind: i64): JSValue
+```
+
+_Undocumented._
+
+### `makeBoundMethod`
+
+```milo
+pub fn makeBoundMethod(st: &mut Interp, recv: JSValue, name: string): JSValue
+```
+
+_Undocumented._
+
+### `makeBoundMethodOn`
+
+```milo
+pub fn makeBoundMethodOn(st: &mut Interp, recv: JSValue, name: string, host: string): JSValue
+```
+
+_Undocumented._
+
 ### `makeError`
 
 ```milo
 pub fn makeError(st: &mut Interp, kind: string, msg: string): JSValue
+```
+
+_Undocumented._
+
+### `makeTypedArray`
+
+```milo
+pub fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValue>): JSValue
 ```
 
 _Undocumented._
@@ -164,19 +411,13 @@ length up front: the string is immutable, so there is nothing to keep in sync,
 and it makes `0 in s`, Object.keys and for-in work without a special case on
 every path that enumerates.
 
-### `msFloorSec`
+### `nativeErrorName`
 
 ```milo
-pub fn msFloorSec(ms: f64): i64
+pub fn nativeErrorName(id: Builtin): string
 ```
 
-Seconds to ADD to a UTC instant to get local wall-clock time at that instant.
-Computed by decomposing with the host's localtime and recomposing the fields as
-if they were UTC, so it follows the real timezone database including DST: this
-machine answers -28800 in winter and -25200 in summer.
-Whole seconds of an epoch-millisecond value, rounding toward NEGATIVE infinity
-so a pre-epoch fractional value lands in the right second. `(ms / 1000.0) as i64`
-truncates toward zero, which is off by one for negative times.
+_Undocumented._
 
 ### `nativeSourceText`
 
@@ -278,6 +519,23 @@ Execute a pre-loaded module in a fresh CommonJS scope and cache its exports.
 A module already loading (a require cycle) returns its partial exports, which
 is what Node does.
 
+### `sameValue`
+
+```milo
+pub fn sameValue(a: &JSValue, b: &JSValue): bool
+```
+
+SameValue: strict equality with the two exceptions the spec carves out —
+NaN is equal to itself, and +0 is not equal to -0.
+
+### `setMemberDyn`
+
+```milo
+pub fn setMemberDyn(prog: &Prog, o: i64, key: string, v: JSValue, st: &mut Interp)
+```
+
+_Undocumented._
+
 ### `setProtoOf`
 
 ```milo
@@ -294,10 +552,107 @@ pub fn settlePromise(st: &mut Interp, p: i64, state: i64, value: JSValue)
 
 _Undocumented._
 
-### `setupGlobals`
+### `staticArityData`
 
 ```milo
-pub fn setupGlobals(st: &mut Interp)
+pub fn staticArityData(): string
+```
+
+The table, embedded at compile time. A fn rather than a global because a
+global string needs an initializer that runs, and the embeddable library is
+built with --no-entry (same reason src/uniprops.milo spells its data upData()).
+
+### `symbolDisplay`
+
+```milo
+pub fn symbolDisplay(s: &string): string
+```
+
+What a symbol shows as: Symbol(desc). Without this the internal representation
+leaks out of String(sym) and sym.toString().
+
+### `symIteratorKey`
+
+```milo
+pub fn symIteratorKey(): string
+```
+
+_Undocumented._
+
+### `symToPrimitiveKey`
+
+```milo
+pub fn symToPrimitiveKey(): string
+```
+
+_Undocumented._
+
+### `symToStringTagKey`
+
+```milo
+pub fn symToStringTagKey(): string
+```
+
+_Undocumented._
+
+### `taCurrentLen`
+
+```milo
+pub fn taCurrentLen(st: &Interp, o: i64): i64
+```
+
+The view's element count RIGHT NOW. A tracking view over a resizable buffer
+answers a different number after every resize, so nothing may read the stored
+taLen directly.
+
+### `taElem`
+
+```milo
+pub fn taElem(st: &Interp, view: i64, i: i64): f64
+```
+
+_Undocumented._
+
+### `taElemValue`
+
+```milo
+pub fn taElemValue(st: &Interp, view: i64, i: i64): JSValue
+```
+
+The element as a JSValue. A BigInt-kind view yields JSValue.BigInt, and its
+elements cannot go through the f64 path at all: the range runs to 2^64 and f64
+loses integers past 2^53, so a round trip through a double would silently
+corrupt the top bits.
+
+### `taIsDetached`
+
+```milo
+pub fn taIsDetached(st: &Interp, o: i64): bool
+```
+
+new <T>Array(n | buffer | array) — allocates its own buffer except when handed
+an existing ArrayBuffer, which it views in place (mutations are shared).
+A view whose backing buffer has been detached (ArrayBuffer.prototype.transfer,
+or the test262 host hook). The spec makes such a view behave as a zero-length
+one for length/byteLength/byteOffset, undefined for every index, and a
+TypeError from every %TypedArray%.prototype method.
+
+### `taOutOfBounds`
+
+```milo
+pub fn taOutOfBounds(st: &Interp, o: i64): bool
+```
+
+A fixed-length view whose window no longer fits its buffer. Only a RESIZABLE
+buffer can shrink under a view, and the spec then treats the view as out of
+bounds: its length reads 0, its elements read undefined, and every prototype
+method throws (ValidateTypedArray). A tracking view is never out of bounds by
+length — it just gets shorter — but its OFFSET can fall off the end.
+
+### `taSetElem`
+
+```milo
+pub fn taSetElem(st: &mut Interp, view: i64, i: i64, v: f64)
 ```
 
 _Undocumented._
@@ -342,6 +697,14 @@ pub fn toStrProg(prog: &Prog, v: &JSValue, st: &mut Interp): string
 ToString for the paths that DO have a Prog, so a user-defined toString is
 honoured. `toStr` alone cannot call back into the interpreter and answers
 "[object Object]" for any plain object.
+
+### `typedArrayProtoFor`
+
+```milo
+pub fn typedArrayProtoFor(st: &mut Interp, kind: i64): i64
+```
+
+_Undocumented._
 
 ### `utcFromLocalSec`
 
