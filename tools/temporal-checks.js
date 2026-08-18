@@ -129,7 +129,10 @@ throws(function () { T.PlainTime.from("12:00").round(); }, TypeError, "round nee
 throws(function () { T.PlainTime.from("12:00").round({ smallestUnit: "bogus" }); }, RangeError, "unknown unit");
 throws(function () { T.PlainTime.from("12:00").round({ smallestUnit: "second", roundingIncrement: 0 }); }, RangeError, "increment 0");
 throws(function () { T.PlainTime.from("12:00").round({ smallestUnit: "second", roundingMode: "bogus" }); }, RangeError, "unknown mode");
-eq(T.Instant.from("2026-08-16T12:00:00Z").until("2026-08-16T13:00:00Z").toString(), "PT1H", "instant until");
+// An instant difference reports seconds unless asked for something larger: an
+// Instant has no calendar, so "second" is its default largestUnit.
+eq(T.Instant.from("2026-08-16T12:00:00Z").until("2026-08-16T13:00:00Z").toString(), "PT3600S", "instant until");
+eq(T.Instant.from("2026-08-16T12:00:00Z").until("2026-08-16T13:00:00Z", { largestUnit: "hour" }).toString(), "PT1H", "instant until in hours");
 eq(T.Instant.from("2026-08-16T12:00:00.5Z").round("second").toString(), "2026-08-16T12:00:01Z", "instant round");
 eq(T.PlainDateTime.from("2026-08-16T12:00").until("2026-08-16T15:30").toString(), "PT3H30M", "datetime until");
 eq(T.PlainDateTime.from("2026-08-16T23:59:59.6").round("second").toString(), "2026-08-17T00:00:00", "datetime round crosses midnight");
