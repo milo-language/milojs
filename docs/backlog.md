@@ -43,6 +43,41 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## Three parser/lexer gaps closed, and why the QuickJS number went DOWN
+
+All three came out of the 45 QuickJS cases recorded below as never having parsed.
+Each is verified byte-for-byte against node by
+`tests/parserContextualAndNumbers.js`.
+
+1. **`get` / `set` / `async` / `static` as class member names.** They are
+   contextual keywords; the parser committed to an accessor or modifier on seeing
+   the word and then failed on the `=`, so `class P { get; set = () => 1; }` did
+   not parse. Guarded by `classWordIsFieldName`: the word is a NAME when the next
+   token ends the member (`;`, `}`) or starts an initializer (`=`), and for
+   `static` also when it is `(`.
+2. **A sequence expression in a template hole.** `` `aaa${a, b}ccc` ``.
+   `parseExpr` deliberately stops at a comma, so the hole now uses
+   `parseCommaSeq`, which is what already backs `(a, b)` and for-init.
+3. **Legacy octal literals.** Two bugs in one: `0777` evaluated as 777 rather
+   than 511 because the digits went through the decimal path, and the `.` in
+   `01.a` was eaten as a decimal point instead of being a property read. A
+   leading zero containing an 8 or 9 (`08`, `09`) is decimal and stays so.
+
+**The sweep went 109/149 to 97/149, and that is an ARTIFACT, not a regression.**
+All 12 lost cases are in `test_language.js` and all 12 report the same single
+unimplemented feature, `using x = {}` (ES2026 explicit resource management). The
+mechanism: the harness runs a file once per test case, and after the FIRST parse
+error the rest of the file is wreckage. Fixing gaps 1-3 moved that first error
+from line 366 to roughly line 700, so more of the file now parses, more test
+functions are defined and actually RUN, and whether the truncated remainder
+happens to throw at runtime is what the sweep is really measuring for this file.
+It is not measuring the engine.
+
+The report in `docs/conformance/quickjs.json` was deliberately NOT regenerated for
+this commit, so the published 73.8% is untouched. Republishing 65.1% would record
+a decline that did not happen, and the honest number cannot be produced until
+`using` lands and the `p.errored` check below goes in together with it.
+
 ## Deep expression nesting: crash fixed, and two things it uncovered
 
 **Fixed.** The recursive-descent parser had no depth bound. Nested `[[[...]]]`

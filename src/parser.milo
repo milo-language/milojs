@@ -198,7 +198,11 @@ fn parseTemplate(p: &mut PState, prog: &mut Prog): ExprId {
     }
     var result = addExpr(prog, Expr.StrLit(first))
     while peekKind(p) != T_TEMPLATE_END && peekKind(p) != T_EOF {
-        let e = parseExpr(p, prog)
+        // A substitution takes a full Expression, comma operator included:
+        // `${a, b}` evaluates a then yields b. parseExpr stops at a comma (see
+        // parseCommaSeq), so using it here made the `,` look like the start of a
+        // second hole and the template failed to parse.
+        let e = parseCommaSeq(p, prog)
         // NOT a bare `+`: a hole converts with the string hint (see ToStrHole)
         let hole = addExpr(prog, Expr.ToStrHole(e))
         result = addExpr(prog, Expr.Bin("+", result, hole))
@@ -2268,6 +2272,20 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
 // method; that stopped being true and nothing forced it to be revisited, which
 // is the quietest kind of wrong doc: it under-claims, so nobody hits a bug, they
 // just avoid a feature that works.
+// `get`, `set` and `async` are CONTEXTUAL keywords. Inside a class body they
+// introduce an accessor or a modifier only when a key can still follow. When the
+// next token ends the member (`;`, `}`) or starts an initializer (`=`), the word
+// is the field's own name: `class P { get; set = () => 1; }` declares fields
+// called "get" and "set". Previously the parser committed to an accessor on
+// seeing the word and then failed on the `=`, which is 28 of the QuickJS cases.
+fn classWordIsFieldName(p: &PState): bool {
+    if p.pos + 1 >= p.toks.len() {
+        return true
+    }
+    let k = p.toks[p.pos + 1].kind
+    return k == T_EQ || k == T_SEMI || k == T_RBRACE
+}
+
 fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     // `C.toString()` is the whole class text, so the span is recorded on the
     // constructor FuncDef — declared or synthesised — since that is the function
@@ -2326,7 +2344,10 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
             // at `static`; the static block form starts at `static`.
             let sbStartAt = p.toks[p.pos].at
             var cmStartAt = p.toks[p.pos].at
-            if peekKind(p) == T_IDENT && p.toks[p.pos].text == "static" {
+            // `static` is contextual in the same way (see classWordIsFieldName):
+            // `static() {}` is a METHOD NAMED static, and `static = 1` a field
+            // named static, neither of them a modifier.
+            if peekKind(p) == T_IDENT && p.toks[p.pos].text == "static" && p.pos + 1 < p.toks.len() && p.toks[p.pos + 1].kind != T_LPAREN && !classWordIsFieldName(p) {
                 isStatic = true
                 advance(p)
                 cmStartAt = p.toks[p.pos].at
@@ -2354,12 +2375,12 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                 staticFieldKeys.push(Option.None)
                 continue
             }
-            if peekKind(p) == T_ASYNC && p.pos + 1 < p.toks.len() && p.toks[p.pos + 1].kind != T_LPAREN {
+            if peekKind(p) == T_ASYNC && p.pos + 1 < p.toks.len() && p.toks[p.pos + 1].kind != T_LPAREN && !classWordIsFieldName(p) {
                 isAsyncM = true
                 advance(p)
             }
             var memberKind: i64 = 0
-            if (peekKind(p) == T_IDENT && (p.toks[p.pos].text == "get" || p.toks[p.pos].text == "set")) && p.pos + 1 < p.toks.len() && p.toks[p.pos + 1].kind != T_LPAREN {
+            if (peekKind(p) == T_IDENT && (p.toks[p.pos].text == "get" || p.toks[p.pos].text == "set")) && p.pos + 1 < p.toks.len() && p.toks[p.pos + 1].kind != T_LPAREN && !classWordIsFieldName(p) {
                 if p.toks[p.pos].text == "get" {
                     memberKind = 1
                 } else {

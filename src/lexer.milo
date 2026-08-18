@@ -717,6 +717,37 @@ pub fn lex(src: &string): Vec<Token> {
                 }
                 i = i + 1
             }
+            // LegacyOctalIntegerLiteral: a leading `0` followed only by digits
+            // 0-7 is BASE 8 in sloppy code, and it has no fractional or exponent
+            // part, so `01.a` is `(01).a`. Both halves were wrong: the value went
+            // through parseFloat as decimal (`0777` read 777 rather than 511) and
+            // the `.` was eaten as a decimal point, which is what made `01.a`
+            // lex as one number followed by a bare identifier. A leading zero with
+            // an 8 or 9 in it (`08`, `09`) is NOT octal and stays decimal.
+            var isLegacyOctal = false
+            if txt.len() > 1 && txt[0] == '0' {
+                isLegacyOctal = true
+                var oi: i64 = 1
+                while oi < txt.len() {
+                    if txt[oi] < '0' || txt[oi] > '7' {
+                        isLegacyOctal = false
+                    }
+                    oi = oi + 1
+                }
+            }
+            if isLegacyOctal {
+                var oacc: f64 = 0.0
+                var oj: i64 = 1
+                while oj < txt.len() {
+                    oacc = oacc * 8.0 + ((txt[oj] - '0') as f64)
+                    oj = oj + 1
+                }
+                toks.push(Token {
+                    kind: T_NUM, num: oacc, text: "", nlBefore: false, raw: ""
+                , at: 0, end: 0}
+                )
+                continue
+            }
             // at most ONE fractional dot, then more digits. a second dot is a
             // member access, not part of the number: `0.1.toString()` lexes as
             // (0.1)(.)(toString), matching JS — the old `|| == '.'` loop ate it.
