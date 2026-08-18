@@ -1347,7 +1347,45 @@ pub fn parseIsoDate(s: &string): f64 {
         return jsNan()
     }
     let days = daysFromCivil(year, month, day)
-    return ((days * 86400 + hour * 3600 + minute * 60 + second) * 1000 + millis) as f64
+    let naiveSec = days * 86400 + hour * 3600 + minute * 60 + second
+    // The zone designator decides what those fields MEAN. `Z` is UTC; an explicit
+    // +HH:MM or -HH:MM shifts by that much; and a date-TIME with neither is LOCAL
+    // wall-clock time, which is the case milojs used to read as UTC. A date-ONLY
+    // form is UTC even with no designator, which is why this only runs when a time
+    // was actually present.
+    var zoneAt = off + 15
+    if s.len() >= off + 19 && s[off + 15] == '.' {
+        zoneAt = off + 19
+    }
+    if s.len() <= off + 6 {
+        // date-only: UTC by definition
+        return (naiveSec * 1000 + millis) as f64
+    }
+    if zoneAt >= s.len() {
+        return (utcFromLocalSec(naiveSec) * 1000 + millis) as f64
+    }
+    let z = s[zoneAt]
+    if z == 'Z' || z == 'z' {
+        return (naiveSec * 1000 + millis) as f64
+    }
+    if z == '+' || z == '-' {
+        let oh = isoNum(s, zoneAt + 1, zoneAt + 3)
+        var om: i64 = 0
+        if s.len() >= zoneAt + 6 && s[zoneAt + 3] == ':' {
+            om = isoNum(s, zoneAt + 4, zoneAt + 6)
+        } else if s.len() >= zoneAt + 5 {
+            om = isoNum(s, zoneAt + 3, zoneAt + 5)
+        }
+        if oh < 0 || om < 0 {
+            return jsNan()
+        }
+        var shift = oh * 3600 + om * 60
+        if z == '-' {
+            shift = -shift
+        }
+        return ((naiveSec - shift) * 1000 + millis) as f64
+    }
+    return jsNan()
 }
 fn isoNum(s: &string, from: i64, to: i64): i64 {
     if to > s.len() {

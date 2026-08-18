@@ -6774,6 +6774,53 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         let _ed = ensureExtra(st, o)
         if argVals.len() == 0 {
             st.objExtras[st.objects[o].extra].dateMs = epochMillis() as f64
+        } else if argVals.len() >= 2 {
+            // new Date(year, monthIndex, day?, h?, m?, s?, ms?) — the field form,
+            // and its fields are LOCAL wall-clock time, not UTC. It was not
+            // implemented at all: the first argument fell through to the
+            // milliseconds path, so `new Date(2020, 4, 17)` produced 2020ms past
+            // the epoch.
+            var cy = toNum(argVals[0])
+            if cy != cy {
+                st.objExtras[st.objects[o].extra].dateMs = jsNan()
+            } else {
+                var cyi = cy as i64
+                // 0..99 mean 1900..1999
+                if cyi >= 0 && cyi <= 99 {
+                    cyi = cyi + 1900
+                }
+                let cmon = numToIndex(toNum(argVals[1]))
+                var cday: i64 = 1
+                var chour: i64 = 0
+                var cmin: i64 = 0
+                var csec: i64 = 0
+                var cms: i64 = 0
+                if argVals.len() > 2 {
+                    cday = numToIndex(toNum(argVals[2]))
+                }
+                if argVals.len() > 3 {
+                    chour = numToIndex(toNum(argVals[3]))
+                }
+                if argVals.len() > 4 {
+                    cmin = numToIndex(toNum(argVals[4]))
+                }
+                if argVals.len() > 5 {
+                    csec = numToIndex(toNum(argVals[5]))
+                }
+                if argVals.len() > 6 {
+                    cms = numToIndex(toNum(argVals[6]))
+                }
+                // a month outside 0-11 rolls the year, matching MakeDay
+                var yy = cyi + cmon / 12
+                var mm = cmon % 12
+                if mm < 0 {
+                    mm = mm + 12
+                    yy = yy - 1
+                }
+                let cdays = daysFromCivil(yy, mm + 1, cday)
+                let cLocal = cdays * 86400 + chour * 3600 + cmin * 60 + csec
+                st.objExtras[st.objects[o].extra].dateMs = timeClip((utcFromLocalSec(cLocal) * 1000 + cms) as f64)
+            }
         } else {
             // new Date(ms) or new Date(isoString); anything else is Invalid Date
             match cloneValue(argVals[0]) {
@@ -18209,12 +18256,20 @@ fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSVa
     // date is decomposed to civil parts, the requested field(s) replaced, and
     // recomposed to epoch ms.
     var sname = name.clone()
+    var wantUtcSet = false
     if sname.len() >= 6 && strSlice(sname, 0, 6) == "setUTC" {
         sname = "set" + strSlice(sname, 6, sname.len())
+        wantUtcSet = true
     }
     if sname == "setFullYear" || sname == "setMonth" || sname == "setDate" || sname == "setHours" || sname == "setMinutes" || sname == "setSeconds" || sname == "setMilliseconds" {
-        let secs = (ms / 1000.0) as i64
-        let dt = DateTime.fromEpoch(secs)
+        let secs = msFloorSec(ms)
+        // The local setters read AND write local wall-clock fields; the UTC family
+        // does neither. Both halves have to move together, or `d.setHours(d.getHours())`
+        // shifts the date by the host offset.
+        var dt = DateTime.fromEpoch(secs)
+        if !wantUtcSet {
+            dt = DateTime.fromEpochLocal(secs)
+        }
         var frac = Math.mod(ms, 1000.0) as i64
         if frac < 0 {
             frac = frac + 1000
@@ -18283,7 +18338,11 @@ fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSVa
             }
         }
         let days = daysFromCivil(year, month, day)
-        let newMs = timeClip(((days * 86400 + hour * 3600 + minute * 60 + second) * 1000 + millis) as f64)
+        var composed = days * 86400 + hour * 3600 + minute * 60 + second
+        if !wantUtcSet {
+            composed = utcFromLocalSec(composed)
+        }
+        let newMs = timeClip((composed * 1000 + millis) as f64)
         st.objExtras[st.objects[o].extra].dateMs = newMs
         return JSValue.Number(newMs)
     }
@@ -18306,9 +18365,9 @@ fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSVa
         if ms != ms {
             return JSValue.Str("Invalid Date")
         }
-        let u = DateTime.fromEpoch((ms / 1000.0) as i64)
+        let u = DateTime.fromEpochLocal(msFloorSec(ms))
         let datePart = dateAbbrevDay(u.weekday) + " " + dateAbbrevMonth(u.month) + " " + pad2(u.day as i64) + " " + i64ToStr(u.year as i64)
-        let timePart = pad2(u.hour as i64) + ":" + pad2(u.minute as i64) + ":" + pad2(u.second as i64) + " GMT+0000 (Coordinated Universal Time)"
+        let timePart = pad2(u.hour as i64) + ":" + pad2(u.minute as i64) + ":" + pad2(u.second as i64) + " " + gmtOffsetLabel(msFloorSec(ms))
         if name == "toDateString" {
             return JSValue.Str(datePart)
         }
@@ -18364,16 +18423,22 @@ fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSVa
     }
     // getUTCFoo and getFoo are the same here — see the UTC note below
     var gname = name.clone()
+    var wantUtc = false
     if gname.len() >= 6 && strSlice(gname, 0, 6) == "getUTC" {
         gname = "get" + strSlice(gname, 6, gname.len())
+        wantUtc = true
     }
     if gname == "getFullYear" || gname == "getMonth" || gname == "getDate" || gname == "getHours" || gname == "getMinutes" || gname == "getSeconds" || gname == "getMilliseconds" || gname == "getDay" {
-        // UTC, not the host timezone, for BOTH families. milojs carries no
-        // timezone database: the set* family already decomposes in UTC, and
-        // getTimezoneOffset reports 0, so a local getter was the one piece that
-        // disagreed — `d.setHours(d.getHours())` shifted the date by the host
-        // offset. Behaviour now matches node run under TZ=UTC throughout.
-        let dt = DateTime.fromEpoch((ms / 1000.0) as i64)
+        // The local family decomposes in the HOST timezone and the UTC family does
+        // not. These used to be the same function because the engine had no
+        // timezone at all; std's fromEpochLocal is the real localtime, DST
+        // included, so they can differ correctly now. The set* family and the
+        // constructor were converted in the same change: splitting only the
+        // getters is what would make `d.setHours(d.getHours())` shift the date.
+        var dt = DateTime.fromEpoch(msFloorSec(ms))
+        if !wantUtc {
+            dt = DateTime.fromEpochLocal(msFloorSec(ms))
+        }
         if gname == "getFullYear" {
             return JSValue.Number(dt.year as f64)
         }
@@ -18402,7 +18467,12 @@ fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSVa
         return JSValue.Str(isoFromMillis(ms))
     }
     if name == "getTimezoneOffset" {
-        return JSValue.Number(0.0)
+        if ms != ms {
+            return JSValue.Number(jsNan())
+        }
+        // JS reports the minutes to ADD to local to reach UTC, so a zone west of
+        // Greenwich is POSITIVE: UTC-8 answers 480.
+        return JSValue.Number((-localOffsetSecAt(msFloorSec(ms)) / 60) as f64)
     }
     return JSValue.Undefined
 }
@@ -21697,6 +21767,52 @@ pub fn timeClip(t: f64): f64 {
         return -Math.floor(-t)
     }
     return Math.floor(t)
+}
+
+// Seconds to ADD to a UTC instant to get local wall-clock time at that instant.
+// Computed by decomposing with the host's localtime and recomposing the fields as
+// if they were UTC, so it follows the real timezone database including DST: this
+// machine answers -28800 in winter and -25200 in summer.
+// Whole seconds of an epoch-millisecond value, rounding toward NEGATIVE infinity
+// so a pre-epoch fractional value lands in the right second. `(ms / 1000.0) as i64`
+// truncates toward zero, which is off by one for negative times.
+pub fn msFloorSec(ms: f64): i64 {
+    return Math.floor(ms / 1000.0) as i64
+}
+
+// The "GMT-0700 (…)" tail of Date.prototype.toString. node names the zone from the
+// tz database; without that name available here the numeric offset is repeated in
+// the parenthesised part, which keeps the string self-describing and, crucially,
+// machine-independent in shape.
+fn gmtOffsetLabel(epochSec: i64): string {
+    let off = localOffsetSecAt(epochSec)
+    var mag = off
+    var sign = "+"
+    if off < 0 {
+        mag = -off
+        sign = "-"
+    }
+    let hh = pad2(mag / 3600)
+    let mm2 = pad2((mag % 3600) / 60)
+    return "GMT" + sign + hh + mm2 + " (UTC" + sign + hh + ":" + mm2 + ")"
+}
+
+pub fn localOffsetSecAt(epochSec: i64): i64 {
+    let l = DateTime.fromEpochLocal(epochSec)
+    let asUtc = daysFromCivil(l.year as i64, l.month as i64, l.day as i64) * 86400
+        + (l.hour as i64) * 3600 + (l.minute as i64) * 60 + (l.second as i64)
+    return asUtc - epochSec
+}
+
+// The inverse: given local wall-clock fields already folded into a would-be UTC
+// instant, find the real UTC instant. The offset depends on the instant, which is
+// what makes this circular, so it is resolved the standard way: guess with the
+// offset at the naive value, then re-read the offset at the guess. A second pass
+// is enough everywhere except inside a DST transition, where the spec allows
+// either side.
+pub fn utcFromLocalSec(localAsUtcSec: i64): i64 {
+    let guess = localAsUtcSec - localOffsetSecAt(localAsUtcSec)
+    return localAsUtcSec - localOffsetSecAt(guess)
 }
 
 pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {

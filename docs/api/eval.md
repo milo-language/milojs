@@ -137,6 +137,14 @@ pub fn isExtensibleOf(prog: &Prog, st: &mut Interp, v: &JSValue): bool
 
 _Undocumented._
 
+### `localOffsetSecAt`
+
+```milo
+pub fn localOffsetSecAt(epochSec: i64): i64
+```
+
+_Undocumented._
+
 ### `makeError`
 
 ```milo
@@ -155,6 +163,20 @@ Box a primitive. A String wrapper materialises its index properties and
 length up front: the string is immutable, so there is nothing to keep in sync,
 and it makes `0 in s`, Object.keys and for-in work without a special case on
 every path that enumerates.
+
+### `msFloorSec`
+
+```milo
+pub fn msFloorSec(ms: f64): i64
+```
+
+Seconds to ADD to a UTC instant to get local wall-clock time at that instant.
+Computed by decomposing with the host's localtime and recomposing the fields as
+if they were UTC, so it follows the real timezone database including DST: this
+machine answers -28800 in winter and -25200 in summer.
+Whole seconds of an epoch-millisecond value, rounding toward NEGATIVE infinity
+so a pre-epoch fractional value lands in the right second. `(ms / 1000.0) as i64`
+truncates toward zero, which is off by one for negative times.
 
 ### `nativeSourceText`
 
@@ -320,6 +342,19 @@ pub fn toStrProg(prog: &Prog, v: &JSValue, st: &mut Interp): string
 ToString for the paths that DO have a Prog, so a user-defined toString is
 honoured. `toStr` alone cannot call back into the interpreter and answers
 "[object Object]" for any plain object.
+
+### `utcFromLocalSec`
+
+```milo
+pub fn utcFromLocalSec(localAsUtcSec: i64): i64
+```
+
+The inverse: given local wall-clock fields already folded into a would-be UTC
+instant, find the real UTC instant. The offset depends on the instant, which is
+what makes this circular, so it is resolved the standard way: guess with the
+offset at the naive value, then re-read the offset at the guess. A second pass
+is enough everywhere except inside a DST transition, where the spec allows
+either side.
 
 ### `valueIsConstructor`
 

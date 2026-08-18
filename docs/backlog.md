@@ -43,6 +43,44 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## Local time exists now: the engine had no timezone at all
+
+`getTimezoneOffset()` returned 0 and every "local" accessor decomposed in UTC, so
+local time WAS UTC engine-wide. The old comment said milojs "carries no timezone
+database", but std's `DateTime.fromEpochLocal` is the host's real localtime, DST
+included, so the database was there the whole time.
+
+Two helpers carry it: `localOffsetSecAt(epochSec)` decomposes locally and
+recomposes as if UTC to get the offset AT that instant (this machine answers
+-28800 in winter and -25200 in summer), and `utcFromLocalSec` inverts it. The
+inverse is circular, since the offset depends on the instant it is being used to
+find, so it guesses with the offset at the naive value and re-reads the offset at
+the guess. Inside a DST transition the spec allows either side.
+
+Everything had to move together, because splitting only some of it is what makes
+`d.setHours(d.getHours())` shift the date:
+
+- the local get* family decomposes with `fromEpochLocal`, the getUTC* family does not
+- the local set* family reads AND writes local fields, recomposing through `utcFromLocalSec`
+- `toString`/`toDateString`/`toTimeString` render local with the real numeric offset
+- a date-TIME with no zone designator parses as LOCAL, while a date-ONLY form stays UTC
+- explicit `+HH:MM` / `-HH:MM` offsets are applied; they used to be IGNORED entirely
+
+**`new Date(y, m, d, h, mi, s, ms)` was not implemented at all.** The field form
+fell through to the milliseconds path, so `new Date(2020, 4, 17)` produced 2020 ms
+past the epoch. It is now the field constructor, and its arguments are local.
+
+`tests/dateLocalTime.js` is deliberately TIMEZONE-INDEPENDENT: it checks
+RELATIONSHIPS (the local/UTC field gap equals getTimezoneOffset, the field
+constructor round-trips, set-then-get is identity, the no-Z parse differs from the
+Z parse by exactly the offset) rather than absolute local values, which would pin
+it to whichever machine node ran on. Verified byte-identical to node under
+America/Los_Angeles, UTC and Asia/Tokyo, with the same output in all three.
+
+Remaining implementation-defined divergence: `toString` names the zone
+`(UTC-07:00)` where node says `(Pacific Daylight Time)`. The numeric offset is
+right; naming it needs a tz-NAME lookup that std does not expose.
+
 ## A class escape as a range bound rejected valid patterns
 
 `[a-\d]` threw. A class escape is a SET, not a code point, so it cannot be a range
