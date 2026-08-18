@@ -84,14 +84,21 @@ const leaked: Array<{ file: string; n: number }> = [];
 // case that spawns past this cap is killed alone, named in the report, and the
 // other 3372 cases keep going. jobs * MAX_GROUP is the true process ceiling.
 const MAX_GROUP = arg("--max-group") ? parseInt(arg("--max-group")!) : 24;
+// The same defence as MAX_GROUP, for the other resource. A case does not have to
+// fork to take the machine down: one that allocates without bound reaches the
+// watchdog's whole-run memory limit on its own, and the run dies at case 2200
+// of 3373 with no attribution and no report. Killing the one case that did it
+// costs one test instead of the other 1173.
+const MAX_GROUP_MB = arg("--max-group-mb") ? parseInt(arg("--max-group-mb")!) : 1500;
 // Diagnostics go to fd 2 with writeSync, not console.log: a run wide enough to
 // be worth diagnosing is a run something SIGKILLs, and SIGKILL drops whatever
 // is sitting in stdout's buffer. Two earlier runs lost their whole leak table
 // exactly that way.
 const diag = (m: string) => { try { writeSync(2, m + "\n"); } catch {} };
-type Live = { file: string; bomb: (n: number) => void };
+type Live = { file: string; bomb: (n: number) => void; hog: (mb: number) => void };
 const runningPgid = new Map<number, Live>();
 const widest = new Map<string, number>();
+const heaviest = new Map<string, number>();
 
 // The group leader is excluded: it is the case's own process, which has just
 // exited and may still be sitting in the table as a zombie. Counting it would
@@ -267,6 +274,11 @@ function runOne(f: string, index: number): Promise<Row> {
         killGroup("SIGKILL");
         finish({ file: f, ok: false, why: `forkbomb: ${n} processes` });
       },
+      hog: (mb) => {
+        diag(`  MEMHOG ${mb} MB in ${f} - killing group`);
+        killGroup("SIGKILL");
+        finish({ file: f, ok: false, why: `memory: ${mb} MB` });
+      },
     });
 
     const finish = (row: Row) => {
@@ -309,16 +321,27 @@ function runOne(f: string, index: number): Promise<Row> {
 // 400x cheaper than asking each case separately.
 const widthSampler = setInterval(() => {
   let out = "";
-  try { out = execFileSync("ps", ["-A", "-o", "pgid="], { encoding: "utf-8" }); } catch { return; }
+  // rss comes back in KiB, summed per process group: a case's cost is its whole
+  // tree, not just the process this sweep started.
+  try { out = execFileSync("ps", ["-A", "-o", "pgid=,rss="], { encoding: "utf-8" }); } catch { return; }
   const counts = new Map<number, number>();
+  const rssKb = new Map<number, number>();
   for (const line of out.split("\n")) {
-    const g = parseInt(line.trim(), 10);
-    if (!isNaN(g)) counts.set(g, (counts.get(g) ?? 0) + 1);
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 2) continue;
+    const g = parseInt(parts[0], 10);
+    const r = parseInt(parts[1], 10);
+    if (isNaN(g)) continue;
+    counts.set(g, (counts.get(g) ?? 0) + 1);
+    if (!isNaN(r)) rssKb.set(g, (rssKb.get(g) ?? 0) + r);
   }
   for (const [pgid, live] of runningPgid) {
     const n = counts.get(pgid) ?? 0;
+    const mb = Math.round((rssKb.get(pgid) ?? 0) / 1024);
     if (n > (widest.get(live.file) ?? 0)) widest.set(live.file, n);
-    if (n > MAX_GROUP) { runningPgid.delete(pgid); live.bomb(n); }
+    if (mb > (heaviest.get(live.file) ?? 0)) heaviest.set(live.file, mb);
+    if (n > MAX_GROUP) { runningPgid.delete(pgid); live.bomb(n); continue; }
+    if (mb > MAX_GROUP_MB) { runningPgid.delete(pgid); live.hog(mb); }
   }
 }, 1000);
 widthSampler.unref?.();
@@ -377,6 +400,12 @@ clearInterval(widthSampler);
   if (wide.length) {
     console.log("widest cases (live processes in the case's own group):");
     wide.forEach(([f, n]) => console.log(`  ${String(n).padStart(4)}  ${f}`));
+    console.log("");
+  }
+  const heavy = [...heaviest].sort((a, b) => b[1] - a[1]).slice(0, 10).filter(([, mb]) => mb > 200);
+  if (heavy.length) {
+    console.log("heaviest cases (MB resident in the case's own group):");
+    heavy.forEach(([f, mb]) => console.log(`  ${String(mb).padStart(5)}  ${f}`));
     console.log("");
   }
 }

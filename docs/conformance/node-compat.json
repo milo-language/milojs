@@ -6,8 +6,8 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "1fc1c03bc6a03f0d5b6c4d91d5b9bb79da5ec086",
-    "dirty": false
+    "revision": "68824578b22f438441ae432ea226c98827571d38",
+    "dirty": true
   },
   "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
   "selection": {
