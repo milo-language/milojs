@@ -23,6 +23,26 @@ Gate 0 suite is green without `ulimit` changes. A differential fixture now also
 requires 100 successful recursive calls before checking that runaway recursion
 still becomes a catchable `RangeError`; the engine guard is 104 frames.
 
+## Class methods do not capture a `for (let ...)` binding
+
+Found while adding `tests/forLetCaptureShapes.js`. A method body reads the loop
+variable's FINAL value instead of its per-iteration one. Both class forms are
+affected, and node disagrees with milojs on both:
+
+```js
+const out = [];
+for (let k = 0; k < 2; k++) { const C = class { m(){ return k; } }; out.push(() => new C().m()); }
+console.log(out.map(f => f()).join(","));   // node 0,1   milojs 1,1
+```
+
+Plain functions and arrows in the same position are correct, so this is specific
+to how a class body's methods are bound to the enclosing scope, not to the
+per-iteration copy itself: the copy happens (the arrow around it captures fine),
+but the method does not close over `bodyScope`. PRE-EXISTING, and unrelated to
+the per-iteration-scope optimisation below: an engine built from the commit
+before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
+to match node and this one cannot yet.
+
 ## Interpreter allocation churn: what a profile says, and one dead end
 
 A `sample`-based profile of `bench/arith.js` (pure arithmetic, no property access,
