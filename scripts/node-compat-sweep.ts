@@ -182,13 +182,25 @@ const CHILD_ENV = { ...process.env, NODE_TEST_DIR: NODE_TESTS, NODE_TEST_KNOWN_G
 
 // Every test that touches the filesystem calls tmpdir.refresh(), and node names
 // that directory `.tmp.${TEST_SERIAL_ID ?? TEST_THREAD_ID ?? 0}`. Unset, all of
-// them share `.tmp.0` — so with N jobs, N concurrent tests rm -rf and recreate
-// the SAME directory underneath each other, and the losers fail on a temp file
-// that vanished mid-test. Node's own runner hands each worker its own id; this
-// is that, and without it the fs number is a race, not a measurement. It cost
-// 35 fs cases the day a change made fs fast enough to widen the window.
-function envForSlot(slot: number): NodeJS.ProcessEnv {
-  return { ...CHILD_ENV, TEST_THREAD_ID: String(slot), TEST_SERIAL_ID: String(slot) };
+// them share `.tmp.0`, so concurrent tests rm -rf and recreate the SAME
+// directory underneath each other and the losers fail on a temp file that
+// vanished mid-test.
+//
+// Keyed per TEST, not per worker slot. Per-slot still shares a directory
+// between every case that slot runs, and a case whose orphaned grandchild
+// escaped the process-group kill keeps writing into it — the next case on that
+// slot then fails refresh() with EEXIST, which is exactly what 37 of the 38
+// mkdir failures were. A unique id per case cannot collide with anything.
+function clearTempDirs() {
+  try {
+    for (const d of readdirSync(NODE_TESTS)) {
+      if (d.startsWith(".tmp.")) rmSync(join(NODE_TESTS, d), { recursive: true, force: true });
+    }
+  } catch {}
+}
+
+function envForTest(index: number): NodeJS.ProcessEnv {
+  return { ...CHILD_ENV, TEST_THREAD_ID: String(index), TEST_SERIAL_ID: String(index) };
 }
 
 // Each case runs DETACHED, in its own process group, and the timeout kills the
@@ -198,11 +210,11 @@ function envForSlot(slot: number): NodeJS.ProcessEnv {
 // the runtime under test has a spawn bug they keep multiplying. That is how this
 // sweep took a machine down. Run it under tools/guard.sh as well; this is the
 // inner half of the same defence.
-function runOne(f: string, slot: number): Promise<Row> {
+function runOne(f: string, index: number): Promise<Row> {
   return new Promise((resolve) => {
     const child = spawn(RUNTIME, [join(PARALLEL, f)], {
       cwd: PARALLEL,
-      env: envForSlot(slot),
+      env: envForTest(index),
       detached: true,
       // All three piped, then stdin closed immediately: this is what execFile
       // does, and matching it matters. Handing the child no stdin at all
@@ -298,16 +310,26 @@ widthSampler.unref?.();
 
 // A fixed pool rather than one promise per case: 3979 concurrent processes would
 // thrash, and the servers these tests start would collide on ports.
+// Cleared BEFORE the run, not only after: a sweep that is killed (the watchdog,
+// a ^C) leaves its temp directories behind, and case N of the next run would
+// then find `.tmp.N` already populated and fail refresh() with EEXIST through no
+// fault of the runtime. Cleaning up on the way out is not enough on its own,
+// because the runs that fail to clean up are exactly the ones that crashed.
+clearTempDirs();
+
 const rows: Row[] = new Array(selected.length);
 let next = 0;
-async function worker(slot: number) {
+async function worker() {
   while (true) {
     const i = next++;
     if (i >= selected.length) return;
-    rows[i] = await runOne(selected[i], slot);
+    rows[i] = await runOne(selected[i], i);
   }
 }
-await Promise.all(Array.from({ length: Math.max(1, jobs) }, (_, slot) => worker(slot)));
+await Promise.all(Array.from({ length: Math.max(1, jobs) }, () => worker()));
+
+// Swept again at the end so a normal run leaves the tree clean.
+clearTempDirs();
 process.stdout.write("\n");
 
 const pass = rows.filter((r) => r.ok).length;
