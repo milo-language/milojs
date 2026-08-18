@@ -6,7 +6,7 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "9ae88c5f329261c41fa34588d2179c1c2be70ee3",
+    "revision": "e9e0e894ff7b958146ccdd25cf0b8112a774834a",
     "dirty": false
   },
   "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
@@ -18,15 +18,15 @@
     "excludedNodeInternal": 606
   },
   "totals": {
-    "pass": 1535,
-    "fail": 1838,
+    "pass": 1565,
+    "fail": 1808,
     "total": 3373
   },
   "areas": [
     {
       "area": "http",
-      "pass": 78,
-      "fail": 299,
+      "pass": 79,
+      "fail": 298,
       "total": 377
     },
     {
@@ -60,12 +60,6 @@
       "total": 90
     },
     {
-      "area": "dgram",
-      "pass": 3,
-      "fail": 61,
-      "total": 64
-    },
-    {
       "area": "process",
       "pass": 23,
       "fail": 58,
@@ -97,8 +91,8 @@
     },
     {
       "area": "child",
-      "pass": 58,
-      "fail": 42,
+      "pass": 59,
+      "fail": 41,
       "total": 100
     },
     {
@@ -109,9 +103,15 @@
     },
     {
       "area": "cluster",
-      "pass": 43,
-      "fail": 38,
+      "pass": 44,
+      "fail": 37,
       "total": 81
+    },
+    {
+      "area": "dgram",
+      "pass": 28,
+      "fail": 36,
+      "total": 64
     },
     {
       "area": "whatwg",
@@ -127,8 +127,8 @@
     },
     {
       "area": "diagnostics",
-      "pass": 34,
-      "fail": 30,
+      "pass": 35,
+      "fail": 29,
       "total": 64
     },
     {
@@ -702,12 +702,6 @@
       "total": 1
     },
     {
-      "area": "ref",
-      "pass": 0,
-      "fail": 1,
-      "total": 1
-    },
-    {
       "area": "resource",
       "pass": 0,
       "fail": 1,
@@ -1003,6 +997,12 @@
     },
     {
       "area": "performanceobserver",
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    {
+      "area": "ref",
       "pass": 1,
       "fail": 0,
       "total": 1
