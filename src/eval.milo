@@ -8403,9 +8403,23 @@ fn buildNativeProto(st: &mut Interp, nativeId: i64, names: &Vec<string>): i64 {
     if nativeId == NATIVE_MAP {
         host = "Map"
     }
+    // Every Map/Set prototype method brand-checks its receiver against the
+    // internal slot rather than coercing it, so `Set.prototype.clear.call(0)` is
+    // a TypeError. Without a brand these methods accepted any receiver and did
+    // nothing, which reads as a successful call.
+    var brand: i64 = 0
+    if nativeId == NATIVE_MAP {
+        brand = BRAND_MAP
+    } else if nativeId == NATIVE_SET {
+        brand = BRAND_SET
+    }
     var i: i64 = 0
     while i < names.len() {
-        objSet(st, proto, names[i].clone(), makeBoundMethodOn(st, JSValue.Undefined, names[i].clone(), host.clone()))
+        let m = makeBoundMethodOn(st, JSValue.Undefined, names[i].clone(), host.clone())
+        if brand != 0 {
+            st.objExtras[st.objects[objHandle(m)].extra].boundBrand = brand
+        }
+        objSet(st, proto, names[i].clone(), m)
         objSetNonEnumerable(st, proto, names[i])
         i = i + 1
     }
