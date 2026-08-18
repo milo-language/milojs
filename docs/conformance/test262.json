@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "6f9088004a8d910184938bcde6a615c6371ff396",
+    "revision": "2225e9c4971514bbbad33875463b806f124d8d49",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -17,8 +17,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 1134,
-    "fail": 336,
+    "pass": 1139,
+    "fail": 331,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -44,8 +44,8 @@
     },
     {
       "area": "built-ins/Object",
-      "pass": 90,
-      "fail": 37,
+      "pass": 95,
+      "fail": 32,
       "total": 127
     },
     {
@@ -460,16 +460,14 @@
   "failureBuckets": [
     {
       "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all",
-      "count": 19,
+      "count": 17,
       "cases": [
         "built-ins/Symbol/prototype/toString/toString-default-attributes-strict.js",
         "built-ins/Error/prototype/toString/called-as-function.js",
-        "built-ins/Object/defineProperties/15.2.3.7-6-a-186.js",
         "language/statements/class/elements/privatefieldset-typeerror-5.js",
         "built-ins/Array/prototype/flatMap/target-array-non-extensible.js",
         "built-ins/Array/prototype/shift/set-length-array-length-is-non-writable.js",
         "built-ins/MapIteratorPrototype/next/does-not-have-mapiterator-internal-slots-map.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-192.js",
         "language/statements/class/definition/invalid-extends.js",
         "language/statements/generators/restricted-properties.js",
         "built-ins/Function/prototype/bind/15.3.4.5-2-10.js",
@@ -590,16 +588,6 @@
         "built-ins/Map/prototype/getOrInsertComputed/returns-value-if-key-is-not-present-different-key-types.js",
         "language/statements/labeled/cptn-break.js",
         "language/statements/using/syntax/using-for-using-of-of.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Expected TypeError, got Test262Error: Expected an exception.",
-      "count": 4,
-      "cases": [
-        "built-ins/Object/defineProperty/15.2.3.6-4-305.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-218.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-307.js",
-        "built-ins/Object/defineProperty/15.2.3.6-4-246.js"
       ]
     },
     {
@@ -812,6 +800,14 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Expected TypeError, got Test262Error: Expected an exception.",
+      "count": 2,
+      "cases": [
+        "built-ins/Object/defineProperty/15.2.3.6-4-218.js",
+        "built-ins/Object/defineProperty/15.2.3.6-4-246.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: invalid access of c1 private method Expected a TypeError to be thrown ",
       "count": 2,
       "cases": [
@@ -825,14 +821,6 @@
       "cases": [
         "built-ins/Promise/reject/length.js",
         "built-ins/Object/defineProperties/15.2.3.7-6-a-120.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: N descriptor should not be enumerable; N descriptor should not be writ",
-      "count": 2,
-      "cases": [
-        "built-ins/Object/defineProperties/15.2.3.7-6-a-200.js",
-        "built-ins/Object/defineProperties/15.2.3.7-6-a-225.js"
       ]
     },
     {
@@ -1825,6 +1813,13 @@
       "count": 1,
       "cases": [
         "built-ins/Object/defineProperty/15.2.3.6-4-199.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: N descriptor should not be enumerable; N descriptor should not be writ",
+      "count": 1,
+      "cases": [
+        "built-ins/Object/defineProperties/15.2.3.7-6-a-225.js"
       ]
     },
     {

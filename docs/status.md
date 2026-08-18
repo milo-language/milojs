@@ -42,7 +42,7 @@ reproducible release artifact.
 
 | measure | result | corpus |
 |---|---:|---|
-| deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->1134<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->77.1%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
+| deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->1139<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->77.5%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
 | QuickJS `tests/` | **<!--fact:qjs-pass-->110<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = <!--fact:qjs-pct-->73.8%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
 | locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->220<!--/fact--> | byte-exact differential output vs node |
 | locked runtime fixtures (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->35<!--/fact--> | module, async, fetch, HTTP, sqlite, host behavior |
@@ -88,7 +88,7 @@ Not every remaining difference is milojs's: `/api/v2/roads` hangs under node too
 (it needs a live upstream), and `analytics/middleware` keeps both runtimes alive
 because it installs a `setInterval` at module scope.
 
-test262 stands at <!--fact:t262-pass-->1134<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = **<!--fact:t262-pct-->77.1%<!--/fact-->** on the deterministic sample. The
+test262 stands at <!--fact:t262-pass-->1139<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = **<!--fact:t262-pct-->77.5%<!--/fact-->** on the deterministic sample. The
 backlog carries the per-change attribution.
 
 Where the remaining failures are, compiled from the committed report rather than
@@ -100,7 +100,7 @@ sweep moved:
 |---|---:|---:|
 | `language/statements` | 55 | 227/282 |
 | `language/expressions` | 43 | 291/334 |
-| `built-ins/Object` | 37 | 90/127 |
+| `built-ins/Object` | 32 | 95/127 |
 | `built-ins/Array` | 26 | 65/91 |
 | `built-ins/RegExp` | 19 | 54/73 |
 | `built-ins/Temporal` | 17 | 114/131 |

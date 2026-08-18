@@ -6,7 +6,7 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "6f9088004a8d910184938bcde6a615c6371ff396",
+    "revision": "2225e9c4971514bbbad33875463b806f124d8d49",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -33,7 +33,7 @@
   "failureBuckets": [
     {
       "reason": "Uncaught Error: assertion failed: got |…|, expected |…|",
-      "count": 19,
+      "count": 20,
       "cases": [
         "bug1498.js:<whole>",
         "bug492.js:test_resize_shrink",
@@ -46,6 +46,7 @@
         "parse-error-column.js:<whole>",
         "test_bigint.js:test_bigint_asintn",
         "test_builtin.js:test_array",
+        "test_builtin.js:test_rope",
         "test_builtin.js:test_eval",
         "test_builtin.js:test_date",
         "test_builtin.js:test_regexp",
@@ -70,11 +71,10 @@
     },
     {
       "reason": "timeout/crash (SIGTERM)",
-      "count": 3,
+      "count": 2,
       "cases": [
         "bug1355.js:<whole>",
-        "bug1571.js:<whole>",
-        "test_builtin.js:test_rope"
+        "bug1571.js:<whole>"
       ]
     },
     {
