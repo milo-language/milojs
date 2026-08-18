@@ -22385,6 +22385,9 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                     }
                 }
             }
+            // a `using` in the init clause is held for the whole loop and
+            // released when the loop ends
+            runDisposals(prog, st, loopScope)
             popActive(st)
             return Flow.Normal
         }

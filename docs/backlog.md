@@ -43,6 +43,30 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## Comma operator in a computed key and a for-in head, and `using` in a for init
+
+The last of the test262 parse-failure buckets, and all four causes are the same
+mistake in different places: an Expression position parsed with `parseExpr`, which
+deliberately stops at a comma.
+
+- **A computed key takes a full Expression.** `a[0, 1, 2]` evaluates the sequence
+  and indexes by the LAST value. Both index-parsing sites now use `parseCommaSeq`.
+- **for-IN's object is an Expression**, so `for (x in null, obj)` is legal.
+  for-OF's is an AssignmentExpression and still stops at the comma, so the two are
+  handled differently on purpose.
+- **`using` is legal in a C-style for init.** `for (using x = res; cond; step)`
+  holds the resource for the whole loop; the `Stmt.For` arm now disposes its loop
+  scope on exit, next to where the per-iteration scope is already handled.
+
+The three together make `for (using of of [0, 1, 2])` parse, which is the
+contextual-keyword pileup test262 uses to check that `using` has not been turned
+into a reserved word: `using` is the loop variable, the first `of` is the keyword,
+and the second is an array indexed by a sequence.
+
+`tests/sequenceAndUsingHeads.js` covers all of it, including the nested
+outer/inner `using` case whose disposal order is
+`body, inner_y, inner_x, after-loop, outer_y, outer_x`.
+
 ## Binding patterns in a catch parameter and a C-style for init
 
 Two of the three parse-failure buckets in the test262 sample, ~18 cases, and two

@@ -1,0 +1,5 @@
+index-seq: 30
+call-index-seq: f1
+for-in-seq: key
+using-of-of: 1 7
+nested-using: body,inner_y,inner_x,after-loop,outer_y,outer_x

@@ -941,7 +941,8 @@ fn parseNew(p: &mut PState, prog: &mut Prog): ExprId {
             callee = addExpr(prog, Expr.Member(callee, name))
         } else {
             advance(p)
-            let key = parseExpr(p, prog)
+            // see parsePostfix: a computed key takes a full Expression
+            let key = parseCommaSeq(p, prog)
             expect(p, T_RBRACKET)
             callee = addExpr(prog, Expr.Index(callee, key))
         }
@@ -1202,7 +1203,10 @@ fn parsePostfix(p: &mut PState, prog: &mut Prog): ExprId {
             e = parseTaggedTemplate(p, prog, e)
         } else if k == T_LBRACKET {
             advance(p)
-            let keyIdx = parseExpr(p, prog)
+            // The index is an Expression, comma operator included: `a[0, 1, 2]`
+            // evaluates the sequence and indexes by the LAST value. parseExpr
+            // stops at a comma, so this used to be a parse error.
+            let keyIdx = parseCommaSeq(p, prog)
             expect(p, T_RBRACKET)
             e = addExpr(prog, Expr.Index(e, keyIdx))
         } else {
@@ -2195,7 +2199,16 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
         }
         if forInName.len() > 0 {
             advance(p)
-            let objExpr = parseExpr(p, prog)
+            // for-IN takes a full Expression, so `for (x in null, obj)` is legal;
+            // for-OF takes an AssignmentExpression and stops at the comma.
+            var objExpr = parseExpr(p, prog)
+            if !isOf {
+                while peekKind(p) == T_COMMA {
+                    advance(p)
+                    let rhs = parseExpr(p, prog)
+                    objExpr = addExpr(prog, Expr.Comma(objExpr, rhs))
+                }
+            }
             expect(p, T_RPAREN)
             let body = parseStmt(p, prog)
             if isOf {
@@ -2295,7 +2308,12 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
         var init: Option<StmtId> = Option.None
         if peekKind(p) == T_SEMI {
             advance(p)
-        } else if peekKind(p) == T_LET || peekKind(p) == T_VAR || peekKind(p) == T_CONST {
+        } else if peekKind(p) == T_LET || peekKind(p) == T_VAR || peekKind(p) == T_CONST
+            || (peekKind(p) == T_IDENT && p.toks[p.pos].text == "using" && p.pos + 1 < p.toks.len()
+                && p.toks[p.pos + 1].kind == T_IDENT && p.toks[p.pos + 1].text != "of") {
+            // `using` is legal here too: `for (using x = res; cond; step)` holds the
+            // resource for the whole loop and releases it when the loop ends.
+            // parseStmt already knows the declaration form.
             init = Option.Some(parseStmt(p, prog))
         } else {
             let ie = parseCommaSeq(p, prog)
