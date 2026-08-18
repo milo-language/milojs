@@ -1818,15 +1818,16 @@ pub fn arrGet(st: &Interp, obj: i64, idx: i64): JSValue {
         return JSValue.Undefined
     }
     if idx < arrLen(st, obj) {
-        if idx < st.objects[obj].elems.len() {
-            if !arrIsHole(st, obj, idx) {
-                return cloneValue(st.objects[obj].elems[idx])
-            }
-        } else {
-            let sparse = objOwnIndex(st, obj, i64ToStr(idx))
-            if sparse >= 0 {
-                return cloneValue(st.objects[obj].props[sparse].value)
-            }
+        if idx < st.objects[obj].elems.len() && !arrIsHole(st, obj, idx) {
+            return cloneValue(st.objects[obj].elems[idx])
+        }
+        // A hole INSIDE the element vector may still be an own property: an
+        // index given attributes by defineProperty moves out of the element
+        // vector, which has no room for them, and is holed there. Looking only
+        // past the end missed that case and the read answered undefined.
+        let sparse = objOwnIndex(st, obj, i64ToStr(idx))
+        if sparse >= 0 {
+            return cloneValue(st.objects[obj].props[sparse].value)
         }
     }
     // Past the end is the same case as a hole: no own property, so the read

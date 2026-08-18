@@ -7394,6 +7394,27 @@ fn arrayDefineOwn(prog: &Prog, st: &mut Interp, o: i64, key: &string, d: i64): A
     } else if st.objects[o].frozen {
         return ArrayDefineResult { handled: true, ok: false }
     }
+    // The element vector stores VALUES, with no room for attributes, so a
+    // descriptor that turns one off cannot be represented there: writable:false
+    // on an index was accepted and silently dropped, and the element stayed
+    // writable. Move the index into an ordinary property instead, the same
+    // escape the accessor case above takes, and hole the element so there is one
+    // source of truth. Carrying the current value across first is what keeps a
+    // descriptor that names only attributes from blanking the element, and it
+    // also makes the ordinary path see the property as pre-existing, so the
+    // attributes it does not name keep an element's defaults rather than
+    // dropping to false.
+    let turnsOffAttr = (objHasInChain(st, d, "writable") && !truthy(getMember(st, d, "writable")))
+        || (objHasInChain(st, d, "enumerable") && !truthy(getMember(st, d, "enumerable")))
+        || (objHasInChain(st, d, "configurable") && !truthy(getMember(st, d, "configurable")))
+    if turnsOffAttr {
+        if ai < arrLen(st, o) && !arrIsHole(st, o, ai) {
+            let cur = arrGet(st, o, ai)
+            objSet(st, o, key.clone(), cur)
+            st.objects[o].holes.push(ai)
+        }
+        return notMine
+    }
     if objHasInChain(st, d, "value") {
         arrSet(st, o, ai, getMember(st, d, "value"))
     } else if arrIsHole(st, o, ai) {
