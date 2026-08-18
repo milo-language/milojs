@@ -164,6 +164,11 @@ fn builtinSource(name: &string): string {
     if name == "process" {
         return @embedFile("../lib/process.js")
     }
+    // milojs's own shared validators. Not a node module name, so it cannot
+    // shadow one; see the _http_* convention immediately below.
+    if name == "_errors" {
+        return @embedFile("../lib/errors.js")
+    }
     // node's legacy internal module names for the http and tls machinery. They are
     // aliases of the public module in node too, so pointing them at it is accurate.
     if name == "_http_agent" || name == "_http_client" || name == "_http_common"
