@@ -12600,10 +12600,18 @@ fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JSValu
         // new.target is the constructor this frame was invoked with, or
         // undefined for a plain call
         scopeDefine(st, callScope, "new.target", cloneValue(st.newTarget))
-        // a named function expression can refer to itself by name from inside its
-        // own body, even though the name is not bound in the enclosing scope
+        // A named function EXPRESSION can refer to itself by name from inside its
+        // own body, even though the name is not bound in the enclosing scope.
+        // A method, getter or setter must NOT: its name is a property key, not a
+        // binding, and installing one shadows any same-named variable the body
+        // meant to read. `let v = 5; ({ get v() { return v; } }).v` returned the
+        // getter function instead of 5, and the setter form silently wrote to the
+        // shadow instead of the variable. node's own test harness hit this —
+        // `common.localhostIPv4` is a getter over a module-level
+        // `let localhostIPv4`, so every test using it connected to a host named
+        // "[Function: localhostIPv4]" and hung.
         let selfName = prog.funcs[fIdx].name.clone()
-        if selfName.len() > 0 {
+        if selfName.len() > 0 && !prog.funcs[fIdx].isMethod {
             scopeDefine(st, callScope, selfName, JSValue.Func(fIdx, envIdx))
         }
     }
