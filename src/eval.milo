@@ -21080,12 +21080,27 @@ fn execTry(prog: &Prog, tryB: BlockId, param: &string, catchB: Option<BlockId>, 
     let hadThrow = st.throwing
     let hadGenReturn = st.genReturning
     var savedThrow = cloneValue(st.thrownValue)
+    // Break and continue have to be carried across `finally` for the same reason
+    // return does. They were not, so the trailing `return Flow.Normal` below
+    // swallowed them: `for(;;){ try { break } finally {} }` never left the loop
+    // and the program hung.
     var hadRet = false
     var savedRet = JSValue.Undefined
+    var hadBreak = false
+    var hadContinue = false
+    var savedLabel = ""
     match flow {
         Flow.Ret(v) => {
             hadRet = true
             savedRet = cloneValue(v)
+        }
+        Flow.Break(l) => {
+            hadBreak = true
+            savedLabel = l.clone()
+        }
+        Flow.Continue(l) => {
+            hadContinue = true
+            savedLabel = l.clone()
         }
         _ => {
         }
@@ -21104,9 +21119,17 @@ fn execTry(prog: &Prog, tryB: BlockId, param: &string, catchB: Option<BlockId>, 
     savedRet = st.tempRoots.pop()!
     savedThrow = st.tempRoots.pop()!
 
+    // An abrupt completion in `finally` REPLACES whatever try/catch left pending,
+    // which is why these are checked before the saved values are restored.
     match finFlow {
         Flow.Ret(fv) => {
             return Flow.Ret(fv)
+        }
+        Flow.Break(fl) => {
+            return Flow.Break(fl.clone())
+        }
+        Flow.Continue(fl) => {
+            return Flow.Continue(fl.clone())
         }
         _ => {
         }
@@ -21122,6 +21145,12 @@ fn execTry(prog: &Prog, tryB: BlockId, param: &string, catchB: Option<BlockId>, 
     }
     if hadRet {
         return Flow.Ret(savedRet)
+    }
+    if hadBreak {
+        return Flow.Break(savedLabel)
+    }
+    if hadContinue {
+        return Flow.Continue(savedLabel)
     }
     return Flow.Normal
 }

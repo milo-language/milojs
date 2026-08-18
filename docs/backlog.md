@@ -43,6 +43,28 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## break and continue were swallowed by `finally` (HANG)
+
+`execTry` captured what try/catch left pending so it could re-raise it after the
+finally block, but it only captured `Flow.Ret` and the throw state. `Flow.Break`
+and `Flow.Continue` fell through to the trailing `return Flow.Normal`, so
+
+```js
+for (;;) { try { break; } finally {} }   // never left the loop
+```
+
+hung the engine. Found because `test_loop.js` only started reaching
+`test_try_catch5` once its parse gaps closed; the sweep had been killing it with
+SIGTERM. Both are now carried across the finally, and a finally that itself
+completes abruptly still REPLACES the pending completion, which is checked before
+the saved values are restored.
+
+`tests/finallyControlFlow.js` pins ten cases against node, including the
+precedence ones: a `continue` in the finally overriding a `break` in the try, a
+`return` in the finally overriding a `return` in the try, labeled break out of a
+nested loop, and break/continue issued from a catch clause. The pre-fix engine
+hangs on that fixture rather than failing it.
+
 ## for-in/for-of heads: binding kind and non-identifier targets
 
 `Stmt.ForIn` stored only a NAME, which lost two things at once.
