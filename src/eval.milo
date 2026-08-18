@@ -5094,21 +5094,74 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             st.thrownValue = makeError(st, "TypeError", "Object.defineProperties called on non-object" + currentModule(st))
             return JSValue.Undefined
         }
-        var i: i64 = 0
-        while i < st.objects[descs].props.len() {
-            let key = st.objects[descs].props[i].key.clone()
-            let d = objHandle(st.objects[descs].props[i].value)
-            if d < 0 {
-                st.throwing = true
-                st.thrownValue = makeError(st, "TypeError", "Property description must be an object" + currentModule(st))
-                return JSValue.Undefined
+        // Every descriptor is READ first and only then applied, which is the
+        // order the spec fixes and what makes a later descriptor that throws
+        // leave the earlier ones unapplied. Reading also has to go through the
+        // ordinary Get: the props array holds an accessor's unused value slot,
+        // so a descriptor supplied by a getter read as a non-object and the call
+        // died with "Property description must be an object".
+        var keys: Vec<string> = Vec.new()
+        var descList: Vec<i64> = Vec.new()
+        // A holder keeps every descriptor object rooted across the reads, which
+        // run user code and can collect.
+        let holder = newArray(st)
+        pushTemp(st, JSValue.Obj(holder))
+        let order = enumOrder(st, descs)
+        var oi: i64 = 0
+        while oi < order.len() {
+            if st.objects[descs].props[order[oi]].enumerable {
+                let key = st.objects[descs].props[order[oi]].key.clone()
+                let dv = getMemberDyn(gProg, descs, key, st)
+                if st.throwing {
+                    popTemp(st)
+                    return JSValue.Undefined
+                }
+                let d = objHandle(dv)
+                if d < 0 {
+                    popTemp(st)
+                    st.throwing = true
+                    st.thrownValue = makeError(st, "TypeError", "Property description must be an object" + currentModule(st))
+                    return JSValue.Undefined
+                }
+                arrPush(st, holder, JSValue.Obj(d))
+                keys.push(key)
+                descList.push(d)
             }
-            if !validDescriptor(st, o, key, d) {
-                return JSValue.Undefined
-            }
-            applyDescriptor(st, o, key, d)
-            i = i + 1
+            oi = oi + 1
         }
+        // Own enumerable SYMBOL keys count too, and enumOrder omits them.
+        var sy: i64 = 0
+        while sy < st.objects[descs].props.len() {
+            if isSymbolKey(st.objects[descs].props[sy].key) && st.objects[descs].props[sy].enumerable {
+                let skey = st.objects[descs].props[sy].key.clone()
+                let sdv = getMemberDyn(gProg, descs, skey, st)
+                if st.throwing {
+                    popTemp(st)
+                    return JSValue.Undefined
+                }
+                let sd = objHandle(sdv)
+                if sd < 0 {
+                    popTemp(st)
+                    st.throwing = true
+                    st.thrownValue = makeError(st, "TypeError", "Property description must be an object" + currentModule(st))
+                    return JSValue.Undefined
+                }
+                arrPush(st, holder, JSValue.Obj(sd))
+                keys.push(skey)
+                descList.push(sd)
+            }
+            sy = sy + 1
+        }
+        var ai: i64 = 0
+        while ai < keys.len() {
+            if !validDescriptor(st, o, keys[ai], descList[ai]) {
+                popTemp(st)
+                return JSValue.Undefined
+            }
+            applyDescriptor(st, o, keys[ai], descList[ai])
+            ai = ai + 1
+        }
+        popTemp(st)
         return JSValue.Obj(o)
     }
     if id == NATIVE_MAP || id == NATIVE_SET {
@@ -6346,6 +6399,15 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     }
     if id == NATIVE_OBJECT_FREEZE {
         if argVals.len() > 0 {
+            // A typed array's integer-indexed elements cannot be made
+            // non-configurable, so SetIntegrityLevel fails outright on a view
+            // that HAS any: freezing one is a TypeError rather than a no-op that
+            // reports success. An empty view has nothing to object to.
+            if taIntegrityBlocked(st, argVals[0]) {
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", "Cannot freeze array buffer views with elements" + currentModule(st))
+                return JSValue.Undefined
+            }
             let _ok = preventExtOf(gProg, st, argVals[0], true)
             if st.throwing {
                 return JSValue.Undefined
@@ -6454,6 +6516,13 @@ fn callNative(id: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     }
     if id == NATIVE_OBJECT_PREVENTEXT || id == NATIVE_OBJECT_SEAL {
         if argVals.len() > 0 {
+            // Sealing has the same obstacle as freezing: see the note there.
+            // preventExtensions does not, since it never touches the elements.
+            if id == NATIVE_OBJECT_SEAL && taIntegrityBlocked(st, argVals[0]) {
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", "Cannot seal array buffer views with elements" + currentModule(st))
+                return JSValue.Undefined
+            }
             let ok = preventExtOf(gProg, st, argVals[0], id == NATIVE_OBJECT_SEAL)
             if st.throwing {
                 return JSValue.Undefined
@@ -12849,6 +12918,20 @@ fn newTargetProto(prog: &Prog, st: &mut Interp, ctor: &JSValue, newTarget: &JSVa
 // subclass's `this` already exists and carries its own prototype), so the slots
 // move instead. Only the discriminators and their payloads: ordinary properties
 // stay where the subclass put them.
+// True for a typed array that still has elements. Freezing or sealing one is a
+// TypeError: its integer-indexed properties are non-configurable already and
+// cannot be made non-writable, so SetIntegrityLevel cannot complete.
+fn taIntegrityBlocked(st: &Interp, v: &JSValue): bool {
+    let h = objHandle(v)
+    if h < 0 {
+        return false
+    }
+    if st.objExtras[st.objects[h].extra].taBuf < 0 || st.objects[h].isDataView {
+        return false
+    }
+    return taCurrentLen(st, h) > 0
+}
+
 fn adoptBuiltinSlots(st: &mut Interp, dst: i64, src: i64) {
     st.objects[dst].isMap = st.objects[src].isMap
     st.objects[dst].isSet = st.objects[src].isSet
