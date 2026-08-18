@@ -247,11 +247,16 @@ Need a local corpus, so they are manual, not CI:
 ```sh
 TEST262=~/git/test262 MILOJS_ENGINE=.dev/mj-engine bun scripts/test262-sweep.ts --sample 1500
 QUICKJS_TESTS=~/git/quickjs/tests MILOJS_ENGINE=.dev/mj-engine bun scripts/quickjs-sweep.ts
+NODE_TESTS=~/git/node/test MILOJS_RUNTIME=.dev/mj-runtime bun scripts/node-compat-sweep.ts --sample 400
 node tools/gen-facts.mjs   # compile the new numbers into the docs
 ```
 
 Each sweep writes committed evidence to `docs/conformance/<suite>.json`, stamped
-with the milojs revision it measured. Run them from a CLEAN checkout — a report
+with the milojs revision it measured. The first two measure the ENGINE (the
+language); node-compat measures the RUNTIME (modules, event loop, host
+bindings), against node's own test/parallel through node's own test/common. It
+scores any node-compatible binary, so a peer number is measured rather than
+quoted: pass `MILOJS_RUNTIME=$(which bun)`. Run them from a CLEAN checkout — a report
 marked `dirty` is refused at publication time, because a score measured on
 uncommitted work cannot be reproduced by anyone.
 

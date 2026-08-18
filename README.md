@@ -15,12 +15,24 @@ Experimental, not yet a drop-in replacement for either.
 
 ## Conformance
 
-| suite | score |
-|---|---|
-| [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | <!--fact:t262-pct-->77.5%<!--/fact--> (<!--fact:t262-pass-->1139<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) |
-| [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | <!--fact:qjs-pct-->73.8%<!--/fact--> (<!--fact:qjs-pass-->110<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) |
+The two binaries are measured separately, because they are separate claims: the
+first two rows test the **engine** (the language itself), the third tests the
+**runtime** (modules, event loop, host bindings). A score on one says nothing
+about the other.
 
-Every number is generated from a committed report, never typed by hand. Full breakdown by area, known gaps and how to reproduce: [docs/status.md](docs/status.md).
+| suite | what it measures | score |
+|---|---|---|
+| [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | `milojs-engine` — ECMAScript | <!--fact:t262-pct-->77.5%<!--/fact--> (<!--fact:t262-pass-->1139<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) |
+| [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | `milojs-engine` — ECMAScript | <!--fact:qjs-pct-->73.8%<!--/fact--> (<!--fact:qjs-pass-->110<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) |
+| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) (<!--fact:node-sample-->400<!--/fact-->-case sample of <!--fact:node-available-->3979<!--/fact-->) | `milojs` — Node compatibility | <!--fact:node-pct-->37.3%<!--/fact--> (<!--fact:node-pass-->149<!--/fact-->/<!--fact:node-total-->400<!--/fact-->) |
+
+The Node row runs Node's own tests through Node's own `test/common` harness, and
+the same harness scores any node-compatible binary. Measured the same way on the
+same sample: **node itself 89.5%**, **bun 44.8%**. Node's 89.5% rather than 100%
+is the harness ceiling — the rest need build flags or Node's official runner —
+so read the row against that, not against 100.
+
+For more details, see [docs/status.md](docs/status.md).
 
 ## Install
 

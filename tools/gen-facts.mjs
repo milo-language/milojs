@@ -86,6 +86,14 @@ const FACTS = {
   "t262-seed": () => String(report("test262").selection.seed),
   "t262-corpus": () => short(report("test262").corpus.revision),
   "qjs-pct": () => pct(report("quickjs").totals.pass, report("quickjs").totals.total ?? report("quickjs").totals.scored),
+  // The node-compat sweep measures the RUNTIME against node's own test/parallel
+  // suite. It is a different axis from test262, which measures the ENGINE, and
+  // the docs say so where they quote it.
+  "node-pass": () => String(report("node-compat").totals.pass),
+  "node-total": () => String(report("node-compat").totals.total),
+  "node-pct": () => pct(report("node-compat").totals.pass, report("node-compat").totals.total),
+  "node-sample": () => String(report("node-compat").selection.sample ?? report("node-compat").totals.total),
+  "node-available": () => String(report("node-compat").selection.available),
   "qjs-pass": () => String(report("quickjs").totals.pass),
   "qjs-total": () => String(report("quickjs").totals.total ?? report("quickjs").totals.scored),
   "qjs-corpus": () => short(report("quickjs").corpus.revision),
