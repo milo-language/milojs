@@ -165,6 +165,14 @@ pub enum Builtin {
     CopyFile,
     // UDP. node's dgram module has no equivalent in std/net (which is TCP only),
     // so these sit directly on the socket syscalls.
+    // Compression. std has a real DEFLATE in both directions; lib/zlib.js was an
+    // identity shim, so gzipSync returned its input uncompressed.
+    DeflateRaw,
+    DeflateGzip,
+    DeflateZlib,
+    InflateRaw,
+    InflateGzip,
+    InflateZlib,
     UdpBind,
     UdpSend,
     UdpRecv,

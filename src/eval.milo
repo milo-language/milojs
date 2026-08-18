@@ -28,7 +28,13 @@ from "./modules" import {
 }
 from "std/os" import {
     exit, readFd, read, write, open, close, lseek, fsync, ftruncate, fchmod,
-    socket, bindIn, setsockopt, getSockPort, ntohs
+    socket, bindIn, setsockopt, getSockPort, ntohs, fflush
+}
+from "std/deflate" import {
+    Deflate
+}
+from "std/inflate" import {
+    Inflate
 }
 from "std/platform" import {
     oWriteCreateTrunc, oWriteCreateAppend,
@@ -2690,6 +2696,60 @@ fn relIndex(raw: f64, n: i64): i64 {
         i = n
     }
     return i
+}
+
+// Compression moves BYTES, and a JavaScript string cannot carry them: milojs
+// strings are UTF-8, so any byte sequence that is not valid UTF-8 decodes to
+// U+FFFD and the data is destroyed. gzipSync(x) then gunzipSync() failed with
+// "incorrect header check" for exactly that reason. Both directions therefore
+// use Uint8Array, whose storage is raw bytes.
+fn bytesFromTypedArray(st: &Interp, v: &JSValue): string {
+    var out: string = ""
+    match v {
+        JSValue.Obj(o) => {
+            let ex = st.objects[o].extra
+            if ex < 0 {
+                return out
+            }
+            if st.objExtras[ex].taBuf < 0 || st.objects[o].isDataView {
+                return out
+            }
+            let n = st.objExtras[ex].taLen
+            var i: i64 = 0
+            while i < n {
+                out.push(taElem(st, o, i) as u8)
+                i = i + 1
+            }
+        }
+        _ => {
+        }
+    }
+    return out
+}
+
+// Built by hand rather than through makeTypedArray, which needs a &Prog that
+// callBuiltin does not have.
+fn typedArrayFromBytes(st: &mut Interp, src: &string): JSValue {
+    let nb = newObject(st)
+    st.objects[nb].isArrayBuffer = true
+    st.objects[nb].proto = arrayBufferProto(st)
+    let _e = ensureExtra(st, nb)
+    var b: Vec<u8> = Vec.new()
+    var i: i64 = 0
+    while i < src.len() {
+        b.push(src[i])
+        i = i + 1
+    }
+    st.objExtras[st.objects[nb].extra].bytes = b
+    let view = newObject(st)
+    let _ev = ensureExtra(st, view)
+    st.objExtras[st.objects[view].extra].taBuf = nb
+    st.objExtras[st.objects[view].extra].taKind = 0
+    st.objects[view].proto = typedArrayProtoFor(st, 0)
+    st.objExtras[st.objects[view].extra].taOffset = 0
+    st.objExtras[st.objects[view].extra].taLen = src.len()
+    st.objExtras[st.objects[view].extra].taTracking = false
+    return JSValue.Obj(view)
 }
 
 fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValue>): JSValue {
@@ -5997,6 +6057,65 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Bool(fchmod(toNum(argVals[0]) as i32, toNum(argVals[1]) as u32) == 0 as i32)
     }
+    if id == Builtin.DeflateRaw {
+        if argVals.len() < 1 {
+            return JSValue.Null
+        }
+        return typedArrayFromBytes(st, Deflate.raw(bytesFromTypedArray(st, argVals[0])))
+    }
+    if id == Builtin.DeflateGzip {
+        if argVals.len() < 1 {
+            return JSValue.Null
+        }
+        return typedArrayFromBytes(st, Deflate.gzip(bytesFromTypedArray(st, argVals[0])))
+    }
+    if id == Builtin.DeflateZlib {
+        if argVals.len() < 1 {
+            return JSValue.Null
+        }
+        return typedArrayFromBytes(st, Deflate.zlib(bytesFromTypedArray(st, argVals[0])))
+    }
+    if id == Builtin.InflateRaw {
+        // null on failure rather than a thrown milo error: lib/zlib.js turns it
+        // into the coded Error node's callers catch.
+        if argVals.len() < 1 {
+            return JSValue.Null
+        }
+        match Inflate.raw(bytesFromTypedArray(st, argVals[0])) {
+            Result.Ok(outv) => {
+                return typedArrayFromBytes(st, outv)
+            }
+            Result.Err(_e) => {
+                return JSValue.Null
+            }
+        }
+    }
+    if id == Builtin.InflateGzip {
+        if argVals.len() < 1 {
+            return JSValue.Null
+        }
+        match Inflate.gzip(bytesFromTypedArray(st, argVals[0])) {
+            Result.Ok(outv) => {
+                return typedArrayFromBytes(st, outv)
+            }
+            Result.Err(_e) => {
+                return JSValue.Null
+            }
+        }
+    }
+    if id == Builtin.InflateZlib {
+        if argVals.len() < 1 {
+            return JSValue.Null
+        }
+        match Inflate.zlib(bytesFromTypedArray(st, argVals[0])) {
+            Result.Ok(outv) => {
+                return typedArrayFromBytes(st, outv)
+            }
+            Result.Err(_e) => {
+                return JSValue.Null
+            }
+        }
+    }
     if id == Builtin.UdpBind {
         // AF_INET and SOCK_DGRAM are both 2 on darwin and linux, and makeSockaddr
         // already fixes the family, so no per-platform constant is needed here.
@@ -7114,7 +7233,12 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             eprint(line)
         } else {
             print(line)
-            flush()
+            // fflush(NULL) rather than the `flush` builtin: std/deflate has a
+            // module-private `flush`, and milo's single program-wide namespace
+            // rebinds the bare name to it the moment the compressor is imported.
+            unsafe {
+                fflush(0 as *u8)
+            }
         }
         return JSValue.Undefined
     }
@@ -9962,6 +10086,12 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "__renameSync", JSValue.Native(Native.Fn(Builtin.Rename)))
     scopeDefine(st, 0, "__isDir", JSValue.Native(Native.Fn(Builtin.IsDir)))
     scopeDefine(st, 0, "__statSync", JSValue.Native(Native.Fn(Builtin.StatInfo)))
+    scopeDefine(st, 0, "__deflateRaw", JSValue.Native(Native.Fn(Builtin.DeflateRaw)))
+    scopeDefine(st, 0, "__deflateGzip", JSValue.Native(Native.Fn(Builtin.DeflateGzip)))
+    scopeDefine(st, 0, "__deflateZlib", JSValue.Native(Native.Fn(Builtin.DeflateZlib)))
+    scopeDefine(st, 0, "__inflateRaw", JSValue.Native(Native.Fn(Builtin.InflateRaw)))
+    scopeDefine(st, 0, "__inflateGzip", JSValue.Native(Native.Fn(Builtin.InflateGzip)))
+    scopeDefine(st, 0, "__inflateZlib", JSValue.Native(Native.Fn(Builtin.InflateZlib)))
     scopeDefine(st, 0, "__udpBind", JSValue.Native(Native.Fn(Builtin.UdpBind)))
     scopeDefine(st, 0, "__udpSend", JSValue.Native(Native.Fn(Builtin.UdpSend)))
     scopeDefine(st, 0, "__udpRecv", JSValue.Native(Native.Fn(Builtin.UdpRecv)))
@@ -21085,8 +21215,11 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                         }
                         // node line-buffers to a terminal; without flushing here
                         // a Ctrl-C or SIGKILL discards everything the program
-                        // printed, which makes a long-running server look silent
-                        flush()
+                        // printed, which makes a long-running server look silent.
+                        // fflush(NULL), not the `flush` builtin — see above.
+                        unsafe {
+                            fflush(0 as *u8)
+                        }
                         return JSValue.Undefined
                     }
                 }

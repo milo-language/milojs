@@ -13,7 +13,7 @@ from "std/io" import {
     writeStdout
 }
 from "std/os" import {
-    readFd
+    readFd, fflush
 }
 from "std/fs" import {
     readFile, writeFile
@@ -635,8 +635,13 @@ fn readLineEdited(prompt: &string, history: &Vec<string>, st: &Interp, builtinCo
     var cur: i64 = 0
 
     // user code's console.log goes through print()'s buffered stdout; drain it
-    // before the raw-write prompt so results never appear after the next prompt
-    flush()
+    // before the raw-write prompt so results never appear after the next prompt.
+    // fflush(NULL), not the `flush` builtin: std/deflate defines a module-private
+    // `flush` and milo has ONE program-wide namespace, so importing the
+    // compressor silently rebinds the bare name to its 1-arg version.
+    unsafe {
+        fflush(0 as *u8)
+    }
     writeStdout(prompt)
 
     while true {
