@@ -1,0 +1,6 @@
+obj [true,false]
+str-idx true
+null-prop threw TypeError
+super threw ReferenceError
+undef-prop threw TypeError
+nonconfig false

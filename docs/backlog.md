@@ -43,6 +43,18 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## `delete null.a` silently succeeded
+
+`delete base.k` on a nullish base returned true and deleted nothing, where the
+spec's ToObject step throws a TypeError before any deletion is attempted. Both the
+`.k` and `[k]` forms were affected.
+
+The fix has to yield to an already-pending exception, which the first version did
+not: `delete super.a` raises a ReferenceError while evaluating the base, and a
+blanket TypeError masked it. `tests/deleteOperator.js` covers both, plus the cases
+that must keep working (a non-configurable property answering false, an absent
+index on a string answering true).
+
 ## AsyncDisposableStack, and what the test262 gap is actually made of
 
 `AsyncDisposableStack` was missing entirely, which is 75 test262 cases from one

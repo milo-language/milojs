@@ -46,7 +46,7 @@ reproducible release artifact.
 | QuickJS `tests/` | **<!--fact:qjs-pass-->101<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = <!--fact:qjs-pct-->67.8%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
 | test262 failures that are PARSE failures | <!--fact:t262-parsefail-->41<!--/fact--> of <!--fact:t262-fail-->324<!--/fact--> | <!--fact:t262-parsefail-pct-->12.7%<!--/fact--> of the gap is missing syntax; the rest is semantics |
 | QuickJS cases that never ran (parse gaps) | <!--fact:qjs-parsefail-->0<!--/fact--> | of those that ran, <!--fact:qjs-ran-pct-->67.8%<!--/fact--> of <!--fact:qjs-ran-->149<!--/fact--> pass |
-| locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->230<!--/fact--> | byte-exact differential output vs node |
+| locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->231<!--/fact--> | byte-exact differential output vs node |
 | locked runtime fixtures (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->35<!--/fact--> | module, async, fetch, HTTP, sqlite, host behavior |
 | Milo invariant fixtures (`tests/milo/`, `tests/milo-errors/`) | <!--fact:fixtures-milo-->3<!--/fact--> + <!--fact:fixtures-milo-errors-->8<!--/fact--> | scheduler/context and GC-root invariants |
 | ESM / Node-API / embedding fixtures | 2 / 2 / 1 | lowering, addon callbacks, C ABI |

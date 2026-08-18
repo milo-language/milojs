@@ -15952,6 +15952,37 @@ fn proxyDelete(prog: &Prog, o: i64, key: string, st: &mut Interp): JSValue {
 // objHandle answers -1 for a Func, so every `delete fn.x` used to report true
 // while removing nothing, and test262's isConfigurable() probe (which deletes
 // and then checks hasOwnProperty) failed on every class static method.
+// `delete base.k` where the base has no property bag. Only null and undefined get
+// here in practice, and for those the spec's ToObject step throws a TypeError
+// BEFORE any deletion is attempted; milojs answered true and deleted nothing, so
+// `delete null.a` silently succeeded. Any other bagless value keeps the old
+// answer, since deleting an absent property is true.
+fn deleteOnNoBag(st: &mut Interp, base: &JSValue): JSValue {
+    // Evaluating the base may already have thrown, and that exception wins:
+    // `delete super.a` raises a ReferenceError from the base, which this would
+    // otherwise overwrite with a TypeError.
+    if st.throwing {
+        return JSValue.Undefined
+    }
+    var nullish = false
+    match base {
+        JSValue.Undefined => {
+            nullish = true
+        }
+        JSValue.Null => {
+            nullish = true
+        }
+        _ => {
+        }
+    }
+    if nullish {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Cannot convert undefined or null to object")
+        return JSValue.Undefined
+    }
+    return JSValue.Bool(true)
+}
+
 fn evalDelete(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSValue {
     match prog.exprs[targetId.index] {
         Expr.Member(objIdx, name) => {
@@ -15966,7 +15997,7 @@ fn evalDelete(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
                 }
                 return JSValue.Bool(objDeleteKey(st, o, name))
             }
-            return JSValue.Bool(true)
+            return deleteOnNoBag(st, ov)
         }
         Expr.Index(objIdx, keyIdx) => {
             let ov = evalExpr(prog, objIdx, st, scope)
@@ -15984,7 +16015,7 @@ fn evalDelete(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
                 }
                 return JSValue.Bool(objDeleteKey(st, o, key))
             }
-            return JSValue.Bool(true)
+            return deleteOnNoBag(st, ov)
         }
         _ => {
             // `delete someVariable` is not permitted on bindings; evaluate for
