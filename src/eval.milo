@@ -832,6 +832,11 @@ let BRAND_STRING_GENERIC: i64 = 10
 // Function.prototype.toString requires a callable receiver. is-callable is built
 // on that throw: it calls it inside a try/catch and reports what comes back.
 let BRAND_CALLABLE: i64 = 11
+// Map/Set carry an internal slot the spec brand-checks; `size` is an accessor on
+// each prototype, and reading it off anything else is a TypeError rather than
+// undefined.
+let BRAND_MAP: i64 = 12
+let BRAND_SET: i64 = 13
 
 // A bound method that first checks its receiver really is of `brand`. See
 // JSObjExtra.boundBrand for why the buffer family needs this and Array does not.
@@ -905,6 +910,12 @@ fn brandMatches(st: &Interp, brand: i64, recv: &JSValue): bool {
     }
     if brand == 3 {
         return st.objects[h].isDataView
+    }
+    if brand == BRAND_MAP {
+        return st.objects[h].isMap
+    }
+    if brand == BRAND_SET {
+        return st.objects[h].isSet
     }
     return st.objExtras[st.objects[h].extra].taBuf >= 0 && !st.objects[h].isDataView
 }
@@ -1132,6 +1143,12 @@ pub fn valueIsConstructor(prog: &Prog, st: &Interp, v: &JSValue): bool {
 fn brandName(brand: i64): string {
     if brand == 2 {
         return "ArrayBuffer"
+    }
+    if brand == BRAND_MAP {
+        return "Map"
+    }
+    if brand == BRAND_SET {
+        return "Set"
     }
     if brand == 3 {
         return "DataView"
@@ -2838,8 +2855,57 @@ fn boundMethodNameOf(st: &Interp, v: &JSValue): string {
     return st.objExtras[st.objects[h].extra].boundMethod.clone()
 }
 
+// The getters behind the accessor properties on the builtin prototypes. Each is
+// installed with objDefineAccessor and a brand, so an incompatible receiver is
+// rejected by brandOk before this runs; the name is the only thing left to
+// dispatch on. Kept apart from callBuiltinByName because none of them takes
+// arguments or needs a Prog.
+//
+// These were plain absent: `Object.getOwnPropertyDescriptor(Map.prototype,
+// "size")` answered undefined, so anything reflecting over a builtin prototype
+// (test262's propertyHelper, feature detection, util.inspect clones) saw a
+// prototype with no shape at all.
+fn builtinAccessorValue(st: &mut Interp, o: i64, name: &string): JSValue {
+    if name == "__mapSize" || name == "__setSize" {
+        return JSValue.Number(st.objExtras[st.objects[o].extra].mapKeys.len() as f64)
+    }
+    if name == "__taLength" {
+        return JSValue.Number(taCurrentLen(st, o) as f64)
+    }
+    if name == "__taByteLength" {
+        return JSValue.Number((taCurrentLen(st, o) * taWidth(st.objExtras[st.objects[o].extra].taKind)) as f64)
+    }
+    if name == "__taByteOffset" || name == "__dvByteOffset" {
+        if taIsDetached(st, o) || taOutOfBounds(st, o) {
+            return JSValue.Number(0.0)
+        }
+        return JSValue.Number(st.objExtras[st.objects[o].extra].taOffset as f64)
+    }
+    if name == "__taBuffer" || name == "__dvBuffer" {
+        return JSValue.Obj(st.objExtras[st.objects[o].extra].taBuf)
+    }
+    if name == "__dvByteLength" {
+        return JSValue.Number(dataViewByteLen(st, o) as f64)
+    }
+    return JSValue.Undefined
+}
+
+// True for the names builtinAccessorValue answers.
+fn isBuiltinAccessorName(n: &string): bool {
+    return n == "__mapSize" || n == "__setSize" || n == "__taLength" || n == "__taByteLength" || n == "__taByteOffset" || n == "__taBuffer" || n == "__dvByteLength" || n == "__dvByteOffset" || n == "__dvBuffer"
+}
+
 // Invoke a builtin method by name against an already-evaluated receiver+args.
 fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSValue>, st: &mut Interp): JSValue {
+    // the accessor properties on the builtin prototypes; brandOk has already
+    // rejected an incompatible receiver by the time this runs
+    if isBuiltinAccessorName(name) {
+        let ah = objHandle(recv)
+        if ah >= 0 {
+            return builtinAccessorValue(st, ah, name)
+        }
+        return JSValue.Undefined
+    }
     // a per-module `require` value: the receiver carries the directory it was
     // bound to, so resolution matches the module the reference came from
     if name == "__require" {
@@ -8070,6 +8136,26 @@ fn setupTypedArrayProtos(st: &mut Interp) {
         objSetNonEnumerable(st, taProto, names[i])
         i = i + 1
     }
+    // length/byteLength/byteOffset/buffer are ACCESSORS on %TypedArray%.prototype,
+    // not data properties on each view. Reading one off a non-view is a
+    // TypeError, which the brand gives for free.
+    var taAcc: Vec<string> = Vec.new()
+    taAcc.push("length")
+    taAcc.push("byteLength")
+    taAcc.push("byteOffset")
+    taAcc.push("buffer")
+    var taGet: Vec<string> = Vec.new()
+    taGet.push("__taLength")
+    taGet.push("__taByteLength")
+    taGet.push("__taByteOffset")
+    taGet.push("__taBuffer")
+    var ai: i64 = 0
+    while ai < taAcc.len() {
+        let g = makeBrandedMethod(st, taGet[ai].clone(), 1)
+        objDefineAccessor(st, taProto, taAcc[ai].clone(), g, JSValue.Undefined)
+        objSetNonEnumerable(st, taProto, taAcc[ai])
+        ai = ai + 1
+    }
     let taCtor = newObject(st)
     st.objects[taCtor].isFunctionLike = true
     objSet(st, taCtor, "prototype", JSValue.Obj(taProto))
@@ -8164,6 +8250,23 @@ fn setupBufferProtos(st: &mut Interp) {
         objSet(st, dvProto, dvNames[d].clone(), makeBrandedMethod(st, dvNames[d].clone(), 3))
         objSetNonEnumerable(st, dvProto, dvNames[d])
         d = d + 1
+    }
+    // buffer/byteLength/byteOffset are accessors here too, and reading one off
+    // anything that is not a DataView is a TypeError.
+    var dvAcc: Vec<string> = Vec.new()
+    dvAcc.push("buffer")
+    dvAcc.push("byteLength")
+    dvAcc.push("byteOffset")
+    var dvGet: Vec<string> = Vec.new()
+    dvGet.push("__dvBuffer")
+    dvGet.push("__dvByteLength")
+    dvGet.push("__dvByteOffset")
+    var dq: i64 = 0
+    while dq < dvAcc.len() {
+        let dg = makeBrandedMethod(st, dvGet[dq].clone(), 3)
+        objDefineAccessor(st, dvProto, dvAcc[dq].clone(), dg, JSValue.Undefined)
+        objSetNonEnumerable(st, dvProto, dvAcc[dq])
+        dq = dq + 1
     }
     objSet(st, dvProto, "constructor", JSValue.Native(NATIVE_DATAVIEW))
     objSetNonEnumerable(st, dvProto, "constructor")
@@ -8375,6 +8478,13 @@ fn setupRemainingProtos(st: &mut Interp) {
     mapNames.push("values")
     mapNames.push("entries")
     st.mapProtoObj = buildNativeProto(st, NATIVE_MAP, mapNames)
+    // size is an accessor on Map.prototype/Set.prototype, and was answered by an
+    // ad-hoc read on the instance instead — so the prototype carried no
+    // descriptor for it and `Map.prototype.size` off a non-Map read as
+    // undefined rather than throwing.
+    let mapSizeGetter = makeBrandedMethod(st, "__mapSize", BRAND_MAP)
+    objDefineAccessor(st, st.mapProtoObj, "size", mapSizeGetter, JSValue.Undefined)
+    objSetNonEnumerable(st, st.mapProtoObj, "size")
 
     var setNames: Vec<string> = Vec.new()
     setNames.push("add")
@@ -8392,6 +8502,9 @@ fn setupRemainingProtos(st: &mut Interp) {
     setNames.push("isSupersetOf")
     setNames.push("isDisjointFrom")
     st.setProtoObj = buildNativeProto(st, NATIVE_SET, setNames)
+    let setSizeGetter = makeBrandedMethod(st, "__setSize", BRAND_SET)
+    objDefineAccessor(st, st.setProtoObj, "size", setSizeGetter, JSValue.Undefined)
+    objSetNonEnumerable(st, st.setProtoObj, "size")
 
     var promNames: Vec<string> = Vec.new()
     promNames.push("then")
