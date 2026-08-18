@@ -3,7 +3,7 @@ system: milojs-object-footprint
 purpose: measured per-object memory cost in milojs, and the JSObjExtra side table that shrank it
 key-files: src/runtime.milo
 update-when: JSObj gains or loses fields, or the side-table split lands
-last-verified: 2026-08-18 (re-read after the native id enum: object layout is unchanged, JSValue.Native carries a Native rather than an i64) (JSObj gained `protoNull`, the bit that separates a null prototype from an absent link)
+last-verified: 2026-08-18 (HashMap accessor claim re-checked against std/arena)
 -->
 
 # milojs: object footprint
@@ -288,9 +288,9 @@ Checked the side-table primitive before coding slice 1. `HashMap<i64, T>`
 exposes only New / Insert / Get / GetOrDefault / Contains / Remove / Len. **`get`
 and `getOrDefault` DEEP-CLONE the value** — the codegen comment is explicit:
 "Deep-clone, don't `load`: a shallow copy aliases the map's heap." There is no
-`getMut`/`entry`/reference accessor, and there cannot cleanly be one: Milo's
-second-class references forbid returning `&V`, which is exactly *why* `get`
-clones. This constraint was not in the plan above, and it reshapes the refactor:
+`getMut`/`entry`/reference accessor, because Milo's second-class references forbid
+returning `&V`, which is exactly *why* `get` clones. This constraint was not in the
+plan above, and it reshapes the refactor:
 
 - **The big movable payloads are Vecs, and Vecs cannot be cheaply moved.**
   `bytes` (typed-array/DataView element access, per-element), `mapKeys/mapVals`
@@ -317,6 +317,23 @@ dispatch / settle), but a GC-mark or flag-gating slip there breaks priority-1,
 and it can only be *confirmed* by running the full app, which needs the private
 bundle. So the high-value part of this refactor is gated on app-in-the-loop
 verification that the milojs session cannot do alone.
+
+**CORRECTION 2026-08-18: "there cannot cleanly be one" was wrong.** The rule
+forbids *returning* `&V`; it does not forbid *passing* one to a callback, and
+`std/arena` already ships exactly that shape against the same rule:
+
+```
+Arena.modifyMut(self: &mut Arena, h: Handle<T>, f: (&mut T) => void): bool
+arenaWith<T, R>(a: &Arena<T>, h: Handle<T>, f: (&T) => R): Option<R>
+```
+
+So a `HashMap.withMut(k, f: (&mut V) => void)` needs no new type-system rule, only
+codegen work, and the upstream ask should be framed as "extend a proven pattern to
+the map intrinsic" rather than "change the reference model". Two caveats keep this
+from being a free win: the callback must not re-enter the interpreter while an
+element is borrowed (the same rule `std/arena` states for its own accessors), which
+rules it out where user code can run mid-operation, and it addresses the Vec-payload
+clone only, not the per-object footprint the rest of this doc is about.
 
 **Three ways forward, in rough ROI order:**
 1. **Deprioritize memory; spend the effort on QuickJS/generators (item 3),** which
