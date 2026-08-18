@@ -12810,6 +12810,51 @@ fn newTargetProto(prog: &Prog, st: &mut Interp, ctor: &JSValue, newTarget: &JSVa
 // reach the TARGET's [[Construct]], which may be another proxy's trap, and
 // Reflect.construct has to be able to pass a newTarget that is not the callee —
 // neither is expressible as "call the target with a fresh `this`".
+// Move a freshly built builtin's internal slots onto the instance a subclass
+// constructor is initialising. `super()` cannot hand the built object back (the
+// subclass's `this` already exists and carries its own prototype), so the slots
+// move instead. Only the discriminators and their payloads: ordinary properties
+// stay where the subclass put them.
+fn adoptBuiltinSlots(st: &mut Interp, dst: i64, src: i64) {
+    st.objects[dst].isMap = st.objects[src].isMap
+    st.objects[dst].isSet = st.objects[src].isSet
+    st.objects[dst].isDate = st.objects[src].isDate
+    st.objects[dst].isArrayBuffer = st.objects[src].isArrayBuffer
+    st.objects[dst].isDataView = st.objects[src].isDataView
+    st.objects[dst].isError = st.objects[src].isError
+    st.objects[dst].promiseState = st.objects[src].promiseState
+    let de = ensureExtra(st, dst)
+    let se = st.objects[src].extra
+    st.objExtras[de].mapKeys = cloneValueVec(st.objExtras[se].mapKeys)
+    st.objExtras[de].mapVals = cloneValueVec(st.objExtras[se].mapVals)
+    st.objExtras[de].promiseValue = cloneValue(st.objExtras[se].promiseValue)
+    st.objExtras[de].boxed = cloneValue(st.objExtras[se].boxed)
+    st.objExtras[de].regexId = st.objExtras[se].regexId
+    st.objExtras[de].taBuf = st.objExtras[se].taBuf
+    st.objExtras[de].taKind = st.objExtras[se].taKind
+    st.objExtras[de].taOffset = st.objExtras[se].taOffset
+    st.objExtras[de].taLen = st.objExtras[se].taLen
+    st.objExtras[de].taTracking = st.objExtras[se].taTracking
+    st.objExtras[de].abMaxLen = st.objExtras[se].abMaxLen
+    // A promise's pending reactions belong to the object that will be handed to
+    // user code, so they move with the state rather than being left behind on a
+    // throwaway nothing references.
+    st.objExtras[de].reactions = replace(st.objExtras[se].reactions, Vec.new())
+    st.objects[src].promiseState = 0 - 1
+}
+
+// A shallow copy of a value vector, since the source object is discarded right
+// after and its slots must not be shared.
+fn cloneValueVec(v: &Vec<JSValue>): Vec<JSValue> {
+    var out: Vec<JSValue> = Vec.new()
+    var i: i64 = 0
+    while i < v.len() {
+        out.push(cloneValue(v[i]))
+        i = i + 1
+    }
+    return out
+}
+
 pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec<JSValue>, newTarget: &JSValue): JSValue {
     let co = objHandle(ctor)
     if co >= 0 && st.objects[co].isProxy {
@@ -19883,6 +19928,27 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                         objSetNonEnumerable(st, selfObj, "stack")
                     }
                     return JSValue.Undefined
+                }
+                // Any OTHER builtin base (Promise, Map, Set, Array, Date, ...)
+                // has to be CONSTRUCTED, not called: calling it as a function
+                // with `this` set never ran the Promise executor and never gave
+                // the instance a Map's entry table, so `class P extends Promise`
+                // produced an object that looked right and did nothing. Build a
+                // throwaway with the base's own [[Construct]] and move its
+                // internal slots onto the instance under construction.
+                if funcHandle(baseVal) < 0 && !isUndefinedValue(baseVal) {
+                    let selfObj2 = objHandle(thisVal)
+                    if selfObj2 >= 0 {
+                        let built = constructValue(prog, st, baseVal, argVals, baseVal)
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
+                        let bh = objHandle(built)
+                        if bh >= 0 {
+                            adoptBuiltinSlots(st, selfObj2, bh)
+                        }
+                        return JSValue.Undefined
+                    }
                 }
                 return callValue(prog, baseVal, argVals, thisVal, st)
             }

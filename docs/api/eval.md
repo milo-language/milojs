@@ -39,10 +39,7 @@ which run the full ToPrimitive) disagree with it.
 pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec<JSValue>, newTarget: &JSValue): JSValue
 ```
 
-[[Construct]] over any value. `new proxy(...)` with no construct trap has to
-reach the TARGET's [[Construct]], which may be another proxy's trap, and
-Reflect.construct has to be able to pass a newTarget that is not the callee —
-neither is expressible as "call the target with a fresh `this`".
+_Undocumented._
 
 ### `definePropOf`
 
