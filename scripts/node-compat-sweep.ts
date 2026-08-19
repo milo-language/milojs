@@ -32,6 +32,8 @@ const NODE_TESTS = process.env.NODE_TESTS ?? join(homedir(), "git/node/test");
 const RUNTIME_RAW = process.env.MILOJS_RUNTIME ?? ".dev/mj-runtime";
 const RUNTIME = RUNTIME_RAW.includes("/") ? resolve(RUNTIME_RAW) : RUNTIME_RAW;
 const PARALLEL = join(NODE_TESTS, "parallel");
+// Resolved once: a --version probe per case would be 3373 extra spawns.
+let RUNTIME_VERSION = "unknown";
 
 if (!existsSync(PARALLEL)) {
   console.error(`node-compat-sweep: no node test suite at ${PARALLEL}\n` +
@@ -98,6 +100,32 @@ const MAX_GROUP_MB = arg("--max-group-mb") ? parseInt(arg("--max-group-mb")!) : 
 // is sitting in stdout's buffer. Two earlier runs lost their whole leak table
 // exactly that way.
 const diag = (m: string) => { try { writeSync(2, m + "\n"); } catch {} };
+
+// The one line of stderr worth filing the failure under.
+//
+// This used to be "first non-empty line", which is wrong for any runtime with a
+// code-frame error formatter: bun and deno print the offending SOURCE lines
+// before the message, so the bucket key came out as whatever comment happened
+// to sit above the throw. A bun sweep filed 426 failures under
+// "// On non-Windows platforms, this always returns `true`" — a comment in
+// node's test/common — while the actual error, `getCallSites is not a
+// function`, appeared nowhere in the report. Prefer a line that looks like a
+// thrown message; fall back to the old rule when nothing matches.
+const ERR_LINE = /^(?:[A-Za-z_$][\w$]*Error\b|error\b|Uncaught\b|panic\b)/;
+function whyFrom(stderr: string): string {
+  const lines = stderr.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  return (lines.find((l) => ERR_LINE.test(l)) ?? lines[0] ?? "").slice(0, 200);
+}
+
+// Recorded so a peer report is citeable: "bun" is not a number anyone can
+// reproduce against, "bun 1.3.10" is.
+function runtimeVersion(bin: string): string {
+  try {
+    return execFileSync(bin, ["--version"], {
+      encoding: "utf-8", timeout: 5_000, stdio: ["ignore", "pipe", "ignore"],
+    }).trim().split("\n")[0].slice(0, 60);
+  } catch { return "unknown"; }
+}
 type Live = { file: string; bomb: (n: number) => void; hog: (mb: number) => void };
 const runningPgid = new Map<number, Live>();
 const widest = new Map<string, number>();
@@ -198,6 +226,7 @@ let done = 0;
 // which happens to add fewer globals, slipped through. Node supports switching
 // it off; without that the comparison measures the wrong thing.
 const CHILD_ENV = { ...process.env, NODE_TEST_DIR: NODE_TESTS, NODE_TEST_KNOWN_GLOBALS: "0" };
+RUNTIME_VERSION = runtimeVersion(RUNTIME);
 
 // Every test that touches the filesystem calls tmpdir.refresh(), and node names
 // that directory `.tmp.${TEST_SERIAL_ID ?? TEST_THREAD_ID ?? 0}`. Unset, all of
@@ -336,9 +365,7 @@ function runOne(f: string, index: number): Promise<Row> {
         finish({ file: f, ok: true, why: "", skipped: false, skipWhy: "" });
         return;
       }
-      const err = stderr.trim();
-      const why = err.split("\n").filter((l) => l.trim().length > 0).slice(0, 1).join(" ").slice(0, 200)
-        || (signal ? `signal ${signal}` : `exit ${code}`);
+      const why = whyFrom(stderr) || (signal ? `signal ${signal}` : `exit ${code}`);
       finish({ file: f, ok: false, why, skipped: false, skipWhy: "" });
     });
   });
@@ -407,6 +434,18 @@ const skipped = rows.filter((r) => r.skipped).length;
 const ran = rows.length - skipped;
 const fail = ran - pass;
 const pct = ran ? ((pass / ran) * 100).toFixed(1) : "0.0";
+// The ran-only percentage is NOT MONOTONE in progress, which makes it the wrong
+// headline and a trap when comparing two runtimes.
+//
+// A skip leaves the denominator, so a subsystem the runtime cannot attempt is
+// silently forgiven. 606 of milojs's 936 skips say "missing crypto"; the day
+// crypto lands, those cases start RUNNING and mostly failing, so pass/ran falls
+// (32.4% -> ~30%) while the runtime got strictly better. pass/total cannot do
+// that: it can only rise when a case starts passing. Publish that one.
+//
+// It also decides peer comparisons. milojs skips 936 cases and bun 145, so
+// ran-only flatters whichever engine declines more work.
+const pctAll = rows.length ? ((pass / rows.length) * 100).toFixed(1) : "0.0";
 
 // Per area, so the report says WHERE the runtime stands rather than only how
 // far: "fs 60%, http 20%" is actionable in a way one number is not.
@@ -479,7 +518,9 @@ if (verbose) {
   console.log("\nfailing:");
   rows.filter((r) => !r.ok).forEach((r) => console.log(`  ${r.file}  ${r.why}`));
 }
-console.log(`\nnode-compat-sweep: ${pass}/${ran} pass (${pct}%), ${skipped} skipped, of ${selected.length} selected from ${files.length} runnable (${excluded} node-internal tests excluded)`);
+console.log(`\nnode-compat-sweep: ${pass}/${rows.length} of all selected (${pctAll}%)  ·  ${pass}/${ran} of those that ran (${pct}%), ${skipped} skipped`);
+console.log(`  ${tilde(RUNTIME)} ${RUNTIME_VERSION} · ${selected.length} selected from ${files.length} runnable (${excluded} node-internal tests excluded)`);
+console.log(`  quote the all-selected number when comparing runtimes: a skip leaves the ran-only denominator, so it forgives whatever an engine cannot attempt`);
 
 if (failsPath) {
   writeFileSync(failsPath, rows.filter((r) => !r.ok && !r.skipped).map((r) => JSON.stringify({ file: r.file, why: r.why })).join("\n") + "\n");
@@ -492,6 +533,7 @@ const report = {
   corpus: { path: tilde(NODE_TESTS), revision: gitRev(NODE_TESTS) },
   milojs: { revision: gitRev("."), dirty: gitDirty(".") },
   runtime: tilde(RUNTIME),
+  runtimeVersion: RUNTIME_VERSION,
   selection: { directory: subDir || null, sample: sampleN, seed: "0x5eed17", available: files.length, excludedNodeInternal: excluded },
   totals: { pass, fail, skipped, ran, total: rows.length },
   areas: areaRows,

@@ -126,6 +126,23 @@ const FACTS = {
   "node-ran": () => String(report("node-compat").totals.ran),
   "node-skipped": () => String(report("node-compat").totals.skipped),
   "node-pct": () => pct(report("node-compat").totals.pass, report("node-compat").totals.ran),
+  // THE HEADLINE. Scored against every selected case, skips included in the
+  // denominator, which is the only form that is monotone in progress: a skip
+  // leaves the ran-only denominator, so a subsystem milojs cannot attempt is
+  // forgiven rather than counted. 606 of the current skips are one gap
+  // ("missing crypto"), and shipping crypto makes them RUN and mostly fail, so
+  // node-pct falls while the runtime got strictly better. node-pct-all rises.
+  // Quote this one anywhere a number is compared to another engine or to an
+  // older milojs; node-pct is the secondary "of what we attempt".
+  "node-pct-all": () => pct(report("node-compat").totals.pass, report("node-compat").totals.total),
+  // The peer column. Same corpus, same harness, same caps, measured rather than
+  // quoted from a vendor's table — see docs/conformance/node-compat-peer.json.
+  "node-peer-name": () => peerName(),
+  "node-peer-pass": () => String(report("node-compat-peer").totals.pass),
+  "node-peer-total": () => String(report("node-compat-peer").totals.total),
+  "node-peer-skipped": () => String(report("node-compat-peer").totals.skipped),
+  "node-peer-pct": () => pct(report("node-compat-peer").totals.pass, report("node-compat-peer").totals.ran),
+  "node-peer-pct-all": () => pct(report("node-compat-peer").totals.pass, report("node-compat-peer").totals.total),
   "node-sample": () => String(report("node-compat").selection.sample ?? report("node-compat").totals.total),
   "node-available": () => String(report("node-compat").selection.available),
   "node-excluded": () => String(report("node-compat").selection.excludedNodeInternal),
@@ -166,6 +183,22 @@ const pct = (a, b) => {
   return v.toFixed(1) + "%";
 };
 const short = (rev) => (rev ? rev.slice(0, 8) : "unknown");
+
+// "bun 1.3.10", not "bun": a peer score nobody can pin to a version is not
+// evidence, it is a rumour. Some runtimes already print their own name in
+// --version output ("milojs 0.1.0 (dev …)"), so do not repeat it.
+function peerName(suite = "node-compat-peer") {
+  const r = report(suite);
+  const bin = String(r.runtime ?? "peer").split("/").pop();
+  const ver = String(r.runtimeVersion ?? "unknown");
+  if (ver === "unknown") {
+    throw new Error(
+      `docs/conformance/${suite}.json records no runtimeVersion — re-run the sweep with a build ` +
+      `of scripts/node-compat-sweep.ts that captures it, or the peer number cannot be cited.`
+    );
+  }
+  return ver.toLowerCase().startsWith(bin.toLowerCase()) ? ver : `${bin} ${ver}`;
+}
 
 const reportCache = new Map();
 function report(suite) {

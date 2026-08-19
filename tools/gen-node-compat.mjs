@@ -143,6 +143,39 @@ if (report?.milojs?.dirty) {
   console.error("gen-node-compat: docs/conformance/node-compat.json was measured on a DIRTY tree");
   process.exit(2);
 }
+// The peer column. Optional: the table is about milojs and still generates
+// without it, but when the report is present every row carries a second engine
+// measured on the SAME corpus by the SAME harness. That is the difference
+// between a number and a number that means something — a reader looking at a
+// column of red has no way to know whether 34% on node's fs suite is bad or
+// whether node's fs suite is brutal, and the shipping runtime everyone compares
+// against scoring 57% on the identical files answers it.
+const peerPath = join(ROOT, "docs/conformance/node-compat-peer.json");
+const peer = existsSync(peerPath) ? JSON.parse(readFileSync(peerPath, "utf-8")) : null;
+if (peer?.milojs?.dirty) {
+  console.error("gen-node-compat: docs/conformance/node-compat-peer.json was measured on a DIRTY tree");
+  process.exit(2);
+}
+// A peer measured against a different node checkout is not a comparison, it is
+// two unrelated numbers side by side. Refuse rather than publish it.
+if (peer && report && peer.corpus?.revision !== report.corpus?.revision) {
+  console.error(
+    `gen-node-compat: peer report was measured against node ${String(peer.corpus?.revision).slice(0, 8)} ` +
+    `but the milojs report against ${String(report.corpus?.revision).slice(0, 8)} — re-run both on one corpus.`);
+  process.exit(2);
+}
+const peerLabel = (() => {
+  if (!peer) return null;
+  const bin = String(peer.runtime ?? "peer").split("/").pop();
+  const ver = String(peer.runtimeVersion ?? "");
+  if (!ver || ver === "unknown") {
+    console.error("gen-node-compat: peer report records no runtimeVersion — re-run the peer sweep");
+    process.exit(2);
+  }
+  return ver.toLowerCase().startsWith(bin.toLowerCase()) ? ver : `${bin} ${ver}`;
+})();
+const peerByName = new Map((peer?.areas ?? []).map((a) => [a.area, a]));
+
 const sweepDate = (() => {
   const rev = report?.milojs?.revision;
   if (!rev) return "1970-01-01";
@@ -170,6 +203,10 @@ for (const m of MODULES) {
     covered,
     missing,
     tests: area ? { pass: area.pass, ran: area.total - (area.skipped ?? 0), skipped: area.skipped ?? 0 } : null,
+    peer: (() => {
+      const pa = peerByName.get(AREA_ALIAS[m] ?? m);
+      return pa ? { pass: pa.pass, ran: pa.total - (pa.skipped ?? 0), skipped: pa.skipped ?? 0 } : null;
+    })(),
   });
 }
 
@@ -225,12 +262,25 @@ const exportPct = (r) => (!r.loads || r.wanted === 0 ? 0 : (r.covered / r.wanted
 // null, not 0, when nothing ran: "no evidence" is a different statement from
 // "measured and failing", and ⚪ says so rather than implying a zero.
 const testPct = (r) => (r.tests && r.tests.ran > 0 ? (r.tests.pass / r.tests.ran) * 100 : null);
+// Every case node has for this module, skips included. null only when node ships
+// no test for it at all, which is the one honest "no evidence" case: a module
+// whose every case SKIPPED has evidence, and the evidence is that it is missing.
+const allPct = (r) => {
+  const n = (r.tests?.ran ?? 0) + (r.tests?.skipped ?? 0);
+  return n > 0 ? (r.tests.pass / n) * 100 : null;
+};
 // Behaviour first, surface as the tiebreak. An unmeasured module sorts on its
 // surface alone, below anything with a measured pass rate above zero, and a
 // module that does not load sorts last whatever it exports.
 function score(r) {
   if (!r.loads) return -100;
-  const t = testPct(r);
+  // RANKED on all-selected, not on what ran, even though the cell displays the
+  // ran-only rate. Ranking on ran-only let a module climb the table by
+  // declining work: `tls` ran exactly one of its 188 cases, passed it, and
+  // sorted top of the table at "100%" above modules passing a hundred cases
+  // apiece. Skips belong in the denominator of an ORDERING for the same reason
+  // they belong in the denominator of the headline.
+  const t = allPct(r);
   // Unmeasured sorts BELOW a measured zero: "0 of 19 pass" is a stronger
   // statement than "nothing ran", and the bottom of the table should be where
   // the evidence runs out.
@@ -283,16 +333,31 @@ lines.push("dot has told you the module is behind. `vm` exports all 10 of node's
 lines.push("fails two thirds of its cases, which is the whole reason this column stopped");
 lines.push("voting.");
 lines.push("");
+if (peerLabel) {
+  lines.push(`**The ${peerLabel} column is measured, not quoted.** Same corpus, same node`);
+  lines.push("`test/common` harness, same per-case caps, produced by this repo's own sweep with");
+  lines.push("`MILOJS_RUNTIME=$(which bun)`. It is here because a column of red says nothing on its");
+  lines.push("own: it cannot tell you whether milojs is behind or whether node's suite is brutal.");
+  lines.push("A shipping runtime on the identical files answers that, and the answer is often that");
+  lines.push("the suite is brutal — modules that vendor tables mark fully-implemented do not score");
+  lines.push("100% here either.");
+  lines.push("");
+  lines.push("Read the two cells against each other only through their skip counts. Where milojs");
+  lines.push("skipped and the peer did not, milojs's denominator is smaller and its rate is");
+  lines.push("flattered; the whole-suite line under the table is the comparable form.");
+  lines.push("");
+}
 lines.push(`Reference surface: node ${snapshot.node.version}` +
   (report ? `. Sweep at \`${(report.milojs?.revision ?? "").slice(0, 8)}\`` : "") + ".");
 lines.push("");
-lines.push(`| | module | tests | exports | missing exports |`);
-lines.push(`|---|---|---|---|---|`);
+lines.push(`| | module | tests |${peerLabel ? ` ${peerLabel} |` : ""} exports | missing exports |`);
+lines.push(`|---|---|---|${peerLabel ? "---|" : ""}---|---|`);
 for (const r of ranked) {
   const miss = r.missing.slice(0, 6).map((x) => `\`${x}\``).join(", ")
     + (r.missing.length > 6 ? ` +${r.missing.length - 6} more` : "");
   const name = r.loads ? `\`${r.module}\`` : `\`${r.module}\` **(does not load)**`;
-  lines.push(`| ${dot(r)} | ${name} | ${testCell(r.tests)} | ${r.covered}/${r.wanted} ${pct(r.covered, r.wanted)} | ${miss || "none"} |`);
+  lines.push(`| ${dot(r)} | ${name} | ${testCell(r.tests)} |${peerLabel ? ` ${testCell(r.peer)} |` : ""}` +
+    ` ${r.covered}/${r.wanted} ${pct(r.covered, r.wanted)} | ${miss || "none"} |`);
 }
 lines.push("");
 
@@ -306,6 +371,17 @@ const passTotal = rows.reduce((a, r) => a + (r.tests?.pass ?? 0), 0);
 lines.push(`Across all ${rows.length} modules: **${passTotal}/${ranTotal} node cases pass (${pct(passTotal, ranTotal)})**, ` +
   BANDS.map((b) => `${b} ${bandCount[b]}`).join(", ") +
   `. Surface: ${totalCovered}/${totalWanted} exports present (${pct(totalCovered, totalWanted)}).`);
+if (report) {
+  const t = report.totals;
+  lines.push("");
+  lines.push(`Whole suite, every selected case counted: **${t.pass}/${t.total} (${pct(t.pass, t.total)})**` +
+    (peer ? `, against ${peerLabel} at **${peer.totals.pass}/${peer.totals.total} (${pct(peer.totals.pass, peer.totals.total)})**` : "") +
+    `. This is the number to quote. The per-module column above is scored against what RAN, which forgives` +
+    ` whatever an engine declines: milojs skips ${t.skipped} cases` +
+    (peer
+      ? ` and ${peerLabel.split(" ")[0]} skips ${peer.totals.skipped}, so the two ran-only rates are not comparable to each other.`
+      : `, so that rate rises and falls with how much milojs is able to attempt.`));
+}
 if (notLoading.length) {
   lines.push("");
   lines.push(`Modules that do not load at all: ${notLoading.map((m) => `\`${m}\``).join(", ")}.`);
