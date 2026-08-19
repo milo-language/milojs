@@ -6,7 +6,7 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "3fcca3634fdbd3d176d8c47906dbe57b38ca16e7",
+    "revision": "f13cef810516aca28182e02fed226653e5692e62",
     "dirty": false
   },
   "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
@@ -18,40 +18,26 @@
     "excludedNodeInternal": 606
   },
   "totals": {
-    "pass": 724,
-    "fail": 1719,
-    "skipped": 930,
-    "ran": 2443,
+    "pass": 790,
+    "fail": 1647,
+    "skipped": 936,
+    "ran": 2437,
     "total": 3373
   },
   "areas": [
     {
       "area": "http",
-      "pass": 71,
-      "fail": 300,
+      "pass": 81,
+      "fail": 290,
       "skipped": 6,
       "total": 377
     },
     {
       "area": "fs",
-      "pass": 74,
-      "fail": 145,
+      "pass": 78,
+      "fail": 141,
       "skipped": 8,
       "total": 227
-    },
-    {
-      "area": "stream",
-      "pass": 54,
-      "fail": 110,
-      "skipped": 1,
-      "total": 165
-    },
-    {
-      "area": "net",
-      "pass": 27,
-      "fail": 106,
-      "skipped": 3,
-      "total": 136
     },
     {
       "area": "worker",
@@ -59,6 +45,20 @@
       "fail": 105,
       "skipped": 7,
       "total": 125
+    },
+    {
+      "area": "stream",
+      "pass": 60,
+      "fail": 104,
+      "skipped": 1,
+      "total": 165
+    },
+    {
+      "area": "net",
+      "pass": 30,
+      "fail": 103,
+      "skipped": 3,
+      "total": 136
     },
     {
       "area": "repl",
@@ -69,15 +69,15 @@
     },
     {
       "area": "process",
-      "pass": 21,
-      "fail": 55,
+      "pass": 22,
+      "fail": 54,
       "skipped": 5,
       "total": 81
     },
     {
       "area": "zlib",
-      "pass": 8,
-      "fail": 50,
+      "pass": 9,
+      "fail": 49,
       "skipped": 1,
       "total": 59
     },
@@ -90,8 +90,8 @@
     },
     {
       "area": "runner",
-      "pass": 5,
-      "fail": 41,
+      "pass": 6,
+      "fail": 40,
       "skipped": 2,
       "total": 48
     },
@@ -103,13 +103,6 @@
       "total": 64
     },
     {
-      "area": "buffer",
-      "pass": 19,
-      "fail": 37,
-      "skipped": 1,
-      "total": 57
-    },
-    {
       "area": "child",
       "pass": 61,
       "fail": 37,
@@ -118,10 +111,17 @@
     },
     {
       "area": "whatwg",
-      "pass": 1,
-      "fail": 36,
+      "pass": 4,
+      "fail": 33,
       "skipped": 6,
       "total": 43
+    },
+    {
+      "area": "buffer",
+      "pass": 25,
+      "fail": 31,
+      "skipped": 1,
+      "total": 57
     },
     {
       "area": "cluster",
@@ -132,8 +132,8 @@
     },
     {
       "area": "diagnostics",
-      "pass": 17,
-      "fail": 28,
+      "pass": 18,
+      "fail": 27,
       "skipped": 19,
       "total": 64
     },
@@ -145,13 +145,6 @@
       "total": 27
     },
     {
-      "area": "timers",
-      "pass": 23,
-      "fail": 25,
-      "skipped": 0,
-      "total": 48
-    },
-    {
       "area": "async",
       "pass": 21,
       "fail": 22,
@@ -159,11 +152,11 @@
       "total": 45
     },
     {
-      "area": "module",
-      "pass": 3,
-      "fail": 21,
-      "skipped": 3,
-      "total": 27
+      "area": "timers",
+      "pass": 26,
+      "fail": 22,
+      "skipped": 0,
+      "total": 48
     },
     {
       "area": "domain",
@@ -171,6 +164,13 @@
       "fail": 20,
       "skipped": 2,
       "total": 48
+    },
+    {
+      "area": "module",
+      "pass": 4,
+      "fail": 20,
+      "skipped": 3,
+      "total": 27
     },
     {
       "area": "compile",
@@ -194,20 +194,6 @@
       "total": 25
     },
     {
-      "area": "path",
-      "pass": 1,
-      "fail": 15,
-      "skipped": 1,
-      "total": 17
-    },
-    {
-      "area": "require",
-      "pass": 5,
-      "fail": 15,
-      "skipped": 1,
-      "total": 21
-    },
-    {
       "area": "fastutf8stream",
       "pass": 0,
       "fail": 14,
@@ -223,15 +209,15 @@
     },
     {
       "area": "util",
-      "pass": 2,
-      "fail": 14,
+      "pass": 3,
+      "fail": 13,
       "skipped": 1,
       "total": 17
     },
     {
       "area": "console",
-      "pass": 8,
-      "fail": 13,
+      "pass": 9,
+      "fail": 12,
       "skipped": 0,
       "total": 21
     },
@@ -251,8 +237,8 @@
     },
     {
       "area": "assert",
-      "pass": 2,
-      "fail": 11,
+      "pass": 3,
+      "fail": 10,
       "skipped": 0,
       "total": 13
     },
@@ -278,11 +264,11 @@
       "total": 10
     },
     {
-      "area": "perf",
-      "pass": 3,
+      "area": "require",
+      "pass": 11,
       "fail": 9,
-      "skipped": 0,
-      "total": 12
+      "skipped": 1,
+      "total": 21
     },
     {
       "area": "trace",
@@ -292,18 +278,25 @@
       "total": 28
     },
     {
+      "area": "perf",
+      "pass": 4,
+      "fail": 8,
+      "skipped": 0,
+      "total": 12
+    },
+    {
+      "area": "path",
+      "pass": 9,
+      "fail": 7,
+      "skipped": 1,
+      "total": 17
+    },
+    {
       "area": "promise",
       "pass": 4,
       "fail": 7,
       "skipped": 0,
       "total": 11
-    },
-    {
-      "area": "tls",
-      "pass": 1,
-      "fail": 6,
-      "skipped": 181,
-      "total": 188
     },
     {
       "area": "file",
@@ -360,13 +353,6 @@
       "fail": 4,
       "skipped": 2,
       "total": 10
-    },
-    {
-      "area": "querystring",
-      "pass": 0,
-      "fail": 4,
-      "skipped": 0,
-      "total": 4
     },
     {
       "area": "events",
@@ -446,13 +432,6 @@
       "total": 2
     },
     {
-      "area": "eventtarget",
-      "pass": 0,
-      "fail": 2,
-      "skipped": 0,
-      "total": 2
-    },
-    {
       "area": "heapsnapshot",
       "pass": 0,
       "fail": 2,
@@ -467,13 +446,6 @@
       "total": 3
     },
     {
-      "area": "next",
-      "pass": 7,
-      "fail": 2,
-      "skipped": 0,
-      "total": 9
-    },
-    {
       "area": "outgoing",
       "pass": 0,
       "fail": 2,
@@ -481,11 +453,11 @@
       "total": 2
     },
     {
-      "area": "queue",
-      "pass": 0,
+      "area": "querystring",
+      "pass": 2,
       "fail": 2,
       "skipped": 0,
-      "total": 2
+      "total": 4
     },
     {
       "area": "stream3",
@@ -579,13 +551,6 @@
       "total": 1
     },
     {
-      "area": "client",
-      "pass": 0,
-      "fail": 1,
-      "skipped": 0,
-      "total": 1
-    },
-    {
       "area": "common",
       "pass": 3,
       "fail": 1,
@@ -608,13 +573,6 @@
     },
     {
       "area": "cppheap",
-      "pass": 0,
-      "fail": 1,
-      "skipped": 0,
-      "total": 1
-    },
-    {
-      "area": "delayed",
       "pass": 0,
       "fail": 1,
       "skipped": 0,
@@ -656,6 +614,13 @@
       "total": 1
     },
     {
+      "area": "eventtarget",
+      "pass": 1,
+      "fail": 1,
+      "skipped": 0,
+      "total": 2
+    },
+    {
       "area": "experimental",
       "pass": 0,
       "fail": 1,
@@ -664,13 +629,6 @@
     },
     {
       "area": "find",
-      "pass": 0,
-      "fail": 1,
-      "skipped": 0,
-      "total": 1
-    },
-    {
-      "area": "instanceof",
       "pass": 0,
       "fail": 1,
       "skipped": 0,
@@ -733,6 +691,13 @@
       "total": 1
     },
     {
+      "area": "next",
+      "pass": 8,
+      "fail": 1,
+      "skipped": 0,
+      "total": 9
+    },
+    {
       "area": "no",
       "pass": 0,
       "fail": 1,
@@ -766,6 +731,13 @@
       "fail": 1,
       "skipped": 0,
       "total": 4
+    },
+    {
+      "area": "queue",
+      "pass": 1,
+      "fail": 1,
+      "skipped": 0,
+      "total": 2
     },
     {
       "area": "quotaexceedederror",
@@ -922,6 +894,13 @@
       "total": 1
     },
     {
+      "area": "client",
+      "pass": 1,
+      "fail": 0,
+      "skipped": 0,
+      "total": 1
+    },
+    {
       "area": "crypto",
       "pass": 0,
       "fail": 0,
@@ -948,6 +927,13 @@
       "fail": 0,
       "skipped": 45,
       "total": 45
+    },
+    {
+      "area": "delayed",
+      "pass": 1,
+      "fail": 0,
+      "skipped": 0,
+      "total": 1
     },
     {
       "area": "diagnostic",
@@ -1111,6 +1097,13 @@
       "total": 55
     },
     {
+      "area": "instanceof",
+      "pass": 1,
+      "fail": 0,
+      "skipped": 0,
+      "total": 1
+    },
+    {
       "area": "intl",
       "pass": 0,
       "fail": 0,
@@ -1249,6 +1242,13 @@
       "fail": 0,
       "skipped": 1,
       "total": 1
+    },
+    {
+      "area": "tls",
+      "pass": 1,
+      "fail": 0,
+      "skipped": 187,
+      "total": 188
     },
     {
       "area": "tracing",

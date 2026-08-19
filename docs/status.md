@@ -18,11 +18,11 @@ Open gaps are listed in [docs/backlog.md](backlog.md); per-module detail in
 |---|---|---:|
 | test262 (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->`) | engine | **<!--fact:t262-pct-->79.5%<!--/fact-->** <!--fact:t262-pass-->1169<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> |
 | QuickJS `tests/` | engine | **<!--fact:qjs-pct-->69.8%<!--/fact-->** <!--fact:qjs-pass-->104<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> |
-| Node `test/parallel` | runtime | **<!--fact:node-pct-->29.6%<!--/fact-->** <!--fact:node-pass-->724<!--/fact-->/<!--fact:node-ran-->2443<!--/fact--> |
+| Node `test/parallel` | runtime | **<!--fact:node-pct-->32.4%<!--/fact-->** <!--fact:node-pass-->790<!--/fact-->/<!--fact:node-ran-->2437<!--/fact--> |
 
 Corpora: test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`.
 
-Node denominator is what RAN: <!--fact:node-skipped-->930<!--/fact--> of <!--fact:node-available-->3373<!--/fact--> call `common.skip()` and are
+Node denominator is what RAN: <!--fact:node-skipped-->936<!--/fact--> of <!--fact:node-available-->3373<!--/fact--> call `common.skip()` and are
 scored neither way, <!--fact:node-excluded-->606<!--/fact--> more are node-internal and excluded. Most skips
 read `missing crypto`.
 

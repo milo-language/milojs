@@ -26,9 +26,9 @@ A JavaScript engine and runtime written in the [Milo](https://github.com/milo-la
 
 | suite | score | evidence |
 |---|---|---|
-| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) | <!--fact:node-pct-->29.6%<!--/fact--> (<!--fact:node-pass-->724<!--/fact-->/<!--fact:node-ran-->2443<!--/fact-->) | [report](docs/conformance/node-compat.json) · [sweep](scripts/node-compat-sweep.ts) |
+| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) | <!--fact:node-pct-->32.4%<!--/fact--> (<!--fact:node-pass-->790<!--/fact-->/<!--fact:node-ran-->2437<!--/fact-->) | [report](docs/conformance/node-compat.json) · [sweep](scripts/node-compat-sweep.ts) |
 
-<!--fact:node-ran-->2443<!--/fact--> of node's tests run here. Another <!--fact:node-skipped-->930<!--/fact--> skip themselves, mostly for
+<!--fact:node-ran-->2437<!--/fact--> of node's tests run here. Another <!--fact:node-skipped-->936<!--/fact--> skip themselves, mostly for
 missing crypto, and are not counted either way. Every score above is compiled
 from its committed report and gated in CI, so it cannot drift from the tree.
 
