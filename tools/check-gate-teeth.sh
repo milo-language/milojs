@@ -127,6 +127,20 @@ else
     skipped=$((skipped + 1))
 fi
 
+# --- sweeps, second defect: a skipped test scored as a pass ---
+# Same corpus caveat as the quickjs case above: without node's test suite the
+# skip probe inside check-sweeps does not run, so removing the detection would
+# not fail and the probe would report a false "toothless".
+NODE_CORPUS="${NODE_TESTS:-$HOME/git/node/test}"
+if [ -d "$NODE_CORPUS/parallel" ]; then
+    teeth "check-sweeps (skip scored as pass)" scripts/node-compat-sweep.ts \
+        "perl -0pi -e 's/        const sk = .*?\n        if \(sk\).*?\n//s' scripts/node-compat-sweep.ts" \
+        "node tools/check-sweeps.mjs"
+else
+    echo "check-gate-teeth: no node corpus at $NODE_CORPUS, skip-scoring not probed" >&2
+    skipped=$((skipped + 1))
+fi
+
 # --- arity: a built-in length that disagrees with node ---
 if grep -q 'arity' tools/check-arity.mjs 2>/dev/null; then
     teeth "check-arity" src/engine/eval.milo \

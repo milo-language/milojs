@@ -126,7 +126,16 @@ function gitRev(dir: string): string {
 }
 function gitDirty(dir: string): boolean {
   try {
-    return execFileSync("git", ["-C", dir, "status", "--porcelain"], { encoding: "utf-8" }).trim().length > 0;
+    // docs/conformance is where the reports themselves land, so a run that has
+    // already written one would otherwise mark the NEXT sweep dirty and make it
+    // impossible to produce all three reports from one clean checkout.
+    // quickjs-sweep.ts has carried this exclusion for a while; this copy did
+    // not, which is how a clean-checkout node run still published dirty: true.
+    return execFileSync("git", ["-C", dir, "status", "--porcelain"], { encoding: "utf-8" })
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.includes("docs/conformance"))
+      .length > 0;
   } catch { return true; }
 }
 

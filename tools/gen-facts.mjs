@@ -120,7 +120,12 @@ const FACTS = {
   // the docs say so where they quote it.
   "node-pass": () => String(report("node-compat").totals.pass),
   "node-total": () => String(report("node-compat").totals.total),
-  "node-pct": () => pct(report("node-compat").totals.pass, report("node-compat").totals.total),
+  // Scored against what RAN, not against every file. A test that calls
+  // common.skip() declined to run: counting it as a pass inflated this number
+  // by 19 points, and counting it as a failure would understate it by as much.
+  "node-ran": () => String(report("node-compat").totals.ran),
+  "node-skipped": () => String(report("node-compat").totals.skipped),
+  "node-pct": () => pct(report("node-compat").totals.pass, report("node-compat").totals.ran),
   "node-sample": () => String(report("node-compat").selection.sample ?? report("node-compat").totals.total),
   "node-available": () => String(report("node-compat").selection.available),
   "node-excluded": () => String(report("node-compat").selection.excludedNodeInternal),
@@ -149,7 +154,17 @@ const FACTS = {
     ),
 };
 
-const pct = (a, b) => ((a / b) * 100).toFixed(1) + "%";
+// A fact that cannot be computed must FAIL, not be written. A missing field
+// made this return "NaN%", and gen-facts wrote that straight into the README
+// table — a published conformance score of NaN%, staged by the pre-commit hook,
+// with nothing in the output saying anything had gone wrong.
+const pct = (a, b) => {
+  const v = (a / b) * 100;
+  if (!Number.isFinite(v)) {
+    throw new Error(`cannot compute a percentage from ${a}/${b} — the report is missing a field`);
+  }
+  return v.toFixed(1) + "%";
+};
 const short = (rev) => (rev ? rev.slice(0, 8) : "unknown");
 
 const reportCache = new Map();
