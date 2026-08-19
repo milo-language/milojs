@@ -454,6 +454,18 @@ to tell a built-in from a user function, so every user function looked native.
 A built-in's source text. Its own `name` property is authoritative: it is set
 from node's own tables by nameNativesOf.
 
+### `ownEnumerableKeys`
+
+```milo
+pub fn ownEnumerableKeys(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string>
+```
+
+EnumerableOwnPropertyNames: the own STRING keys that are enumerable, in spec
+order. A Proxy has no own properties of its own, so every caller that walked
+`enumOrder` over the object's prop table saw nothing and Object.values,
+Object.entries, Object.assign and `{...proxy}` all came back empty. This goes
+through the ownKeys and getOwnPropertyDescriptor traps instead.
+
 ### `ownKeysOf`
 
 ```milo
@@ -730,6 +742,19 @@ what makes this circular, so it is resolved the standard way: guess with the
 offset at the naive value, then re-read the offset at the guess. A second pass
 is enough everywhere except inside a DST transition, where the spec allows
 either side.
+
+### `valueIsArrayLike`
+
+```milo
+pub fn valueIsArrayLike(st: &Interp, v: &JSValue): bool
+```
+
+IsArray per the spec: a Proxy is an array when its TARGET is, following the
+chain through nested proxies. Reading `isArray` off the proxy object itself
+answered false for every proxied array, which is not a cosmetic difference:
+Array.isArray, JSON.stringify's array form, join/toString and concat's
+spreadable check all branch on it, so `[...new Proxy([1,2,3], {})]` and
+`JSON.stringify(proxiedArray)` produced object-shaped results.
 
 ### `valueIsConstructor`
 

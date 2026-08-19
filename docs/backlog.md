@@ -8,6 +8,53 @@ last-verified: 2026-08-18 (re-read after the native id enum landed; the NATIVE_*
 
 # milojs backlog
 
+## A Proxy wrapping an array was not an array
+
+Same differential technique as the index-accessor sweep, pointed at
+`new Proxy([1,2,3,4], {...})` with every trap logged. 32 operations, 8 wrong
+results (the rest differ only in trap COUNT, see the open item below).
+
+The root cause of half of them is one line: `Array.isArray` read
+`st.objects[h].isArray` off the proxy object itself, and a proxy has no elements
+of its own. The spec's IsArray follows the target, through nested proxies. With
+that wrong, `JSON.stringify(proxiedArray)` produced `{"0":1,"1":2,...}` instead
+of `[1,2,3,4]`, and `Object.keys` came back empty.
+
+The second cluster was reading `Symbol.iterator` with the raw `getMember`, which
+does not consult the `get` trap. `[...proxy]`, `for (const x of proxy)` and
+`Array.from(proxy)` all threw `TypeError: not iterable` -- for a proxy of a plain
+array. Four sites; two of them only ask "could this be driven", and a proxy now
+answers yes there rather than paying a trap call for the probe.
+
+The third: `Object.values`, `Object.entries`, `Object.assign` and `{...proxy}`
+all walked `enumOrder`, which returns indices into the object's own property
+table. A proxy has none, so all four returned nothing. They go through a new
+`ownEnumerableKeys` (ownKeys trap, then getOwnPropertyDescriptor per key for the
+enumerable check, then `getMemberDyn` for the value), which is what the spec's
+EnumerableOwnPropertyNames actually says.
+
+`tests/proxyArrayOperations.js` locks the results and asserts at least one trap
+ran per operation, so a future fast path cannot bypass the proxy and still pass.
+
+### OPEN: two proxy operations still wrong, and the trap counts
+
+- **`fill` writes to the proxy's own elements** instead of through the `set`
+  trap: `new Proxy([1,2,3,4],{}).fill(7,3)` reads back `[null,null,null,7]`.
+  The mutating array methods (`isMutatingArrayMethod`: push/pop/shift/unshift/
+  splice/sort/reverse/fill/copyWithin) all write raw, so this is one bug with
+  nine faces; the accessor sweep fixed their READS but not their writes.
+- **`Array.prototype.toString` on a proxy** answers `"[object Object]"`. The
+  dispatch guard is `st.objects[o].isArray && isArrayMethod(name)`, which a proxy
+  fails, so it falls through to a generic path. Routing proxies into
+  `arrayMethod` would be WRONG: that operates on the handle directly and a proxy
+  has no elements, so it would read an empty array. The generic array-like path
+  (length + [[Get]] per index) is the one that needs to handle it.
+- **Trap counts differ across the board** even where results now match: node runs
+  the exact [[Get]]/[[HasProperty]] sequence each spec algorithm prescribes, and
+  milojs takes shortcuts (`slice` 6 traps vs node's 9, `reverse` 12 vs 24). Only
+  observable through a logging handler, but that is exactly what a Proxy is for.
+
+
 ## 22 of 38 Array methods disagreed with node on an own index accessor
 
 The known `arrGet` vs `arrGetDyn` gap, measured instead of estimated. One script

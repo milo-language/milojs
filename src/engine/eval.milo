@@ -1659,7 +1659,7 @@ pub fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValu
             // would send `new Uint8Array(new Set([1,2,3]))` down the array-like
             // path and produce an empty view
             let drivable = st.objects[h].isGenerator || st.objects[h].isMap
-                || st.objects[h].isSet
+                || st.objects[h].isSet || st.objects[h].isProxy
                 || isCallableIn(st, getMember(st, h, symIteratorKey()))
             var srcH: i64 = -1
             if drivable {
@@ -3632,7 +3632,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             let h = objHandle(argVals[0])
             if h >= 0 {
                 // the arguments object is array-SHAPED here but is not an Array
-                return JSValue.Bool(st.objects[h].isArray && !st.objects[h].isArguments)
+                return JSValue.Bool(valueIsArrayLike(st, argVals[0]))
             }
         }
         return JSValue.Bool(false)
@@ -3864,7 +3864,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                         i = i + 1
                     }
                 } else {
-                    let itFn = getMember(st, h, symIteratorKey())
+                    let itFn = getMemberDyn(gProg, h, symIteratorKey(), st)
                     if isCallableIn(st, itFn) {
                         // a real iterable (Buffer, custom [Symbol.iterator], …) —
                         // drive its iterator, exactly as spread does. Comes before
@@ -6074,6 +6074,27 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 }
             }
             if let JSValue.Obj(o) = cloneValue(argVals[0]) {
+                if st.objects[o].isProxy {
+                    let pkeys = ownEnumerableKeys(gProg, st, argVals[0])
+                    var pi: i64 = 0
+                    while pi < pkeys.len() && !st.throwing {
+                        let pk = pkeys[pi].clone()
+                        pi = pi + 1
+                        let pv = getMemberDyn(gProg, o, pk.clone(), st)
+                        if wantPairs {
+                            let ppair = newArray(st)
+                            pushTemp(st, JSValue.Obj(ppair))
+                            arrPush(st, ppair, JSValue.Str(pk))
+                            arrPush(st, ppair, pv)
+                            popTemp(st)
+                            arrPush(st, arr, JSValue.Obj(ppair))
+                        } else {
+                            arrPush(st, arr, pv)
+                        }
+                    }
+                    popTemp(st)
+                    return JSValue.Obj(arr)
+                }
                 if st.objects[o].isArray {
                     var i: i64 = 0
                     let n = st.objects[o].elems.len()
@@ -6214,7 +6235,18 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 srcVal = makeWrapper(st, argVals[s])
             }
             let src = propertyBagOf(st, srcVal)
-            if src >= 0 {
+            if src >= 0 && st.objects[src].isProxy {
+                let akeys = ownEnumerableKeys(gProg, st, srcVal)
+                var ai: i64 = 0
+                while ai < akeys.len() && !st.throwing {
+                    let ak = akeys[ai].clone()
+                    ai = ai + 1
+                    let av = getMemberDyn(gProg, src, ak.clone(), st)
+                    if !st.throwing {
+                        setMemberDyn(gProg, t, ak, av, st)
+                    }
+                }
+            } else if src >= 0 {
                 let order = enumOrder(st, src)
                 var oi: i64 = 0
                 while oi < order.len() {
@@ -8579,7 +8611,18 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     objDefineAccessor(st, obj, key, g, sfn)
                 } else if key == "..." {
                     let src = objHandle(v)
-                    if src >= 0 {
+                    if src >= 0 && st.objects[src].isProxy {
+                        let skeys = ownEnumerableKeys(prog, st, v)
+                        var si: i64 = 0
+                        while si < skeys.len() && !st.throwing {
+                            let sk = skeys[si].clone()
+                            si = si + 1
+                            let sv2 = getMemberDyn(prog, src, sk.clone(), st)
+                            if !st.throwing {
+                                objSet(st, obj, sk, sv2)
+                            }
+                        }
+                    } else if src >= 0 {
                         if st.objects[src].isArray {
                             var e: i64 = 0
                             let ne = arrLen(st, src)
@@ -8996,7 +9039,13 @@ fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp)
         return
     }
     if h >= 0 && !st.objects[h].isArray && !st.objects[h].isSet {
-        let itFn = getMember(st, h, symIteratorKey())
+        // getMemberDyn, not getMember: a Proxy's Symbol.iterator lives behind its
+        // `get` trap, and reading it raw found nothing, so spreading or for-of'ing
+        // any proxy threw "not iterable" -- including a proxy of a plain array.
+        let itFn = getMemberDyn(prog, h, symIteratorKey(), st)
+        if st.throwing {
+            return
+        }
         if isCallableIn(st, itFn) {
             var noArgs: Vec<JSValue> = Vec.new()
             let iter = callValue(prog, itFn, noArgs, cloneValue(v), st)
@@ -9144,6 +9193,7 @@ fn iterableToArray(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
         return cloneValue(v)
     }
     let drivable = st.objects[h].isGenerator || st.objects[h].isMap || st.objects[h].isSet
+        || st.objects[h].isProxy
         || isCallableIn(st, getMember(st, h, symIteratorKey()))
     if !drivable {
         return cloneValue(v)
@@ -10186,6 +10236,26 @@ fn proxyRevoked(st: &Interp, o: i64): bool {
     return objHandle(st.objExtras[st.objects[o].extra].proxyHandler) < 0
 }
 
+// IsArray per the spec: a Proxy is an array when its TARGET is, following the
+// chain through nested proxies. Reading `isArray` off the proxy object itself
+// answered false for every proxied array, which is not a cosmetic difference:
+// Array.isArray, JSON.stringify's array form, join/toString and concat's
+// spreadable check all branch on it, so `[...new Proxy([1,2,3], {})]` and
+// `JSON.stringify(proxiedArray)` produced object-shaped results.
+pub fn valueIsArrayLike(st: &Interp, v: &JSValue): bool {
+    var h = objHandle(v)
+    var guard: i64 = 0
+    while h >= 0 && guard < 1000 {
+        guard = guard + 1
+        if st.objects[h].isProxy {
+            h = objHandle(st.objExtras[st.objects[h].extra].proxyTarget)
+            continue
+        }
+        return st.objects[h].isArray && !st.objects[h].isArguments
+    }
+    return false
+}
+
 fn proxyTargetOf(st: &Interp, o: i64): JSValue {
     return cloneValue(st.objExtras[st.objects[o].extra].proxyTarget)
 }
@@ -10358,6 +10428,30 @@ fn ordinaryGetOwnPropDesc(st: &mut Interp, v: &JSValue, key: &string): JSValue {
         return JSValue.Undefined
     }
     return JSValue.Obj(buildPropDescriptor(st, h, idx))
+}
+
+// EnumerableOwnPropertyNames: the own STRING keys that are enumerable, in spec
+// order. A Proxy has no own properties of its own, so every caller that walked
+// `enumOrder` over the object's prop table saw nothing and Object.values,
+// Object.entries, Object.assign and `{...proxy}` all came back empty. This goes
+// through the ownKeys and getOwnPropertyDescriptor traps instead.
+pub fn ownEnumerableKeys(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string> {
+    var out: Vec<string> = Vec.new()
+    let keys = ownKeysOf(prog, st, v)
+    var i: i64 = 0
+    while i < keys.len() && !st.throwing {
+        let k = keys[i].clone()
+        i = i + 1
+        if isSymbolKey(k) || isPrivateKey(k) {
+            continue
+        }
+        let d = getOwnPropDescOf(prog, st, v, k.clone())
+        let dh = objHandle(d)
+        if dh >= 0 && truthy(getMember(st, dh, "enumerable")) {
+            out.push(k)
+        }
+    }
+    return out
 }
 
 pub fn getOwnPropDescOf(prog: &Prog, st: &mut Interp, v: &JSValue, key: &string): JSValue {
@@ -15546,7 +15640,8 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 }
             }
             if !asyncIter && srcH >= 0 && !isGen && !st.objects[srcH].isArray && !st.objects[srcH].isMap && !st.objects[srcH].isSet {
-                let itFn = getMember(st, srcH, symIteratorKey())
+                // a Proxy keeps Symbol.iterator behind its `get` trap
+                let itFn = getMemberDyn(prog, srcH, symIteratorKey(), st)
                 if isCallableIn(st, itFn) {
                     var noArgs: Vec<JSValue> = Vec.new()
                     iterVal = callValue(prog, itFn, noArgs, cloneValue(ov), st)
