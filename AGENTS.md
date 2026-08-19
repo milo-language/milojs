@@ -190,7 +190,13 @@ Sizing the caps: `guard.sh` reports `peak N processes, M MB rss` on every run,
 so set `GUARD_MAX_PROCS` from a measured peak rather than a guess. A 400-case
 node-compat sweep peaks at 83 processes and 9.5 GB at `--jobs 8`, because the
 cases spawn children of their own; a cap under that reads as a fork bomb when it
-is only the workload. The sweep's own `--jobs` default is derived from
+is only the workload.
+
+Measured for the WHOLE 3373-case sweep, which is the run that publishes a
+number: **`--jobs 4 --max-group-mb 1200` peaks at 31 processes and 4.4 GB**, and
+`--jobs 5` peaks at 6.6 GB. A 6.5 GB cap killed a `--jobs 5` run at case 3000 of
+3373 — the guard was right and the cap was simply below the workload, which
+costs a ten-minute re-run. Use `--jobs 4` and give it 9 GB. The sweep's own `--jobs` default is derived from
 `os.totalmem()` at ~1.2 GB per job for that reason — on a 16 GB machine it picks
 6, not 8, and the whole run stays under half of RAM.
 
