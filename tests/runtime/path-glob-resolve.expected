@@ -1,0 +1,14 @@
+true true
+ |  |
+true
+false
+true
+false
+true
+true
+["",".","",".a","."]
+["",".",""]
+\\server\share\relative
+\\server\share\x
+"C:."
+true true

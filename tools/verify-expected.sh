@@ -159,13 +159,17 @@ check_dir() {
       }
       continue
     fi
-    if [ ! -f "$exp" ]; then
+    if [ ! -f "$exp" ] && [ "$UPDATE" -eq 0 ]; then
       # run.sh prints SKIP and exits 0 for these, so a fixture with no .expected
       # silently tests nothing. Caught here instead.
       echo "MISSING  $rel has no .expected (add one, or list it in $EXEMPT_FILE)"
       fail=1
       continue
     fi
+    # --update is the documented way to ADD a fixture, so a missing .expected is
+    # the normal case there: capture it rather than refusing. Requiring the file
+    # to exist first meant the documented workflow did not work on a new fixture.
+    [ -f "$exp" ] || : >"$exp"
     if [ -n "$TIMEOUT_CMD" ]; then
       got="$("$TIMEOUT_CMD" -s KILL "$PER_TEST_TIMEOUT" "$NODE" --no-warnings "$js" 2>&1)"
     else

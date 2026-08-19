@@ -143,9 +143,6 @@ fn builtinSource(name: &string): string {
     // requires every one. Mapping them to the module they are actually part of is
     // honest; inventing a module we do not implement would turn a clean resolution
     // failure into a confusing one at first use, so nothing here is fabricated.
-    if name == "path/posix" || name == "path/win32" {
-        return @embedFile("../../lib/path.js")
-    }
     if name == "assert/strict" {
         return @embedFile("../../lib/assert.js")
     }
@@ -210,6 +207,12 @@ fn builtinSource(name: &string): string {
     }
     if name == "path" {
         return @embedFile("../../lib/path.js")
+    }
+    if name == "path/posix" {
+        return @embedFile("../../lib/path-posix.js")
+    }
+    if name == "path/win32" {
+        return @embedFile("../../lib/path-win32.js")
     }
     if name == "events" {
         return @embedFile("../../lib/events.js")
