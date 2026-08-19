@@ -4,8 +4,8 @@
 //   node tools/check-arity.mjs          # report disagreements, exit 1 on any
 //   node tools/check-arity.mjs -v       # also print every name node has no answer for
 //
-// Three functions in src/eval.milo carry 389 hand-transcribed integers under a
-// comment saying "GENERATED from node" — but no generator was ever committed, so
+// Three tables in src/eval.milo carry 402 hand-transcribed integers under a
+// comment saying "GENERATED from node", but no generator was ever committed, so
 // nothing could tell whether they still matched, or ever did. test262 asserts
 // every one of them (there is a length.js per method), which makes each wrong
 // integer a silent conformance failure that looks like an unrelated gap.
@@ -26,12 +26,24 @@ import { readFileSync } from "node:fs";
 const verbose = process.argv.includes("-v");
 const src = readFileSync(new URL("../src/eval.milo", import.meta.url), "utf8");
 
+// The three tables are `fn <name>ArityData(): string` returning one
+// "name:arity,name:arity,..." literal. They used to be if-chains of
+// `if n == "x" { return N }` and this parsed those; the shape changed when the
+// chains became data, and an empty result is treated as a hard error rather
+// than as "nothing to check" — a silently-empty table is exactly how this
+// verifier stopped verifying once before.
 function table(fn) {
-  const m = src.match(new RegExp(`fn ${fn}\\(.*?\\n([\\s\\S]*?)\\n\\}\\n`));
+  const m = src.match(new RegExp(`fn ${fn}\\(\\): string \\{\\n\\s*return "([^"]*)"`));
   if (!m) throw new Error(`${fn} not found in src/eval.milo`);
-  return new Map(
-    [...m[1].matchAll(/if n == "([^"]+)" \{\s*return (-?\d+)/g)].map(([, k, v]) => [k, Number(v)])
+  const out = new Map(
+    m[1].split(",").filter(Boolean).map(e => {
+      const i = e.indexOf(":");
+      if (i < 0) throw new Error(`${fn}: malformed entry ${JSON.stringify(e)}`);
+      return [e.slice(0, i), Number(e.slice(i + 1))];
+    })
   );
+  if (out.size === 0) throw new Error(`${fn} parsed to an empty table`);
+  return out;
 }
 
 // Every builtin constructor/namespace the engine models. Anything absent from the
@@ -140,11 +152,11 @@ const staticSeen = observe("static");
 const protoOrStatic = new Map(protoSeen);
 for (const [k, v] of staticSeen) if (!protoOrStatic.has(k)) protoOrStatic.set(k, v);
 
-compare("proto ", table("builtinArity"), protoOrStatic);
-compare("static", table("builtinStaticArity"), staticSeen);
+compare("proto ", table("arityData"), protoOrStatic);
+compare("static", table("staticArityData"), staticSeen);
 
 // Constructors are unambiguous — there is exactly one answer per name.
-for (const [name, want] of table("builtinCtorArity")) {
+for (const [name, want] of table("ctorArityData")) {
   const ctor = globalThis[name];
   if (typeof ctor !== "function") {
     unknown++;
