@@ -8,52 +8,6 @@ last-verified: 2026-08-19, every item below re-probed against .dev/mj-engine and
 
 # milojs backlog
 
-## The http client's timeout and abort, and why they hung
-
-http 71 -> 76 of 371, timeouts 66 -> 62, zero regressions. Three defects, each
-found by running a hanging test rather than by reading the module.
-
-- **`Socket.prototype.setTimeout` and `ClientRequest.prototype.setTimeout` were
-  both `function () { return this; }`.** No 'timeout' event could fire on any
-  socket or any request, so every test that waits for one waited until the
-  harness killed it. The socket now carries a real idle timer, rearmed from BOTH
-  directions: a timer rearmed only by writes fires on a connection that is busily
-  receiving. It reports rather than destroys, which is node's behaviour and the
-  difference between a recoverable stall and a lost connection. `req.setTimeout`
-  arms the socket's timer and forwards the event; `{ timeout }` in the options
-  bag is the same thing spelled differently. The timer is cleared on destroy,
-  or a dead socket's pending timer keeps the event loop alive forever.
-
-- **`req.abort(); req.end();` sent the request anyway.** `end()` did not consult
-  `aborted`, so it opened a socket to a server the test had already declared must
-  never be contacted (`common.mustNotCall()`), and that socket then pinned the
-  event loop. node's own tests write exactly that sequence.
-
-- **Destroying a live request emitted nothing**, where node emits
-  `Error: socket hang up` with code `ECONNRESET`. `abort()` is the deliberate
-  exception: it emits 'abort' and no error, which is why node's abort tests
-  assert `req.on('error', common.mustNotCall())`. Encoding that distinction is
-  what makes both families of test pass at once.
-
-**`http.request` was never the problem.** `docs/status.md` had claimed the client
-"never completes" and hangs against an in-process server; it does not, and has
-not for some time.
-
-Still open, and the next piece of the 62: the server side cannot tell that a
-client went away mid-response. `_serveOnce` reads a whole request with one
-`__tcpRecv` and never wraps the accepted connection in a Socket, so there is no
-'close' to observe and `req.emit('aborted')` never happens. That is a real
-change to the server's connection model, not a patch.
-
-Open items only. This file is not a changelog: a fixed item gets DELETED, and
-`git log -p docs/backlog.md` is the history. Current scores live in
-[docs/status.md](status.md) and [docs/node-compat.md](node-compat.md), both
-generated; never type a score into prose here (see
-[conformance-reports.md](conformance-reports.md) §Publication rule).
-
-Each entry says what is wrong, how to reproduce it, and why it is not a one-line
-fix. An entry with none of that is a wish, not a backlog item.
-
 ## Ranked next, by measured case count
 
 From the whole-corpus test262 sweep (`bun scripts/test262-sweep.ts`, no
@@ -87,6 +41,29 @@ intuition: the 1500-case sample is too thin to rank causes.
    ShadowRealm (48) are host features, and `built-ins/Iterator`'s remainder is
    mostly stage-2 proposals (`zip`, `zipKeyed`, `concat`, `chunks`, `windows`)
    that node does not have either.
+
+## http: the server cannot tell that a client went away
+
+`req.on('aborted')` and `req.on('close')` never fire on the SERVER's request
+object when a client disconnects mid-response, so node's abort tests wait for an
+event that cannot arrive and are killed by the harness. This is the largest
+remaining cluster of hangs in the http area.
+
+Reproduce: `test-http-client-abort.js`, `test-http-client-aborted-event.js`,
+`test-http-server-close-destroy-timeout.js`.
+
+Why it is not a one-line fix: `Server.prototype._serveOnce` in `lib/http.js`
+accepts a connection, reads the whole request with a single `__tcpRecv`, and
+dispatches. The accepted connection is a raw id, never wrapped in a
+`net.Socket`, so there is nothing that emits 'close' and nothing watching for
+one. Serving a request is not an event stream on the server side the way it is
+on the client side, where `sendOverSocket` does use a real Socket. Closing this
+means giving the server the same connection model as the client, which also
+unblocks keep-alive and request bodies that arrive in more than one packet.
+
+Related and cheaper, same file: `req.setTimeout`, `res.setTimeout` and
+`server.setTimeout` are still no-ops on the server side. The client's versions
+now work and can be copied.
 
 ## Async: `next()` on an async generator drives the body, and can HANG
 
