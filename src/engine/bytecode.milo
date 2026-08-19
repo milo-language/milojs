@@ -172,7 +172,7 @@ fn constSlot(c: &mut Comp, v: f64): i64 {
 }
 
 // Find the slot for `name`, adding one if this is its first mention. `declared`
-// marks a name the loop itself binds, which is what makes it not-outer.
+// marks a name the chunk itself binds, which is what makes it not-outer.
 fn slotOf(c: &mut Comp, name: &string, declared: bool): i64 {
     var i: i64 = 0
     while i < c.slotNames.len() {
@@ -183,6 +183,24 @@ fn slotOf(c: &mut Comp, name: &string, declared: bool): i64 {
     }
     c.slotNames.push(name.clone())
     c.slotOuter.push(!declared)
+    return c.slotNames.len() - 1
+}
+
+// A DECLARATION of a name that already has a slot. Slots are per NAME and a
+// chunk has no block scopes, so the second binding would write the first one's
+// storage: `let b = 1; { let b = 5; } return b` answered 5. Two bindings need
+// two slots, which this compiler cannot express, so the chunk is rejected.
+fn declareSlot(c: &mut Comp, name: &string): i64 {
+    var i: i64 = 0
+    while i < c.slotNames.len() {
+        if c.slotNames[i] == name {
+            c.ok = false
+            return i
+        }
+        i = i + 1
+    }
+    c.slotNames.push(name.clone())
+    c.slotOuter.push(false)
     return c.slotNames.len() - 1
 }
 
@@ -472,7 +490,7 @@ fn compStmt(prog: &Prog, c: &mut Comp, id: StmtId) {
                     return
                 }
                 compExpr(prog, c, prog.declLists[listIdx.index][i].init)
-                let s = slotOf(c, prog.declLists[listIdx.index][i].name, true)
+                let s = declareSlot(c, prog.declLists[listIdx.index][i].name)
                 emitOp(c, Op.Store, s)
                 i = i + 1
             }

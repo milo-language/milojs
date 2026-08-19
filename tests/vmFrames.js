@@ -89,6 +89,12 @@ function mk(k) { return {v: k}; }
 function chain(k) { if (k === 0) { return 0; } let o = mk(k); let r = chain(k - 1); return o.v + r; }
 console.log("held across calls:", chain(200));
 
+// a nested block's `let` is a DIFFERENT binding from the outer one, which one
+// stack slot per name cannot express, so the chunk has to decline rather than
+// answer with the inner value
+function shadowBlock() { let b = 1; { let b = 5; } return b; }
+console.log("block shadow:", shadowBlock());
+
 // the callee's parameters are its own: the caller's same-named slot is untouched
 let n = 9;
 function shadow(n) { n = n + 1; return n; }
