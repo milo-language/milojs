@@ -18,11 +18,11 @@ Two independent measurements per module, because either one alone lies:
 - **tests**: node's own `test-<area>-*.js` cases that pass, out of those that ran.
   Skipped cases are counted separately and scored neither way.
 
-The bun column is the SAME probe run against the bun on PATH, not a number
-quoted from its compatibility page, which is hand-assigned per module. It is
-there so our own column has something measured to sit beside it.
+The bun column is the SAME probe, recorded from bun rather than quoted from its
+compatibility page, which is hand-assigned per module. It is there so our own
+column has something measured to sit beside it.
 
-Measured against node v25.3.0, sweep at `3fcca363`.
+Reference surface: node v25.3.0, bun 1.3.10. Sweep at `3fcca363`.
 
 Colour bands the WORSE of the two columns: 🟢 both 90%+, 🟡 both 60%+, 🔴 below
 that or does not load. A module with no tests that ran is capped at 🟡 however

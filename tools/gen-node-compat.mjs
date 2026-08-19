@@ -86,28 +86,60 @@ function probe(bin) {
   return JSON.parse(line.slice("__PROBE__".length));
 }
 
-let nodeSide, miloSide, bunSide = null;
-try {
-  nodeSide = probe("node");
-} catch (e) {
-  console.error(`gen-node-compat: could not probe node itself: ${e.message}`);
+// The reference sides are a COMMITTED SNAPSHOT, not a live probe.
+//
+// They were live at first, and that made the generated table depend on the
+// machine: node's version string goes into the file, and whether bun is
+// installed decides whether there is a bun column at all. So `--check` passed
+// on the laptop that generated it and failed in CI, which is a gate that cannot
+// be satisfied rather than a gate that caught something. Only the milojs
+// binary is probed now; everything it is compared against is in the repo, which
+// is the same rule docs/conformance/*.json already follows.
+//
+// `--refresh` re-probes node and bun and rewrites the snapshot. That is a
+// deliberate act, committed alongside whatever it changes.
+const SNAPSHOT = join(ROOT, "docs/conformance/node-exports.json");
+const refresh = process.argv.includes("--refresh");
+
+function versionOf(bin) {
+  try {
+    return execFileSync(bin, ["--version"], { encoding: "utf-8" }).trim().split("\n")[0];
+  } catch { return null; }
+}
+
+if (refresh) {
+  let nodeProbe;
+  try {
+    nodeProbe = probe("node");
+  } catch (e) {
+    console.error(`gen-node-compat: could not probe node itself: ${e.message}`);
+    process.exit(2);
+  }
+  let bunProbe = null, bunVersion = null;
+  try { bunProbe = probe("bun"); bunVersion = versionOf("bun"); } catch { bunProbe = null; }
+  writeFileSync(SNAPSHOT, JSON.stringify({
+    schemaVersion: 1,
+    node: { version: versionOf("node"), modules: nodeProbe },
+    bun: bunProbe ? { version: bunVersion, modules: bunProbe } : null,
+  }, null, 2) + "\n");
+  console.log(`gen-node-compat: refreshed ${SNAPSHOT}`);
+}
+
+if (!existsSync(SNAPSHOT)) {
+  console.error("gen-node-compat: docs/conformance/node-exports.json is missing — " +
+    "run `node tools/gen-node-compat.mjs --refresh` to record what node and bun export.");
   process.exit(2);
 }
+const snapshot = JSON.parse(readFileSync(SNAPSHOT, "utf-8"));
+const nodeSide = snapshot.node.modules;
+const bunSide = snapshot.bun ? snapshot.bun.modules : null;
+
+let miloSide;
 try {
   miloSide = probe(RUNTIME);
 } catch (e) {
   console.error(`gen-node-compat: could not probe ${RUNTIME}: ${e.message}`);
   process.exit(2);
-}
-
-// A peer measured the SAME way, rather than a number quoted from someone's
-// compatibility page. Bun publishes a hand-assigned per-module table; this runs
-// the identical probe against the bun on PATH so the column means the same
-// thing as ours. Absent bun, the column is simply omitted.
-try {
-  bunSide = probe("bun");
-} catch (e) {
-  bunSide = null;
 }
 
 const reportPath = join(ROOT, "docs/conformance/node-compat.json");
@@ -220,12 +252,14 @@ lines.push("  Skipped cases are counted separately and scored neither way.");
 // probe against the bun binary instead, so the two columns are comparable.
 if (bunSide) {
   lines.push("");
-  lines.push("The bun column is the SAME probe run against the bun on PATH, not a number");
-  lines.push("quoted from its compatibility page, which is hand-assigned per module. It is");
-  lines.push("there so our own column has something measured to sit beside it.");
+  lines.push("The bun column is the SAME probe, recorded from bun rather than quoted from its");
+  lines.push("compatibility page, which is hand-assigned per module. It is there so our own");
+  lines.push("column has something measured to sit beside it.");
 }
 lines.push("");
-lines.push(`Measured against node ${process.version}` + (report ? `, sweep at \`${(report.milojs?.revision ?? "").slice(0, 8)}\`` : "") + ".");
+lines.push(`Reference surface: node ${snapshot.node.version}` +
+  (snapshot.bun ? `, bun ${snapshot.bun.version}` : "") +
+  (report ? `. Sweep at \`${(report.milojs?.revision ?? "").slice(0, 8)}\`` : "") + ".");
 lines.push("");
 lines.push("Colour bands the WORSE of the two columns: 🟢 both 90%+, 🟡 both 60%+, 🔴 below");
 lines.push("that or does not load. A module with no tests that ran is capped at 🟡 however");
