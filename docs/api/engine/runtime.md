@@ -310,8 +310,9 @@ _Undocumented._
 pub fn maybeGc(st: &mut Interp)
 ```
 
-Run a collection if enough allocations happened since the last one. Called
-only from execBlock between statements (the GC safepoint).
+Run a collection if enough allocations happened since the last one. The
+safepoints are execBlock between statements, and the VM's Op.Call — a compiled
+frame allocates per call and never reaches a statement boundary of its own.
 
 ### `nativeBufferGet`
 

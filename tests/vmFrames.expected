@@ -1,0 +1,17 @@
+write-through: 2 2
+reseed: 42
+fact: 3628800
+deep: 3000
+compiled throw: true 5
+nested throw: true 1
+native: 5
+bound: 15
+array without new: 3
+generator: 7
+proxy: 12
+not a function: true notFn is not a function
+arguments: 3
+strict: true
+sloppy this: true
+held across calls: 20100
+shadow: 2 9

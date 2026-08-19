@@ -48,7 +48,8 @@ from "./value" import {
     JSValue, cloneValue, truthy
 }
 from "./runtime" import {
-    Interp, scopeTryLookup, scopeAssign, newObject, pushActive, popActive
+    Interp, scopeTryLookup, scopeAssign, newObject, pushActive, popActive,
+    maybeGc
 }
 from "./eval" import {
     evalBinValues, toNumProg, toNumArg, memberOfValue, setMemberOfValue,
@@ -736,6 +737,9 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
         // Set by Ret and Halt: this frame is finished and the one under it (if
         // any) resumes.
         var leaving = false
+        // Set when a CALLEE left the exception pending, which decides whether
+        // this frame's slots are flushed on the way out (see below).
+        var threwInCallee = false
         // Every chunk ends in Halt and no jump target is past it, so this cannot
         // fire; it keeps a compiler bug from indexing off the end of the array.
         if pc >= ch.ops.len() || pc < 0 {
@@ -984,6 +988,13 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                 // collect marks 0..vmSp and nothing above it, and the callee
                 // value and every argument sit below this.
                 st.vmSp = sp
+                // The VM's safepoint, and the only one it has. The tree walker
+                // takes one per statement; a compiled frame allocates a scope and
+                // an `arguments` array per call, so a call is where a compiled
+                // program's allocation happens. It also gives MILOJS_GC_THRESHOLD=1
+                // reach into this path: without it the frame stack was never once
+                // marked mid-dispatch under the GC-stress pass.
+                maybeGc(st)
                 let calleeVal = cloneValue(st.vmStack[calleeSlot])
                 var argVals: Vec<JSValue> = Vec.new()
                 var ai: i64 = 0
@@ -1002,7 +1013,9 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         // The same guard callFunctionBody applies. A frame here
                         // costs no native stack, so the depth counter is the only
                         // half of it that can fire.
-                        if !callGuardTripped(st) {
+                        if callGuardTripped(st) {
+                            threwInCallee = true
+                        } else {
                             // Everything callFunctionBody does for an ordinary
                             // call, minus the parts the subset rules out:
                             // hoistBlock (a compiled body has no `var` and no
@@ -1050,6 +1063,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         st.vmSp = sp
                         vmSet(st, calleeSlot, res)
                         vmSeedOuter(st, ch, base, curScope)
+                        threwInCallee = st.throwing
                     } else {
                         throwNotAFunction(st, ch.strs[nameSlot])
                     }
@@ -1078,12 +1092,14 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
             // on. Side effects up to here have happened, which is what the tree
             // walker would also have done.
             //
-            // The frame that THREW still flushes: its writes since its last call
-            // live only in its slots. The frames under it must NOT — each of them
-            // flushed immediately before the call that is now unwinding, so
-            // flushing again would put a stale snapshot back over whatever the
-            // callee wrote.
-            vmFlushOuter(st, ch, base, curScope)
+            // The frame whose own op threw still flushes: its writes since its
+            // last call live only in its slots. A frame whose CALLEE threw must
+            // NOT — it flushed immediately before that call, so flushing again
+            // would put a stale snapshot back over whatever the callee wrote
+            // before it threw.
+            if !threwInCallee {
+                vmFlushOuter(st, ch, base, curScope)
+            }
             flushedOnThrow = true
             while frames.len() > 0 {
                 popActive(st)
