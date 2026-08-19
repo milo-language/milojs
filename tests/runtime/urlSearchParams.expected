@@ -1,0 +1,12 @@
+size: 4
+keys: a,b,a,c
+values: 1,2,3,hello world
+entries: [["a","1"],["b","2"],["a","3"],["c","hello world"]]
+toString: a=1&b=2&a=3&c=hello+world
+iterator tag: [object URLSearchParams Iterator]
+after delete a: b=2&c=hello+world
+sorted: a=2&a=1&b=3&c=1
+has(a,2): true has(a,9): false
+brand: ERR_INVALID_THIS | Value of "this" must be of type URLSearchParams
+toJSON: http://x/y?q=1 | stringify: {"u":"http://x/y?q=1"}
+tag: [object URL]
