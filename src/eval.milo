@@ -20222,10 +20222,30 @@ fn arrPushMaybeHole(st: &mut Interp, dst: i64, src: i64, i: i64) {
     }
 }
 
+// Deepest ACTUAL nesting flattenInto will follow. The requested depth is capped
+// separately at a million, which is fine as a number but not as native recursion:
+// a cyclic array reached that cap and blew the stack, and the process exited 0
+// having printed nothing. node has no cycle check either; it hits its own stack
+// limit and raises a catchable RangeError, which is what this reproduces. Real
+// arrays never nest past a handful of levels.
+let FLATTEN_DEPTH_LIMIT: i64 = 4000
+
 // Flatten `arr` into `out` up to `depth` levels of nested arrays.
 fn flattenInto(st: &mut Interp, out: i64, arr: i64, depth: i64) {
+    flattenIntoAt(st, out, arr, depth, 0)
+}
+
+fn flattenIntoAt(st: &mut Interp, out: i64, arr: i64, depth: i64, level: i64) {
+    if level > FLATTEN_DEPTH_LIMIT {
+        st.throwing = true
+        st.thrownValue = makeError(st, "RangeError", "Maximum call stack size exceeded")
+        return
+    }
     var i: i64 = 0
     while i < arrLen(st, arr) {
+        if st.throwing {
+            return
+        }
         if arrIsHole(st, arr, i) {
             // flat/flatMap DROP holes rather than flattening them to undefined
             i = i + 1
@@ -20234,7 +20254,7 @@ fn flattenInto(st: &mut Interp, out: i64, arr: i64, depth: i64) {
         let v = arrGet(st, arr, i)
         let vh = objHandle(v)
         if depth > 0 && vh >= 0 && st.objects[vh].isArray {
-            flattenInto(st, out, vh, depth - 1)
+            flattenIntoAt(st, out, vh, depth - 1, level + 1)
         } else {
             arrPush(st, out, v)
         }

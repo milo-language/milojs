@@ -43,6 +43,37 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## Hunting the cycle-bug CLASS rather than waiting for the next one
+
+Three cycle bugs had turned up separately (the parser's expression nesting,
+`Array.join`, `JSON.stringify`), which is enough to treat "recursion over user data
+with no visited set" as a pattern and go looking. Sixteen operations that recurse
+were tested against a self-referencing object, a self-referencing array, and a
+two-object cycle.
+
+**One more was broken: `flat`.** Its requested depth is capped at a million, which
+is fine as a NUMBER but not as native recursion: a cyclic array reached that cap,
+blew the stack, and the process exited 0 having printed nothing. node has no cycle
+check either -- it hits its own stack limit and raises a catchable RangeError -- so
+the fix is a depth bound that reproduces that, not a visited set that would make
+milojs succeed where node throws. 4000 levels, far past anything real.
+
+Everything else in the class was already safe: `concat`, `includes`, `sort`,
+`Object.assign`, spread, `Object.keys`, `Map`/`Set` membership, and the reviver
+walk in `JSON.parse`.
+
+`tests/cyclicStructures.js` pins the whole survey, so the next operation added to
+this family has somewhere obvious to be checked.
+
+**Known divergence, not fixed: `console.log` of a cyclic value.** milojs prints a
+depth-limited expansion, `{ x: 1, self: { x: 1, self: [Object] } }`, where node
+marks the cycle: `<ref *1> { x: 1, self: [Circular *1] }`. Printing a fake nesting
+is worse than saying so, but matching node byte-for-byte means implementing its
+`<ref *N>` numbering, which has to be threaded through inspectArr/inspectObj/
+inspectMapSet along with the seen-set. Worth doing; not a patch.
+
+`structuredClone` is also absent (it handles cycles by design).
+
 ## Number and JSON: a second hang, an i64 wrap, parseInt, and a third cycle
 
 515 Number/JSON/Object combinations against node. Four bugs.

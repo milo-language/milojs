@@ -1,0 +1,16 @@
+flat-cyclic ERR RangeError
+flat-normal OK 1,2,3,4
+flat-depth1 OK 3
+join-cyclic OK 1-
+join-indirect OK 1-
+String-cyclic OK 1,
+json-cyclic ERR TypeError
+json-indirect ERR TypeError
+concat-cyclic OK 2
+includes-cyclic OK true
+sort-cyclic OK 2
+assign-cyclic OK 2
+spread-cyclic OK 2
+map-cyclic OK 1
+set-cyclic OK 1
+keys-cyclic OK x,self
