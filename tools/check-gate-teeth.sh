@@ -78,6 +78,13 @@ teeth "gen-uniprops --check" src/engine/uniprops.milo \
     "printf '\n// teeth\n' >> src/engine/uniprops.milo" \
     "node tools/gen-uniprops.mjs --check"
 
+# --- builtin specifier list: derived from builtinSource(), so a hand edit to
+# either side must not survive. The list had drifted twelve modules behind the
+# specifiers require() actually answers before the generator existed.
+teeth "gen-builtins --check" lib/module.js \
+    "perl -0pi -e 's/\"zlib\",/\"zlib\", \"teeth-not-a-module\",/' lib/module.js" \
+    "node tools/gen-builtins.mjs --check"
+
 # --- prose facts: a number edited by hand must not survive ---
 teeth "gen-facts --check" README.md \
     "perl -0pi -e 's/(<!--fact:qjs-pass-->)\\d+/\${1}999/' README.md" \

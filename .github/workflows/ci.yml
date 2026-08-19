@@ -228,6 +228,15 @@ jobs:
       - name: Node-API addon callback
         run: MILOJS_RUNTIME_BIN=/tmp/milojs ./tests/run-napi.sh
 
+      # Real packages' OWN suites, ratcheted against tools/packages-baseline.txt.
+      # This gate only ever ran by hand, and two engine defects that took it from
+      # 1297 passing assertions to ZERO sat on main because of that — both
+      # invisible to every fixture and to test262's sample. It installs a pinned
+      # corpus on first run and skips itself (exit 0) when that install cannot
+      # reach the network.
+      - name: package suites
+        run: MILOJS_RUNTIME_BIN=/tmp/milojs ./tools/check-packages.sh
+
   # The embedding story (build-lib -> libmilojs.a/.h -> compile & run the C
   # example) is the one path users hit on both platforms, so it gets its own
   # cross-OS matrix instead of riding the Linux-only test job. run-embed.sh
