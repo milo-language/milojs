@@ -445,18 +445,6 @@ struct Utf16Pos {
     isLowHalf: bool,
 }
 
-// Byte offset of the first non-ASCII byte, or s.len() when there is none.
-//
-// Every UTF-16 index conversion below used to walk from byte 0 calling
-// decodeCodepoint per CHARACTER, which makes `charCodeAt(i)` cost O(i) and any
-// loop over a string quadratic: scanning a 100k-character ASCII string cost 14
-// SECONDS against node's 4ms. Below the first non-ASCII byte, byte offset and
-// UTF-16 index are the same number, so a tight byte scan answers the whole
-// question and the decode loop only has to start where multibyte data does.
-fn firstNonAscii(s: &string): i64 {
-    return firstNonAsciiUpTo(s, s.len())
-}
-
 // The same, but it may stop early: a caller that only needs to know whether the
 // first `upTo` bytes are ASCII should not pay for the rest of the string. That is
 // what keeps `charCodeAt(i)` proportional to i instead of to the whole length,
@@ -1179,12 +1167,6 @@ fn mjHexNibble(v: i64): u8 {
         return ('0' as i64 + v) as u8
     }
     return ('a' as i64 + (v - 10)) as u8
-}
-
-fn mjJsonEscape(s: &string): string {
-    var out = String.withCapacity(s.len() + 2)
-    mjPushJsonEscaped(out, s)
-    return out
 }
 
 fn mjPushJsonEscaped(out: &mut string, s: &string) {

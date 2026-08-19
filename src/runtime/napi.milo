@@ -136,32 +136,11 @@ pub fn napiValueOf(h: i64): JSValue {
 // Read a pointer-sized handle out of an out-param slot written by the addon.
 extern fn memcpy(_dst: *u8, _src: *u8, _n: i64): *u8
 
-fn napiReadHandle(p: *u8): i64 {
-    unsafe {
-        var buf: [i64; 1] = [0; 1]
-        memcpy(buf as *u8, p, 8)
-        return buf[0]
-    }
-}
-
 pub fn napiWriteHandle(p: *u8, h: i64) {
     unsafe {
         var buf: [i64; 1] = [h; 1]
         memcpy(p, buf as *u8, 8)
     }
-}
-
-// Number of handles currently live — for tests and diagnostics.
-fn napiHandleCount(): i64 {
-    if gNapi.handles.len() == 0 {
-        return 0
-    }
-    return gNapi.handles.len() - 1
-}
-
-fn napiReset() {
-    gNapi.handles = Vec.new()
-    gNapi.registered = false
 }
 
 // ── C ABI helpers ──

@@ -15,7 +15,7 @@
 //
 // The report is COMMITTED evidence. After a sweep, run `node tools/gen-facts.mjs`
 // so the numbers in status.md/README are recompiled from it, and commit both.
-import { readdirSync, readFileSync, writeFileSync, mkdtempSync, copyFileSync, mkdirSync } from "fs";
+import { readdirSync, readFileSync, writeFileSync, mkdtempSync, copyFileSync, mkdirSync, existsSync } from "fs";
 import { execFileSync } from "child_process";
 import { join } from "path";
 import { homedir } from "node:os";
@@ -27,7 +27,14 @@ const tilde = (x: string) => (x.startsWith(homedir()) ? "~" + x.slice(homedir().
 import { tmpdir } from "os";
 
 const QJS = process.env.QUICKJS_TESTS ?? join(process.env.HOME!, "git/quickjs/tests");
-const ENGINE = process.env.MILOJS_ENGINE ?? "/tmp/milojs-engine";
+const ENGINE = process.env.MILOJS_ENGINE ?? ".dev/mj-engine";
+// A missing engine makes every single case "crash", which reads as a catastrophic
+// conformance regression instead of as a setup mistake. Say what actually happened.
+if (!existsSync(ENGINE)) {
+  console.error(`quickjs-sweep: engine not found at ${ENGINE}\n` +
+    `  build it first (tools/dev.sh), or set MILOJS_ENGINE.`);
+  process.exit(2);
+}
 const verbose = process.argv.includes("-v");
 const filterIdx = process.argv.indexOf("-f");
 const filter = filterIdx >= 0 ? process.argv[filterIdx + 1] : null;

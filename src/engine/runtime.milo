@@ -2232,12 +2232,6 @@ fn markTargetOf(v: &JSValue): MarkTarget {
     }
 }
 
-// Mark whatever the value at an already-borrowed slot references.
-fn markVia(st: &mut Interp, t: MarkTarget) {
-    markObject(st, t.obj)
-    markScope(st, t.scope)
-}
-
 // Append a value's reference targets to pending work lists.
 fn pushMarkTargets(v: &JSValue, objs: &mut Vec<i64>, scopes: &mut Vec<i64>) {
     let t = markTargetOf(v)

@@ -8,6 +8,47 @@ last-verified: 2026-08-18 (re-read after the native id enum landed; the NATIVE_*
 
 # milojs backlog
 
+## Dead-code sweep: 13 removals, and a sweep that scored a missing binary
+
+Routine #4 (dead-code removal) over `src/**/*.milo` (24 files after the
+engine/runtime split). Ten uncalled functions, two write-only struct fields, one
+enum variant nothing constructs:
+
+- `napiReadHandle`, `napiHandleCount`, `napiReset` (`src/runtime/napi.milo`)
+- `markVia` (`src/engine/runtime.milo`)
+- `runChildToCompletion`, `yieldAtAwait`, `isIdentifierText` (`src/engine/eval.milo`)
+- `firstNonAscii`, `mjJsonEscape` (`src/engine/builtins.milo`)
+- `reIsSpace` (`src/engine/regex.milo`)
+- `Regex.source`, `Regex.flags` -- written at compile, never read. The
+  JS-visible `.source`/`.flags` are served from the object's own props, so the
+  struct copies were two dead strings per compiled regex.
+- `Builtin.ArrayCtor` (`src/engine/value.milo`)
+
+`yieldAtAwait` was the abandoned park-based await-yield approach; the doc that
+names it describes it as the rejected path, so the prose stands. AGENTS.md cited
+`mjJsonEscape` as the `mj`-prefix convention example and now cites `mjJsonParse`.
+
+**Method note.** The first two scans were worthless: they globbed `src/*.milo`,
+which after the split matches 3 files. A scan that reports "0 dead" because it
+looked at 12% of the tree is worse than no scan. Any repo-wide scan written
+before a restructure needs its glob re-checked after one.
+
+**The gate hole this turned up.** `scripts/quickjs-sweep.ts` defaulted to
+`/tmp/milojs-engine`, a path nothing builds. With no binary there, every case
+was recorded as `timeout/crash` and the sweep wrote a clean-looking
+`docs/conformance/quickjs.json` reading 0/149 -- a total conformance collapse
+presented as a legitimate score. `test262-sweep.ts` had had the existence guard
+since it was written; it was never copied over, and the three sweeps defaulted
+to three different paths (`/tmp/milojs-engine`, `/tmp/mj-eng`, `.dev/mj-runtime`).
+quickjs-sweep now defaults to `.dev/mj-engine` (what `tools/dev.sh` actually
+produces) and exits 2 without writing JSON when it is absent.
+
+A conformance number that can be produced by a setup mistake is not a
+measurement. Every sweep must fail loudly rather than score zero.
+
+Gates after removal: dev.sh 6/6, precommit clean, GC-stress 280/280, fuzz 200
+seeds clean, QuickJS 102/149 with 0 parse failures (unchanged).
+
 Work items carried over from the milo repo's backlog when milojs moved to its own
 repo, re-verified against the engine through 2026-07-30.
 

@@ -79,8 +79,6 @@ pub struct Regex {
     // the sticky flag: the match must start exactly at lastIndex rather than
     // being searched for from there
     flagY: bool,
-    source: string,
-    flags: string,
     valid: bool,
     // Which check rejected the pattern, so the message can say. A bad property
     // name and malformed syntax read very differently to whoever hits one.
@@ -191,10 +189,6 @@ fn reIsDigit(c: u8): bool {
 
 fn reIsWord(c: u8): bool {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
-}
-
-fn reIsSpace(c: u8): bool {
-    return c == ' ' || c == 9 as u8 || c == 10 as u8 || c == 13 as u8 || c == 12 as u8 || c == 11 as u8
 }
 
 // Add a shorthand's ranges into a class's lo/hi arrays. `kind`: 'd','w','s'.
@@ -1305,7 +1299,7 @@ pub fn regexCompile(source: string, flags: string): Regex {
     reEmit(prog, RE_SAVE, 1, 0)
     reEmit(prog, RE_MATCH, 0, 0)
     return Regex {
-        prog: prog, classes: p.classes, nGroups: p.ngroup, flagI: fi, flagG: fg, flagM: fm, flagS: fs_, flagY: fy, source: source, flags: flags, valid: !p.badProp && !p.badSyntax, badPropName: p.badProp, groupNames: p.groupNames, groupNums: p.groupNums
+        prog: prog, classes: p.classes, nGroups: p.ngroup, flagI: fi, flagG: fg, flagM: fm, flagS: fs_, flagY: fy, valid: !p.badProp && !p.badSyntax, badPropName: p.badProp, groupNames: p.groupNames, groupNums: p.groupNums
     }
 }
 

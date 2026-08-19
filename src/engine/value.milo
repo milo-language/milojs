@@ -192,7 +192,6 @@ pub enum Builtin {
     BigInt,
     ObjectGetOwnPropSymbols,
     ObjectGetOwnPropDescs,
-    ArrayCtor,
     TcpListen,
     TcpAccept,
     TcpRecv,

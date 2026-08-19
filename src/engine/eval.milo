@@ -11387,66 +11387,6 @@ pub fn symbolDisplay(s: &string): string {
     return "Symbol(" + symbolDescription(s) + ")"
 }
 
-fn runChildToCompletion(program: string, args: Vec<string>, envPairs: Vec<string>): string {
-    // Command rather than Child.spawn when the caller supplied environment
-    // overrides: Child.spawn has no way to set one, and a cluster worker that
-    // cannot be told it is a worker would run the primary's branch instead.
-    var cmd = Command.new(program).args(args).stderr(Stdio.Merge)
-    var ei: i64 = 0
-    while ei < envPairs.len() {
-        let pair = envPairs[ei].clone()
-        var eq: i64 = 0 - 1
-        var ci: i64 = 0
-        while ci < pair.len() {
-            if pair[ci] == '=' && eq < 0 {
-                eq = ci
-            }
-            ci = ci + 1
-        }
-        if eq > 0 {
-            let ename = pair.slice(0, eq).clone()
-            let eval_ = pair.slice(eq + 1, pair.len()).clone()
-            cmd = cmd.env(ename, eval_)
-        }
-        ei = ei + 1
-    }
-    match cmd.spawn() {
-        Result.Ok(child) => {
-            var text = ""
-            var buf: [u8; 4096] = [0; 4096]
-            var reading = true
-            while reading {
-                var n: i64 = 0
-                unsafe {
-                    n = child.readStdout(buf as *u8, 4096)
-                }
-                if n <= 0 {
-                    reading = false
-                } else {
-                    var bi: i64 = 0
-                    while bi < n {
-                        text.push(buf[bi])
-                        bi = bi + 1
-                    }
-                }
-            }
-            var code: i64 = 0
-            match child.wait() {
-                Result.Ok(c) => {
-                    code = c as i64
-                }
-                Result.Err(_w) => {
-                    code = 0 - 1
-                }
-            }
-            return i64ToStr(code) + "|" + text
-        }
-        Result.Err(_e) => {
-            return "E-1|spawn failed"
-        }
-    }
-}
-
 fn serviceFetches(st: &mut Interp) {
     var i: i64 = 0
     while i < st.fetches.len() {
@@ -11512,30 +11452,6 @@ fn releaseCreatorOnce(st: &mut Interp) {
         }
         i = i + 1
     }
-}
-
-// Drop this activation's bookkeeping and its pre-bind roots once the body ends.
-// An activation reaching any await hands control back to whoever called it and
-// lets the scheduler run them before this body continues. A no-op off an
-// activation: the main task owns the event loop and must not yield here.
-fn yieldAtAwait(st: &mut Interp) {
-    let me = schedulerCurrent()
-    if me as i64 == 0 {
-        return
-    }
-    var onActivation = false
-    var i: i64 = 0
-    while i < st.actTask.len() {
-        if st.actTask[i] as i64 == me as i64 {
-            onActivation = true
-        }
-        i = i + 1
-    }
-    if !onActivation {
-        return
-    }
-    releaseCreatorOnce(st)
-    schedulerYield()
 }
 
 fn endActivation(st: &mut Interp) {
@@ -13259,24 +13175,6 @@ pub fn sameValue(a: &JSValue, b: &JSValue): bool {
             return jsStrictEquals(a, b)
         }
     }
-}
-
-// A single JS identifier and nothing else — what the limited eval accepts.
-fn isIdentifierText(s: &string): bool {
-    if s.len() == 0 {
-        return false
-    }
-    var i: i64 = 0
-    while i < s.len() {
-        let c = s[i]
-        let alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '$'
-        let digit = c >= '0' && c <= '9'
-        if !alpha && !(digit && i > 0) {
-            return false
-        }
-        i = i + 1
-    }
-    return true
 }
 
 pub fn currentModule(st: &Interp): string {

@@ -6,10 +6,10 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "ae9c7e56d6de8b6a4ac18752e4036b1d4d0c2989",
-    "dirty": false
+    "revision": "cd7696e0b5e77e30add4f424d701cc2be386ccb3",
+    "dirty": true
   },
-  "engine": "/private/tmp/mj-next/.dev/mj-engine",
+  "engine": ".dev/mj-engine",
   "selection": {
     "filter": null,
     "skippedFiles": [
@@ -25,8 +25,8 @@
     ]
   },
   "totals": {
-    "pass": 101,
-    "fail": 48,
+    "pass": 102,
+    "fail": 47,
     "parseFail": 0,
     "total": 149,
     "ran": 149,
@@ -35,7 +35,7 @@
   "failureBuckets": [
     {
       "reason": "Uncaught Error: assertion failed: got |…|, expected |…|",
-      "count": 22,
+      "count": 23,
       "cases": [
         "bug1498.js:<whole>",
         "bug492.js:test_detach",
@@ -45,6 +45,7 @@
         "parse-error-column.js:<whole>",
         "test_bigint.js:test_bigint_asintn",
         "test_builtin.js:test_array",
+        "test_builtin.js:test_rope",
         "test_builtin.js:test_eval",
         "test_builtin.js:test_date",
         "test_builtin.js:test_regexp",
@@ -75,11 +76,10 @@
     },
     {
       "reason": "timeout/crash (SIGTERM)",
-      "count": 3,
+      "count": 2,
       "cases": [
         "bug1355.js:<whole>",
-        "bug1571.js:<whole>",
-        "test_builtin.js:test_rope"
+        "bug1571.js:<whole>"
       ]
     },
     {
@@ -157,13 +157,6 @@
       "count": 1,
       "cases": [
         "test_for_of_line_numbers.js:<whole>"
-      ]
-    },
-    {
-      "reason": "Uncaught Error: assertion failed: got |…|, expected |…| (delete)",
-      "count": 1,
-      "cases": [
-        "test_language.js:test_delete"
       ]
     },
     {
