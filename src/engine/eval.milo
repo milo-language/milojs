@@ -7897,6 +7897,73 @@ fn evalIndexNode(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue 
 //
 // Effect: fallback frame 9264 -> ~2.9 KB, and max nested-expression depth roughly
 // triples (see docs/backlog.md).
+// The value-level half of a property WRITE: everything after the object, key and
+// value have been evaluated. Split out of the Expr.SetMember arm for the same
+// reason as memberOfValue and evalBinValues — the bytecode VM must hit the
+// Buffer/typed-array fast paths and the setter rules, not a second copy of them.
+pub fn setMemberOfValue(prog: &Prog, ov: JSValue, key: string, v: JSValue, st: &mut Interp): JSValue {
+    match ov {
+        JSValue.Obj(o) => {
+            // buf[i] = n writes the byte (masked to 0-255) into the
+            // Buffer's backing array, matching Uint8Array assignment
+            let bwidx = asArrayIndex(key)
+            if bwidx >= 0 {
+                let nv = bufferNativeViewHandle(st, o)
+                if nv >= 0 && nativeBufferSet(st, nv, bwidx, toNum(v)) {
+                    return cloneValue(v)
+                }
+                let bh = bufferBytesHandle(st, o)
+                if bh >= 0 && bwidx < st.objects[bh].elems.len() {
+                    let byte = (toNum(v) as i64) & 255
+                    st.objects[bh].elems[bwidx] = JSValue.Number(byte as f64)
+                    return cloneValue(v)
+                }
+            }
+            setMemberDyn(prog, o, key, cloneValue(v), st)
+        }
+        JSValue.Native(nid) => {
+            // assigning onto a builtin constructor, e.g.
+            // Error.captureStackTrace = fn. setMemberDyn, not objSet, so
+            // a non-writable property (every built-in `prototype`) drops
+            // the write instead of silently replacing itself.
+            let bag = getNativeProps(st, nid)
+            setMemberDyn(prog, bag, key, cloneValue(v), st)
+        }
+        JSValue.Func(sf, senv) => {
+            if key == "prototype" {
+                // `Child.prototype = Object.create(Parent.prototype)` —
+                // the ES5 inheritance idiom. Replacing the prototype
+                // object is what makes instances inherit from Parent.
+                let newProto = objHandle(v)
+                if newProto >= 0 {
+                    while st.funcProtos.len() <= sf {
+                        st.funcProtos.push(-1)
+                    }
+                    st.funcProtos[sf] = newProto
+                    // the bag may already carry a materialised
+                    // `prototype` for descriptor queries; leaving it
+                    // behind would make getOwnPropertyDescriptor
+                    // disagree with a plain read
+                    let sbag = getFuncStatics(st, sf, senv)
+                    if objOwnIndex(st, sbag, "prototype") >= 0 {
+                        objSet(st, sbag, "prototype", JSValue.Obj(newProto))
+                        objSetNonEnumerable(st, sbag, "prototype")
+                    }
+                }
+            } else {
+                let statics = getFuncStatics(st, sf, senv)
+                // setMemberDyn, not objSet: a `static set x(v)` accessor
+                // has to be invoked, and objSet would replace it with a
+                // plain data property
+                setMemberDyn(prog, statics, key, cloneValue(v), st)
+            }
+        }
+        _ => {
+        }
+    }
+    return v
+}
+
 // The value-level half of a binary operator: everything after both operands
 // have been evaluated. Split out of evalBinArm so the bytecode VM runs the same
 // semantics rather than a second copy of them — a duplicated implementation of
@@ -8630,66 +8697,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             let key = toStr(kv)
             let v = evalExpr(prog, valIdx, st, scope)
             popTemp(st)
-            match ov {
-                JSValue.Obj(o) => {
-                    // buf[i] = n writes the byte (masked to 0-255) into the
-                    // Buffer's backing array, matching Uint8Array assignment
-                    let bwidx = asArrayIndex(key)
-                    if bwidx >= 0 {
-                        let nv = bufferNativeViewHandle(st, o)
-                        if nv >= 0 && nativeBufferSet(st, nv, bwidx, toNum(v)) {
-                            return cloneValue(v)
-                        }
-                        let bh = bufferBytesHandle(st, o)
-                        if bh >= 0 && bwidx < st.objects[bh].elems.len() {
-                            let byte = (toNum(v) as i64) & 255
-                            st.objects[bh].elems[bwidx] = JSValue.Number(byte as f64)
-                            return cloneValue(v)
-                        }
-                    }
-                    setMemberDyn(prog, o, key, cloneValue(v), st)
-                }
-                JSValue.Native(nid) => {
-                    // assigning onto a builtin constructor, e.g.
-                    // Error.captureStackTrace = fn. setMemberDyn, not objSet, so
-                    // a non-writable property (every built-in `prototype`) drops
-                    // the write instead of silently replacing itself.
-                    let bag = getNativeProps(st, nid)
-                    setMemberDyn(prog, bag, key, cloneValue(v), st)
-                }
-                JSValue.Func(sf, senv) => {
-                    if key == "prototype" {
-                        // `Child.prototype = Object.create(Parent.prototype)` —
-                        // the ES5 inheritance idiom. Replacing the prototype
-                        // object is what makes instances inherit from Parent.
-                        let newProto = objHandle(v)
-                        if newProto >= 0 {
-                            while st.funcProtos.len() <= sf {
-                                st.funcProtos.push(-1)
-                            }
-                            st.funcProtos[sf] = newProto
-                            // the bag may already carry a materialised
-                            // `prototype` for descriptor queries; leaving it
-                            // behind would make getOwnPropertyDescriptor
-                            // disagree with a plain read
-                            let sbag = getFuncStatics(st, sf, senv)
-                            if objOwnIndex(st, sbag, "prototype") >= 0 {
-                                objSet(st, sbag, "prototype", JSValue.Obj(newProto))
-                                objSetNonEnumerable(st, sbag, "prototype")
-                            }
-                        }
-                    } else {
-                        let statics = getFuncStatics(st, sf, senv)
-                        // setMemberDyn, not objSet: a `static set x(v)` accessor
-                        // has to be invoked, and objSet would replace it with a
-                        // plain data property
-                        setMemberDyn(prog, statics, key, cloneValue(v), st)
-                    }
-                }
-                _ => {
-                }
-            }
-            return v
+            return setMemberOfValue(prog, ov, key, v, st)
         }
         Expr.ClassExpr(classIdx) => {
             return instantiateClass(prog, classIdx, st, scope)
