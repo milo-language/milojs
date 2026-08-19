@@ -31,6 +31,14 @@ fi
 
 sha() { shasum -a 256 "$1" | awk '{print $1}'; }
 
+# The gates that probe a binary need one. tools/dev.sh caches at .dev/; CI builds
+# to /tmp. Resolve either, so the engine-dependent cases run in both places
+# instead of silently reporting themselves as skipped.
+ENGINE=""
+for candidate in "${MILOJS_ENGINE:-}" .dev/mj-engine /tmp/milojs-engine; do
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then ENGINE="$candidate"; break; fi
+done
+
 # teeth <label> <file-to-mutate> <mutation-shell> <gate-shell>
 teeth() {
     local label="$1" file="$2" mutate="$3" gate="$4"
@@ -113,11 +121,12 @@ if grep -q 'arity' tools/check-arity.mjs 2>/dev/null; then
 fi
 
 # --- gaps: a documented limit that is no longer real. Needs a built engine. ---
-if [ -x .dev/mj-engine ]; then
+if [ -n "$ENGINE" ]; then
     teeth "check-gaps" docs/status.md \
         "perl -0pi -e 's/<!--gap:float16-->//' docs/status.md" \
-        "node tools/check-gaps.mjs"
+        "node tools/check-gaps.mjs --engine $ENGINE"
 else
+    echo "check-gate-teeth: no engine binary found (.dev/mj-engine, /tmp/milojs-engine) — check-gaps not probed" >&2
     skipped=$((skipped + 1))
 fi
 

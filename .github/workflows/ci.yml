@@ -161,10 +161,6 @@ jobs:
           milo build src/milojs-engine.milo -o /tmp/milojs-engine
           milo build src/milojs.milo -o /tmp/milojs
 
-      # tests/*.js on the engine, tests/runtime/*.js on the runtime. The runtime
-      # pass is the guard on the async / fetch / event-loop machinery — it used
-      # to run out of the milo repo (tests/milojsRuntime.test.ts) and moved here
-      # with the source.
       # Every gate above answers "is the tree clean". None of them answers "would
       # this gate still say no". This repo has shipped three gates that had
       # stopped checking anything and stayed green for months: check-arity
@@ -176,6 +172,10 @@ jobs:
       - name: the gates still have teeth
         run: ./tools/check-gate-teeth.sh
 
+      # tests/*.js on the engine, tests/runtime/*.js on the runtime. The runtime
+      # pass is the guard on the async / fetch / event-loop machinery — it used
+      # to run out of the milo repo (tests/milojsRuntime.test.ts) and moved here
+      # with the source.
       - name: js fixtures
         run: MILOJS_ENGINE_BIN=/tmp/milojs-engine MILOJS_RUNTIME_BIN=/tmp/milojs ./tests/run.sh
 
