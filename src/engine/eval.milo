@@ -811,12 +811,18 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
         }
         // obj.__proto__ mirrors Object.getPrototypeOf (a Object.prototype accessor
         // in the spec); resolve it through the same type-based helper
-        if key == "__proto__" {
-            let pp = protoOfHandle(st, o)
-            if pp >= 0 {
-                return JSValue.Obj(pp)
+        // ...and only when the object inherits the accessor. An own "__proto__"
+        // data property on a null-prototype object is an ordinary property, and
+        // reading it off one that has neither answers undefined, not null.
+        if key == "__proto__" && objOwnIndex(st, o, key) < 0 {
+            if inheritsObjectProto(st, o) {
+                let pp = protoOfHandle(st, o)
+                if pp >= 0 {
+                    return JSValue.Obj(pp)
+                }
+                return JSValue.Null
             }
-            return JSValue.Null
+            return JSValue.Undefined
         }
         // builtin methods are dispatched by name, not stored as properties, so
         // reading one as a value needs a bound method synthesised here
@@ -2849,7 +2855,12 @@ pub fn setMemberDyn(prog: &Prog, o: i64, key: string, v: JSValue, st: &mut Inter
     // an ordinary own property named "__proto__" and the object kept its old
     // prototype — the ES5 inheritance idiom `Child.prototype.__proto__ = Parent.prototype`
     // did nothing at all.
-    if key == "__proto__" {
+    // ...but only for an object that actually INHERITS that accessor. An object
+    // with a null prototype does not, so `obj.__proto__ = v` on one defines an
+    // ordinary own property — which is what querystring.parse("__proto__=1")
+    // has to answer, and what makes a null-prototype object safe to use as a
+    // string-keyed map in the first place.
+    if key == "__proto__" && inheritsObjectProto(st, o) {
         match v {
             JSValue.Null => {
                 st.objects[o].proto = -1
@@ -7374,9 +7385,12 @@ fn nativeProtoChainHas(st: &Interp, o: i64, n: &Native): bool {
 fn nativeInstanceOf(st: &Interp, o: i64, nv: &Native): bool {
     match nv {
         Native.Fn(id) => {
-            // every object inherits from Object.prototype
+            // Almost every object inherits from Object.prototype — but not one
+            // with a null prototype, and `{ __proto__: null }` can build one, so
+            // answering true unconditionally made `x instanceof Object` true for
+            // exactly the objects it must reject.
             if id == Builtin.ObjectCtor {
-                return true
+                return inheritsObjectProto(st, o)
             }
             // the built-in exotic constructors are recognised by the object's
             // internal kind (Date/Map/Set/RegExp/ArrayBuffer are Native values,
@@ -7454,6 +7468,12 @@ fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
     if let JSValue.Native(cid) = ctor {
         if nativeEq(cid, Native.Fn(Builtin.FunctionCtor)) {
             return isCallableIn(st, val)
+        }
+        // ...and `f instanceof Object` for the same reason: a function value is
+        // not a JSValue.Obj here, so the object walk below never sees one, and
+        // its chain runs Function.prototype -> Object.prototype either way.
+        if nativeEq(cid, Native.Fn(Builtin.ObjectCtor)) && isCallableIn(st, val) {
+            return true
         }
     }
     match val {
@@ -9135,6 +9155,26 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                                 pv = cloneValue(st.objects[src].props[k].value)
                             }
                             objSet(st, obj, pk, pv)
+                        }
+                    }
+                } else if prog.objLits[litIdx.index][i].isProtoSetter {
+                    // `{ __proto__: v }` SETS the prototype. A value that is
+                    // neither an object nor null is ignored — not an error, and
+                    // not a property either. This used to define an own
+                    // "__proto__" property, so `{ __proto__: null }` produced an
+                    // ordinary object with a stray enumerable key, which is what
+                    // querystring.parse needs to answer for "__proto__=1".
+                    // Same two cases as the `o.__proto__ = v` setter above, and
+                    // protoNull is the part that matters: proto = -1 alone means
+                    // "the default Object.prototype", not "no prototype".
+                    if isNullValue(v) {
+                        st.objects[obj].proto = -1
+                        st.objects[obj].protoNull = true
+                    } else {
+                        let np = propertyBagOf(st, v)
+                        if np >= 0 {
+                            st.objects[obj].proto = np
+                            st.objects[obj].protoNull = false
                         }
                     }
                 } else {
@@ -14039,6 +14079,36 @@ fn findNapiAddon(st: &Interp, path: &string): Option<JSValue> {
         i = i + 1
     }
     return Option.None
+}
+
+// Does this object reach %Object.prototype% through its prototype chain? That
+// is where the `__proto__` accessor lives, so it decides whether a `__proto__`
+// read or write is the magic one or an ordinary property access.
+fn inheritsObjectProto(st: &Interp, o: i64): bool {
+    if st.objects[o].protoNull {
+        return false
+    }
+    var p = st.objects[o].proto
+    if p < 0 {
+        // -1 with protoNull false means the default, which IS Object.prototype.
+        return true
+    }
+    var guard: i64 = 0
+    while p >= 0 && guard < 1000 {
+        if p == st.objectProtoObj {
+            return true
+        }
+        if st.objects[p].protoNull {
+            return false
+        }
+        let next = st.objects[p].proto
+        if next < 0 {
+            return true
+        }
+        p = next
+        guard = guard + 1
+    }
+    return false
 }
 
 pub fn isUndefinedValue(v: &JSValue): bool {

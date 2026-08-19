@@ -1004,7 +1004,7 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
             advance(p)
             let se = parseExpr(p, prog)
             props.push(PropInit {
-                key: "...", val: se, kind: 0, keyExpr: Option.None
+                key: "...", val: se, kind: 0, keyExpr: Option.None, isProtoSetter: false
             }
             )
             if peekKind(p) == T_COMMA {
@@ -1012,6 +1012,7 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
             }
         } else {
             var key = ""
+            var sawColon = false
             var keyExpr: Option<ExprId> = Option.None
             var isMethodGen = false
             // `{ *gen() {} }` / `{ *[Symbol.iterator]() {} }` — the star comes
@@ -1108,6 +1109,7 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
                 valIdx = Option.Some(addExpr(prog, Expr.FuncExpr(prog.funcs.len() - 1)))
             } else if peekKind(p) == T_COLON {
                 advance(p)
+                sawColon = true
                 valIdx = Option.Some(parseExpr(p, prog))
                 // `{ handler: () => {} }` — the anonymous value takes the key name
                 inferFuncName(prog, valIdx!, key)
@@ -1121,8 +1123,9 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
             } else {
                 valIdx = Option.Some(addExpr(prog, Expr.Ident(key.clone())))
             }
+            let protoSetter = sawColon && accessorKind == 0 && key == "__proto__" && keyExpr.isNone()
             props.push(PropInit {
-                key: key, val: valIdx!, kind: accessorKind, keyExpr: keyExpr
+                key: key, val: valIdx!, kind: accessorKind, keyExpr: keyExpr, isProtoSetter: protoSetter
             }
             )
             if peekKind(p) == T_COMMA {

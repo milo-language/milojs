@@ -1,0 +1,8 @@
+[ 'foo' ] null false
+1 []
+computed is an own property: [ '__proto__' ] true
+quoted still sets it: null
+a non-object value is ignored: true []
+own on a null-proto object: [ '__proto__' ] undefined null
+read with no accessor: undefined
+true true true true true false false

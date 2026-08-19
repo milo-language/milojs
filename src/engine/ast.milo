@@ -146,6 +146,11 @@ pub struct PropInit {
     kind: i64,
     // computed key `{ [expr]: v }`, absent for a literal key.
     keyExpr: Option<ExprId>,
+    // `__proto__: v` in the `key: value` form, which SETS the prototype rather
+    // than defining a property. Only that spelling does: `{ __proto__ }`,
+    // `{ ["__proto__"]: v }` and `{ __proto__() {} }` all define an ordinary own
+    // property, so the parser decides this and the evaluator cannot.
+    isProtoSetter: bool,
 }
 
 pub enum Stmt {
