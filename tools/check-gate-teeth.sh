@@ -109,9 +109,23 @@ teeth "check-layering (engine global)" src/engine/bootstrap.milo \
     "tools/check-layering.sh --quiet"
 
 # --- sweeps: scoring with no engine binary ---
-teeth "check-sweeps" scripts/quickjs-sweep.ts \
-    "perl -0pi -e 's/if \(!existsSync\(ENGINE\)\) \{.*?\n\}\n//s' scripts/quickjs-sweep.ts" \
-    "node tools/check-sweeps.mjs"
+# The probe deletes quickjs-sweep's missing-engine guard and expects
+# check-sweeps to notice. That only proves anything when the quickjs CORPUS is
+# present: without it the sweep exits nonzero because it cannot find its tests,
+# check-sweeps is satisfied by that unrelated failure, and the probe reports a
+# false "toothless". Measured: guard removed with the corpus present exits 0 and
+# writes the report (check-sweeps fails, correct); guard removed with the corpus
+# missing exits 1 and writes nothing (check-sweeps passes, meaningless). CI has
+# no corpus, which is why this went red there and never locally.
+QJS_CORPUS="${QUICKJS_TESTS:-$HOME/git/quickjs/tests}"
+if [ -d "$QJS_CORPUS" ]; then
+    teeth "check-sweeps" scripts/quickjs-sweep.ts \
+        "perl -0pi -e 's/if \(!existsSync\(ENGINE\)\) \{.*?\n\}\n//s' scripts/quickjs-sweep.ts" \
+        "node tools/check-sweeps.mjs"
+else
+    echo "check-gate-teeth: no quickjs corpus at $QJS_CORPUS, check-sweeps not probed" >&2
+    skipped=$((skipped + 1))
+fi
 
 # --- arity: a built-in length that disagrees with node ---
 if grep -q 'arity' tools/check-arity.mjs 2>/dev/null; then
