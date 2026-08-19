@@ -36,7 +36,7 @@ from "std/fs" import {
     readFile
 }
 from "../runtime/modules" import {
-    dirOf, resolveSpec, findModule, relativizeToCwd
+    dirOf, resolveSpec, findModule, relativizeToCwd, loadModuleLazily
 }
 from "std/os" import {
     exit, readFd, read, write, open, close, lseek, fsync, ftruncate, fchmod,
@@ -7283,14 +7283,20 @@ fn requireModuleFrom(prog: &Prog, spec: &string, st: &mut Interp, dirIn: string)
         throwModuleNotFound(st, spec)
         return JSValue.Undefined
     }
-    let idx = findModule(st, path)
+    var idx = findModule(st, path)
     if idx < 0 {
-        // The CLI preloads the whole require() graph before running, so reaching
-        // here means either that walk missed an edge or there was no walk at all
-        // (an embedder calling milojs_eval on a string). Either way the module
-        // did not load, which is MODULE_NOT_FOUND from the program's side: it
-        // used to print "was not pre-loaded" to the HOST's stderr and hand back
-        // undefined, so an embedder saw STATUS_OK for a require that never ran.
+        // The preload walk only follows require("literal"), so a computed
+        // specifier — require(name) over a list, which is how every package that
+        // feature-detects core modules works — lands here with the module never
+        // registered. Load it now. An embedder calling milojs_eval on a string
+        // never had a walk at all and reaches this the same way.
+        idx = loadModuleLazily(path.clone(), st)
+    }
+    if idx < 0 {
+        // Nothing to load: the path does not resolve to readable source, which is
+        // MODULE_NOT_FOUND from the program's side. It used to print "was not
+        // pre-loaded" to the HOST's stderr and hand back undefined, so an
+        // embedder saw STATUS_OK for a require that never ran.
         throwModuleNotFound(st, spec)
         return JSValue.Undefined
     }

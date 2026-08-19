@@ -37,6 +37,13 @@ if [ "$before" != "$after" ]; then
     echo "precommit: docs/api was stale; regenerated and staged"
 fi
 
+# lib/module.js's builtinModules list is derived from the specifiers
+# builtinSource() actually answers, partitioned by node's own builtinModules. It
+# drifted twelve modules behind before this gate existed.
+if command -v node >/dev/null 2>&1 && ! node tools/gen-builtins.mjs --check; then
+    status=1
+fi
+
 # 389 built-in `length` values in src/engine/eval.milo sit under a "GENERATED from node"
 # comment with no generator behind it. test262 asserts every one.
 if command -v node >/dev/null 2>&1 && ! node tools/check-arity.mjs; then

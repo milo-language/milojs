@@ -6,7 +6,10 @@
 //
 // Edges are found by scanning the token stream for `require("literal")` and for
 // the ESM forms that desugar onto it, so computed specifiers (require(someVar),
-// import(someVar)) are not discovered — a known limit.
+// import(someVar)) are not discovered by the walk. Those load LAZILY instead,
+// through loadModuleLazily below: the same registration, run mid-eval against
+// the global Prog. The evaluator's `&Prog` parameters all alias gProg, which is
+// what makes that safe — runEvalSource has parsed into it mid-eval all along.
 
 from "../engine/strutil" import {
     strSlice, jsIndexOf
@@ -18,7 +21,7 @@ from "../engine/lexer" import {
     lex, Token, T_IDENT, T_LPAREN, T_STR, T_IMPORT, T_EXPORT, T_STAR, T_LBRACE, T_RBRACE, T_COMMA, T_DOT
 }
 from "../engine/ast" import {
-    Prog, registerSource
+    Prog, registerSource, gProg
 }
 from "../engine/parser" import {
     PState, parseProgram
@@ -144,9 +147,12 @@ fn builtinSource(name: &string): string {
     // honest; inventing a module we do not implement would turn a clean resolution
     // failure into a confusing one at first use, so nothing here is fabricated.
     if name == "assert/strict" {
-        return @embedFile("../../lib/assert.js")
+        return @embedFile("../../lib/assert-strict.js")
     }
-    if name == "util/types" || name == "sys" {
+    if name == "util/types" {
+        return @embedFile("../../lib/util-types.js")
+    }
+    if name == "sys" {
         return @embedFile("../../lib/util.js")
     }
     if name == "stream/promises" || name == "stream/consumers"
@@ -199,8 +205,11 @@ fn builtinSource(name: &string): string {
     if name == "repl" {
         return @embedFile("../../lib/repl.js")
     }
-    if name == "timers" || name == "timers/promises" {
+    if name == "timers" {
         return @embedFile("../../lib/timers.js")
+    }
+    if name == "timers/promises" {
+        return @embedFile("../../lib/timers-promises.js")
     }
     if name == "punycode" {
         return @embedFile("../../lib/punycode.js")
@@ -240,6 +249,9 @@ fn builtinSource(name: &string): string {
     }
     if name == "vm" {
         return @embedFile("../../lib/vm.js")
+    }
+    if name == "dns/promises" {
+        return @embedFile("../../lib/dns-promises.js")
     }
     if name == "dns" {
         return @embedFile("../../lib/dns.js")
@@ -719,13 +731,19 @@ fn hasAddonExt(p: &string): bool {
 }
 
 pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
-    var queue: Vec<string> = Vec.new()
     // The registry keys on the paths the preloader produces, and require
     // resolves through relativizeToCwd, so an ABSOLUTE entry under the working
     // directory keyed the whole graph absolutely while every require looked it
     // up relatively. `milojs /path/to/app/main.js` run from inside that app
     // therefore failed on every node_modules require — the common invocation.
-    let entryKey = relativizeToCwd(entryPath.clone())
+    return loadGraphFrom(relativizeToCwd(entryPath.clone()), prog, st)
+}
+
+// Register a module and everything its LITERAL requires reach, and answer its
+// registry index. Both entry points share this: the up-front walk from the
+// program's entry file, and the lazy load of a specifier only known at run time.
+fn loadGraphFrom(entryKey: string, prog: &mut Prog, st: &mut Interp): i64 {
+    var queue: Vec<string> = Vec.new()
     queue.push(entryKey.clone())
     var head: i64 = 0
     while head < queue.len() {
@@ -821,4 +839,16 @@ pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
         }
     }
     return findModule(st, entryKey)
+}
+
+// require() with a computed specifier: the preload walk never saw this edge, so
+// the module is registered now, on the global Prog the evaluator is running
+// against. Returns -1 when the path cannot be read, which the caller reports as
+// MODULE_NOT_FOUND — the same answer node gives.
+//
+// Feature detection is what needs this. is-core-module and the es-shim packages
+// loop over a list of names and require each one, and every such probe reported
+// the module missing however plainly it was there.
+pub fn loadModuleLazily(path: string, st: &mut Interp): i64 {
+    return loadGraphFrom(path, gProg, st)
 }

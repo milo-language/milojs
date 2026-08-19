@@ -1,0 +1,12 @@
+os true
+zlib true
+vm true
+assert/strict true
+util/types true
+assert/strict true
+util/types true
+timers/promises true
+path/posix true
+fs/promises true
+isBuiltin true,true,true,false
+missing -> MODULE_NOT_FOUND

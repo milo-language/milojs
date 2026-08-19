@@ -34,6 +34,21 @@ Does this token stream use ESM syntax? Only the `import`/`export` STATEMENT
 forms make a file a module; dynamic `import()` is an ordinary expression and
 is legal in a plain script.
 
+### `loadModuleLazily`
+
+```milo
+pub fn loadModuleLazily(path: string, st: &mut Interp): i64
+```
+
+require() with a computed specifier: the preload walk never saw this edge, so
+the module is registered now, on the global Prog the evaluator is running
+against. Returns -1 when the path cannot be read, which the caller reports as
+MODULE_NOT_FOUND — the same answer node gives.
+
+Feature detection is what needs this. is-core-module and the es-shim packages
+loop over a list of names and require each one, and every such probe reported
+the module missing however plainly it was there.
+
 ### `moduleIsStrict`
 
 ```milo
