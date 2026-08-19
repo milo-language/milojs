@@ -8,6 +8,55 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## Eight enumeration surfaces x 22 object kinds: six disagreed with node
+
+The typed-array entry above ended with "five separate key walks each carry their
+own array branch". Rather than unify them straight away, I built the differential
+that makes the divergence visible: 8 surfaces (`Object.keys`/`values`/`entries`,
+for-in, `getOwnPropertyNames`, `JSON.stringify`, `{...o}`, `Object.assign`) crossed
+with 22 object kinds (sparse array, array with a named property, each typed array
+kind, DataView, ArrayBuffer, wrappers, Map, Set, function, class instance, own
+accessor, non-enumerable, symbol key, prototype chain, proxy of array, frozen,
+detached view). Six kinds were wrong, and every one was a surface that had not
+been told something the others knew:
+
+- **`JSON.stringify` serialised INHERITED properties.** The JS-level stringify in
+  `lib/engine-prelude.js` walked with `for (var pk in v)`, and for-in walks the
+  prototype chain. `JSON.stringify(Object.create({inherited: 1}, {own: {...}}))`
+  emitted both. JSON is defined over own enumerable properties, so it uses
+  `Object.keys` now. This one predates the typed-array work and is the most
+  consequential of the six: silent extra data in serialised output.
+- **`Object.values`/`entries` did not run a getter.** They copied the property's
+  value slot, which is unused behind an accessor, so
+  `Object.values({get acc(){return 9}})` was `[undefined]` -- while
+  `JSON.stringify` of the same object correctly gave 9. The spec does Get(O, key)
+  per key.
+- **`{...typedArray}` and `Object.assign({}, typedArray)` were empty**, the two
+  surfaces the previous commit did not reach, because both walk `enumOrder`
+  directly.
+- **`{...sparseArray}` invented keys for the holes**: `{...[1,,,4]}` produced four
+  keys instead of `{0:1, 3:4}`. A hole is the absence of a property.
+- **`getOwnPropertyNames` on a sparse array repeated an index.** `const a = [1];
+  a[3] = 4` leaves index 3 in BOTH the element vector and the property table, and
+  the two loops each emitted it, giving `["0","3","length","3"]`.
+- **`JSON.stringify` of a BigInt emitted digits** where node throws TypeError. The
+  native serialiser cannot throw (it has no `&mut Interp`), which is why it was
+  lenient; the JS wrapper can, and now does.
+
+`tests/enumerationSurfaces.js` is the cross product, byte-identical to node. It is
+the durable half of this work: the next exotic representation added to the engine
+will be missing from some surface, and this is what will say which one.
+
+Unifying the five walks behind one helper is still worth doing and is NOT done
+here. The obstacle is that `Object.keys` and for-in are hot and the general path
+allocates a descriptor per key, so it needs a shape that answers "own string keys
+plus their enumerability" without allocating. Filed rather than rushed.
+
+Gates: dev.sh 6/6, GC-stress 286/287 fixtures, fuzz 200 seeds clean, QuickJS
+103/149 and node-compat sample 203/400 unchanged, and the four earlier
+differentials (accessors, proxies, array-like receivers, typed arrays) all clean.
+
+
 ## Typed arrays: 9 of 32 edge cases wrong, and five key walks that never learned about them
 
 Fourth differential in the series. 32 typed-array operations covering index
