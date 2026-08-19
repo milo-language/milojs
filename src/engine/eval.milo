@@ -6852,7 +6852,16 @@ fn requireModuleFrom(prog: &Prog, spec: &string, st: &mut Interp, dirIn: string)
     }
     let idx = findModule(st, path)
     if idx < 0 {
-        eprint("milojs: module was not pre-loaded: '" + path + "'")
+        // The CLI preloads the whole require() graph before running, so reaching
+        // here means either that walk missed an edge or there was no walk at all
+        // (an embedder calling milojs_eval on a string). Printing to stderr and
+        // handing back undefined was wrong for both: a library must not write to
+        // its host's stderr, and the caller saw STATUS_OK for a require that had
+        // not happened, with the failure surfacing later as "undefined is not a
+        // function". Throwing matches what the unresolved branch above already
+        // does, and what node does.
+        st.throwing = true
+        st.thrownValue = makeError(st, "Error", "module was not pre-loaded: '" + path + "'")
         return JSValue.Undefined
     }
     return runModule(prog, idx, st)

@@ -8,6 +8,64 @@ last-verified: 2026-08-18 (re-read after the native id enum landed; the NATIVE_*
 
 # milojs backlog
 
+## The embedded engine wrote to its host's stderr and reported OK
+
+Follow-up probe after the capability split: I built `libmilojs.a` and drove it
+from C to see what an embedder can actually reach, rather than reading the
+bootstrap. `__spawnSync` is gone as intended, and module loading does not touch
+the filesystem (`require` of an absolute path reports the module was never
+pre-loaded rather than reading it). Two things were still wrong:
+
+```
+require abs path       rc=0        <- and "milojs: module was not pre-loaded" on the host's stderr
+```
+
+A resolved-but-not-loaded specifier called `eprint` and returned `undefined`.
+For the CLI that branch means the preload walk missed an edge; for an embedder
+it fires on every `require`, and it is wrong twice over. A library must not
+write to its host's process stderr, and `milojs_eval` returned `STATUS_OK` for a
+require that never happened, so the failure surfaced later as "undefined is not
+a function" -- the exact mode the sibling branch's comment already complains
+about. It now throws, like the unresolved branch beside it and like node.
+
+The assertions live in `tests/embed/context.c`, in C, where an embedder would
+hit them: `typeof __spawnSync` must be `"undefined"`, and a require of a missing
+module must return `MILOJS_STATUS_JS_EXCEPTION` with a nonempty message. Both
+fail against the previous build.
+
+Verified by probe, not by reading: engine binary, runtime binary, and a C
+consumer of the static archive. `dev.sh` 6/6, GC-stress 280/280, node-compat
+sample 203/400 identical before and after.
+
+## OPEN: `import()` throws synchronously where node rejects
+
+Found while probing the above, and it predates it (both binaries at `23cbe44`
+behave the same, so this is not fallout from the throw change):
+
+```
+$ node /tmp/dyn.js                    $ milojs-engine /tmp/dyn.js
+threw synchronously: no               threw synchronously: Error
+rejected: Error
+```
+
+`parser.milo:714` desugars `import(m)` to `Promise.resolve(require(m))`, so a
+failing require throws before `Promise.resolve` is ever reached. `import()` is
+specified to always return a promise; nothing that fails inside it may escape
+synchronously. Any code doing `import(x).catch(...)` gets an uncaught throw.
+
+The desugar cannot fix this on its own: it needs the failure captured. Two
+options, in order of preference:
+
+1. An `__importCall(spec)` intrinsic: run the same require path, and on
+   `st.throwing` clear the flag and return a rejected promise instead. One
+   Builtin arm; the specifier's directory context resolves exactly as it does
+   for `require` today because it is the same call site.
+2. Desugar to `(async () => require(m))()`, which converts the throw to a
+   rejection for free. Costs a task allocation per `import()` and drags the
+   async scheduler into module loading, which the await-yield item above says is
+   not somewhere to add load right now.
+
+
 ## The engine binary handed every script a working `__spawnSync`
 
 Routine #5 (abstraction police) against the layering gate the split shipped

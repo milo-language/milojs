@@ -63,6 +63,19 @@ int main(void) {
     if (milojs_exception_copy(first, exception, 63) != exception_length) return 34;
     if (strcmp((const char *)exception, "TypeError: bad") != 0) return 35;
 
+    /* An embedded context is the language and nothing else: no host natives, and
+       no module resolution against the host filesystem. Both were reachable
+       once -- bootstrap installed __spawnSync for every embedder, and a failed
+       require printed to the HOST's stderr and still reported OK. Assert the
+       capability boundary here, in C, where an embedder would actually hit it. */
+    if (eval(first, "typeof __spawnSync", &value) != MILOJS_STATUS_OK) return 40;
+    if (milojs_value_string_length(first, value) != 9) return 41; /* "undefined" */
+    if (milojs_value_release(first, value) != MILOJS_STATUS_OK) return 42;
+
+    if (eval(first, "require('/tmp/nonexistent-embed-probe.js')", &value)
+            != MILOJS_STATUS_JS_EXCEPTION) return 43;
+    if (milojs_exception_length(first) <= 0) return 44;
+
     if (milojs_context_free(first) != MILOJS_STATUS_OK) return 36;
     if (milojs_context_free(first) != MILOJS_STATUS_INVALID_CONTEXT) return 37;
     if (milojs_context_new(&second) != MILOJS_STATUS_OK || second == first) return 38;
