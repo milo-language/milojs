@@ -1,0 +1,29 @@
+of [1,2,3]
+from-iter [1,2,3]
+subarray [2,3]
+slice [2,3]
+set-offset [1,2,9,9]
+fill-range [1,7,7,4]
+copyWithin [3,4,3,4]
+sort-default [2,9,10]
+sort-cmp [3,2,1]
+at-negative 4
+indexOf-fromIndex -1
+includes-NaN true
+join "1-2-3-4"
+toString "1,2,3,4"
+reverse [4,3,2,1]
+with [9,2,3,4]
+toSorted [1,2,3]
+byteLength [4,0,4]
+BYTES_PER [1,8]
+oob-write [null,4]
+frac-index [null,2]
+neg-index [null,4]
+clamp-u8 44
+clamped 255
+int8-wrap -56
+detach-then-read [0,null]
+detach-in-cmp ERR DOMException
+detach-in-cb [1,null,null]
+detach-in-valueOf ERR TypeError

@@ -18,7 +18,7 @@ from "./strutil" import {
     clampIndex, strSlice, jsIndexOf, jsStartsWith, jsEndsWith
 }
 from "./eval" import {
-    toStrProg, callBuiltinByName, makeError, currentModule, isCallable, isSymbolStr, symbolDisplay, isBigIntVal, bigStrOf, callValue, makeArrayIterator
+    toStrProg, callBuiltinByName, makeError, currentModule, isCallable, isSymbolStr, symbolDisplay, isBigIntVal, bigStrOf, callValue, makeArrayIterator, taCurrentLen, taElemValue
 }
 from "./value" import {
     JSValue, hexDigitVal
@@ -1180,6 +1180,23 @@ fn mjPushStringified(out: &mut string, v: &JSValue, st: &Interp) {
             } else {
                 out.push('{')
                 var first = true
+                // A typed array serialises as an OBJECT keyed by index -- node
+                // gives {"0":1,"1":2} -- and its elements are in the buffer, not
+                // the property bag, so this loop alone produced {}.
+                if !st.objects[o].isDataView {
+                    let tl = taCurrentLen(st, o)
+                    var tv: i64 = 0
+                    while tv < tl {
+                        if !first {
+                            out.push(',')
+                        }
+                        first = false
+                        mjPushJsonEscaped(out, i64ToStr(tv))
+                        out.push(':')
+                        mjPushStringified(out, taElemValue(st, o, tv), st)
+                        tv = tv + 1
+                    }
+                }
                 var i: i64 = 0
                 let n = st.objects[o].props.len()
                 while i < n {

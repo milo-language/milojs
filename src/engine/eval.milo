@@ -1547,6 +1547,24 @@ pub fn taOutOfBounds(st: &Interp, o: i64): bool {
 // The view's element count RIGHT NOW. A tracking view over a resizable buffer
 // answers a different number after every resize, so nothing may read the stored
 // taLen directly.
+// CanonicalNumericIndexString: a key whose ToString(ToNumber(key)) is the key
+// itself. On a typed array such a key is handled by the integer-index path even
+// when it is not a valid index, and an invalid one is DROPPED rather than stored:
+// `u8["1.5"] = 5` and `u8[-1] = 5` must leave no property behind. Without this
+// they became ordinary properties, so they read back and turned up in
+// Object.keys, which no real array index ever does.
+pub fn isCanonicalNumericKey(key: &string): bool {
+    if key.len() == 0 {
+        return false
+    }
+    // "-0" is the one canonical form ToString does not reproduce
+    if key == "-0" {
+        return true
+    }
+    let n = toNum(JSValue.Str(key.clone()))
+    return numToStr(n) == key.clone()
+}
+
 pub fn taCurrentLen(st: &Interp, o: i64): i64 {
     let buf = st.objExtras[st.objects[o].extra].taBuf
     if buf < 0 || st.objects[buf].abDetached || taOutOfBounds(st, o) {
@@ -1743,6 +1761,14 @@ pub fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValu
 pub fn taElemValue(st: &Interp, view: i64, i: i64): JSValue {
     let kind = st.objExtras[st.objects[view].extra].taKind
     if !taIsBigKind(kind) {
+        // Out of range, or a buffer detached since the caller read the length:
+        // the element is ABSENT, which reads as undefined. taElem answers 0 for
+        // both, so a callback that detached the buffer mid-iteration kept seeing
+        // zeros instead of undefined for the rest of the loop. The big-int path
+        // below already checked; this one did not.
+        if i < 0 || i >= taCurrentLen(st, view) {
+            return JSValue.Undefined
+        }
         return JSValue.Number(taElem(st, view, i))
     }
     let buf = st.objExtras[st.objects[view].extra].taBuf
@@ -2861,6 +2887,12 @@ fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
             if !taIsDetached(st, o) {
                 taSetElemValue(st, o, ti, value)
             }
+            return
+        }
+        // Not a valid index but still numeric ("1.5", "-1", "1e21", "NaN"): the
+        // integer-indexed path owns those keys and rejects them, so the write is
+        // dropped instead of becoming an ordinary property.
+        if isCanonicalNumericKey(key) {
             return
         }
     }
@@ -6103,6 +6135,24 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                     popTemp(st)
                     return JSValue.Obj(arr)
                 }
+                if !st.objects[o].isDataView && taCurrentLen(st, o) > 0 {
+                    let tl2 = taCurrentLen(st, o)
+                    var tv: i64 = 0
+                    while tv < tl2 {
+                        let tval = taElemValue(st, o, tv)
+                        if wantPairs {
+                            let tpair = newArray(st)
+                            pushTemp(st, JSValue.Obj(tpair))
+                            arrPush(st, tpair, JSValue.Str(i64ToStr(tv)))
+                            arrPush(st, tpair, tval)
+                            popTemp(st)
+                            arrPush(st, arr, JSValue.Obj(tpair))
+                        } else {
+                            arrPush(st, arr, tval)
+                        }
+                        tv = tv + 1
+                    }
+                }
                 if st.objects[o].isArray {
                     var i: i64 = 0
                     let n = st.objects[o].elems.len()
@@ -6194,6 +6244,16 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                             arrPush(st, arr, JSValue.Str(i64ToStr(i)))
                         }
                         i = i + 1
+                    }
+                }
+                // A typed array's indices are own enumerable properties, and
+                // they are not in the property bag: they live in the buffer.
+                if !st.objects[o].isDataView {
+                    let tl = taCurrentLen(st, o)
+                    var ti: i64 = 0
+                    while ti < tl {
+                        arrPush(st, arr, JSValue.Str(i64ToStr(ti)))
+                        ti = ti + 1
                     }
                 }
                 let order = enumOrder(st, o)
@@ -11444,6 +11504,21 @@ pub fn ownKeysOf(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string> {
             }
             out.push("length")
         }
+        // A typed array's integer indices ARE own properties: they come first, and
+        // there is no "length" among them (length is an accessor on the
+        // prototype). Missing them made Object.keys/values/entries, for-in,
+        // getOwnPropertyNames and JSON.stringify all treat a typed array as having
+        // no properties at all.
+        if !st.objects[h].isDataView {
+            let tlen = taCurrentLen(st, h)
+            if tlen > 0 {
+                var te: i64 = 0
+                while te < tlen {
+                    out.push(i64ToStr(te))
+                    te = te + 1
+                }
+            }
+        }
         let order = enumOrder(st, h)
         var oi: i64 = 0
         while oi < order.len() {
@@ -15963,6 +16038,18 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                             keys.push(i64ToStr(e))
                         }
                         e = e + 1
+                    }
+                }
+                // A typed array's indices are enumerable own properties too, and
+                // they are in the buffer rather than the property bag. Without
+                // this, `for (k in u8)` produced nothing -- and so did the JS-level
+                // JSON.stringify in lib/engine-prelude.js, which walks with for-in.
+                if !st.objects[o].isDataView {
+                    let tlen = taCurrentLen(st, o)
+                    var tk: i64 = 0
+                    while tk < tlen {
+                        keys.push(i64ToStr(tk))
+                        tk = tk + 1
                     }
                 }
                 // Own properties, then inherited ones (JS enumerates the chain).

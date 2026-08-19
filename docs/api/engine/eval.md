@@ -345,6 +345,22 @@ isCallable, but also true for bound-method objects (Function.prototype.bind
 results and the builtin bound methods). They are ordinary JSObjs, so the
 JSValue-only test above cannot see them — typeof already reports "function".
 
+### `isCanonicalNumericKey`
+
+```milo
+pub fn isCanonicalNumericKey(key: &string): bool
+```
+
+The view's element count RIGHT NOW. A tracking view over a resizable buffer
+answers a different number after every resize, so nothing may read the stored
+taLen directly.
+CanonicalNumericIndexString: a key whose ToString(ToNumber(key)) is the key
+itself. On a typed array such a key is handled by the integer-index path even
+when it is not a valid index, and an invalid one is DROPPED rather than stored:
+`u8["1.5"] = 5` and `u8[-1] = 5` must leave no property behind. Without this
+they became ordinary properties, so they read back and turned up in
+Object.keys, which no real array index ever does.
+
 ### `isExtensibleOf`
 
 ```milo
@@ -648,9 +664,7 @@ _Undocumented._
 pub fn taCurrentLen(st: &Interp, o: i64): i64
 ```
 
-The view's element count RIGHT NOW. A tracking view over a resizable buffer
-answers a different number after every resize, so nothing may read the stored
-taLen directly.
+_Undocumented._
 
 ### `taElem`
 

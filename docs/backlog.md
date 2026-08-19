@@ -8,6 +8,54 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## Typed arrays: 9 of 32 edge cases wrong, and five key walks that never learned about them
+
+Fourth differential in the series. 32 typed-array operations covering index
+canonicalisation, key enumeration and mid-operation detach.
+
+**`Object.keys(u8)` was `[]` and `JSON.stringify(u8)` was `{}`.** A typed array's
+indices live in the buffer, not in the object's property table, and FIVE separate
+key walks each carry their own "if isArray, push the indices" branch with no
+typed-array equivalent: `ownKeysOf`, `Object.keys`, `Object.values`/`entries`,
+for-in, and the JS-level `JSON.stringify` in `lib/engine-prelude.js` (which walks
+with for-in, so fixing that one fell out of fixing for-in). Every one had to be
+told separately. That is a dup-unifier finding as much as a conformance one: five
+copies of one rule, and the newest data representation was missing from all five.
+Unifying them is a separate change, because `Object.keys` and for-in are hot and
+the general path allocates a descriptor per key.
+
+**Index writes that are numeric but not indices were stored as properties.**
+`u8["1.5"] = 5` and `u8[-1] = 5` created real properties that read back and showed
+up in `Object.keys`. For an integer-indexed exotic object the spec routes every
+CanonicalNumericIndexString through the index path, which REJECTS an invalid one
+rather than falling through to ordinary property storage. Added
+`isCanonicalNumericKey` (ToString(ToNumber(key)) == key, with "-0" special-cased,
+which is the one canonical form ToString does not reproduce).
+
+**`indexOf` ignored its fromIndex** entirely, so `u8.indexOf(2, 2)` found the 2 at
+index 1. And **`includes` compared with `==`**, so `new Float64Array([NaN])
+.includes(NaN)` was false: includes uses SameValueZero, which matches NaN, while
+indexOf uses strict equality, which does not. One shared loop, two different
+comparison rules.
+
+**Detach was not observed anywhere it matters.** `structuredClone(buf, {transfer:
+[buf]})` ignored the transfer list, so nothing detached at all. `.transfer()`
+already worked, which is why this looked like a detach bug and was really an
+options bug. With that fixed, two more surfaced: `taElemValue` answered 0 rather
+than undefined for an out-of-range read on the non-BigInt path (the BigInt path
+already checked), so a callback that detached the buffer kept seeing zeros; and
+the typed-array callback loops built their arguments as
+`JSValue.Number(taElem(...))` directly, bypassing `taElemValue` -- which also meant
+a BigInt64Array callback received a Number. `fill` now re-validates after coercing
+its arguments, because coercion can run user code that detaches, and the spec
+checks again before writing.
+
+`tests/typedArrayEdges.js` is the 32-case differential, byte-identical to node.
+Gates: dev.sh 6/6, GC-stress 285/286 fixtures, fuzz 200 seeds clean, QuickJS
+103/149 and node-compat sample 203/400 unchanged, and the three earlier
+differentials (accessors, proxies, array-like receivers) still clean.
+
+
 ## The GC-stress pass is now a CI step
 
 `tests/run.sh` under `MILOJS_GC_THRESHOLD=1` is what found all three unrooted-local

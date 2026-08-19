@@ -1220,6 +1220,15 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>,
         if end > n {
             end = n
         }
+        // The value and the bounds are coerced FIRST, and any of those coercions
+        // can run user code that detaches the buffer. The spec re-validates here,
+        // before writing: node throws TypeError, and without the check this wrote
+        // zeros into a detached view and answered as if it had worked.
+        if taIsDetached(st, o) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot perform fill on a detached ArrayBuffer" + currentModule(st))
+            return JSValue.Undefined
+        }
         var i = start
         while i < end {
             taSetElem(st, o, i, v)
@@ -1232,8 +1241,22 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>,
         if args.len() > 0 {
             target = toNumProg(prog, args[0], st)
         }
+        // The second argument is fromIndex, negative counting from the end. It
+        // was ignored outright, so `new Uint8Array([1,2,3,4]).indexOf(2, 2)`
+        // answered 1 instead of -1.
         var i: i64 = 0
+        if args.len() > 1 {
+            i = relIndex(toNumProg(prog, args[1], st), n)
+        }
+        // includes compares with SameValueZero, which matches NaN against NaN;
+        // indexOf uses strict equality, which never does. Both went through `==`
+        // on f64, so Float64Array([NaN]).includes(NaN) was false.
+        // x != x is the NaN test; mjIsNan is private to builtins.milo
+        let nanMatches = name == "includes" && target != target
         while i < n {
+            if nanMatches && taElem(st, o, i) != taElem(st, o, i) {
+                return JSValue.Bool(true)
+            }
             if taElem(st, o, i) == target {
                 if name == "includes" {
                     return JSValue.Bool(true)
@@ -1388,7 +1411,11 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>,
         var i: i64 = 0
         while i < n && !st.throwing {
             var cbArgs: Vec<JSValue> = Vec.new()
-            cbArgs.push(JSValue.Number(taElem(st, o, i)))
+            // taElemValue, not Number(taElem): it answers undefined for an index
+            // that went out of range because a previous callback detached or
+            // shrank the buffer, and a BigInt for the 64-bit kinds, where wrapping
+            // the raw f64 handed the callback a Number.
+            cbArgs.push(taElemValue(st, o, i))
             cbArgs.push(JSValue.Number(i as f64))
             cbArgs.push(JSValue.Obj(o))
             let _r = callValue(prog, args[0], cbArgs, cloneValue(cbThis), st)
@@ -1405,7 +1432,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>,
         var i: i64 = 0
         while i < n && !st.throwing {
             var cbArgs: Vec<JSValue> = Vec.new()
-            cbArgs.push(JSValue.Number(taElem(st, o, i)))
+            cbArgs.push(taElemValue(st, o, i))
             cbArgs.push(JSValue.Number(i as f64))
             cbArgs.push(JSValue.Obj(o))
             let r = callValue(prog, args[0], cbArgs, cloneValue(cbThis), st)
