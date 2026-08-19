@@ -78,15 +78,6 @@ relative to the working directory. `__dirname` is absolute (node guarantees
 it), so a resolution starting from it has to come back to the registry's form
 or every lookup misses.
 
-### `reportUnresolved`
-
-```milo
-pub fn reportUnresolved(st: &mut Interp, spec: &string)
-```
-
-Each missing module is reported once; a package required from twenty places
-otherwise produces twenty identical lines and buries the real failure.
-
 ### `resolveSpec`
 
 ```milo

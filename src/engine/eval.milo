@@ -36,7 +36,7 @@ from "std/fs" import {
     readFile
 }
 from "../runtime/modules" import {
-    dirOf, resolveSpec, findModule, reportUnresolved, relativizeToCwd
+    dirOf, resolveSpec, findModule, relativizeToCwd
 }
 from "std/os" import {
     exit, readFd, read, write, open, close, lseek, fsync, ftruncate, fchmod,
@@ -6814,6 +6814,19 @@ fn requireModule(prog: &Prog, spec: &string, st: &mut Interp, scope: i64): JSVal
 //     const requireFunc = typeof __non_webpack_require__ === 'function' ? __non_webpack_require__ : require;
 // and every addon loader is built on that. Each module scope now binds its own
 
+// node's MODULE_NOT_FOUND, message and code. Packages probe for optional
+// dependencies with try/catch and branch on `e.code`, not on the message, so an
+// error without the code reads as present-but-broken instead of absent.
+fn throwModuleNotFound(st: &mut Interp, spec: &string) {
+    st.throwing = true
+    let err = makeError(st, "Error", "Cannot find module '" + spec + "'")
+    let eo = objHandle(err)
+    if eo >= 0 {
+        objSet(st, eo, "code", JSValue.Str("MODULE_NOT_FOUND"))
+    }
+    st.thrownValue = err
+}
+
 fn requireModuleFrom(prog: &Prog, spec: &string, st: &mut Interp, dirIn: string): JSValue {
     let dir = relativizeToCwd(dirIn)
     // A .node file is a shared library, not JS: it never goes through the module
@@ -6848,23 +6861,21 @@ fn requireModuleFrom(prog: &Prog, spec: &string, st: &mut Interp, dirIn: string)
         // node throws MODULE_NOT_FOUND; packages rely on that to probe for
         // optional dependencies with try/catch. Returning undefined instead made
         // the failure surface later as a confusing "undefined is not a function".
-        reportUnresolved(st, spec)
-        st.throwing = true
-        st.thrownValue = makeError(st, "Error", "Cannot find module '" + spec + "'")
+        // The probe reads `e.code`, not the message, so the code has to be on the
+        // error or every optional dependency looks present-but-broken rather
+        // than absent.
+        throwModuleNotFound(st, spec)
         return JSValue.Undefined
     }
     let idx = findModule(st, path)
     if idx < 0 {
         // The CLI preloads the whole require() graph before running, so reaching
         // here means either that walk missed an edge or there was no walk at all
-        // (an embedder calling milojs_eval on a string). Printing to stderr and
-        // handing back undefined was wrong for both: a library must not write to
-        // its host's stderr, and the caller saw STATUS_OK for a require that had
-        // not happened, with the failure surfacing later as "undefined is not a
-        // function". Throwing matches what the unresolved branch above already
-        // does, and what node does.
-        st.throwing = true
-        st.thrownValue = makeError(st, "Error", "module was not pre-loaded: '" + path + "'")
+        // (an embedder calling milojs_eval on a string). Either way the module
+        // did not load, which is MODULE_NOT_FOUND from the program's side: it
+        // used to print "was not pre-loaded" to the HOST's stderr and hand back
+        // undefined, so an embedder saw STATUS_OK for a require that never ran.
+        throwModuleNotFound(st, spec)
         return JSValue.Undefined
     }
     return runModule(prog, idx, st)

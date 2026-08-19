@@ -337,27 +337,6 @@ fn hasJsonExt(path: &string): bool {
     return path[n - 5] == '.' && path[n - 4] == 'j' && path[n - 3] == 's' && path[n - 2] == 'o' && path[n - 1] == 'n'
 }
 
-// Each missing module is reported once; a package required from twenty places
-// otherwise produces twenty identical lines and buries the real failure.
-pub fn reportUnresolved(st: &mut Interp, spec: &string) {
-    var i: i64 = 0
-    while i < st.reportedMissing.len() {
-        if st.reportedMissing[i] == spec {
-            return
-        }
-        i = i + 1
-    }
-    st.reportedMissing.push(spec.clone())
-    // A path specifier is not a package lookup, so the "no such package, and
-    // node builtins are not implemented" note is wrong for it and misleading:
-    // the file simply is not there. The thrown MODULE_NOT_FOUND already says so,
-    // and node prints nothing extra, so neither does this.
-    if spec.len() > 0 && (spec[0] == '/' || spec[0] == '.') {
-        return
-    }
-    eprint("milojs: cannot resolve '" + spec + "' — no such package, and node builtin modules are not implemented yet")
-}
-
 // Builtins Node only exposes under the node: prefix, because a same-named npm
 // package predates them. Bare `require("sqlite")` must keep resolving through
 // node_modules or it silently hijacks the (unrelated) `sqlite` package.

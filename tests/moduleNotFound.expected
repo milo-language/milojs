@@ -1,0 +1,4 @@
+bare specifier: false MODULE_NOT_FOUND
+relative specifier: MODULE_NOT_FOUND true
+absolute specifier: MODULE_NOT_FOUND
+still resolves: function

@@ -8,6 +8,57 @@ last-verified: 2026-08-18 (re-read after the native id enum landed; the NATIVE_*
 
 # milojs backlog
 
+## Every optional-dependency probe wrote to stderr, and carried no `e.code`
+
+Third instance of the host-stderr class, found by sweeping all 17 `eprint` sites
+rather than waiting for a fourth probe to trip over one. This is the worst of
+them, because it fires on the exact pattern the code's own comment cites:
+
+```
+$ node /tmp/optdep.js 2>&1 >/dev/null      # silent
+$ milojs /tmp/optdep.js 2>&1 >/dev/null
+milojs: cannot resolve 'definitely-not-installed-pkg' — no such package, and node builtin modules are not implemented yet
+```
+
+`try { require(x) } catch {}` is how a package asks whether an optional
+dependency is installed. Every such probe printed a line to the program's stderr
+that node does not print.
+
+Someone had already half-fixed this: `reportUnresolved` returns early for a
+specifier starting with `/` or `.`, with the reasoning spelled out in a comment
+("the thrown MODULE_NOT_FOUND already says so, and node prints nothing extra, so
+neither does this"). Correct reasoning, applied to one of the two cases. Bare
+package specifiers, which is what optional-dependency probes use, kept printing.
+Same shape as the sweep-guard fix that went to one sweep of three.
+
+`reportUnresolved` is deleted, and with it the `reportedMissing` dedupe Vec on
+`Interp` that existed only to keep the message from repeating.
+
+**The bigger half: `e.code` was `undefined`.** The probe branches on
+`e.code === "MODULE_NOT_FOUND"`, not on the message, so a missing dependency read
+as present-but-broken. Both throw sites now go through one `throwModuleNotFound`
+helper carrying node's message and code. That also fixed the relative-specifier
+branch, which was still throwing the internal "module was not pre-loaded" text
+with no code:
+
+```
+node:    MODULE_NOT_FOUND "Cannot find module './no-such-relative.js'\nRequire stack:\n- /private/tmp/mnf.js"
+before:  undefined        "module was not pre-loaded: '/tmp/no-such-relative.js'"
+after:   MODULE_NOT_FOUND "Cannot find module './no-such-relative.js'"
+```
+
+Known remaining divergence: node appends `Require stack:` with the ABSOLUTE path
+of the requiring file. Matching it would put machine-specific paths into fixture
+output, and milojs's `modPathStack` holds cwd-relative paths, so a partial match
+would be a different wrong answer. Left alone deliberately.
+
+`tests/moduleNotFound.js` covers bare, relative and absolute specifiers plus a
+require that still succeeds, byte-identical to node with empty stderr.
+
+Gates: dev.sh 6/6, GC-stress 282/283 fixtures, QuickJS 103/149, node-compat
+sample 203/400, all unchanged.
+
+
 ## `import()` now returns a promise even when the specifier fails (+1 QuickJS)
 
 Fixes the OPEN item below, and takes QuickJS 102 -> 103; the case that flipped is
