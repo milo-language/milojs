@@ -12774,7 +12774,84 @@ fn inspectFuncLabel(name: &string): string {
 
 // A value as it appears INSIDE a container: strings are quoted, unlike the
 // top-level form (see inspectTop).
-fn inspectInner(st: &Interp, v: &JSValue, depth: i64, indentLvl: i64): string {
+// Pass one of the cycle marking: record every object reachable from `o` that is
+// referenced by something BELOW it, i.e. that closes a cycle. Order of discovery
+// is the order node numbers them, so the index here plus one is the *N.
+fn findCircularTargets(st: &Interp, o: i64, stack: &mut Vec<i64>, targets: &mut Vec<i64>) {
+    var si: i64 = 0
+    while si < stack.len() {
+        if stack[si] == o {
+            var ti: i64 = 0
+            var known = false
+            while ti < targets.len() {
+                if targets[ti] == o {
+                    known = true
+                }
+                ti = ti + 1
+            }
+            if !known {
+                targets.push(o)
+            }
+            return
+        }
+        si = si + 1
+    }
+    stack.push(o)
+    var ei: i64 = 0
+    while ei < st.objects[o].elems.len() {
+        let ev = cloneValue(st.objects[o].elems[ei])
+        let eh = objHandle(ev)
+        if eh >= 0 {
+            findCircularTargets(st, eh, stack, targets)
+        }
+        ei = ei + 1
+    }
+    var pi: i64 = 0
+    while pi < st.objects[o].props.len() {
+        if st.objects[o].props[pi].enumerable {
+            let pv = cloneValue(st.objects[o].props[pi].value)
+            let ph = objHandle(pv)
+            if ph >= 0 {
+                findCircularTargets(st, ph, stack, targets)
+            }
+        }
+        pi = pi + 1
+    }
+    // Map/Set entries are NOT props or elems: they live in the side table, so a
+    // walk over props alone missed `m.set("k", m)` entirely and the back edge
+    // printed as [Circular *0] with no matching <ref *1>.
+    if st.objects[o].isMap || st.objects[o].isSet {
+        var mi: i64 = 0
+        while mi < st.objExtras[st.objects[o].extra].mapKeys.len() {
+            let kh = objHandle(st.objExtras[st.objects[o].extra].mapKeys[mi])
+            if kh >= 0 {
+                findCircularTargets(st, kh, stack, targets)
+            }
+            if st.objects[o].isMap {
+                let vh2 = objHandle(st.objExtras[st.objects[o].extra].mapVals[mi])
+                if vh2 >= 0 {
+                    findCircularTargets(st, vh2, stack, targets)
+                }
+            }
+            mi = mi + 1
+        }
+    }
+    let _popped = stack.pop()
+}
+
+// The 1-based marker for `o`, or 0 when it is not a cycle target.
+fn circularMarkOf(targets: &Vec<i64>, o: i64): i64 {
+    var i: i64 = 0
+    while i < targets.len() {
+        if targets[i] == o {
+            return i + 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+fn inspectInner(st: &Interp, v: &JSValue, depth: i64, indentLvl: i64, stack: &mut Vec<i64>, targets: &Vec<i64>): string {
     match v {
         JSValue.Str(s) => {
             // a symbol is a tagged string internally; console.log shows it as
@@ -12795,7 +12872,7 @@ fn inspectInner(st: &Interp, v: &JSValue, depth: i64, indentLvl: i64): string {
             return inspectFuncLabel(gProg.funcs[fidx].name)
         }
         JSValue.Obj(o) => {
-            return inspectObj(st, o, depth, indentLvl)
+            return inspectObj(st, o, depth, indentLvl, stack, targets)
         }
         _ => {
             return toStr(v)
@@ -12803,7 +12880,7 @@ fn inspectInner(st: &Interp, v: &JSValue, depth: i64, indentLvl: i64): string {
     }
 }
 
-fn inspectArr(st: &Interp, o: i64, depth: i64, indentLvl: i64): string {
+fn inspectArr(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut Vec<i64>, targets: &Vec<i64>): string {
     if depth > 2 {
         return "[Array]"
     }
@@ -12844,7 +12921,7 @@ fn inspectArr(st: &Interp, o: i64, depth: i64, indentLvl: i64): string {
             }
         }
         let v = cloneValue(st.objects[o].elems[i])
-        parts.push(inspectInner(st, v, depth + 1, indentLvl + 2))
+        parts.push(inspectInner(st, v, depth + 1, indentLvl + 2, stack, targets))
         i = i + 1
     }
     var grouped = false
@@ -12862,7 +12939,7 @@ fn objIsoOrTag(st: &Interp, o: i64): string {
     return isoFromMillis(st.objExtras[st.objects[o].extra].dateMs)
 }
 
-fn inspectMapSet(st: &Interp, o: i64, depth: i64, indentLvl: i64): string {
+fn inspectMapSet(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut Vec<i64>, targets: &Vec<i64>): string {
     let keys = st.objExtras[st.objects[o].extra].mapKeys.len()
     var base = "Set(" + keys.toString() + ")"
     if st.objects[o].isMap {
@@ -12880,18 +12957,39 @@ fn inspectMapSet(st: &Interp, o: i64, depth: i64, indentLvl: i64): string {
         let k = cloneValue(st.objExtras[st.objects[o].extra].mapKeys[i])
         if st.objects[o].isMap {
             let val = cloneValue(st.objExtras[st.objects[o].extra].mapVals[i])
-            parts.push(inspectInner(st, k, depth + 1, indentLvl + 2) + " => " + inspectInner(st, val, depth + 1, indentLvl + 2))
+            parts.push(inspectInner(st, k, depth + 1, indentLvl + 2, stack, targets) + " => " + inspectInner(st, val, depth + 1, indentLvl + 2, stack, targets))
         } else {
-            parts.push(inspectInner(st, k, depth + 1, indentLvl + 2))
+            parts.push(inspectInner(st, k, depth + 1, indentLvl + 2, stack, targets))
         }
         i = i + 1
     }
     return inspectJoin(parts, "{", "}", base, indentLvl, false)
 }
 
-fn inspectObj(st: &Interp, o: i64, depth: i64, indentLvl: i64): string {
+// Wrapper so the body below can keep its several return paths: the stack has to be
+// popped exactly once however it leaves. A back edge prints `[Circular *N]`; the
+// first (outermost) writing of a cycle target carries the `<ref *N>` prefix.
+fn inspectObj(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut Vec<i64>, targets: &Vec<i64>): string {
+    var si: i64 = 0
+    while si < stack.len() {
+        if stack[si] == o {
+            return "[Circular *" + i64ToStr(circularMarkOf(targets, o)) + "]"
+        }
+        si = si + 1
+    }
+    stack.push(o)
+    let body = inspectObjBody(st, o, depth, indentLvl, stack, targets)
+    let _popped = stack.pop()
+    let mark = circularMarkOf(targets, o)
+    if mark > 0 {
+        return "<ref *" + i64ToStr(mark) + "> " + body
+    }
+    return body
+}
+
+fn inspectObjBody(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut Vec<i64>, targets: &Vec<i64>): string {
     if st.objects[o].isArray {
-        return inspectArr(st, o, depth, indentLvl)
+        return inspectArr(st, o, depth, indentLvl, stack, targets)
     }
     // an Error prints as "Name: message [\n stack]", like node's console
     if st.objects[o].isError {
@@ -12924,7 +13022,7 @@ fn inspectObj(st: &Interp, o: i64, depth: i64, indentLvl: i64): string {
         return "/" + toStr(objGet(st, o, "source")) + "/" + toStr(objGet(st, o, "flags"))
     }
     if st.objects[o].isMap || st.objects[o].isSet {
-        return inspectMapSet(st, o, depth, indentLvl)
+        return inspectMapSet(st, o, depth, indentLvl, stack, targets)
     }
     if st.objects[o].isFunctionLike {
         return inspectFuncLabel(toStr(objGet(st, o, "name")))
@@ -12938,7 +13036,7 @@ fn inspectObj(st: &Interp, o: i64, depth: i64, indentLvl: i64): string {
         if st.objects[o].props[i].enumerable {
             let key = st.objects[o].props[i].key.clone()
             let val = cloneValue(st.objects[o].props[i].value)
-            parts.push(inspectKeyStr(key) + ": " + inspectInner(st, val, depth + 1, indentLvl + 2))
+            parts.push(inspectKeyStr(key) + ": " + inspectInner(st, val, depth + 1, indentLvl + 2, stack, targets))
         }
         i = i + 1
     }
@@ -12951,7 +13049,16 @@ fn inspectObj(st: &Interp, o: i64, depth: i64, indentLvl: i64): string {
 pub fn inspectTop(st: &Interp, v: &JSValue): string {
     match v {
         JSValue.Obj(o) => {
-            return inspectObj(st, o, 0, 0)
+            // Two passes, because the `<ref *N>` marker belongs on the object that
+            // is referenced BACK to, and that is only known once the whole graph
+            // has been walked. The first pass collects those objects; the second
+            // formats, printing `[Circular *N]` at a back-edge and prefixing the
+            // target where it is first written out.
+            var targets: Vec<i64> = Vec.new()
+            var findStack: Vec<i64> = Vec.new()
+            findCircularTargets(st, o, findStack, targets)
+            var stack: Vec<i64> = Vec.new()
+            return inspectObj(st, o, 0, 0, stack, targets)
         }
         JSValue.Number(n) => {
             return inspectNum(n)

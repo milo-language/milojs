@@ -1,0 +1,12 @@
+<ref *1> { x: 1, self: [Circular *1] }
+<ref *1> [ 1, [Circular *1] ]
+<ref *1> { d: { c: [Circular *1] } }
+<ref *1> { l1: { l2: { back: [Circular *1] } } }
+<ref *1> Map(1) { 'k' => [Circular *1] }
+<ref *1> Set(1) { [Circular *1] }
+<ref *1> { arr: [ [Circular *1] ] }
+{ p: { v: 1 }, q: { v: 1 } }
+[ [ 1 ], [ 1 ] ]
+{ a: { b: { c: 1 } } }
+[ 1, [ 2, [ 3 ] ] ]
+Map(1) { 'a' => 1 } Set(2) { 1, 2 }

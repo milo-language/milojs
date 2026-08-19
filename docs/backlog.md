@@ -43,6 +43,30 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## console.log marks cycles instead of inventing nesting
+
+The last item from the cycle sweep. milojs printed a depth-limited EXPANSION of a
+cyclic value, `{ x: 1, self: { x: 1, self: [Object] } }`, which reads as real
+nesting that is not there. node marks the cycle: `<ref *1> { x: 1, self:
+[Circular *1] }`.
+
+Two passes, because the `<ref *N>` marker belongs on the object referred BACK to,
+and which object that is only becomes known once the whole graph has been walked.
+Pass one collects the cycle targets in discovery order, which is the order node
+numbers them; pass two formats, printing `[Circular *N]` at a back edge and the
+prefix where the target is first written out. `inspectObj` is split into a wrapper
+and a body so the stack is pushed and popped exactly once however the several
+return paths inside it leave.
+
+Map and Set entries are NOT props or elems, they live in the side table, so pass
+one has to walk `mapKeys`/`mapVals` separately. Without that a Map cycle printed
+`[Circular *0]` with no matching `<ref *1>` -- the back-edge detection worked, but
+the numbering had never seen the object.
+
+`tests/inspectCircular.js` covers it, including the case that a naive visited-set
+gets wrong: the same object appearing twice as SIBLINGS is not a cycle and must
+still print in full, twice.
+
 ## Hunting the cycle-bug CLASS rather than waiting for the next one
 
 Three cycle bugs had turned up separately (the parser's expression nesting,
