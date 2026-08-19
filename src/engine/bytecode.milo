@@ -105,6 +105,11 @@ enum Op {
     Halt,
 }
 
+// runChunk's between-instructions signals. See the dispatch loop.
+let SIG_LEAVE: i64 = 1
+let SIG_ENTER: i64 = 2
+let SIG_THROW: i64 = 3
+
 pub struct Chunk {
     ops: Vec<Op>,
     args: Vec<i64>,
@@ -788,372 +793,384 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
 
     var frames: Vec<VmFrame> = Vec.new()
     var frameChunks: Vec<Chunk> = Vec.new()
-    // Chunk index of a callee entered by the op just dispatched, or -1.
+    // Chunk index of a callee entered by the op just dispatched.
     var pendingCid: i64 = -1
     var retVal = JSValue.Undefined
     var sp = base + ch.slotNames.len()
     var pc: i64 = 0
     var done = false
     var flushedOnThrow = false
+    // Whether a CALLEE left the exception pending, which decides whether this
+    // frame's slots are flushed on the way out (see the throw handler). Written
+    // by every Op.Call, and only a call can leave a stale value, so it does not
+    // have to be cleared per instruction.
+    var threwInCallee = false
+    // 0 while the frame is running; SIG_LEAVE when Ret or Halt finished it,
+    // SIG_ENTER when Op.Call pushed one. Everything the dispatch loop has to do
+    // between instructions hangs off this ONE comparison: an extra per-instruction
+    // branch is not free here, and a version with three of them cost 25-35% on the
+    // loop benches (numRead 117ms to 147ms, arith 129ms to 174ms).
+    var signal: i64 = 0
     while !done {
-        // Set by Ret and Halt: this frame is finished and the one under it (if
-        // any) resumes.
-        var leaving = false
-        // Set when a CALLEE left the exception pending, which decides whether
-        // this frame's slots are flushed on the way out (see below).
-        var threwInCallee = false
-        // Every chunk ends in Halt and no jump target is past it, so this cannot
-        // fire; it keeps a compiler bug from indexing off the end of the array.
-        if pc >= ch.ops.len() || pc < 0 {
-            pc = ch.ops.len() - 1
-        }
-        let a = ch.args[pc]
-        match ch.ops[pc] {
-            Op.Const => {
-                vmSet(st, sp, JSValue.Number(ch.consts[a]))
-                sp = sp + 1
-                pc = pc + 1
-            }
-            Op.Str => {
-                vmSet(st, sp, JSValue.Str(ch.strs[a].clone()))
-                sp = sp + 1
-                pc = pc + 1
-            }
-            Op.Load => {
-                vmSet(st, sp, cloneValue(st.vmStack[base + a]))
-                sp = sp + 1
-                pc = pc + 1
-            }
-            Op.Store => {
-                sp = sp - 1
-                st.vmStack[base + a] = cloneValue(st.vmStack[sp])
-                pc = pc + 1
-            }
-            Op.Add => {
-                sp = sp - 1
-                if bothNumbers(st, sp - 1, sp) {
-                    let v = vmNum(st, sp - 1) + vmNum(st, sp)
-                    st.vmStack[sp - 1] = JSValue.Number(v)
-                } else {
-                    st.vmSp = sp + 1
-                    let x = cloneValue(st.vmStack[sp - 1])
-                    let y = cloneValue(st.vmStack[sp])
-                    st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Add), x, y, st)
-                    st.vmSp = sp
-                }
-                pc = pc + 1
-            }
-            Op.Sub => {
-                sp = sp - 1
-                if bothNumbers(st, sp - 1, sp) {
-                    let v = vmNum(st, sp - 1) - vmNum(st, sp)
-                    st.vmStack[sp - 1] = JSValue.Number(v)
-                } else {
-                    st.vmSp = sp + 1
-                    let x = cloneValue(st.vmStack[sp - 1])
-                    let y = cloneValue(st.vmStack[sp])
-                    st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Sub), x, y, st)
-                    st.vmSp = sp
-                }
-                pc = pc + 1
-            }
-            Op.Mul => {
-                sp = sp - 1
-                if bothNumbers(st, sp - 1, sp) {
-                    let v = vmNum(st, sp - 1) * vmNum(st, sp)
-                    st.vmStack[sp - 1] = JSValue.Number(v)
-                } else {
-                    st.vmSp = sp + 1
-                    let x = cloneValue(st.vmStack[sp - 1])
-                    let y = cloneValue(st.vmStack[sp])
-                    st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Mul), x, y, st)
-                    st.vmSp = sp
-                }
-                pc = pc + 1
-            }
-            Op.Div => {
-                sp = sp - 1
-                if bothNumbers(st, sp - 1, sp) {
-                    let v = vmNum(st, sp - 1) / vmNum(st, sp)
-                    st.vmStack[sp - 1] = JSValue.Number(v)
-                } else {
-                    st.vmSp = sp + 1
-                    let x = cloneValue(st.vmStack[sp - 1])
-                    let y = cloneValue(st.vmStack[sp])
-                    st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Div), x, y, st)
-                    st.vmSp = sp
-                }
-                pc = pc + 1
-            }
-            Op.Mod => {
-                sp = sp - 1
-                if bothNumbers(st, sp - 1, sp) {
-                    let v = vmNum(st, sp - 1) % vmNum(st, sp)
-                    st.vmStack[sp - 1] = JSValue.Number(v)
-                } else {
-                    st.vmSp = sp + 1
-                    let x = cloneValue(st.vmStack[sp - 1])
-                    let y = cloneValue(st.vmStack[sp])
-                    st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Mod), x, y, st)
-                    st.vmSp = sp
-                }
-                pc = pc + 1
-            }
-            Op.Neg => {
-                if isNumberAt(st, sp - 1) {
-                    let v = -vmNum(st, sp - 1)
-                    st.vmStack[sp - 1] = JSValue.Number(v)
-                } else {
-                    st.vmSp = sp
-                    let x = cloneValue(st.vmStack[sp - 1])
-                    // toNumArg, not toNumProg: unary minus on a Symbol is a
-                    // TypeError, and toNumProg answers NaN because loose equality
-                    // reaches it too (`Symbol() == 1` is false, not a throw). The
-                    // evaluator's own `-` arm has this guard; the compiled path
-                    // bypassed it and `-Symbol()` quietly produced NaN.
-                    let n = toNumArg(prog, x, st)
-                    st.vmStack[sp - 1] = JSValue.Number(-n)
-                }
-                pc = pc + 1
-            }
-            Op.Lt => {
-                sp = sp - 1
-                if bothNumbers(st, sp - 1, sp) {
-                    let r = vmNum(st, sp - 1) < vmNum(st, sp)
-                    st.vmStack[sp - 1] = boolVal(r)
-                } else {
-                    st.vmSp = sp + 1
-                    let x = cloneValue(st.vmStack[sp - 1])
-                    let y = cloneValue(st.vmStack[sp])
-                    st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Lt), x, y, st)
-                    st.vmSp = sp
-                }
-                pc = pc + 1
-            }
-            Op.Gt => {
-                sp = sp - 1
-                if bothNumbers(st, sp - 1, sp) {
-                    let r = vmNum(st, sp - 1) > vmNum(st, sp)
-                    st.vmStack[sp - 1] = boolVal(r)
-                } else {
-                    st.vmSp = sp + 1
-                    let x = cloneValue(st.vmStack[sp - 1])
-                    let y = cloneValue(st.vmStack[sp])
-                    st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Gt), x, y, st)
-                    st.vmSp = sp
-                }
-                pc = pc + 1
-            }
-            Op.Le => {
-                sp = sp - 1
-                if bothNumbers(st, sp - 1, sp) {
-                    let r = vmNum(st, sp - 1) <= vmNum(st, sp)
-                    st.vmStack[sp - 1] = boolVal(r)
-                } else {
-                    st.vmSp = sp + 1
-                    let x = cloneValue(st.vmStack[sp - 1])
-                    let y = cloneValue(st.vmStack[sp])
-                    st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Le), x, y, st)
-                    st.vmSp = sp
-                }
-                pc = pc + 1
-            }
-            Op.Ge => {
-                sp = sp - 1
-                if bothNumbers(st, sp - 1, sp) {
-                    let r = vmNum(st, sp - 1) >= vmNum(st, sp)
-                    st.vmStack[sp - 1] = boolVal(r)
-                } else {
-                    st.vmSp = sp + 1
-                    let x = cloneValue(st.vmStack[sp - 1])
-                    let y = cloneValue(st.vmStack[sp])
-                    st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Ge), x, y, st)
-                    st.vmSp = sp
-                }
-                pc = pc + 1
-            }
-            Op.Eq => {
-                sp = sp - 1
-                if bothNumbers(st, sp - 1, sp) {
-                    let r = vmNum(st, sp - 1) == vmNum(st, sp)
-                    st.vmStack[sp - 1] = boolVal(r)
-                } else {
-                    st.vmSp = sp + 1
-                    let x = cloneValue(st.vmStack[sp - 1])
-                    let y = cloneValue(st.vmStack[sp])
-                    st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Eq), x, y, st)
-                    st.vmSp = sp
-                }
-                pc = pc + 1
-            }
-            Op.Ne => {
-                sp = sp - 1
-                if bothNumbers(st, sp - 1, sp) {
-                    let r = vmNum(st, sp - 1) != vmNum(st, sp)
-                    st.vmStack[sp - 1] = boolVal(r)
-                } else {
-                    st.vmSp = sp + 1
-                    let x = cloneValue(st.vmStack[sp - 1])
-                    let y = cloneValue(st.vmStack[sp])
-                    st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Ne), x, y, st)
-                    st.vmSp = sp
-                }
-                pc = pc + 1
-            }
-            Op.Jmp => {
-                pc = a
-            }
-            Op.Jmpf => {
-                sp = sp - 1
-                if truthy(st.vmStack[sp]) {
+        // The hot loop: two tests per instruction, which is what the single-frame
+        // version cost too. Everything about frames happens outside it, because an
+        // extra per-instruction branch is not free here — a version that tested
+        // three flags between instructions cost 25-35% on the loop benches
+        // (numRead 117ms to 147ms, arith 129ms to 174ms).
+        // ch.ops[pc] is bounds-checked by Milo, and no jump target is past the
+        // Halt every chunk ends in, so pc cannot leave the array.
+        while signal == 0 {
+            let a = ch.args[pc]
+            match ch.ops[pc] {
+                Op.Const => {
+                    vmSet(st, sp, JSValue.Number(ch.consts[a]))
+                    sp = sp + 1
                     pc = pc + 1
-                } else {
+                }
+                Op.Str => {
+                    vmSet(st, sp, JSValue.Str(ch.strs[a].clone()))
+                    sp = sp + 1
+                    pc = pc + 1
+                }
+                Op.Load => {
+                    vmSet(st, sp, cloneValue(st.vmStack[base + a]))
+                    sp = sp + 1
+                    pc = pc + 1
+                }
+                Op.Store => {
+                    sp = sp - 1
+                    st.vmStack[base + a] = cloneValue(st.vmStack[sp])
+                    pc = pc + 1
+                }
+                Op.Add => {
+                    sp = sp - 1
+                    if bothNumbers(st, sp - 1, sp) {
+                        let v = vmNum(st, sp - 1) + vmNum(st, sp)
+                        st.vmStack[sp - 1] = JSValue.Number(v)
+                    } else {
+                        st.vmSp = sp + 1
+                        let x = cloneValue(st.vmStack[sp - 1])
+                        let y = cloneValue(st.vmStack[sp])
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Add), x, y, st)
+                        st.vmSp = sp
+                    }
+                    pc = pc + 1
+                }
+                Op.Sub => {
+                    sp = sp - 1
+                    if bothNumbers(st, sp - 1, sp) {
+                        let v = vmNum(st, sp - 1) - vmNum(st, sp)
+                        st.vmStack[sp - 1] = JSValue.Number(v)
+                    } else {
+                        st.vmSp = sp + 1
+                        let x = cloneValue(st.vmStack[sp - 1])
+                        let y = cloneValue(st.vmStack[sp])
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Sub), x, y, st)
+                        st.vmSp = sp
+                    }
+                    pc = pc + 1
+                }
+                Op.Mul => {
+                    sp = sp - 1
+                    if bothNumbers(st, sp - 1, sp) {
+                        let v = vmNum(st, sp - 1) * vmNum(st, sp)
+                        st.vmStack[sp - 1] = JSValue.Number(v)
+                    } else {
+                        st.vmSp = sp + 1
+                        let x = cloneValue(st.vmStack[sp - 1])
+                        let y = cloneValue(st.vmStack[sp])
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Mul), x, y, st)
+                        st.vmSp = sp
+                    }
+                    pc = pc + 1
+                }
+                Op.Div => {
+                    sp = sp - 1
+                    if bothNumbers(st, sp - 1, sp) {
+                        let v = vmNum(st, sp - 1) / vmNum(st, sp)
+                        st.vmStack[sp - 1] = JSValue.Number(v)
+                    } else {
+                        st.vmSp = sp + 1
+                        let x = cloneValue(st.vmStack[sp - 1])
+                        let y = cloneValue(st.vmStack[sp])
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Div), x, y, st)
+                        st.vmSp = sp
+                    }
+                    pc = pc + 1
+                }
+                Op.Mod => {
+                    sp = sp - 1
+                    if bothNumbers(st, sp - 1, sp) {
+                        let v = vmNum(st, sp - 1) % vmNum(st, sp)
+                        st.vmStack[sp - 1] = JSValue.Number(v)
+                    } else {
+                        st.vmSp = sp + 1
+                        let x = cloneValue(st.vmStack[sp - 1])
+                        let y = cloneValue(st.vmStack[sp])
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Mod), x, y, st)
+                        st.vmSp = sp
+                    }
+                    pc = pc + 1
+                }
+                Op.Neg => {
+                    if isNumberAt(st, sp - 1) {
+                        let v = -vmNum(st, sp - 1)
+                        st.vmStack[sp - 1] = JSValue.Number(v)
+                    } else {
+                        st.vmSp = sp
+                        let x = cloneValue(st.vmStack[sp - 1])
+                        // toNumArg, not toNumProg: unary minus on a Symbol is a
+                        // TypeError, and toNumProg answers NaN because loose equality
+                        // reaches it too (`Symbol() == 1` is false, not a throw). The
+                        // evaluator's own `-` arm has this guard; the compiled path
+                        // bypassed it and `-Symbol()` quietly produced NaN.
+                        let n = toNumArg(prog, x, st)
+                        st.vmStack[sp - 1] = JSValue.Number(-n)
+                    }
+                    pc = pc + 1
+                }
+                Op.Lt => {
+                    sp = sp - 1
+                    if bothNumbers(st, sp - 1, sp) {
+                        let r = vmNum(st, sp - 1) < vmNum(st, sp)
+                        st.vmStack[sp - 1] = boolVal(r)
+                    } else {
+                        st.vmSp = sp + 1
+                        let x = cloneValue(st.vmStack[sp - 1])
+                        let y = cloneValue(st.vmStack[sp])
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Lt), x, y, st)
+                        st.vmSp = sp
+                    }
+                    pc = pc + 1
+                }
+                Op.Gt => {
+                    sp = sp - 1
+                    if bothNumbers(st, sp - 1, sp) {
+                        let r = vmNum(st, sp - 1) > vmNum(st, sp)
+                        st.vmStack[sp - 1] = boolVal(r)
+                    } else {
+                        st.vmSp = sp + 1
+                        let x = cloneValue(st.vmStack[sp - 1])
+                        let y = cloneValue(st.vmStack[sp])
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Gt), x, y, st)
+                        st.vmSp = sp
+                    }
+                    pc = pc + 1
+                }
+                Op.Le => {
+                    sp = sp - 1
+                    if bothNumbers(st, sp - 1, sp) {
+                        let r = vmNum(st, sp - 1) <= vmNum(st, sp)
+                        st.vmStack[sp - 1] = boolVal(r)
+                    } else {
+                        st.vmSp = sp + 1
+                        let x = cloneValue(st.vmStack[sp - 1])
+                        let y = cloneValue(st.vmStack[sp])
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Le), x, y, st)
+                        st.vmSp = sp
+                    }
+                    pc = pc + 1
+                }
+                Op.Ge => {
+                    sp = sp - 1
+                    if bothNumbers(st, sp - 1, sp) {
+                        let r = vmNum(st, sp - 1) >= vmNum(st, sp)
+                        st.vmStack[sp - 1] = boolVal(r)
+                    } else {
+                        st.vmSp = sp + 1
+                        let x = cloneValue(st.vmStack[sp - 1])
+                        let y = cloneValue(st.vmStack[sp])
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Ge), x, y, st)
+                        st.vmSp = sp
+                    }
+                    pc = pc + 1
+                }
+                Op.Eq => {
+                    sp = sp - 1
+                    if bothNumbers(st, sp - 1, sp) {
+                        let r = vmNum(st, sp - 1) == vmNum(st, sp)
+                        st.vmStack[sp - 1] = boolVal(r)
+                    } else {
+                        st.vmSp = sp + 1
+                        let x = cloneValue(st.vmStack[sp - 1])
+                        let y = cloneValue(st.vmStack[sp])
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Eq), x, y, st)
+                        st.vmSp = sp
+                    }
+                    pc = pc + 1
+                }
+                Op.Ne => {
+                    sp = sp - 1
+                    if bothNumbers(st, sp - 1, sp) {
+                        let r = vmNum(st, sp - 1) != vmNum(st, sp)
+                        st.vmStack[sp - 1] = boolVal(r)
+                    } else {
+                        st.vmSp = sp + 1
+                        let x = cloneValue(st.vmStack[sp - 1])
+                        let y = cloneValue(st.vmStack[sp])
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Ne), x, y, st)
+                        st.vmSp = sp
+                    }
+                    pc = pc + 1
+                }
+                Op.Jmp => {
                     pc = a
                 }
-            }
-            Op.GetMem => {
-                st.vmSp = sp
-                let recv = cloneValue(st.vmStack[sp - 1])
-                st.vmStack[sp - 1] = memberOfValue(prog, recv, ch.strs[a], st)
-                pc = pc + 1
-            }
-            Op.SetMem => {
-                sp = sp - 1
-                st.vmSp = sp + 1
-                let v = cloneValue(st.vmStack[sp])
-                let ov = cloneValue(st.vmStack[sp - 1])
-                st.vmStack[sp - 1] = setMemberOfValue(prog, ov, ch.strs[a].clone(), v, st)
-                pc = pc + 1
-            }
-            Op.NewObj => {
-                st.vmSp = sp
-                let o = newObject(st)
-                vmSet(st, sp, JSValue.Obj(o))
-                sp = sp + 1
-                st.vmSp = sp
-                pc = pc + 1
-            }
-            Op.Dup => {
-                vmSet(st, sp, cloneValue(st.vmStack[sp - 1]))
-                sp = sp + 1
-                pc = pc + 1
-            }
-            Op.Pop => {
-                sp = sp - 1
-                pc = pc + 1
-            }
-            Op.Call => {
-                let argc = a % 256
-                let nameSlot = a / 256
-                let calleeSlot = sp - argc - 1
-                // Publish the exact live top BEFORE anything that can allocate:
-                // collect marks 0..vmSp and nothing above it, and the callee
-                // value and every argument sit below this.
-                st.vmSp = sp
-                // The VM's safepoint, and the only one it has. The tree walker
-                // takes one per statement; a compiled frame allocates a scope and
-                // an `arguments` array per call, so a call is where a compiled
-                // program's allocation happens. It also gives MILOJS_GC_THRESHOLD=1
-                // reach into this path: without it the frame stack was never once
-                // marked mid-dispatch under the GC-stress pass.
-                maybeGc(st)
-                let calleeVal = cloneValue(st.vmStack[calleeSlot])
-                var argVals: Vec<JSValue> = Vec.new()
-                var ai: i64 = 0
-                while ai < argc {
-                    argVals.push(cloneValue(st.vmStack[calleeSlot + 1 + ai]))
-                    ai = ai + 1
+                Op.Jmpf => {
+                    sp = sp - 1
+                    if truthy(st.vmStack[sp]) {
+                        pc = pc + 1
+                    } else {
+                        pc = a
+                    }
                 }
-                // Whatever this frame is holding in its slots has to be in the
-                // scope chain before the callee resolves a single free name.
-                vmFlushOuter(st, ch, base, curScope)
-                var handled = false
-                if let JSValue.Func(fIdx, envIdx) = calleeVal {
-                    let cid2 = bodyChunkOf(prog, fIdx)
-                    // A CLASS constructor takes the slow path even when its body
-                    // compiles: callFunction is where "cannot be invoked without
-                    // 'new'" is raised, and an empty constructor body compiles, so
-                    // a frame here would run it and answer undefined instead.
-                    if cid2 >= 0 && !prog.funcs[fIdx].isClassCtor {
-                        handled = true
-                        // The same guard callFunctionBody applies. A frame here
-                        // costs no native stack, so the depth counter is the only
-                        // half of it that can fire.
-                        if callGuardTripped(st) {
-                            threwInCallee = true
-                        } else {
-                            // Everything callFunctionBody does for an ordinary
-                            // call, minus the parts the subset rules out:
-                            // hoistBlock (a compiled body has no `var` and no
-                            // function declaration) and runDisposals (no `using`).
-                            st.suppressAsyncSpawn = false
-                            st.suppressGenSpawn = false
-                            st.callDepth = st.callDepth + 1
-                            let callScope = bindActivationScope(prog, fIdx, envIdx, argVals, JSValue.Undefined, st, gChunks[cid2].usesArguments)
-                            pushActive(st, callScope)
-                            // The callee's frame goes ABOVE this one's operands,
-                            // so every live value in every frame stays below vmSp
-                            // and stays marked.
-                            if vmSeedFrame(st, cid2, sp, callScope) {
-                                st.fnFileStack.push(prog.funcs[fIdx].file.clone())
-                                frames.push(VmFrame {
-                                    pc: pc + 1, base: base, resSlot: calleeSlot,
-                                    scope: curScope, strict: st.strict,
-                                })
-                                // Strictness belongs to the function being
-                                // entered, not to its caller.
-                                st.strict = prog.funcs[fIdx].isStrict
-                                base = sp
-                                sp = base + gChunks[cid2].slotNames.len()
-                                curScope = callScope
-                                pc = 0
-                                pendingCid = cid2
+                Op.GetMem => {
+                    st.vmSp = sp
+                    let recv = cloneValue(st.vmStack[sp - 1])
+                    st.vmStack[sp - 1] = memberOfValue(prog, recv, ch.strs[a], st)
+                    pc = pc + 1
+                }
+                Op.SetMem => {
+                    sp = sp - 1
+                    st.vmSp = sp + 1
+                    let v = cloneValue(st.vmStack[sp])
+                    let ov = cloneValue(st.vmStack[sp - 1])
+                    st.vmStack[sp - 1] = setMemberOfValue(prog, ov, ch.strs[a].clone(), v, st)
+                    pc = pc + 1
+                }
+                Op.NewObj => {
+                    st.vmSp = sp
+                    let o = newObject(st)
+                    vmSet(st, sp, JSValue.Obj(o))
+                    sp = sp + 1
+                    st.vmSp = sp
+                    pc = pc + 1
+                }
+                Op.Dup => {
+                    vmSet(st, sp, cloneValue(st.vmStack[sp - 1]))
+                    sp = sp + 1
+                    pc = pc + 1
+                }
+                Op.Pop => {
+                    sp = sp - 1
+                    pc = pc + 1
+                }
+                Op.Call => {
+                    let argc = a % 256
+                    let nameSlot = a / 256
+                    let calleeSlot = sp - argc - 1
+                    // Publish the exact live top BEFORE anything that can allocate:
+                    // collect marks 0..vmSp and nothing above it, and the callee
+                    // value and every argument sit below this.
+                    st.vmSp = sp
+                    // The VM's safepoint, and the only one it has. The tree walker
+                    // takes one per statement; a compiled frame allocates a scope and
+                    // an `arguments` array per call, so a call is where a compiled
+                    // program's allocation happens. It also gives MILOJS_GC_THRESHOLD=1
+                    // reach into this path: without it the frame stack was never once
+                    // marked mid-dispatch under the GC-stress pass.
+                    maybeGc(st)
+                    let calleeVal = cloneValue(st.vmStack[calleeSlot])
+                    var argVals: Vec<JSValue> = Vec.new()
+                    var ai: i64 = 0
+                    while ai < argc {
+                        argVals.push(cloneValue(st.vmStack[calleeSlot + 1 + ai]))
+                        ai = ai + 1
+                    }
+                    // Whatever this frame is holding in its slots has to be in the
+                    // scope chain before the callee resolves a single free name.
+                    vmFlushOuter(st, ch, base, curScope)
+                    var handled = false
+                    if let JSValue.Func(fIdx, envIdx) = calleeVal {
+                        let cid2 = bodyChunkOf(prog, fIdx)
+                        // A CLASS constructor takes the slow path even when its body
+                        // compiles: callFunction is where "cannot be invoked without
+                        // 'new'" is raised, and an empty constructor body compiles, so
+                        // a frame here would run it and answer undefined instead.
+                        if cid2 >= 0 && !prog.funcs[fIdx].isClassCtor {
+                            handled = true
+                            // The same guard callFunctionBody applies. A frame here
+                            // costs no native stack, so the depth counter is the only
+                            // half of it that can fire.
+                            if callGuardTripped(st) {
+                                threwInCallee = true
                             } else {
-                                // A free name the callee reads is bound nowhere:
-                                // only the tree walker raises that ReferenceError.
-                                // Undo the activation and take the slow path.
-                                popActive(st)
-                                st.callDepth = st.callDepth - 1
-                                handled = false
+                                // Everything callFunctionBody does for an ordinary
+                                // call, minus the parts the subset rules out:
+                                // hoistBlock (a compiled body has no `var` and no
+                                // function declaration) and runDisposals (no `using`).
+                                st.suppressAsyncSpawn = false
+                                st.suppressGenSpawn = false
+                                st.callDepth = st.callDepth + 1
+                                let callScope = bindActivationScope(prog, fIdx, envIdx, argVals, JSValue.Undefined, st, gChunks[cid2].usesArguments)
+                                pushActive(st, callScope)
+                                // The callee's frame goes ABOVE this one's operands,
+                                // so every live value in every frame stays below vmSp
+                                // and stays marked.
+                                if vmSeedFrame(st, cid2, sp, callScope) {
+                                    st.fnFileStack.push(prog.funcs[fIdx].file.clone())
+                                    frames.push(VmFrame {
+                                        pc: pc + 1, base: base, resSlot: calleeSlot,
+                                        scope: curScope, strict: st.strict,
+                                    })
+                                    // Strictness belongs to the function being
+                                    // entered, not to its caller.
+                                    st.strict = prog.funcs[fIdx].isStrict
+                                    base = sp
+                                    sp = base + gChunks[cid2].slotNames.len()
+                                    curScope = callScope
+                                    pc = 0
+                                    pendingCid = cid2
+                                    signal = SIG_ENTER
+                                } else {
+                                    // A free name the callee reads is bound nowhere:
+                                    // only the tree walker raises that ReferenceError.
+                                    // Undo the activation and take the slow path.
+                                    popActive(st)
+                                    st.callDepth = st.callDepth - 1
+                                    handled = false
+                                }
                             }
                         }
                     }
-                }
-                if !handled && !st.throwing {
-                    // A native, a generator, an async or bound function, a proxy,
-                    // or a body outside the subset: one native round trip, which
-                    // is what the tree walker pays for every call it makes.
-                    if isPlainCallable(st, calleeVal) {
-                        let res = callPlainValue(prog, calleeVal, argVals, st)
-                        sp = calleeSlot + 1
-                        st.vmSp = sp
-                        vmSet(st, calleeSlot, res)
-                        vmSeedOuter(st, ch, base, curScope)
-                        threwInCallee = st.throwing
-                    } else {
-                        throwNotAFunction(st, ch.strs[nameSlot])
+                    if !handled && !st.throwing {
+                        // A native, a generator, an async or bound function, a proxy,
+                        // or a body outside the subset: one native round trip, which
+                        // is what the tree walker pays for every call it makes.
+                        if isPlainCallable(st, calleeVal) {
+                            let res = callPlainValue(prog, calleeVal, argVals, st)
+                            sp = calleeSlot + 1
+                            st.vmSp = sp
+                            vmSet(st, calleeSlot, res)
+                            vmSeedOuter(st, ch, base, curScope)
+                            threwInCallee = st.throwing
+                        } else {
+                            throwNotAFunction(st, ch.strs[nameSlot])
+                        }
+                        pc = pc + 1
                     }
-                    pc = pc + 1
+                }
+                Op.Ret => {
+                    sp = sp - 1
+                    retVal = cloneValue(st.vmStack[sp])
+                    signal = SIG_LEAVE
+                }
+                Op.Halt => {
+                    retVal = JSValue.Undefined
+                    signal = SIG_LEAVE
                 }
             }
-            Op.Ret => {
-                sp = sp - 1
-                retVal = cloneValue(st.vmStack[sp])
-                leaving = true
-            }
-            Op.Halt => {
-                retVal = JSValue.Undefined
-                leaving = true
+            if st.throwing {
+                signal = SIG_THROW
             }
         }
         // Switching the active chunk happens out here: `ch` cannot be moved out
         // from under the match that is reading its opcode.
-        if pendingCid >= 0 {
+        if signal == SIG_ENTER {
             frameChunks.push(ch)
             ch = gChunks[pendingCid]
-            pendingCid = -1
-        }
-        if st.throwing {
+            signal = 0
+        } else if signal == SIG_THROW {
             // A throw stops the chunk where it stands, and every frame it stands
             // on. Side effects up to here have happened, which is what the tree
             // walker would also have done.
@@ -1179,7 +1196,9 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
             }
             retVal = JSValue.Undefined
             done = true
-        } else if leaving {
+            signal = 0
+        } else {
+            signal = 0
             if frames.len() == 0 {
                 done = true
             } else {
