@@ -19,8 +19,8 @@ Experimental, not yet a drop-in replacement for either.
 
 | suite | score |
 |---|---|
-| [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | <!--fact:t262-pct-->78.0%<!--/fact--> (<!--fact:t262-pass-->1146<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) |
-| [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | <!--fact:qjs-pct-->67.8%<!--/fact--> (<!--fact:qjs-pass-->101<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) |
+| [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | <!--fact:t262-pct-->79.5%<!--/fact--> (<!--fact:t262-pass-->1169<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) |
+| [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | <!--fact:qjs-pct-->68.5%<!--/fact--> (<!--fact:qjs-pass-->102<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) |
 
 ## Node Conformance
 
@@ -28,7 +28,7 @@ Experimental, not yet a drop-in replacement for either.
 
 | suite | score |
 |---|---|
-| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) (all <!--fact:node-available-->3373<!--/fact--> externally runnable tests, <!--fact:node-excluded-->606<!--/fact--> node-internal excluded) | <!--fact:node-pct-->48.7%<!--/fact--> (<!--fact:node-pass-->1642<!--/fact-->/<!--fact:node-total-->3373<!--/fact-->) |
+| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) (all <!--fact:node-available-->3373<!--/fact--> externally runnable tests, <!--fact:node-excluded-->606<!--/fact--> node-internal excluded) | <!--fact:node-pct-->48.7%<!--/fact--> (<!--fact:node-pass-->1644<!--/fact-->/<!--fact:node-total-->3373<!--/fact-->) |
 
 Node's own tests, unmodified, through Node's `test/common` harness, each invoked
 as a plain `<binary> test.js`. The same harness scores any node-compatible
