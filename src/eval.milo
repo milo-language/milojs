@@ -5163,10 +5163,27 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                     if id == Builtin.Set {
                         mapPut(st, o, e, JSValue.Bool(true))
                     } else {
+                        // Every entry must be an OBJECT; node raises a TypeError
+                        // for anything else rather than skipping it, which is what
+                        // made `new Map(["ab"])` answer an empty map.
                         let pair = objHandle(e)
-                        if pair >= 0 && st.objects[pair].isArray && arrLen(st, pair) >= 2 {
-                            mapPut(st, o, arrGet(st, pair, 0), arrGet(st, pair, 1))
+                        if pair < 0 {
+                            st.throwing = true
+                            st.thrownValue = makeError(st, "TypeError", "Iterator value " + toStr(e) + " is not an entry object")
+                            popTemp(st)
+                            popTemp(st)
+                            return JSValue.Undefined
                         }
+                        // a short pair is not an error: the missing half is undefined
+                        var pk = JSValue.Undefined
+                        var pv = JSValue.Undefined
+                        if arrLen(st, pair) > 0 {
+                            pk = arrGet(st, pair, 0)
+                        }
+                        if arrLen(st, pair) > 1 {
+                            pv = arrGet(st, pair, 1)
+                        }
+                        mapPut(st, o, pk, pv)
                     }
                     i = i + 1
                 }
@@ -12360,6 +12377,29 @@ fn spreadErrText(v: &JSValue): string {
 // in this engine has that shape today (Array.from, spread); a lazy pull needs an
 // element-count-limited driver, which spreadInto has no argument for.
 fn iterableToArray(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
+    // A STRING is iterable, by code point, and this returned it unchanged because
+    // it is not an object: `new Set("aab")` came out empty where node gives
+    // ["a","b"]. spreadInto already knows how to walk one, which is why `[..."ab"]`
+    // worked while the Set constructor did not.
+    match v {
+        JSValue.Str(sv) => {
+            if !isSymbolStr(sv) {
+                var chars: Vec<JSValue> = Vec.new()
+                spreadInto(prog, chars, cloneValue(v), st)
+                let sarr = newArray(st)
+                pushTemp(st, JSValue.Obj(sarr))
+                var ci: i64 = 0
+                while ci < chars.len() {
+                    arrPush(st, sarr, cloneValue(chars[ci]))
+                    ci = ci + 1
+                }
+                popTemp(st)
+                return JSValue.Obj(sarr)
+            }
+        }
+        _ => {
+        }
+    }
     let h = objHandle(v)
     if h < 0 || st.objects[h].isArray {
         return cloneValue(v)

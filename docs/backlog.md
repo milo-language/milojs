@@ -43,6 +43,30 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## A string is iterable, and the Set constructor did not know
+
+31 Map/Set/Symbol/Proxy/Reflect/descriptor combinations against node found exactly
+one difference, which is a good sign for that surface, and following it turned up
+a second bug next to it.
+
+**`new Set("aab")` was EMPTY.** `iterableToArray` returns any non-object unchanged,
+so the constructor never saw the characters. `spreadInto` already knew how to walk
+a string, which is why `[..."ab"]` and `for (c of "ab")` worked while the
+constructor did not; the string case now routes through the same walk.
+
+**`new Map(["ab"])` answered an empty map** where node raises a TypeError: a
+non-object entry was skipped rather than rejected. A SHORT pair is still not an
+error, so `new Map([["a"]])` keeps the key with an undefined value.
+
+`tests/setMapIterableSources.js` covers both plus the sources that already worked
+(array, Set, Map, generator, typed array, null), so a future change to
+`iterableToArray` has one place that exercises all of them.
+
+Everything else on that surface already matched: NaN and -0 as Map keys,
+insertion order across delete-then-reinsert, WeakMap, Symbol identity and
+`Symbol.for` interning, `Symbol.toPrimitive` and `toStringTag`, the Proxy traps for
+get/set/has/ownKeys/deleteProperty, and the property-descriptor family.
+
 ## console.log marks cycles instead of inventing nesting
 
 The last item from the cycle sweep. milojs printed a depth-limited EXPANSION of a
