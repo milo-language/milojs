@@ -8,6 +8,40 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## Prototype methods accepted receivers they do not belong to
+
+Third pass of the same question -- what else is silently allowed. 27 cases:
+prototype methods called on a foreign receiver, and `new` on things that are not
+constructors. Six were wrong, all in the permissive direction:
+
+- **`Promise.prototype.then.call({})`** answered undefined. A call that silently
+  does nothing reads to the caller exactly like a call that worked, which is the
+  worst shape a bug can take.
+- **`RegExp.prototype.exec.call({})`** and the **`source` getter** likewise.
+- **`Function.prototype.bind.call({})`** likewise -- and `toString` sitting
+  beside it on the same prototype was already branded callable, so this was a
+  three-line omission next to its own counterexample.
+- **`Error.prototype.toString.call({})`** gave `[object Object]` where node gives
+  `"Error"`. It applies to ANY object -- the spec asks only for an object, then
+  reads `name ?? "Error"` and `message ?? ""` -- so installing it as plain
+  `toString` made it indistinguishable from `Object.prototype.toString` the moment
+  the receiver was not an Error. It has its own internal name now.
+- **`new (arrow.bind(null))()`** built an object and ran the arrow. Binding does
+  not MAKE something constructable; the bound-construct path checked that the
+  bound value was not a built-in method value but never that its target was a
+  constructor.
+
+The brand machinery for exactly this already existed and carried Map, Set, Date,
+the wrappers and callable. Promise and RegExp simply had no brand, and the RegExp
+prototype is built by hand rather than through `buildNativeProto`, so it never
+picked one up. Adding `BRAND_PROMISE` and `BRAND_REGEXP` and branding the three
+Function.prototype methods is the whole engine change.
+
+`tests/foreignReceivers.js` covers all 27. Gates: dev.sh 6/6, GC-stress 290/291
+fixtures, suite green with the compiler on and off, fuzz 200 seeds clean, QuickJS
+104/149, node-compat sample 205/400.
+
+
 ## Eleven native constructors accepted a plain call
 
 Direct follow-up to the class-constructor guard: if `class Foo {}; Foo()` was

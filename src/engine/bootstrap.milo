@@ -13,7 +13,7 @@ from "./runtime" import {
     Interp
 }
 from "./eval" import {
-    arityLookup, builtinArityOn, builtinCtorArity, builtinStaticArity, ctorArityData, dateProtoMethodNames, getMember, makeBoundMethod, makeBoundMethodOn, nativeErrorName, staticArityData, symIteratorKey, symToPrimitiveKey, symToStringTagKey, BRAND_BIGINT, BRAND_BOOLEAN, BRAND_CALLABLE, BRAND_DATE, BRAND_MAP, BRAND_NUMBER, BRAND_SET, BRAND_STRING, BRAND_STRING_GENERIC, BRAND_SYMBOL
+    arityLookup, builtinArityOn, builtinCtorArity, builtinStaticArity, ctorArityData, dateProtoMethodNames, getMember, makeBoundMethod, makeBoundMethodOn, nativeErrorName, staticArityData, symIteratorKey, symToPrimitiveKey, symToStringTagKey, BRAND_BIGINT, BRAND_BOOLEAN, BRAND_CALLABLE, BRAND_DATE, BRAND_MAP, BRAND_NUMBER, BRAND_SET, BRAND_PROMISE, BRAND_REGEXP, BRAND_STRING, BRAND_STRING_GENERIC, BRAND_SYMBOL
 }
 
 // A bound method that first checks its receiver really is of `brand`. See
@@ -286,6 +286,10 @@ fn buildNativeProto(st: &mut Interp, nativeId: Builtin, names: &Vec<string>): i6
         brand = BRAND_MAP
     } else if nativeId == Builtin.Set {
         brand = BRAND_SET
+    } else if nativeId == Builtin.Promise {
+        brand = BRAND_PROMISE
+    } else if nativeId == Builtin.RegExp {
+        brand = BRAND_REGEXP
     }
     var i: i64 = 0
     while i < names.len() {
@@ -448,7 +452,13 @@ fn setupRegexProto(st: &mut Interp) {
     names.push("@@sym:Symbol.split:0")
     var i: i64 = 0
     while i < names.len() {
-        objSet(st, rp, names[i].clone(), makeBoundMethod(st, JSValue.Undefined, names[i].clone()))
+        // Branded, so `RegExp.prototype.exec.call({})` is the TypeError the spec
+        // requires rather than a call that quietly answers undefined. The RegExp
+        // prototype is built here rather than through buildNativeProto, so it did
+        // not pick up the brand the Map and Set prototypes get.
+        let rm = makeBoundMethod(st, JSValue.Undefined, names[i].clone())
+        st.objExtras[st.objects[objHandle(rm)].extra].boundBrand = BRAND_REGEXP
+        objSet(st, rp, names[i].clone(), rm)
         objSetNonEnumerable(st, rp, names[i])
         i = i + 1
     }
@@ -471,6 +481,7 @@ fn setupRegexProto(st: &mut Interp) {
     var f: i64 = 0
     while f < flagNames.len() {
         let getter = makeBoundMethod(st, JSValue.Undefined, "__reGet_" + flagNames[f].clone())
+        st.objExtras[st.objects[objHandle(getter)].extra].boundBrand = BRAND_REGEXP
         objDefineAccessor(st, rp, flagNames[f].clone(), getter, JSValue.Undefined)
         objSetNonEnumerable(st, rp, flagNames[f])
         f = f + 1
@@ -487,7 +498,11 @@ fn setupErrorProtos(st: &mut Interp) {
     objSet(st, errorProto, "name", JSValue.Str("Error"))
     objSet(st, errorProto, "message", JSValue.Str(""))
     objSet(st, errorProto, "constructor", JSValue.Native(Native.Fn(Builtin.Error)))
-    objSet(st, errorProto, "toString", makeBoundMethod(st, JSValue.Undefined, "toString"))
+    // Under its own internal name, because Error.prototype.toString applies to
+    // ANY object -- `Error.prototype.toString.call({})` is "Error", not the
+    // object type tag. Installed as plain "toString" it was indistinguishable
+    // from Object.prototype.toString once the receiver was not an Error.
+    objSet(st, errorProto, "toString", makeBoundMethod(st, JSValue.Undefined, "__errorToString"))
     for ep in ["name", "message", "constructor", "toString"] {
         objSetNonEnumerable(st, errorProto, ep)
     }
@@ -813,9 +828,13 @@ pub fn setupGlobals(st: &mut Interp) {
     // .call on them re-targets to whatever function is passed as the receiver,
     // which is how Function.prototype.apply.call(fn, ...) resolves
     let functionProto = newObject(st)
-    objSet(st, functionProto, "call", makeBoundMethod(st, JSValue.Undefined, "call"))
-    objSet(st, functionProto, "apply", makeBoundMethod(st, JSValue.Undefined, "apply"))
-    objSet(st, functionProto, "bind", makeBoundMethod(st, JSValue.Undefined, "bind"))
+    // All three require a callable `this`: `Function.prototype.bind.call({})` is
+    // a TypeError, not a bind of nothing. toString below already said so; these
+    // three did not, so they answered undefined for a receiver they could not
+    // possibly bind.
+    objSet(st, functionProto, "call", makeBrandedMethod(st, "call", BRAND_CALLABLE))
+    objSet(st, functionProto, "apply", makeBrandedMethod(st, "apply", BRAND_CALLABLE))
+    objSet(st, functionProto, "bind", makeBrandedMethod(st, "bind", BRAND_CALLABLE))
     // lodash and friends compare functions by source text via
     // Function.prototype.toString.call(fn)
     objSet(st, functionProto, "toString", makeBrandedMethod(st, "toString", BRAND_CALLABLE))

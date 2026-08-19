@@ -1,0 +1,27 @@
+Map.get THREW TypeError
+Map.set THREW TypeError
+Map.size THREW TypeError
+Set.add THREW TypeError
+Set.has THREW TypeError
+Date.getTime THREW TypeError
+Date.toISOString THREW TypeError
+RegExp.exec THREW TypeError
+RegExp.source THREW TypeError
+Promise.then THREW TypeError
+Array.push-obj OK 1
+TA.byteLength THREW TypeError
+TA.subarray THREW TypeError
+DataView.getInt8 THREW TypeError
+WeakMap.get THREW TypeError
+Function.bind THREW TypeError
+Function.toString THREW TypeError
+Error.toString OK Error
+Symbol.toString THREW TypeError
+String.charAt THREW TypeError
+new arrow THREW TypeError
+new method THREW TypeError
+new Symbol THREW TypeError
+new BigInt THREW TypeError
+new Math.max THREW TypeError
+new bound-arrow THREW TypeError
+new getter THREW TypeError

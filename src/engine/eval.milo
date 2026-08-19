@@ -959,6 +959,12 @@ pub let BRAND_CALLABLE: i64 = 11
 // undefined.
 pub let BRAND_MAP: i64 = 12
 pub let BRAND_SET: i64 = 13
+// Promise and RegExp prototype methods brand-check their receiver too:
+// `Promise.prototype.then.call({})` and `RegExp.prototype.exec.call({})` are
+// TypeErrors, not calls that quietly answer undefined. Without a brand they
+// accepted anything, which reads to the caller as a call that worked.
+pub let BRAND_PROMISE: i64 = 14
+pub let BRAND_REGEXP: i64 = 15
 
 fn brandMatches(st: &Interp, brand: i64, recv: &JSValue): bool {
     if brand == 0 {
@@ -1029,6 +1035,12 @@ fn brandMatches(st: &Interp, brand: i64, recv: &JSValue): bool {
     }
     if brand == BRAND_SET {
         return st.objects[h].isSet
+    }
+    if brand == BRAND_PROMISE {
+        return st.objects[h].promiseState >= 0
+    }
+    if brand == BRAND_REGEXP {
+        return st.objExtras[st.objects[h].extra].regexId >= 0
     }
     return st.objExtras[st.objects[h].extra].taBuf >= 0 && !st.objects[h].isDataView
 }
@@ -1269,6 +1281,12 @@ fn brandName(brand: i64): string {
     }
     if brand == BRAND_SET {
         return "Set"
+    }
+    if brand == BRAND_PROMISE {
+        return "Promise"
+    }
+    if brand == BRAND_REGEXP {
+        return "RegExp"
     }
     if brand == 3 {
         return "DataView"
@@ -1903,6 +1921,41 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             return builtinAccessorValue(st, ah, name)
         }
         return JSValue.Undefined
+    }
+    // Error.prototype.toString: `name ?? "Error"` and `message ?? ""`, read off
+    // whatever receiver it was given. It is not restricted to Errors -- the spec
+    // requires only an object -- so it cannot be the same "toString" every other
+    // prototype installs.
+    if name == "__errorToString" {
+        let eh = objHandle(recv)
+        if eh < 0 {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Error.prototype.toString called on non-object")
+            return JSValue.Undefined
+        }
+        let rawName = getMemberDyn(prog, eh, "name", st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        var ename = "Error"
+        if !isUndefinedValue(rawName) {
+            ename = toStrProg(prog, rawName, st)
+        }
+        let rawMsg = getMemberDyn(prog, eh, "message", st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        var emsg = ""
+        if !isUndefinedValue(rawMsg) {
+            emsg = toStrProg(prog, rawMsg, st)
+        }
+        if ename.len() == 0 {
+            return JSValue.Str(emsg)
+        }
+        if emsg.len() == 0 {
+            return JSValue.Str(ename)
+        }
+        return JSValue.Str(ename + ": " + emsg)
     }
     // the function Proxy.revocable hands back. Clearing the handler is what
     // marks the proxy revoked; a second call is a no-op that still answers
@@ -8489,6 +8542,15 @@ fn evalNewArm(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inter
                     // constructor. A genuine bind() RESULT is, when its
                     // target is, and that is the case just below.
                     if st.objExtras[st.objects[co].extra].boundMethod.len() > 0 {
+                        st.throwing = true
+                        st.thrownValue = makeError(st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor" + currentModule(st))
+                        return JSValue.Undefined
+                    }
+                    // Binding does not MAKE something constructable: an arrow, a
+                    // method or a generator is still not a constructor after
+                    // `.bind(null)`, and `new (arrow.bind(null))()` built an
+                    // object and ran the arrow against it.
+                    if !valueIsConstructor(prog, st, JSValue.Obj(co)) {
                         st.throwing = true
                         st.thrownValue = makeError(st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor" + currentModule(st))
                         return JSValue.Undefined
