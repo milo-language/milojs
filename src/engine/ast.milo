@@ -20,6 +20,12 @@ pub enum Expr {
     Un(string, ExprId),
     Assign(string, ExprId),
     Call(ExprId, ArgListId),
+    // dynamic `import(x)`, wrapping the Promise.resolve(require(x)) the parser
+    // desugars it into. `import()` must ALWAYS return a promise, so a specifier
+    // that fails to resolve has to come back as a rejection; without this node
+    // the require threw straight out of the expression and `import(x).catch()`
+    // never ran. See parser.milo's desugar.
+    ImportCall(ExprId),
     Member(ExprId, string),
     FuncExpr(i64),
     // one hole of an untagged template literal. It exists as its own node
@@ -361,6 +367,9 @@ fn cloneExpr(e: &Expr): Expr {
         }
         Expr.StrLit(s) => {
             return Expr.StrLit(s.clone())
+        }
+        Expr.ImportCall(inner) => {
+            return Expr.ImportCall(inner)
         }
         Expr.BigIntLit(s) => {
             return Expr.BigIntLit(s.clone())

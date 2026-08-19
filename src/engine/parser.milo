@@ -711,7 +711,8 @@ fn parsePrimary(p: &mut PState, prog: &mut Prog): ExprId {
     // list, or at `async` for an async arrow. Captured before any of the arrow
     // shapes below consume anything.
     let arrowStart = p.toks[p.pos].at
-    // dynamic import("m") → Promise.resolve(require("m")). The module graph is
+    // dynamic import("m") → ImportCall(Promise.resolve(require("m"))). The module
+    // graph is
     // discovered and parsed before anything runs, so the load itself is already
     // done by this point and the only thing left is to hand it back as a
     // promise. A computed specifier therefore fails the same way a computed
@@ -731,7 +732,8 @@ fn parsePrimary(p: &mut PState, prog: &mut Prog): ExprId {
         let resolve = addExpr(prog, Expr.Member(promise, "resolve"))
         var pArgs: Vec<ExprId> = Vec.new()
         pArgs.push(loaded)
-        return addExpr(prog, Expr.Call(resolve, addArgList(prog, pArgs)))
+        let call = addExpr(prog, Expr.Call(resolve, addArgList(prog, pArgs)))
+        return addExpr(prog, Expr.ImportCall(call))
     }
     if k == T_NUM {
         let v = p.toks[p.pos].num

@@ -826,7 +826,13 @@ pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
                     }
                 }
                 Result.Err(_e) => {
-                    eprint("milojs: cannot read module '" + path + "'")
+                    // Preload is a speculative walk of the require() edges, so a
+                    // specifier it cannot read is not an error yet: node prints
+                    // nothing here and reports at the require, and so does this
+                    // now that an unloaded module throws. Skipping keeps a
+                    // program node runs cleanly from writing to stderr. A
+                    // missing ENTRY is still reported by the caller, which sees
+                    // the -1 this returns.
                 }
             }
             }

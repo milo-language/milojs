@@ -6,8 +6,8 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "8bc015583300260db61bdeab34538422f2c8e1fd",
-    "dirty": false
+    "revision": "8a081db946ef32f4de6dce007d876c3051e947d1",
+    "dirty": true
   },
   "engine": ".dev/mj-engine",
   "selection": {
@@ -25,8 +25,8 @@
     ]
   },
   "totals": {
-    "pass": 102,
-    "fail": 47,
+    "pass": 103,
+    "fail": 46,
     "parseFail": 0,
     "total": 149,
     "ran": 149,
@@ -115,13 +115,6 @@
       "count": 1,
       "cases": [
         "callsite-isconstructor.js:<whole>"
-      ]
-    },
-    {
-      "reason": "Uncaught Error: Nuke the entire site from orbit. It's the only way to be sure.",
-      "count": 1,
-      "cases": [
-        "dynamic_import_rejection_handled.js:<whole>"
       ]
     },
     {

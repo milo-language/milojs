@@ -1,0 +1,4 @@
+threw synchronously: no
+is a promise: true
+sync end
+rejected:Error | loaded:function

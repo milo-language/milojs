@@ -8,6 +8,41 @@ last-verified: 2026-08-18 (re-read after the native id enum landed; the NATIVE_*
 
 # milojs backlog
 
+## `import()` now returns a promise even when the specifier fails (+1 QuickJS)
+
+Fixes the OPEN item below, and takes QuickJS 102 -> 103; the case that flipped is
+`dynamic_import_rejection_handled.js`, which is exactly what it sounds like.
+node-compat sample unchanged at 203/400.
+
+Took option 1 in a slightly different shape than sketched. Rather than a new
+intrinsic that would have to re-derive the specifier's directory context, the
+parser keeps its existing `Promise.resolve(require(x))` desugar and wraps it in a
+new AST node, `Expr.ImportCall(ExprId)`. The evaluator's arm runs the inner
+expression, and if it left `st.throwing` set, clears it and returns
+`newPromise(st, 2, err)`. Resolution is byte-for-byte the path it already used,
+and any synchronous throw from inside `import()` becomes the rejection the caller
+is entitled to, not just a resolution failure.
+
+Adding an `Expr` variant cost two match arms, `cloneExpr` and the evaluator's
+front dispatcher, and Milo's exhaustiveness check named both. That is the whole
+argument for exhaustive ADTs in an evaluator: the compiler enumerates the sites,
+so the change is a compile error until it is complete rather than a silent
+fall-through at some rare node.
+
+**A second stderr write, found by the fixture.** `tests/dynamicImportRejects.js`
+matched node on stdout immediately but milojs also printed `cannot read module
+'...'` to stderr, from `preloadGraph` failing to read a speculatively queued
+specifier. Preload is milojs's own discovery walk, not a phase node has; a
+program node runs silently must not write to stderr. It now skips the unreadable
+path and lets the require report it, which is where the error belongs and is now
+a real throw. A missing ENTRY module is still reported, by the caller that sees
+preloadGraph return -1: verified, `milojs-engine: cannot read '...'` with exit 1.
+
+That is two host-stderr writes in two probes. The pattern to watch: a
+milojs-internal phase with no node counterpart reporting its own failure as if
+it were the program's.
+
+
 ## The embedded engine wrote to its host's stderr and reported OK
 
 Follow-up probe after the capability split: I built `libmilojs.a` and drove it
@@ -37,7 +72,7 @@ Verified by probe, not by reading: engine binary, runtime binary, and a C
 consumer of the static archive. `dev.sh` 6/6, GC-stress 280/280, node-compat
 sample 203/400 identical before and after.
 
-## OPEN: `import()` throws synchronously where node rejects
+## FIXED: `import()` threw synchronously where node rejects
 
 Found while probing the above, and it predates it (both binaries at `23cbe44`
 behave the same, so this is not fallout from the throw change):

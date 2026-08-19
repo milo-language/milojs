@@ -8417,6 +8417,9 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
         Expr.Un(op, a) => {
             return evalUnArm(prog, op, a, st, scope)
         }
+        Expr.ImportCall(inner) => {
+            return evalImportCall(prog, inner, st, scope)
+        }
         Expr.Assign(name, e) => {
             return evalAssignExpr(prog, name, e, st, scope)
         }
@@ -12310,6 +12313,23 @@ fn wakeAwaiters(st: &mut Interp, p: i64) {
             i = i + 1
         }
     }
+}
+
+// `import(x)` is specified to always return a promise: a specifier that fails to
+// resolve rejects, it does not throw out of the expression. The parser desugars
+// the call to Promise.resolve(require(x)), which threw synchronously the moment
+// require did, so `import(missing).catch(...)` never reached its handler and the
+// throw escaped to the caller instead. Catch the sync throw here and hand back
+// the rejection the caller is entitled to.
+fn evalImportCall(prog: &Prog, inner: ExprId, st: &mut Interp, scope: i64): JSValue {
+    let v = evalExpr(prog, inner, st, scope)
+    if st.throwing {
+        let err = cloneValue(st.thrownValue)
+        st.throwing = false
+        st.thrownValue = JSValue.Undefined
+        return JSValue.Obj(newPromise(st, 2, err))
+    }
+    return v
 }
 
 pub fn settlePromise(st: &mut Interp, p: i64, state: i64, value: JSValue) {
