@@ -7615,6 +7615,117 @@ fn evalUpdateExpr(prog: &Prog, targetIdx: ExprId, isInc: bool, isPrefix: bool, s
 // each one that function's multi-kilobyte frame. Their own arms were also the
 // two largest in it, so moving them out shrinks the frame every REMAINING
 // fallback node pays too.
+// The value-level half of a property read: everything after the object
+// expression has been evaluated. Split out of evalMemberExpr so the bytecode VM
+// reads a property through the same primitive-receiver rules (a number's
+// __proto__, a string's length, a boxed wrapper) instead of a second copy.
+pub fn memberOfValue(prog: &Prog, ov: JSValue, name: &string, st: &mut Interp): JSValue {
+    match ov {
+        JSValue.Obj(o) => {
+            return getMemberDyn(prog, o, name, st)
+        }
+        JSValue.Number(_nv) => {
+            if name == "__proto__" {
+                let npp = primitiveProtoHandle(st, ov)
+                if npp >= 0 {
+                    return JSValue.Obj(npp)
+                }
+            }
+            // number primitives answer these by dispatch; without this a
+            // read yields undefined, which breaks feature detection
+            if isPrimitiveMethodName(name) {
+                return makeBoundMethod(st, cloneValue(ov), name.clone())
+            }
+            return JSValue.Undefined
+        }
+        JSValue.Bool(_bv) => {
+            if name == "__proto__" {
+                let bpp = primitiveProtoHandle(st, ov)
+                if bpp >= 0 {
+                    return JSValue.Obj(bpp)
+                }
+            }
+            if isPrimitiveMethodName(name) {
+                return makeBoundMethod(st, cloneValue(ov), name.clone())
+            }
+            return JSValue.Undefined
+        }
+        JSValue.Str(s) => {
+            if name == "__proto__" {
+                let sp = primitiveProtoHandle(st, JSValue.Str(s.clone()))
+                if sp >= 0 {
+                    return JSValue.Obj(sp)
+                }
+            }
+            return stringPrimitiveMember(st, s, name)
+        }
+        JSValue.Func(fIdx, fe) => {
+            if name == "prototype" {
+                return JSValue.Obj(getFuncProto(st, fIdx))
+            }
+            // `fn.constructor === Function`: functions are not objects in
+            // this value model, so nothing linked them to Function.
+            if name == "constructor" {
+                let statics1 = getFuncStatics(st, fIdx, fe)
+                if objOwnIndex(st, statics1, name) < 0 {
+                    return JSValue.Native(Native.Fn(Builtin.FunctionCtor))
+                }
+            }
+            // fn.call / fn.apply / fn.bind as VALUES. They already work
+            // when invoked directly; this is the extraction form real
+            // bundles use (var slice = Array.prototype.slice; slice.call).
+            if name == "call" || name == "apply" || name == "bind" {
+                let statics0 = getFuncStatics(st, fIdx, fe)
+                if objOwnIndex(st, statics0, name) < 0 {
+                    return makeBoundMethod(st, JSValue.Func(fIdx, fe), name.clone())
+                }
+            }
+            // through the bag, so a REDEFINED length/name is honoured:
+            // these are ordinary own properties now, and reading them
+            // from the FuncDef ignored any defineProperty on them
+            if name == "length" || name == "name" {
+                let nbag = propertyBagOf(st, JSValue.Func(fIdx, fe))
+                let ni = objOwnIndex(st, nbag, name)
+                if ni >= 0 {
+                    return cloneValue(st.objects[nbag].props[ni].value)
+                }
+                // deleted: the read continues up the chain to
+                // Function.prototype, whose name is "" and length 0
+                if st.functionProtoObj >= 0 {
+                    return getMember(st, st.functionProtoObj, name)
+                }
+            }
+            // propertyBagOf, not getFuncStatics: this is the lookup a
+            // borrowed `fn.hasOwnProperty("name")` ends up querying, and
+            // it has to see the materialised name/length
+            let statics = propertyBagOf(st, JSValue.Func(fIdx, fe))
+            // getMemberDyn, not getMember: a `static get v()` is stored on
+            // the statics object as an accessor, and the plain read never
+            // invoked it — every static getter returned undefined
+            return getMemberDyn(prog, statics, name, st)
+        }
+        JSValue.Native(nid) => {
+            let bag = getNativeProps(st, nid)
+            if name == "name" && objOwnIndex(st, bag, "name") < 0 {
+                let nn = nativeCtorName(nid)
+                if nn.len() > 0 {
+                    return JSValue.Str(nn)
+                }
+            }
+            return getMember(st, bag, name)
+        }
+        JSValue.Null => {
+            return throwNullMember(st, name, "null")
+        }
+        JSValue.Undefined => {
+            return throwNullMember(st, name, "undefined")
+        }
+        _ => {
+            return JSValue.Undefined
+        }
+    }
+}
+
 fn evalMemberExpr(prog: &Prog, objIdx: ExprId, name: &string, st: &mut Interp, scope: i64): JSValue {
         let ov = evalExpr(prog, objIdx, st, scope)
         // An object expression that THREW leaves ov undefined, and reading a
@@ -7637,110 +7748,7 @@ fn evalMemberExpr(prog: &Prog, objIdx: ExprId, name: &string, st: &mut Interp, s
         if st.throwing {
             return JSValue.Undefined
         }
-        match ov {
-            JSValue.Obj(o) => {
-                return getMemberDyn(prog, o, name, st)
-            }
-            JSValue.Number(_nv) => {
-                if name == "__proto__" {
-                    let npp = primitiveProtoHandle(st, ov)
-                    if npp >= 0 {
-                        return JSValue.Obj(npp)
-                    }
-                }
-                // number primitives answer these by dispatch; without this a
-                // read yields undefined, which breaks feature detection
-                if isPrimitiveMethodName(name) {
-                    return makeBoundMethod(st, cloneValue(ov), name.clone())
-                }
-                return JSValue.Undefined
-            }
-            JSValue.Bool(_bv) => {
-                if name == "__proto__" {
-                    let bpp = primitiveProtoHandle(st, ov)
-                    if bpp >= 0 {
-                        return JSValue.Obj(bpp)
-                    }
-                }
-                if isPrimitiveMethodName(name) {
-                    return makeBoundMethod(st, cloneValue(ov), name.clone())
-                }
-                return JSValue.Undefined
-            }
-            JSValue.Str(s) => {
-                if name == "__proto__" {
-                    let sp = primitiveProtoHandle(st, JSValue.Str(s.clone()))
-                    if sp >= 0 {
-                        return JSValue.Obj(sp)
-                    }
-                }
-                return stringPrimitiveMember(st, s, name)
-            }
-            JSValue.Func(fIdx, fe) => {
-                if name == "prototype" {
-                    return JSValue.Obj(getFuncProto(st, fIdx))
-                }
-                // `fn.constructor === Function`: functions are not objects in
-                // this value model, so nothing linked them to Function.
-                if name == "constructor" {
-                    let statics1 = getFuncStatics(st, fIdx, fe)
-                    if objOwnIndex(st, statics1, name) < 0 {
-                        return JSValue.Native(Native.Fn(Builtin.FunctionCtor))
-                    }
-                }
-                // fn.call / fn.apply / fn.bind as VALUES. They already work
-                // when invoked directly; this is the extraction form real
-                // bundles use (var slice = Array.prototype.slice; slice.call).
-                if name == "call" || name == "apply" || name == "bind" {
-                    let statics0 = getFuncStatics(st, fIdx, fe)
-                    if objOwnIndex(st, statics0, name) < 0 {
-                        return makeBoundMethod(st, JSValue.Func(fIdx, fe), name.clone())
-                    }
-                }
-                // through the bag, so a REDEFINED length/name is honoured:
-                // these are ordinary own properties now, and reading them
-                // from the FuncDef ignored any defineProperty on them
-                if name == "length" || name == "name" {
-                    let nbag = propertyBagOf(st, JSValue.Func(fIdx, fe))
-                    let ni = objOwnIndex(st, nbag, name)
-                    if ni >= 0 {
-                        return cloneValue(st.objects[nbag].props[ni].value)
-                    }
-                    // deleted: the read continues up the chain to
-                    // Function.prototype, whose name is "" and length 0
-                    if st.functionProtoObj >= 0 {
-                        return getMember(st, st.functionProtoObj, name)
-                    }
-                }
-                // propertyBagOf, not getFuncStatics: this is the lookup a
-                // borrowed `fn.hasOwnProperty("name")` ends up querying, and
-                // it has to see the materialised name/length
-                let statics = propertyBagOf(st, JSValue.Func(fIdx, fe))
-                // getMemberDyn, not getMember: a `static get v()` is stored on
-                // the statics object as an accessor, and the plain read never
-                // invoked it — every static getter returned undefined
-                return getMemberDyn(prog, statics, name, st)
-            }
-            JSValue.Native(nid) => {
-                let bag = getNativeProps(st, nid)
-                if name == "name" && objOwnIndex(st, bag, "name") < 0 {
-                    let nn = nativeCtorName(nid)
-                    if nn.len() > 0 {
-                        return JSValue.Str(nn)
-                    }
-                }
-                return getMember(st, bag, name)
-            }
-            JSValue.Null => {
-                return throwNullMember(st, name, "null")
-            }
-            JSValue.Undefined => {
-                return throwNullMember(st, name, "undefined")
-            }
-            _ => {
-                return JSValue.Undefined
-            }
-        }
+        return memberOfValue(prog, ov, name, st)
 }
 
 fn evalIndexExpr(prog: &Prog, objIdx: ExprId, keyIdx: ExprId, st: &mut Interp, scope: i64): JSValue {
