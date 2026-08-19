@@ -9715,6 +9715,20 @@ fn inspectFuncLabel(name: &string): string {
     return "[Function: " + name + "]"
 }
 
+// node distinguishes a class from a function: `[class Foo]`, `[class (anonymous)]`.
+fn inspectFuncLabelAt(fidx: i64): string {
+    if fidx >= 0 && fidx < gProg.funcs.len() && gProg.funcs[fidx].isClassCtor {
+        if gProg.funcs[fidx].name.len() == 0 {
+            return "[class (anonymous)]"
+        }
+        return "[class " + gProg.funcs[fidx].name.clone() + "]"
+    }
+    if fidx >= 0 && fidx < gProg.funcs.len() {
+        return inspectFuncLabel(gProg.funcs[fidx].name)
+    }
+    return "[Function (anonymous)]"
+}
+
 // A value as it appears INSIDE a container: strings are quoted, unlike the
 // top-level form (see inspectTop).
 // Pass one of the cycle marking: record every object reachable from `o` that is
@@ -9812,7 +9826,7 @@ fn inspectInner(st: &Interp, v: &JSValue, depth: i64, indentLvl: i64, stack: &mu
             return s + "n"
         }
         JSValue.Func(fidx, _env) => {
-            return inspectFuncLabel(gProg.funcs[fidx].name)
+            return inspectFuncLabelAt(fidx)
         }
         JSValue.Obj(o) => {
             return inspectObj(st, o, depth, indentLvl, stack, targets)
@@ -9827,7 +9841,10 @@ fn inspectArr(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut Vec<i
     if depth > 2 {
         return "[Array]"
     }
-    let n = st.objects[o].elems.len()
+    // arrLen, not elems.len(): an index stored past the element vector lives in
+    // the property table (`const a = [1]; a[3] = 4`), and stopping at the vector
+    // printed `[ 1 ]` for an array whose length is 4.
+    let n = arrLen(st, o)
     if n == 0 {
         return "[]"
     }
@@ -9853,7 +9870,10 @@ fn inspectArr(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut Vec<i
         }
         // a separate clone for the match: matching moves the value, and the
         // element is still needed for the render below
-        let probe = cloneValue(st.objects[o].elems[i])
+        // arrGet, not elems[i]: an index past the element vector is a property
+        // (arrIsHole already knows to look there), and indexing the vector
+        // directly aborted the process on `const a = [1]; a[3] = 4`.
+        let probe = arrGet(st, o, i)
         match probe {
             JSValue.Number(_x) => {
             }
@@ -9863,7 +9883,7 @@ fn inspectArr(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut Vec<i
                 allNumeric = false
             }
         }
-        let v = cloneValue(st.objects[o].elems[i])
+        let v = arrGet(st, o, i)
         parts.push(inspectInner(st, v, depth + 1, indentLvl + 2, stack, targets))
         i = i + 1
     }
@@ -9966,8 +9986,96 @@ fn inspectObjBody(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut V
     if st.objects[o].isFunctionLike {
         return inspectFuncLabel(toStr(objGet(st, o, "name")))
     }
+    // A typed array prints its kind, its length and its elements:
+    // `Uint8Array(3) [ 1, 2, 3 ]`. Without this it fell through to the property
+    // walk below, which sees nothing (the elements are in the buffer) and printed
+    // `{}` -- for the value a debugger prints most often.
+    if st.objExtras[st.objects[o].extra].taBuf >= 0 && !st.objects[o].isDataView {
+        let tkind = st.objExtras[st.objects[o].extra].taKind
+        let tlen = taCurrentLen(st, o)
+        if depth > 2 {
+            return "[" + taName(tkind) + "]"
+        }
+        var tparts: Vec<string> = Vec.new()
+        var ti: i64 = 0
+        while ti < tlen {
+            tparts.push(inspectInner(st, taElemValue(st, o, ti), depth + 1, indentLvl + 2, stack, targets))
+            ti = ti + 1
+        }
+        let thead = taName(tkind) + "(" + i64ToStr(tlen) + ") "
+        if tparts.len() == 0 {
+            return thead + "[]"
+        }
+        return thead + inspectJoin(tparts, "[", "]", "", indentLvl, false)
+    }
+    if st.objects[o].isArrayBuffer {
+        let bytes = st.objExtras[st.objects[o].extra].bytes.len()
+        var hex = ""
+        var bi: i64 = 0
+        while bi < bytes {
+            if bi > 0 {
+                hex = hex + " "
+            }
+            let bv = st.objExtras[st.objects[o].extra].bytes[bi]
+            hex.push(mjInspectHexUpper((bv as i64) / 16))
+            hex.push(mjInspectHexUpper((bv as i64) % 16))
+            bi = bi + 1
+        }
+        return "ArrayBuffer { [Uint8Contents]: <" + hex + ">, [byteLength]: " + i64ToStr(bytes) + " }"
+    }
+    // `Promise { 1 }` / `Promise { <pending> }` / `Promise { <rejected> ... }`
+    if st.objects[o].promiseState >= 0 {
+        if st.objects[o].promiseState == 0 {
+            return "Promise { <pending> }"
+        }
+        let pv = cloneValue(st.objExtras[st.objects[o].extra].promiseValue)
+        let shown = inspectInner(st, pv, depth + 1, indentLvl + 2, stack, targets)
+        if st.objects[o].promiseState == 2 {
+            return "Promise { <rejected> " + shown + " }"
+        }
+        return "Promise { " + shown + " }"
+    }
+    // node inspects a proxy as its TARGET: the handler is not part of the value
+    // the program is looking at.
+    if st.objects[o].isProxy {
+        let pt = objHandle(st.objExtras[st.objects[o].extra].proxyTarget)
+        if pt >= 0 {
+            return inspectObj(st, pt, depth, indentLvl, stack, targets)
+        }
+    }
+    // a primitive wrapper prints what it wraps, not its index properties:
+    // Object("hi") is `[String: 'hi']`, not `{ '0': 'h', '1': 'i' }`
+    if isWrapperObj(st, o) {
+        let prim = boxedPrimitive(st, o)
+        match prim {
+            JSValue.Str(ws) => {
+                if !isSymbolStr(ws) {
+                    return "[String: " + inspectQuoteStr(ws) + "]"
+                }
+            }
+            JSValue.Number(wn) => {
+                return "[Number: " + numToStr(wn) + "]"
+            }
+            JSValue.Bool(wb) => {
+                if wb {
+                    return "[Boolean: true]"
+                }
+                return "[Boolean: false]"
+            }
+            _ => {
+            }
+        }
+    }
     if depth > 2 {
         return "[Object]"
+    }
+    // An object with no prototype is not an ordinary object and node says so
+    // before printing its properties: `Object.create(null)` is
+    // `[Object: null prototype] {}`. The distinction matters because such an
+    // object has no toString, so every other way of showing it fails.
+    var nullProtoTag = ""
+    if st.objects[o].protoNull {
+        nullProtoTag = "[Object: null prototype] "
     }
     var parts: Vec<string> = Vec.new()
     var i: i64 = 0
@@ -9980,9 +10088,9 @@ fn inspectObjBody(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut V
         i = i + 1
     }
     if parts.len() == 0 {
-        return "{}"
+        return nullProtoTag + "{}"
     }
-    return inspectJoin(parts, "{", "}", "", indentLvl, false)
+    return nullProtoTag + inspectJoin(parts, "{", "}", "", indentLvl, false)
 }
 
 pub fn inspectTop(st: &Interp, v: &JSValue): string {
@@ -10006,7 +10114,7 @@ pub fn inspectTop(st: &Interp, v: &JSValue): string {
             return s + "n"
         }
         JSValue.Func(fidx, _env) => {
-            return inspectFuncLabel(gProg.funcs[fidx].name)
+            return inspectFuncLabelAt(fidx)
         }
         JSValue.Str(s) => {
             // a bare string logs unquoted (console.log("hi") → hi), but a symbol
@@ -10030,6 +10138,18 @@ pub fn inspectTop(st: &Interp, v: &JSValue): string {
 // than editing callFunctionBody's many early returns keeps the push and pop
 // paired without touching its control flow.
 pub fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
+    // A class constructor may only be reached through `new` (or a super() call,
+    // which goes through the construct path and so has a new.target). Calling one
+    // as a plain function silently ran its body and returned undefined, which is
+    // the opposite of the error every other engine raises -- and quiet, so the
+    // caller carried on with an undefined it never checked.
+    if fIdx >= 0 && fIdx < prog.funcs.len() && prog.funcs[fIdx].isClassCtor {
+        if isUndefinedValue(st.newTarget) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Class constructor " + prog.funcs[fIdx].name.clone() + " cannot be invoked without 'new'")
+            return JSValue.Undefined
+        }
+    }
     if fIdx >= 0 && fIdx < prog.funcs.len() {
         st.fnFileStack.push(prog.funcs[fIdx].file.clone())
     } else {

@@ -223,6 +223,11 @@ pub struct FuncDef {
     // constructors: `new ({m(){}}).m` is a TypeError, and test262 checks that
     // per built-in member.
     isMethod: bool,
+    // a CLASS constructor, declared or synthesised. Two things need to know:
+    // calling one without `new` is a TypeError, and console.log prints it as
+    // `[class C]` rather than `[Function: C]`. Nothing recorded it, so a class
+    // called as a plain function silently ran its body and returned undefined.
+    isClassCtor: bool,
     // byte range of this function's VERBATIM source text within its file, for
     // Function.prototype.toString. A pretty-printer cannot answer that: the
     // result is compared against node byte for byte, and the author's spacing is

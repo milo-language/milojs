@@ -8,6 +8,56 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## console.log printed `{}` for most exotic values, and a class was callable
+
+node-compat sample 203 -> 205, the first movement this session, and it came from
+a bug I found by accident while checking something else: `console.log` of an
+`Int32Array` printed `{}`.
+
+Ten formatting gaps against node, all in one differential (24 kinds through
+`console.log`):
+
+- **Typed arrays, ArrayBuffer, Promise, Proxy and primitive wrappers printed
+  `{}`.** They fell through to the ordinary property walk, which sees nothing
+  because their contents are not in the property table. This is the value a
+  debugger prints most often, and it showed nothing at all.
+- **A sparse array stopped at its element vector**: `const a = [1]; a[3] = 4`
+  printed `[ 1 ]`. The hole-collapsing logic (`<2 empty items>`) was already there
+  and correct -- it just never ran past the vector. Reading through `arrGet` for
+  the elements ALSO fixed a hard abort: indexing `elems` directly aborted the
+  process on that array.
+- **A null-prototype object printed as an ordinary one.** node says
+  `[Object: null prototype] {}`, and the distinction matters because such an
+  object has no `toString`, so every other way of showing it fails.
+- **A class printed as `[Function: Foo]`**, which led to the real find below.
+
+**A class constructor was callable without `new`.** `class Foo {}; Foo()` ran the
+body and returned undefined where every other engine throws. Nothing recorded that
+a FuncDef was a class constructor, so neither the call check nor the `[class Foo]`
+label was possible. `FuncDef.isClassCtor` now marks both the declared and the
+synthesised default constructor.
+
+**That guard immediately broke `Buffer`, and the break was the point.**
+`lib/buffer.js` declares `class Buffer extends Uint8Array`, so `Buffer(10)` -- the
+deprecated call form node still supports, and which node's own suite asserts
+throws ERR_OUT_OF_RANGE rather than a TypeError -- started failing. node's Buffer
+is a callable FUNCTION, not a class. The class stays as the implementation and
+keeps the Uint8Array subclassing; a wrapper function that forwards to
+`alloc`/`from` is what the module exports now, with the statics copied across and
+`prototype` shared so `instanceof` is unchanged.
+
+Two node-compat tests regressed from the guard and three others started passing
+once Buffer was callable, which is the whole story of the +2: an engine-level
+correctness fix exposed a library that was wrong in a way nothing had asked about.
+
+`tests/inspectFormats.js` covers 29 kinds plus the class-call error. DataView is
+deliberately left out -- node prints it across four lines whose wrapping depends
+on terminal width -- and so is Error, whose stack is a machine path.
+
+Gates: dev.sh 6/6, GC-stress 289/290 fixtures, suite green with the compiler on
+and off, fuzz 200 seeds clean, vm-differential clean, QuickJS 104/149.
+
+
 ## The compiled path and the evaluator are now a differential pair (+1 QuickJS)
 
 `MILOJS_NO_BYTECODE=1` forces every expression through the tree-walking evaluator.

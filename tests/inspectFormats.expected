@@ -1,0 +1,32 @@
+u8: Uint8Array(3) [ 1, 2, 3 ]
+u8empty: Uint8Array(0) []
+i32: Int32Array(2) [ 1, 2 ]
+f64: Float64Array(1) [ 1.5 ]
+big64: BigInt64Array(1) [ 1n ]
+ab: ArrayBuffer { [Uint8Contents]: <00 00 00 00>, [byteLength]: 4 }
+map: Map(1) { 'k' => 1 }
+set: Set(2) { 1, 2 }
+arr: [ 1, 2, 3 ]
+sparse: [ 1, <2 empty items>, 4 ]
+hole: [ 1, <1 empty item>, 3 ]
+obj: { a: 1, b: { c: 2 } }
+fn: [Function: foo]
+arrow: [Function (anonymous)]
+cls: [class Foo]
+anonCls: [class (anonymous)]
+date: 1970-01-01T00:00:00.000Z
+re: /ab+c/gi
+sym: Symbol(s)
+bigint: 10n
+nested: { x: [ 1, { y: 2 } ] }
+proxy: { a: 1 }
+proxyArr: [ 1, 2 ]
+resolved: Promise { 1 }
+strObj: [String: 'hi']
+numObj: [Number: 5]
+boolObj: [Boolean: true]
+nullProto: [Object: null prototype] {}
+nullProtoProps: [Object: null prototype] { a: 1 }
+call class: TypeError Class constructor Bare cannot be invoked without 'new'
+call class ctor: TypeError Class constructor WithCtor cannot be invoked without 'new'
+new still works: 1 true

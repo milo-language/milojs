@@ -306,7 +306,7 @@ fn makeArrow(p: &mut PState, prog: &mut Prog, params: Vec<string>, isAsync: bool
         prependStmt(prog, body!, unpack)
     }
     prog.funcs.push(FuncDef {
-        name: "", params: params, body: body!, paramPrelude: Option.None, isArrow: true, isAsync: isAsync, restFrom: mkRestFrom, isGenerator: false, isStrict: p.strict, isMethod: false, srcStart: startAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
+        name: "", params: params, body: body!, paramPrelude: Option.None, isArrow: true, isAsync: isAsync, restFrom: mkRestFrom, isGenerator: false, isStrict: p.strict, isMethod: false, isClassCtor: false, srcStart: startAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
     }
     )
     p.strict = aSaved
@@ -1101,7 +1101,7 @@ fn parseObjectLiteral(p: &mut PState, prog: &mut Prog): ExprId {
                     }
                 }
                 prog.funcs.push(FuncDef {
-                    name: key.clone(), params: mparams, body: mbody, paramPrelude: mParamPrelude, isArrow: false, isAsync: isMethodAsync, restFrom: mrest, isGenerator: isMethodGen, isStrict: p.strict, isMethod: true, srcStart: methodStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
+                    name: key.clone(), params: mparams, body: mbody, paramPrelude: mParamPrelude, isArrow: false, isAsync: isMethodAsync, restFrom: mrest, isGenerator: isMethodGen, isStrict: p.strict, isMethod: true, isClassCtor: false, srcStart: methodStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
                 }
                 )
                 p.strict = mSaved
@@ -1765,7 +1765,7 @@ fn parseFunction(p: &mut PState, prog: &mut Prog, isAsync: bool): i64 {
         }
     }
     prog.funcs.push(FuncDef {
-        name: name, params: params, body: body, paramPrelude: paramPrelude, isArrow: false, isAsync: isAsync, restFrom: restFrom, isGenerator: isGenerator, isStrict: p.strict, isMethod: false, srcStart: fnStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
+        name: name, params: params, body: body, paramPrelude: paramPrelude, isArrow: false, isAsync: isAsync, restFrom: restFrom, isGenerator: isGenerator, isStrict: p.strict, isMethod: false, isClassCtor: false, srcStart: fnStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
     }
     )
     p.strict = fSaved
@@ -2576,7 +2576,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                 }
                 let sbBody = parseBraceBlock(p, prog)
                 prog.funcs.push(FuncDef {
-                    name: "", params: sbParams, body: sbBody, paramPrelude: Option.None, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false, isStrict: p.strict, isMethod: false, srcStart: sbStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
+                    name: "", params: sbParams, body: sbBody, paramPrelude: Option.None, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false, isStrict: p.strict, isMethod: false, isClassCtor: false, srcStart: sbStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
                 }
                 )
                 p.strict = sbSaved
@@ -2650,7 +2650,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                     }
                 }
                 prog.funcs.push(FuncDef {
-                    name: mname.clone(), params: mparams, body: mbody, paramPrelude: cmParamPrelude, isArrow: false, isAsync: isAsyncM, restFrom: mrest, isGenerator: isStarM, isStrict: p.strict, isMethod: true, srcStart: cmStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
+                    name: mname.clone(), params: mparams, body: mbody, paramPrelude: cmParamPrelude, isArrow: false, isAsync: isAsyncM, restFrom: mrest, isGenerator: isStarM, isStrict: p.strict, isMethod: true, isClassCtor: false, srcStart: cmStartAt, srcEnd: p.toks[p.pos - 1].end, file: p.file.clone()
                 }
                 )
                 p.strict = mSaved
@@ -2659,6 +2659,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                     // the class CONSTRUCTOR is a class member syntactically but
                     // is the one that `new` must reach
                     prog.funcs[fidx].isMethod = false
+                    prog.funcs[fidx].isClassCtor = true
                     // The class VALUE is this FuncDef, so its `name` is what
                     // `C.name` and `new C().constructor.name` report. Left as the
                     // member name, every class that declared a constructor
@@ -2761,10 +2762,11 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     let defaultBlock = addBlock(prog, defaultBody)
     var noParams: Vec<string> = Vec.new()
     prog.funcs.push(FuncDef {
-        name: name.clone(), params: noParams, body: defaultBlock, paramPrelude: Option.None, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false, isStrict: p.strict, isMethod: false, srcStart: 0, srcEnd: 0, file: p.file.clone()
+        name: name.clone(), params: noParams, body: defaultBlock, paramPrelude: Option.None, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false, isStrict: p.strict, isMethod: false, isClassCtor: false, srcStart: 0, srcEnd: 0, file: p.file.clone()
     }
     )
     let defaultCtor = prog.funcs.len() - 1
+    prog.funcs[defaultCtor].isClassCtor = true
     let classEndAt = p.toks[p.pos - 1].end
     prog.funcs[defaultCtor].srcStart = classStartAt
     prog.funcs[defaultCtor].srcEnd = classEndAt
