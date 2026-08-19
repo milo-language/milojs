@@ -1,0 +1,6 @@
+socket event
+timeout fired
+req error: ECONNRESET | socket hang up
+write after abort returned: false
+abort event, aborted = true
+socket timeout fired, socket.timeout = 60

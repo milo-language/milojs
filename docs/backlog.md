@@ -8,6 +8,43 @@ last-verified: 2026-08-19, every item below re-probed against .dev/mj-engine and
 
 # milojs backlog
 
+## The http client's timeout and abort, and why they hung
+
+http 71 -> 76 of 371, timeouts 66 -> 62, zero regressions. Three defects, each
+found by running a hanging test rather than by reading the module.
+
+- **`Socket.prototype.setTimeout` and `ClientRequest.prototype.setTimeout` were
+  both `function () { return this; }`.** No 'timeout' event could fire on any
+  socket or any request, so every test that waits for one waited until the
+  harness killed it. The socket now carries a real idle timer, rearmed from BOTH
+  directions: a timer rearmed only by writes fires on a connection that is busily
+  receiving. It reports rather than destroys, which is node's behaviour and the
+  difference between a recoverable stall and a lost connection. `req.setTimeout`
+  arms the socket's timer and forwards the event; `{ timeout }` in the options
+  bag is the same thing spelled differently. The timer is cleared on destroy,
+  or a dead socket's pending timer keeps the event loop alive forever.
+
+- **`req.abort(); req.end();` sent the request anyway.** `end()` did not consult
+  `aborted`, so it opened a socket to a server the test had already declared must
+  never be contacted (`common.mustNotCall()`), and that socket then pinned the
+  event loop. node's own tests write exactly that sequence.
+
+- **Destroying a live request emitted nothing**, where node emits
+  `Error: socket hang up` with code `ECONNRESET`. `abort()` is the deliberate
+  exception: it emits 'abort' and no error, which is why node's abort tests
+  assert `req.on('error', common.mustNotCall())`. Encoding that distinction is
+  what makes both families of test pass at once.
+
+**`http.request` was never the problem.** `docs/status.md` had claimed the client
+"never completes" and hangs against an in-process server; it does not, and has
+not for some time.
+
+Still open, and the next piece of the 62: the server side cannot tell that a
+client went away mid-response. `_serveOnce` reads a whole request with one
+`__tcpRecv` and never wraps the accepted connection in a Socket, so there is no
+'close' to observe and `req.emit('aborted')` never happens. That is a real
+change to the server's connection model, not a patch.
+
 Open items only. This file is not a changelog: a fixed item gets DELETED, and
 `git log -p docs/backlog.md` is the history. Current scores live in
 [docs/status.md](status.md) and [docs/node-compat.md](node-compat.md), both
