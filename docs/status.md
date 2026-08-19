@@ -30,7 +30,7 @@ The project deliberately has two deliverables:
 Engine maturity comes first. Runtime compatibility cannot be credible while the
 language engine and embedding contract are unstable.
 
-About <!--fact:loc-total-->61.3k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
+About <!--fact:loc-total-->61.5k<!--/fact--> lines of Milo across `src/` and `lib/`, from source text to running
 program, with no V8, JavaScriptCore, or C JavaScript engine underneath.
 
 ## Evidence
@@ -46,7 +46,7 @@ reproducible release artifact.
 | QuickJS `tests/` | **<!--fact:qjs-pass-->104<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = <!--fact:qjs-pct-->69.8%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
 | test262 failures that are PARSE failures | <!--fact:t262-parsefail-->23<!--/fact--> of <!--fact:t262-fail-->301<!--/fact--> | <!--fact:t262-parsefail-pct-->7.6%<!--/fact--> of the gap is missing syntax; the rest is semantics |
 | QuickJS cases that never ran (parse gaps) | <!--fact:qjs-parsefail-->0<!--/fact--> | of those that ran, <!--fact:qjs-ran-pct-->69.8%<!--/fact--> of <!--fact:qjs-ran-->149<!--/fact--> pass |
-| locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->261<!--/fact--> | byte-exact differential output vs node |
+| locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->262<!--/fact--> | byte-exact differential output vs node |
 | locked runtime fixtures (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->37<!--/fact--> | module, async, fetch, HTTP, sqlite, host behavior |
 | Milo invariant fixtures (`tests/milo/`, `tests/milo-errors/`) | <!--fact:fixtures-milo-->3<!--/fact--> + <!--fact:fixtures-milo-errors-->8<!--/fact--> | scheduler/context and GC-root invariants |
 | ESM / Node-API / embedding fixtures | 2 / 2 / 1 | lowering, addon callbacks, C ABI |
@@ -220,8 +220,10 @@ is open.
 - `toLocale*` is en-US only and ignores its arguments; `Intl` is not modelled.
   <!--gap:intl-->
 - `@@match`/`@@replace`/`@@split` delegate to the String methods, the reverse of
-  the spec's direction. <!--gap:regexp-symbols--> Correct while nothing
-  overrides them, wrong for a subclass that redefines them.
+  the spec's direction. <!--gap:regexp-symbols--> A plain object carrying one of
+  those symbols IS now consulted first, which is the half that reachable code
+  uses; a RegExp SUBCLASS that overrides one is not, because the member-read fast
+  path answers the engine's own method before the class's.
 
 Closed since this list was last written by hand, and kept here only as a record
 of how far it had drifted: `BigInt64Array`/`BigUint64Array` existing at all,

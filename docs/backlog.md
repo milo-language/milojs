@@ -8,6 +8,53 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## RegExp: 8 of 29, and one of them was mine again
+
+Ninth pass. lastIndex across exec/test/sticky, named groups, replace-callback
+argument shapes, flags, indices, and the custom symbol protocol. The engine got
+the hard parts right -- lastIndex advance and reset, sticky, lookbehind,
+backreferences, lazy quantifiers, `\u{...}` under /u, split with limits, and
+matchAll -- and missed eight smaller things.
+
+**Mine first.** Branding RegExp.prototype's methods yesterday (so
+`exec.call({})` throws) also branded `toString`, which is GENERIC: it reads
+`source` and `flags` off any object, so
+`RegExp.prototype.toString.call({source: "x", flags: "y"})` is "/x/y". It has its
+own internal name now, exactly the shape `Error.prototype.toString` needed two
+days ago. Two generic methods, two identical mistakes, because "install it under
+its own name" is not obvious until the brand check makes it fail.
+
+The rest:
+
+- **An empty pattern read back as ""**, so `String(new RegExp(""))` was "//" --
+  which is not a regex literal at all, it is a line comment. EscapeRegExpPattern
+  says "(?:)".
+- **`flags` answered them in the order written.** `new RegExp("a", "yimsg").flags`
+  was "yimsg"; the getter assembles them in a fixed order and is always "gimsy".
+- **A replace callback with NAMED groups was one argument short.** node passes the
+  groups object after the subject string, so a replacer reading `a.at(-1).year`
+  got the subject instead.
+- **The `d` flag did nothing**: `m.indices` was undefined, so reading it threw. The
+  flag was not even parsed -- `flagD` is new, and `indices` carries the per-capture
+  [start, end] pairs plus a parallel `groups` object.
+- **A plain object carrying `@@replace`/`@@match`/`@@split` was ignored** and
+  stringified. The spec runs these operations THROUGH the argument. That half is
+  fixed; the documented `regexp-symbols` limit now says so precisely, because a
+  RegExp SUBCLASS overriding one still is not honoured -- the member-read fast
+  path answers the engine's own method before the class's.
+
+The subclass attempt is worth recording because it crashed first. Comparing the
+resolved method against RegExp.prototype's copy by object IDENTITY looked right
+and was not: a bound-method value is rebuilt on every property read, so the
+comparison never matched, the engine's own delegating method got called from the
+String operation it delegates to, and the stack died. Comparing the recorded
+bound-method NAME is the test that actually distinguishes them.
+
+`tests/regexpSemantics.js` covers all 29. Gates: dev.sh 6/6, GC-stress 297/298
+fixtures, suite green with the compiler on and off, fuzz 200 seeds clean, QuickJS
+104/149, node-compat sample 207/400.
+
+
 ## toFixed rounded in doubles, so 1.45 came out 1.5
 
 Eighth pass: number formatting, radix conversion, parsing, BigInt and the Math

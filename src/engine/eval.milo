@@ -1921,6 +1921,66 @@ fn isBuiltinAccessorName(n: &string): bool {
 }
 
 // Invoke a builtin method by name against an already-evaluated receiver+args.
+// The spec runs match/replace/search/split THROUGH the argument: String.prototype
+// .replace looks for a @@replace method on its first argument and hands the whole
+// operation over. milojs implements the String side and has RegExp.prototype's
+// symbol methods delegate back to it, which works for a real regex and fails for
+// anything else -- a custom matcher object was simply ignored and the argument
+// stringified. This restores the spec's direction for the case that was broken,
+// without disturbing the regex path that the rest of the engine is built on.
+fn stringSymbolOpKey(name: &string): string {
+    if name == "match" {
+        return "@@sym:Symbol.match:0"
+    }
+    if name == "matchAll" {
+        return "@@sym:Symbol.matchAll:0"
+    }
+    if name == "replace" || name == "replaceAll" {
+        return "@@sym:Symbol.replace:0"
+    }
+    if name == "search" {
+        return "@@sym:Symbol.search:0"
+    }
+    if name == "split" {
+        return "@@sym:Symbol.split:0"
+    }
+    return ""
+}
+
+// The argument's own symbol method, when it has one and is NOT a regex (a regex
+// goes down the engine's own path, which is both faster and the implementation
+// those symbol methods delegate to -- consulting it here would be a loop).
+fn stringOpSymbolMethod(prog: &Prog, st: &mut Interp, name: &string, args: &Vec<JSValue>): JSValue {
+    let key = stringSymbolOpKey(name)
+    if key.len() == 0 || args.len() == 0 {
+        return JSValue.Undefined
+    }
+    let h = objHandle(args[0])
+    if h < 0 {
+        return JSValue.Undefined
+    }
+    let m = getMemberDyn(prog, h, key, st)
+    if st.throwing || !isCallableIn(st, m) {
+        return JSValue.Undefined
+    }
+    // A REGEX resolving to RegExp.prototype's own symbol method goes down the
+    // engine's path instead: those methods delegate back to the String operation,
+    // so calling one here would loop. An OVERRIDE -- which is the whole point,
+    // `class R extends RegExp { [Symbol.match]() {...} }` -- is a different
+    // object and is honoured.
+    // A bound-method value is rebuilt on every read, so identity comparison
+    // against RegExp.prototype's copy does not work. What distinguishes the
+    // engine's own delegating method is its recorded name: it IS the symbol key.
+    // Calling it from here would delegate straight back to this String operation
+    // and recurse until the stack died -- which is exactly what happened before
+    // this check replaced the identity one.
+    let mh = objHandle(m)
+    if mh >= 0 && st.objExtras[st.objects[mh].extra].boundMethod == key.clone() {
+        return JSValue.Undefined
+    }
+    return m
+}
+
 pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSValue>, st: &mut Interp): JSValue {
     // the accessor properties on the builtin prototypes; brandOk has already
     // rejected an incompatible receiver by the time this runs
@@ -1936,6 +1996,27 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             return builtinAccessorValue(st, ah, name)
         }
         return JSValue.Undefined
+    }
+    // RegExp.prototype.toString is GENERIC: "/" + ToString(this.source) + "/" +
+    // ToString(this.flags), off any object. Installed as plain "toString" it was
+    // indistinguishable from Object.prototype.toString once the receiver was not
+    // a regex, and branding it instead made the generic call a TypeError.
+    if name == "__regexpToString" {
+        let rh = objHandle(recv)
+        if rh < 0 {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "RegExp.prototype.toString called on non-object")
+            return JSValue.Undefined
+        }
+        let rsrc = toStrProg(prog, getMemberDyn(prog, rh, "source", st), st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let rflags = toStrProg(prog, getMemberDyn(prog, rh, "flags", st), st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        return JSValue.Str("/" + rsrc + "/" + rflags)
     }
     // Error.prototype.toString: `name ?? "Error"` and `message ?? ""`, read off
     // whatever receiver it was given. It is not restricted to Errors -- the spec
@@ -2041,6 +2122,17 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             // string, which is what a bare "abc".slice() must keep doing.
             if isArrayMethod(name) && !isStringMethodName(name) {
                 return arrayMethodGeneric(prog, JSValue.Str(sv.clone()), name, args, st)
+            }
+            let symOp = stringOpSymbolMethod(prog, st, name, args)
+            if isCallableIn(st, symOp) {
+                var symArgs: Vec<JSValue> = Vec.new()
+                symArgs.push(JSValue.Str(sv.clone()))
+                var sa: i64 = 1
+                while sa < args.len() {
+                    symArgs.push(cloneValue(args[sa]))
+                    sa = sa + 1
+                }
+                return callValue(prog, symOp, symArgs, cloneValue(args[0]), st)
             }
             if stringOpNeedsRegexArg(st, name, args) {
                 let ra = regexArgFor(st, name, args)
@@ -14493,6 +14585,18 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                 st.throwing = true
                 st.thrownValue = makeError(st, "TypeError", name.clone() + " is not a function" + currentModule(st))
                 return JSValue.Undefined
+            }
+            // the argument's own @@replace/@@match/@@split, when it has one
+            let symOp2 = stringOpSymbolMethod(prog, st, name, argVals)
+            if isCallableIn(st, symOp2) {
+                var symArgs2: Vec<JSValue> = Vec.new()
+                symArgs2.push(JSValue.Str(s.clone()))
+                var sb: i64 = 1
+                while sb < argVals.len() {
+                    symArgs2.push(cloneValue(argVals[sb]))
+                    sb = sb + 1
+                }
+                return callValue(prog, symOp2, symArgs2, cloneValue(argVals[0]), st)
             }
             // regex-based string ops when the first arg is a RegExp
             if stringOpNeedsRegexArg(st, name, argVals) {

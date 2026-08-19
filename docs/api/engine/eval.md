@@ -100,7 +100,7 @@ _Undocumented._
 pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSValue>, st: &mut Interp): JSValue
 ```
 
-Invoke a builtin method by name against an already-evaluated receiver+args.
+_Undocumented._
 
 ### `callFunction`
 

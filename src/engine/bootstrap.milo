@@ -440,7 +440,7 @@ fn setupRegexProto(st: &mut Interp) {
     var names: Vec<string> = Vec.new()
     names.push("exec")
     names.push("test")
-    names.push("toString")
+    names.push("__regexpToString")
     names.push("compile")
     // String.prototype.match/replace/search/split are the real implementations
     // here; these delegate to them, which is the direction the spec runs in
@@ -457,9 +457,21 @@ fn setupRegexProto(st: &mut Interp) {
         // prototype is built here rather than through buildNativeProto, so it did
         // not pick up the brand the Map and Set prototypes get.
         let rm = makeBoundMethod(st, JSValue.Undefined, names[i].clone())
-        st.objExtras[st.objects[objHandle(rm)].extra].boundBrand = BRAND_REGEXP
-        objSet(st, rp, names[i].clone(), rm)
-        objSetNonEnumerable(st, rp, names[i])
+        // toString is the exception: it is GENERIC, reading `source` and `flags`
+        // off whatever object it is given, so `RegExp.prototype.toString.call({
+        // source: "x", flags: "y" })` is "/x/y" and not a TypeError. Branding it
+        // with the rest broke that.
+        if names[i] != "__regexpToString" {
+            st.objExtras[st.objects[objHandle(rm)].extra].boundBrand = BRAND_REGEXP
+        }
+        // installed under its real name; the internal one only selects the
+        // generic implementation in callBuiltinByName
+        var installAs = names[i].clone()
+        if installAs == "__regexpToString" {
+            installAs = "toString"
+        }
+        objSet(st, rp, installAs.clone(), rm)
+        objSetNonEnumerable(st, rp, installAs)
         i = i + 1
     }
     // The flag family is an ACCESSOR on the prototype in the spec, while this

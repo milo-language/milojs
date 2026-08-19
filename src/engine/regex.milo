@@ -79,6 +79,9 @@ pub struct Regex {
     // the sticky flag: the match must start exactly at lastIndex rather than
     // being searched for from there
     flagY: bool,
+    // the `d` flag: exec's result carries an `indices` array of [start, end]
+    // pairs alongside the captured text
+    flagD: bool,
     valid: bool,
     // Which check rejected the pattern, so the message can say. A bad property
     // name and malformed syntax read very differently to whoever hits one.
@@ -1264,6 +1267,7 @@ pub fn regexCompile(source: string, flags: string): Regex {
     var fs_ = false
     var fu = false
     var fy = false
+    var fd = false
     var fj: i64 = 0
     while fj < flags.len() {
         let fc = flags[fj]
@@ -1277,6 +1281,9 @@ pub fn regexCompile(source: string, flags: string): Regex {
             fs_ = true
         } else if fc == 'u' || fc == 'v' {
             fu = true
+        }
+        if fc == 'd' {
+            fd = true
         }
         fj = fj + 1
         if fc == 'y' {
@@ -1299,7 +1306,7 @@ pub fn regexCompile(source: string, flags: string): Regex {
     reEmit(prog, RE_SAVE, 1, 0)
     reEmit(prog, RE_MATCH, 0, 0)
     return Regex {
-        prog: prog, classes: p.classes, nGroups: p.ngroup, flagI: fi, flagG: fg, flagM: fm, flagS: fs_, flagY: fy, valid: !p.badProp && !p.badSyntax, badPropName: p.badProp, groupNames: p.groupNames, groupNums: p.groupNums
+        prog: prog, classes: p.classes, nGroups: p.ngroup, flagI: fi, flagG: fg, flagM: fm, flagS: fs_, flagY: fy, flagD: fd, valid: !p.badProp && !p.badSyntax, badPropName: p.badProp, groupNames: p.groupNames, groupNums: p.groupNums
     }
 }
 

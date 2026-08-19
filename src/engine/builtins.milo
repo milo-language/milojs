@@ -623,6 +623,28 @@ fn expandStringReplacement(rep: &string, whole: &string, matchStart: i64, matchL
     return out
 }
 
+// The spec lists the flags in a fixed order (d, g, i, m, s, u, v, y) regardless of
+// how they were written, because `flags` is defined as a getter that assembles
+// them one at a time in that sequence.
+fn canonicalFlagOrder(flags: string): string {
+    let order = "dgimsuvy"
+    var out = String.withCapacity(flags.len())
+    var i: i64 = 0
+    while i < order.len() {
+        var j: i64 = 0
+        while j < flags.len() {
+            if flags[j] == order[i] {
+                out.push(order[i])
+                j = flags.len()
+            } else {
+                j = j + 1
+            }
+        }
+        i = i + 1
+    }
+    return out
+}
+
 pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     if name == "toUpperCase" || name == "toLocaleUpperCase" {
         // the locale forms are the locale-independent ones here: this engine has
@@ -1644,9 +1666,20 @@ pub fn makeRegex(st: &mut Interp, pattern: string, flags: string): JSValue {
     let o = newObject(st)
     let _er = ensureExtra(st, o)
     st.objExtras[st.objects[o].extra].regexId = id
-    objSet(st, o, "source", JSValue.Str(pattern))
+    // EscapeRegExpPattern: an empty pattern reads back as "(?:)" so that
+    // `String(new RegExp(""))` is "/(?:)/" and not "//", which would re-parse as
+    // a line comment. Storing the raw text made the round trip through
+    // source/toString produce something that is not a regex literal at all.
+    var srcText = pattern.clone()
+    if srcText.len() == 0 {
+        srcText = "(?:)"
+    }
+    objSet(st, o, "source", JSValue.Str(srcText))
     objSetNonEnumerable(st, o, "source")
-    objSet(st, o, "flags", JSValue.Str(flags.clone()))
+    // The flags getter answers them in the spec's canonical order (dgimsuvy),
+    // not in the order the caller happened to write them: `new RegExp("a",
+    // "yimsg").flags` is "gimsy".
+    objSet(st, o, "flags", JSValue.Str(canonicalFlagOrder(flags.clone())))
     objSetNonEnumerable(st, o, "flags")
     // the whole flag family, not just `global` — a test that reads .multiline or
     // .sticky got undefined, and `undefined` is not `false`
@@ -1709,6 +1742,54 @@ fn buildMatchArray(st: &mut Interp, s: &string, saves: &Vec<i64>, rid: i64): JSV
     // BYTE offset, so any match after a non-ASCII character reported a position
     // the caller could not use to slice the same string.
     objSet(st, arr, "index", JSValue.Number(byteToUtf16(s, saves[0]) as f64))
+    // `.indices` under the `d` flag: [start, end] per capture in UTF-16 units,
+    // undefined for a group that did not participate, plus a parallel `groups`
+    // object when the pattern has named captures. Reading `m.indices[0]` was a
+    // TypeError without it.
+    if rid >= 0 && st.regexes[rid].flagD {
+        let idxArr = newArray(st)
+        pushTemp(st, JSValue.Obj(idxArr))
+        var ii: i64 = 0
+        while 2 * ii + 1 < saves.len() {
+            let ia = saves[2 * ii]
+            let ib = saves[2 * ii + 1]
+            if ia >= 0 && ib >= 0 {
+                let pair = newArray(st)
+                pushTemp(st, JSValue.Obj(pair))
+                arrPush(st, pair, JSValue.Number(byteToUtf16(s, ia) as f64))
+                arrPush(st, pair, JSValue.Number(byteToUtf16(s, ib) as f64))
+                popTemp(st)
+                arrPush(st, idxArr, JSValue.Obj(pair))
+            } else {
+                arrPush(st, idxArr, JSValue.Undefined)
+            }
+            ii = ii + 1
+        }
+        if st.regexes[rid].groupNames.len() > 0 {
+            let igroups = newObject(st)
+            pushTemp(st, JSValue.Obj(igroups))
+            var ig: i64 = 0
+            while ig < st.regexes[rid].groupNames.len() {
+                let iname = st.regexes[rid].groupNames[ig].clone()
+                let inum = st.regexes[rid].groupNums[ig]
+                var ival = JSValue.Undefined
+                if 2 * inum + 1 < saves.len() && saves[2 * inum] >= 0 && saves[2 * inum + 1] >= 0 {
+                    let ipair = newArray(st)
+                    pushTemp(st, JSValue.Obj(ipair))
+                    arrPush(st, ipair, JSValue.Number(byteToUtf16(s, saves[2 * inum]) as f64))
+                    arrPush(st, ipair, JSValue.Number(byteToUtf16(s, saves[2 * inum + 1]) as f64))
+                    popTemp(st)
+                    ival = JSValue.Obj(ipair)
+                }
+                objSet(st, igroups, iname, ival)
+                ig = ig + 1
+            }
+            popTemp(st)
+            objSet(st, idxArr, "groups", JSValue.Obj(igroups))
+        }
+        popTemp(st)
+        objSet(st, arr, "indices", JSValue.Obj(idxArr))
+    }
     objSet(st, arr, "input", JSValue.Str(s.clone()))
     // .groups: an object of named-capture substrings, or undefined when the
     // pattern has no (?<name>...) groups (matching JS, where .groups is
@@ -2028,6 +2109,31 @@ fn regexReplaceFn(prog: &Prog, st: &mut Interp, s: &string, rid: i64, fn_: &JSVa
             // UTF-16 units rather than bytes
             args.push(JSValue.Number(byteToUtf16(s, mstart) as f64))
             args.push(JSValue.Str(s.clone()))
+            // When the pattern has NAMED groups the callback receives one more
+            // argument after the string: the groups object. Omitting it meant a
+            // replacer written as `(...a) => a.at(-1).year` read the subject
+            // string instead of the groups.
+            if rid >= 0 && st.regexes[rid].groupNames.len() > 0 {
+                let gobj = newObject(st)
+                pushTemp(st, JSValue.Obj(gobj))
+                var gn: i64 = 0
+                while gn < st.regexes[rid].groupNames.len() {
+                    let gname = st.regexes[rid].groupNames[gn].clone()
+                    let gnum2 = st.regexes[rid].groupNums[gn]
+                    var gval = JSValue.Undefined
+                    if 2 * gnum2 + 1 < saves.len() {
+                        let ga = saves[2 * gnum2]
+                        let gb = saves[2 * gnum2 + 1]
+                        if ga >= 0 && gb >= 0 {
+                            gval = JSValue.Str(strSlice(s, ga, gb))
+                        }
+                    }
+                    objSet(st, gobj, gname, gval)
+                    gn = gn + 1
+                }
+                popTemp(st)
+                args.push(JSValue.Obj(gobj))
+            }
             let r = callValue(prog, fn_, args, JSValue.Undefined, st)
             out = out + toStr(r)
             last = mend
