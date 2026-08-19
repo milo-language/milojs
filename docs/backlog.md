@@ -45,21 +45,40 @@ intuition: the 1500-case sample is too thin to rank causes.
 ## http: no keep-alive, so every response closes its connection
 
 `Connection: close` goes out on every response and the socket is destroyed after
-it, so a client that asks for `Connection: keep-alive` does not get it and a
-second request on the same connection is never read.
+it, so a client asking for `Connection: keep-alive` does not get it and a second
+request on the same connection is never read. Multi-packet request bodies have
+the same root cause: `Server.prototype._serveOnce` in `lib/http.js` reads one
+request with a single blocking `__tcpRecv`, so one read is one request.
 
-Reproduce: `test-http-keep-alive-max-requests.js`, which sets
-`server.maxRequestsPerSocket` and expects the first responses to carry
-`Connection: keep-alive`.
+Reproduce: `test-http-keep-alive-max-requests.js`.
 
-Why it is not a one-line fix: answering "keep-alive" without honouring it is
-worse than answering "close", because the client then waits on a connection
-nobody will read. Honouring it means `Server.prototype._serveOnce` in
-`lib/http.js` must stop treating one accepted connection as one request: it
-reads a whole request with a single `__tcpRecv` and closes at `res.end()`. The
-connection is now wrapped in a `net.Socket`, which is the piece that was missing;
-what remains is parsing successive requests out of that socket's stream rather
-than out of one blocking read. Multi-packet request bodies need the same change.
+**Attempted 2026-08-19 and reverted.** The rewrite is the obvious one: accept,
+wrap in the `net.Socket` (that part is already in place and stayed), then
+assemble requests out of the socket's data stream, dispatch one at a time, and
+keep the connection after `res.end()` when both sides agreed to. It works for
+the simple cases and it is measurably worse overall — the http area went 79 to
+76 and hangs went 56 to 66. The three that broke were
+`test-http-1.0-keep-alive.js`, `test-http-default-encoding.js` and
+`test-http-request-large-payload.js`, the last of which is precisely the
+multi-packet body the change was meant to fix. The patch is not kept; `git log`
+has this entry and the reasoning below.
+
+Two things the attempt did get right and a retry should keep:
+
+- Keep-alive is only possible when the response is SELF-DELIMITING. An HTTP/1.0
+  client with a streamed body has neither a length nor chunked framing
+  available, so the close is the delimiter and the connection cannot be kept
+  alive however politely the client asked. Missing this hangs
+  `test-http-wget.js`.
+- The connection decision belongs at dispatch, once, read from what the client
+  actually said: 1.1 keeps alive unless it says `close`, 1.0 only if it says
+  `keep-alive`.
+
+What to work out before retrying: where the extra hangs come from. The suspicion
+is the handoff from the blocking `__tcpRecv` to the pump — a request whose bytes
+are already buffered when the socket is adopted, versus one that arrives after —
+but that was not established, and guessing again is how this attempt went.
+Instrument the drain loop first.
 
 ## Async: `next()` on an async generator drives the body, and can HANG
 
