@@ -895,12 +895,26 @@ pub fn runChunk(prog: &Prog, ch: &Chunk, st: &mut Interp, scope: i64): Option<JS
 // One compiled chunk per `for` statement, keyed by its StmtId index.
 // gLoopIdx[i] is 0 before the statement has been looked at, -1 once it has been
 // rejected, and chunk index + 1 once it compiled.
+// Set from MILOJS_NO_BYTECODE by the entry points. With it on, every expression
+// runs through the tree-walking evaluator instead of a compiled chunk, which
+// makes the two paths a DIFFERENTIAL PAIR: the whole fixture suite must produce
+// byte-identical output either way. The compiler exists to be faster, not
+// different, and an opcode that skips a guard the evaluator applies is exactly
+// the bug this catches -- `-Symbol()` answered NaN through Op.Neg instead of
+// throwing, because the fallback called toNumProg where the evaluator's own arm
+// calls toNumArg. That shipped to main and only a fixture written for an
+// unrelated reason caught it.
+pub var gVmDisabled: bool = false
+
 var gLoopChunks: Vec<Chunk> = Vec.new()
 var gLoopIdx: Vec<i64> = Vec.new()
 
 // Run this `for` through the compiled path, or answer false to say the tree
 // walker still has to run it. Compilation happens once per statement.
 pub fn tryRunFor(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): bool {
+    if gVmDisabled {
+        return false
+    }
     while gLoopIdx.len() <= id.index {
         gLoopIdx.push(0)
     }
@@ -976,6 +990,9 @@ pub fn compileBody(prog: &Prog, fIdx: i64): Option<Chunk> {
 // Run this function body as bytecode, or answer None to say the tree walker
 // still has to run it. Compilation happens once per function.
 pub fn tryRunBody(prog: &Prog, fIdx: i64, st: &mut Interp, scope: i64): Option<JSValue> {
+    if gVmDisabled {
+        return Option.None
+    }
     while gBodyIdx.len() <= fIdx {
         gBodyIdx.push(0)
     }

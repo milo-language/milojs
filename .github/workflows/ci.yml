@@ -189,6 +189,21 @@ jobs:
       - name: js fixtures, collecting at every allocation
         run: MILOJS_GC_THRESHOLD=1 MILOJS_ENGINE_BIN=/tmp/milojs-engine MILOJS_RUNTIME_BIN=/tmp/milojs ./tests/run.sh
 
+      # The compiled path against the tree-walking evaluator. src/engine/bytecode.milo
+      # compiles some shapes to opcodes and falls back for the rest; it exists to be
+      # FASTER, not different, so both must produce identical output. An opcode that
+      # skips a check the evaluator applies is invisible to every conformance suite
+      # until a fixture happens to cover that exact shape -- which is how `-Symbol()`
+      # answering NaN reached main. The operator x operand matrix covers that class
+      # exhaustively; the random seeds add breadth.
+      - name: compiled and evaluated agree
+        run: ./tools/vm-differential.sh 1 120 /tmp/milojs-engine
+
+      # And the whole fixture suite with the compiler switched off, so the evaluator
+      # path keeps its own coverage rather than being shadowed by the VM.
+      - name: js fixtures, compiler disabled
+        run: MILOJS_NO_BYTECODE=1 MILOJS_ENGINE_BIN=/tmp/milojs-engine MILOJS_RUNTIME_BIN=/tmp/milojs ./tests/run.sh
+
       # The README's examples, run against the binaries just built. A doc that
       # promises output the engine no longer produces fails here instead of in
       # front of whoever followed the README.

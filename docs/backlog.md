@@ -8,6 +8,62 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## The compiled path and the evaluator are now a differential pair (+1 QuickJS)
+
+`MILOJS_NO_BYTECODE=1` forces every expression through the tree-walking evaluator.
+That makes the two execution paths comparable, and they must agree: the compiler
+exists to be FASTER, not different. `bench/arith.js` runs 168ms compiled and 449ms
+interpreted, so the switch demonstrably takes the other path.
+
+This exists because of the `-Symbol()` bug from earlier today: `Op.Neg`'s fallback
+called `toNumProg` where the evaluator's `-` arm calls `toNumArg`, so it answered
+NaN instead of throwing. It reached main and was caught days later by a fixture
+written for something else. The other agent is landing VM opcodes quickly
+(property read, property write, object literal), so the class matters more each
+day.
+
+**Getting the gate to actually fire took three tries, and that is the interesting
+part.** Reintroducing the real bug:
+
+1. `tools/vm-differential.sh` over 120 random seeds: **0 disagreements**. The
+   generator emitted `Symbol('s')` as a value but never applied an operator to one
+   inside a function body -- and a function body or loop is the only place the
+   compiler runs.
+2. Added operator statements wrapped in functions: still **0**. Hitting the bug
+   needs the operator (1 in 5), the operand (1 in 24) and the wrapper to coincide,
+   about 0.1% per statement.
+3. Added `fuzz-gen.py --matrix`: every unary and binary operator against every
+   awkward operand (Symbol, BigInt, -0, NaN, throwing valueOf, @@toPrimitive,
+   wrappers, typed array, proxy), 1025 cases, inside function bodies. **Caught it
+   on case 0.**
+
+A gate that passes because its generator cannot produce the failing shape is
+worse than no gate: it reads as evidence. When the class is small and enumerable,
+enumerate it.
+
+**Three real bugs on the matrix's first honest run**, none of which any suite had
+found:
+
+- **`-obj` was NaN in the evaluator.** `toNum` cannot run `valueOf` (no Prog to
+  re-enter user code with), so `-[1]` was NaN instead of -1. The compiled `Op.Neg`
+  did it correctly -- this is exactly the disagreement the pair is for, with the
+  EVALUATOR as the wrong side.
+- **`~obj` skipped ToPrimitive in BOTH paths.** `~[1]` was -1 instead of -2, and a
+  throwing `valueOf` was swallowed rather than propagated.
+- **`+10n` returned 10** where node throws TypeError. Unary plus is the one
+  arithmetic operator BigInt refuses, precisely so a conversion cannot silently
+  lose precision; answering the numeric value did the thing the rule exists to
+  prevent.
+
+QuickJS 103 -> 104 (`test_builtin.js:test_cur_pc`). `tests/unaryOnObjects.js` locks
+the three, and passes with the compiler on AND off. CI gained both the differential
+and a full fixture pass with the compiler disabled, so the evaluator keeps its own
+coverage instead of being shadowed by the VM.
+
+Gates: dev.sh 6/6, GC-stress 288/289 fixtures, suite green in both modes, fuzz 200
+seeds clean, node-compat sample 203/400 unchanged.
+
+
 ## The five key walks are one walk
 
 The unification the previous entry filed. `ownStringKeys(st, h, enumOut, propOut)`

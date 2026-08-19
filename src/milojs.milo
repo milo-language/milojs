@@ -53,6 +53,9 @@ from "./engine/strutil" import {
 from "std/process" import {
     exePath
 }
+from "./engine/bytecode" import {
+    gVmDisabled
+}
 from "./runtime/host" import {
     installHostGlobals
 }
@@ -281,6 +284,11 @@ fn main(): i32 {
                 gcThreshold = n
             }
         }
+    }
+    // Force every expression through the tree-walking evaluator, so the fixture
+    // suite can be run both ways and the outputs compared. See bytecode.milo.
+    if let Option.Some(_nb) = Env.get("MILOJS_NO_BYTECODE") {
+        gVmDisabled = true
     }
     // Headroom multiple over the live set between collections (see collect).
     var gcGrowth: i64 = 2

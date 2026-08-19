@@ -35,11 +35,11 @@ Two binaries, both written in [Milo](https://github.com/milo-language/milo):
   loop, fs/http, Node-API addons. Like node/deno/bun.
 
 <<<<<<< HEAD
-~<!--fact:loc-milo-->46.2k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
+~<!--fact:loc-milo-->46.3k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
 ||||||| parent of 12e3558 (crash fuzzer: symbols no longer leak their internal tag, nullish tostring throws)
-~<!--fact:loc-milo-->46.2k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
+~<!--fact:loc-milo-->46.3k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
 =======
-~<!--fact:loc-milo-->46.2k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
+~<!--fact:loc-milo-->46.3k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
 >>>>>>> 12e3558 (crash fuzzer: symbols no longer leak their internal tag, nullish tostring throws)
 own bigint. No V8, no JSC, no C engine underneath.
 
@@ -383,6 +383,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/check-arity.mjs` | verifies the 389 built-in `length` values in `src/engine/eval.milo` against node; `-v` shows every name it resolved |
 | `tools/check-gaps.mjs` | re-probes every "known engine limit" in `docs/status.md`; fails when one has been fixed and the bullet is still there |
 | `tools/check-sweeps.mjs` | points each conformance sweep at a missing binary; fails if one scores instead of refusing |
+| `tools/vm-differential.sh` | runs generated programs through the compiled path and the tree-walking evaluator and requires identical output; starts with `fuzz-gen.py --matrix`, the operator x operand cross product |
 | `tools/check-gate-teeth.sh` | introduces each gate's own violation and requires it to fail; needs a clean tree, so it runs in CI rather than the hook |
 | `tools/check-docs-exec.mjs` | runs the `<!-- exec -->`-tagged examples in the docs and diffs them against the output the docs claim. Needs built binaries; part of `dev.sh`. |
 | `tools/check-docs.mjs` | doc-meta present, key-files real, AGENTS tables complete, and a staleness ratchet against each doc's key-files |

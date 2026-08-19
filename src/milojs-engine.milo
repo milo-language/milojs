@@ -42,6 +42,9 @@ from "std/argparse" import {
 from "std/args" import {
     args
 }
+from "./engine/bytecode" import {
+    gVmDisabled
+}
 from "./engine/version" import {
     versionText
 }
@@ -100,6 +103,13 @@ fn main(): i32 {
             }
             if let Option.Some(_v) = Env.get("MILOJS_GC_STATS") {
                 gcStats = true
+            }
+            // Force every expression through the tree-walking evaluator. The
+            // fixture suite is run both ways and the outputs must match, which is
+            // what stops a compiled opcode from quietly disagreeing with the
+            // evaluator it stands in for.
+            if let Option.Some(_b) = Env.get("MILOJS_NO_BYTECODE") {
+                gVmDisabled = true
             }
             gInterp = makeInterp(gcStats, gcThreshold, 2)
             bootInterp(gInterp)

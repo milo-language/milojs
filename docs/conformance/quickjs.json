@@ -6,7 +6,7 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "5518a9acc498e3ee9b91fcc871fe94f09073c64b",
+    "revision": "58b69b5677ea18fb15a8f9912ad0729078bedfcc",
     "dirty": true
   },
   "engine": ".dev/mj-engine",
@@ -25,8 +25,8 @@
     ]
   },
   "totals": {
-    "pass": 103,
-    "fail": 46,
+    "pass": 104,
+    "fail": 45,
     "parseFail": 0,
     "total": 149,
     "ran": 149,
@@ -64,14 +64,13 @@
     },
     {
       "reason": "Uncaught Error: assertion failed: got |…|, expected |…| (exception expected)",
-      "count": 6,
+      "count": 5,
       "cases": [
         "bug1368.js:test_symbol_iterator_reentry",
         "bug1368.js:test_value_getter_reentry",
         "test_bigint.js:test_bigint2",
         "test_builtin.js:test_function",
-        "test_builtin.js:test_exception_capture_stack_trace",
-        "test_builtin.js:test_cur_pc"
+        "test_builtin.js:test_exception_capture_stack_trace"
       ]
     },
     {
