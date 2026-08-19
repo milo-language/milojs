@@ -1,0 +1,16 @@
+"".repeat(Infinity) = RangeError
+"a".repeat(Infinity) = RangeError
+"".repeat(-Infinity) = RangeError
+"".repeat(-1) = RangeError
+"a".repeat(-1) = RangeError
+"".repeat(NaN) = ""
+"a".repeat(NaN) = ""
+"".repeat(0) = ""
+"".repeat(5) = ""
+"ab".repeat(3) = "ababab"
+"a".repeat(1000000000) = RangeError
+"".repeat(1000000000) = ""
+"abc".repeat(0) = ""
+"a".repeat(2.9) = "aa"
+ababa|aabab|a
+RangeError

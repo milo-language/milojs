@@ -43,6 +43,39 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## `"".repeat(Infinity)` hung the engine, and what String differential testing found
+
+Same technique as the regex sweep, 2340 String method/argument combinations against
+node. It found one HANG and three structural gaps.
+
+**Fixed: the hang.** `repeat`'s guard bounded the PRODUCT of count and string
+length, and that check is skipped when the string is empty, so an infinite count
+fell through to a loop appending nothing several quintillion times. The spec makes
+a negative or infinite count a RangeError on its own, independent of the string.
+An empty string also short-circuits, so a huge FINITE count answers "" instead of
+spinning. NaN is not an error: ToIntegerOrInfinity makes it 0.
+`tests/stringRepeatCount.js` covers it; the pre-fix engine hangs on that fixture
+rather than failing it.
+
+The remaining 37 differences are three known-shaped gaps, none of them small:
+
+**Lone surrogates cannot be produced.** A supplementary character is TWO UTF-16
+code units and JS indexes by code unit, so `"\u{1F600}x".charAt(0)` must return the
+high surrogate alone. milojs returns the whole codepoint and then "" at index 1;
+`slice`, `substring`, `substr` and `at` all follow. Representing an unpaired
+surrogate needs WTF-8, since it is not valid UTF-8 and Milo strings are UTF-8
+buffers. This is the SAME representation change the quadratic `charCodeAt` needs,
+so the two should land together.
+
+**`localeCompare` is code-point order, not collation.** node uses ICU, where the
+primary weight is case- and diacritic-insensitive, so `"a".localeCompare("NaN")` is
+-1 (a before n) where a code-point comparison says 1 ('a' is 97, 'N' is 78). 20 of
+the 37 differences are this.
+
+**`normalize` is a pass-through.** NFD does not decompose and NFC does not compose.
+The tables are generatable the way `tools/gen-unicase.mjs` already generates the
+case mappings from node's own ICU, which is the obvious route.
+
 ## Four regex bugs, found by differential testing rather than by a suite
 
 The remaining regex items on this list were all VALIDATION (rejecting patterns

@@ -276,6 +276,16 @@ pub fn numToIndex(x: f64): i64 {
     return x as i64
 }
 
+// The raw numeric value of an argument, without the integer coercion argNum
+// applies. Needed where a NON-finite argument is itself an error and must be
+// detected before it is folded into an i64.
+fn argNumF(args: &Vec<JSValue>, i: i64, dflt: f64): f64 {
+    if argPresent(args, i) {
+        return toNum(args[i])
+    }
+    return dflt
+}
+
 fn argNum(args: &Vec<JSValue>, i: i64, dflt: i64): i64 {
     if argPresent(args, i) {
         return numToIndex(toNum(args[i]))
@@ -933,11 +943,30 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         return JSValue.Str(strSlice(s, 0, e))
     }
     if name == "repeat" {
+        // The COUNT is checked before anything else, and independently of the
+        // string: the spec makes a negative or INFINITE count a RangeError on its
+        // own. Only the product was bounded, and the product guard is skipped for
+        // an empty string, so `"".repeat(Infinity)` fell through to a loop that
+        // appended nothing several quintillion times and hung the engine.
+        // An INFINITE count is a RangeError on its own, independent of the string.
+        // NaN is not: ToIntegerOrInfinity turns it into 0, so `"".repeat(NaN)` is
+        // "". A large FINITE count is fine here and is caught by the length check
+        // below, if it is caught at all.
+        let rawCnt = argNumF(args, 0, 0.0)
+        if rawCnt == rawCnt && (rawCnt > 1.7e308 || rawCnt < -1.7e308) {
+            return throwRange(st, "Invalid count value")
+        }
         let cnt = argNum(args, 0, 0)
         if cnt < 0 {
             st.throwing = true
             st.thrownValue = makeError(st, "RangeError", "Invalid count value: " + i64ToStr(cnt))
             return JSValue.Undefined
+        }
+        // Repeating an EMPTY string is empty however many times it is asked for,
+        // and answering directly is what stops a huge count from spinning through
+        // a loop that appends nothing. This is the case that hung on Infinity.
+        if s.len() == 0 {
+            return JSValue.Str("")
         }
         // Same cap padStart carries, and for the same reason: `"a".repeat(1e308)`
         // ground through gigabytes and died with no output and exit 0, where node
