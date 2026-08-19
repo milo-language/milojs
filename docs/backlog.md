@@ -134,25 +134,23 @@ joining them means deciding when a rejection is finally unhandled — node waits
 until the microtask queue drains before declaring it, so an await added later in
 the same tick must not trigger it.
 
-## path: `path.win32` does not exist, and it costs the whole area
+## path: win32 edge cases, `matchesGlob`, and a posix `dirname` bug
 
-`path.posix` is the module itself; `path.win32` is undefined. node's path tests
-exercise BOTH variants in one file, so eleven of them die on their first line
-with "cannot read property 'join' of undefined" without testing anything.
+`path.win32` exists now, so the area's tests RUN; what is left is content rather
+than a missing object.
 
-Reproduce: `test-path-join.js`, `test-path-resolve.js`, `test-path-basename.js`,
-`test-path-normalize.js`, `test-path-relative.js`, `test-path-parse-format.js`,
-`test-path-extname.js`, `test-path-isabsolute.js`,
-`test-path-zero-length-strings.js`, `test-path-glob.js`,
-`test-path-makelong.js`.
+- `win32.normalize('C:')` answers `C:` where node answers `C:.` — a
+  drive-relative root with no path is the drive's own current directory.
+- `win32.toNamespacedPath` on a UNC path: node produces
+  `\\?\UNC\foo\bar\`, this produces the input unchanged.
+- `win32.resolve('//server/share', ...)`: a UNC root given with forward slashes.
+- `path.matchesGlob` does not exist at all, in either variant.
+- **posix `dirname` is wrong**, and this is not a win32 issue:
+  `test-path-dirname.js` reports `/a/b === /a`, so it is returning the input
+  where it should drop the last component.
 
-Why it is not a one-line fix: aliasing win32 to posix would be worse than the
-absence, because the tests would then compare posix answers against win32
-expectations and fail on content rather than on a missing object. A real one
-needs backslash AND forward slash as separators, drive letters (`C:`), the
-drive-relative form (`C:foo`), UNC paths (`\\server\share`), and
-case-insensitive drive comparison in `relative`. `path.matchesGlob` and
-`toNamespacedPath` are separate small gaps in the same area.
+Reproduce: `test-path-normalize.js`, `test-path-makelong.js`,
+`test-path-resolve.js`, `test-path-glob.js`, `test-path-dirname.js`.
 
 ## Async: `next()` on an async generator drives the body, and can HANG
 

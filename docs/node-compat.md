@@ -60,7 +60,7 @@ Reference surface: node v25.3.0. Sweep at `3fcca363`.
 | 🔴 | `util` | 2/16 13% (+1 skipped) | 12/33 36% | `MIMEParams`, `MIMEType`, `TextDecoder`, `TextEncoder`, `_errnoException`, `_exceptionWithHostPort` +15 more |
 | 🔴 | `module` | 3/24 13% (+3 skipped) | 4/33 12% | `SourceMap`, `_cache`, `_extensions`, `_findPath`, `_initPaths`, `_load` +23 more |
 | 🔴 | `worker_threads` | 13/118 11% (+7 skipped) | 11/21 52% | `BroadcastChannel`, `MessageChannel`, `MessagePort`, `SHARE_ENV`, `isInternalThread`, `isMarkedAsUntransferable` +4 more |
-| 🔴 | `path` | 1/16 6% (+1 skipped) | 14/17 82% | `_makeLong`, `matchesGlob`, `win32` |
+| 🔴 | `path` | 1/16 6% (+1 skipped) | 15/17 88% | `_makeLong`, `matchesGlob` |
 | 🔴 | `string_decoder` | 0/3 0% | 1/1 100% | none |
 | 🔴 | `tty` | 0/2 0% | 3/3 100% | none |
 | 🔴 | `querystring` | 0/4 0% | 6/7 86% | `unescapeBuffer` |
@@ -76,6 +76,6 @@ Reference surface: node v25.3.0. Sweep at `3fcca363`.
 | 🔴 | `trace_events` **(does not load)** | no cases | 0/2 0% | `createTracing`, `getEnabledCategories` |
 | 🔴 | `wasi` **(does not load)** | no cases | 0/1 0% | `WASI` |
 
-Across all 43 modules: **579/1954 node cases pass (30%)**, 🟢 0, 🟡 2, 🟠 10, 🔴 26, ⚪ 5. Surface: 449/1056 exports present (43%).
+Across all 43 modules: **579/1954 node cases pass (30%)**, 🟢 0, 🟡 2, 🟠 10, 🔴 26, ⚪ 5. Surface: 450/1056 exports present (43%).
 
 Modules that do not load at all: `http2`, `inspector`, `trace_events`, `wasi`.

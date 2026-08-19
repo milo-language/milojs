@@ -1,0 +1,30 @@
+join a b               "a\\b"
+join C:\ foo           "C:\\foo"
+join UNC               "\\\\server\\share\\a\\b"
+join ..                "C:\\a\\c"
+normalize slashes      "C:\\a\\c\\"
+normalize rel          "a\\c"
+normalize dotdot rel   "..\\..\\a"
+isAbsolute C:\         true
+isAbsolute C:foo       false
+isAbsolute \foo        true
+isAbsolute UNC         true
+isAbsolute rel         false
+resolve C:\a b         "C:\\a\\b"
+resolve abs override   "D:\\b"
+resolve rooted         "C:\\c"
+dirname C:\a\b         "C:\\a"
+dirname C:\            "C:\\"
+dirname UNC            "\\\\s\\sh\\a"
+basename               "b.txt"
+basename ext           "b"
+extname                ".gz"
+relative same drive    "..\\c\\d"
+relative diff drive    "D:\\b"
+relative case          "..\\c"
+parse                  "{\"root\":\"C:\\\\\",\"dir\":\"C:\\\\a\",\"base\":\"b.txt\",\"ext\":\".txt\",\"name\":\"b\"}"
+parse UNC              "{\"root\":\"\\\\\\\\s\\\\sh\\\\\",\"dir\":\"\\\\\\\\s\\\\sh\\\\\",\"base\":\"a.txt\",\"ext\":\".txt\",\"name\":\"a\"}"
+format                 "C:\\a\\b.txt"
+toNamespacedPath       "\\\\?\\C:\\a\\b"
+sep/delim              "\\ ;"
+posix roundtrip        "a/b"
