@@ -165,6 +165,17 @@ jobs:
       # pass is the guard on the async / fetch / event-loop machinery — it used
       # to run out of the milo repo (tests/milojsRuntime.test.ts) and moved here
       # with the source.
+      # Every gate above answers "is the tree clean". None of them answers "would
+      # this gate still say no". This repo has shipped three gates that had
+      # stopped checking anything and stayed green for months: check-arity
+      # printing "0 checked", check-gaps dropping two of six probes, and
+      # quickjs-sweep scoring 0/149 off a binary that did not exist. This one
+      # introduces each gate's own violation and requires it to fail. It needs a
+      # clean tree, so it runs here rather than in the pre-commit hook, and it
+      # restores every file it touches before moving on.
+      - name: the gates still have teeth
+        run: ./tools/check-gate-teeth.sh
+
       - name: js fixtures
         run: MILOJS_ENGINE_BIN=/tmp/milojs-engine MILOJS_RUNTIME_BIN=/tmp/milojs ./tests/run.sh
 

@@ -8,6 +8,42 @@ last-verified: 2026-08-18 (re-read after the native id enum landed; the NATIVE_*
 
 # milojs backlog
 
+## A gate for the gates: `tools/check-gate-teeth.sh`
+
+Routine #1 is the highest-payoff maintenance sweep and the one nobody runs,
+because running it means hand-breaking eleven things and remembering to put them
+all back. So it is a script now, in CI, on every push.
+
+For each check in the pre-commit hook it introduces that check's own violation,
+requires a nonzero exit, restores the file from a copy and verifies the checksum.
+It refuses to start on a dirty tree, so a botched restore shows up in
+`git status` instead of riding along in someone's next commit. That is also why
+it cannot live in the hook: the hook runs with changes staged by definition. It
+sits after the build step in CI, where `check-gaps` has an engine to probe.
+
+The eleven violations are the real ones, not proxies: a hand edit to a generated
+Unicode table, a fact number in the README changed by hand, a doc with its
+doc-meta block deleted, a line appended to a committed `.expected`, a second
+definition of `reLowerByte`, an engine file importing `../runtime/host`, a host
+native added to the engine bootstrap, the missing-binary guard removed from
+quickjs-sweep, an arity changed to disagree with node, and a gap marker deleted
+from status.md.
+
+**All eleven have teeth.** The first run said three did not, and all three were
+my mutations being wrong rather than the gates being asleep: one perl expression
+substituted a string with itself, one targeted an arity table shape that had been
+replaced by comma-separated data, and one appended text after a fact marker
+instead of changing the number inside it. Writing a violation a gate must catch
+is a much sharper test of understanding the gate than reading it, which is the
+argument for the whole exercise.
+
+Known limitation, stated rather than hidden: this proves each gate rejects ONE
+violation, not that it rejects every violation of its class. A gate can still
+narrow over time in a way this does not see. It catches the failure mode that has
+actually happened here three times, which is a gate that stops matching anything
+at all.
+
+
 ## OPEN: an embedder gets STATUS_OK and a line on its stderr for a dropped rejection
 
 Swept all 17 `eprint` sites and drove the remaining ones from a C consumer of
