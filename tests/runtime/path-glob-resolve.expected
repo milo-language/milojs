@@ -12,3 +12,5 @@ true
 \\server\share\x
 "C:."
 true true
+["/a","//a/","/","/","a"]
+["\\\\unc\\share","\\\\unc\\share\\","//a//b/","c:\\"]

@@ -22,3 +22,8 @@ console.log(path.win32.resolve('//server//share', 'x'));
 console.log(JSON.stringify(path.win32.normalize('C:')));
 
 console.log(require('path/posix') === path.posix, require('path/win32') === path.win32);
+
+// dirname ignores TRAILING separators, and the win32 form slices the input
+// rather than rebuilding it from normalized parts.
+console.log(JSON.stringify(['/a/b/', '//a//b//', '/a', '/', 'a/b'].map((s) => path.posix.dirname(s))));
+console.log(JSON.stringify(['\\\\unc\\share', '\\\\unc\\share\\foo\\', '//a//b//', 'c:\\foo\\'].map((s) => path.win32.dirname(s))));

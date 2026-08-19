@@ -134,23 +134,27 @@ joining them means deciding when a rejection is finally unhandled — node waits
 until the microtask queue drains before declaring it, so an await added later in
 the same tick must not trigger it.
 
-## path: win32 edge cases, `matchesGlob`, and a posix `dirname` bug
+## path: win32 device roots, and `join`/`relative`/`basename` corners
 
-`path.win32` exists now, so the area's tests RUN; what is left is content rather
-than a missing object.
+`matchesGlob`, `resolve("")`, the UNC device in `win32.resolve`, `extname("..")`,
+`win32.normalize("C:")` and both `dirname` implementations are fixed; the area is
+9/16 (was 3/16). What is left:
 
-- `win32.normalize('C:')` answers `C:` where node answers `C:.` — a
-  drive-relative root with no path is the drive's own current directory.
-- `win32.toNamespacedPath` on a UNC path: node produces
-  `\\?\UNC\foo\bar\`, this produces the input unchanged.
-- `win32.resolve('//server/share', ...)`: a UNC root given with forward slashes.
-- `path.matchesGlob` does not exist at all, in either variant.
-- **posix `dirname` is wrong**, and this is not a win32 issue:
-  `test-path-dirname.js` reports `/a/b === /a`, so it is returning the input
-  where it should drop the last component.
+- **`\\.\` and `\\?\` DEVICE roots** are not recognized as roots:
+  `win32.resolve("\\\\.\\PHYSICALDRIVE0")` gains a trailing separator, and
+  `win32.normalize("\\\\.\\foo\\")` keeps one node drops. Same cause behind
+  `test-path-win32-normalize-device-names.js` and `test-path-makelong.js`, which
+  also wants forward slashes inside an already-namespaced path left alone.
+- `win32.join("/", "..", "..")` answers `\\..\..\` where node answers `/`.
+- `win32.relative` between two UNC paths under the same share answers `""`.
+- `parse().root` and `parse().dir` normalize the separators they were given;
+  node's parse SLICES the input, so `parse("file")` keeps `dir: ""` and the
+  round-trip through `format` differs.
+- `basename` disagrees on a trailing-separator case.
 
-Reproduce: `test-path-normalize.js`, `test-path-makelong.js`,
-`test-path-resolve.js`, `test-path-glob.js`, `test-path-dirname.js`.
+Reproduce: `test-path-resolve.js`, `test-path-normalize.js`,
+`test-path-join.js`, `test-path-relative.js`, `test-path-parse-format.js`,
+`test-path-basename.js`.
 
 ## Async: `next()` on an async generator drives the body, and can HANG
 
@@ -256,18 +260,11 @@ runs the exact [[Get]]/[[HasProperty]] steps each spec algorithm prescribes and
 milojs takes shortcuts (`slice` 6 traps vs node's 9, `reverse` 12 vs 24). Only
 observable through a logging handler, which is exactly what a Proxy is for.
 
-## Modules: bindings are snapshots, and a computed specifier cannot resolve
+## Modules: bindings are snapshots
 
-Both verified 2026-08-19 against node.
-
-- **Not live bindings.** A mutated export does not update an importer that
-  already read it: after `bump()` sets `n = 2` in the dependency, the importer
-  still reads 1, and so does a later `import()` namespace of the same module.
-- **`import(spec)` with a computed specifier fails**, same as a computed
-  `require`: `import("./oth" + "er.mjs")` rejects with `Cannot find module`
-  because the preload scan (`scanRequires` in `src/runtime/modules.milo`) runs on
-  tokens and cannot see it, so the module is never registered. It works only if
-  something static already pulled that module in.
+Verified 2026-08-19 against node. A mutated export does not update an importer
+that already read it: after `bump()` sets `n = 2` in the dependency, the importer
+still reads 1, and so does a later `import()` namespace of the same module.
 
 ## Strict mode: `f.caller` and `arguments.callee`
 

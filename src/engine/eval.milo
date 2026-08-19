@@ -5657,7 +5657,38 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
             return JSValue.Str(inspectQuoteStr(sv))
         }
-        return JSValue.Str(inspectTop(st, cloneValue(argVals[0])))
+        // node's second argument is an options object, and `depth` is the one
+        // option that changes the RENDERING rather than the colouring: passing
+        // any options at all used to throw, because lib/util.js took the second
+        // parameter as its own recursion state.
+        let savedDepth = st.inspectMaxDepth
+        if argVals.len() > 1 {
+            if let JSValue.Obj(oo) = argVals[1] {
+                let dv = objGet(st, oo, "depth")
+                // An ABSENT depth keeps node's default of 2; a depth that is
+                // present and undefined does not, because node compares
+                // `recurseTimes > ctx.depth` and that comparison is false for
+                // undefined. So { depth: undefined } renders everything.
+                if objOwnIndex(st, oo, "depth") >= 0 && isUndefinedValue(dv) {
+                    st.inspectMaxDepth = 1000000
+                } else if isNullValue(dv) {
+                    // null means "no limit", and so does Infinity
+                    st.inspectMaxDepth = 1000000
+                } else if !isUndefinedValue(dv) {
+                    let dn = toNum(dv)
+                    if dn != dn || dn > 1000000.0 {
+                        st.inspectMaxDepth = 1000000
+                    } else if dn < 0.0 {
+                        st.inspectMaxDepth = -1
+                    } else {
+                        st.inspectMaxDepth = dn as i64
+                    }
+                }
+            }
+        }
+        let rendered = inspectTop(st, cloneValue(argVals[0]))
+        st.inspectMaxDepth = savedDepth
+        return JSValue.Str(rendered)
     }
     if id == Builtin.QueueMicrotaskJs {
         if argVals.len() > 0 {
@@ -10179,7 +10210,7 @@ fn inspectInner(st: &Interp, v: &JSValue, depth: i64, indentLvl: i64, stack: &mu
 }
 
 fn inspectArr(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut Vec<i64>, targets: &Vec<i64>): string {
-    if depth > 2 {
+    if depth > st.inspectMaxDepth {
         return "[Array]"
     }
     // arrLen, not elems.len(): an index stored past the element vector lives in
@@ -10249,7 +10280,7 @@ fn inspectMapSet(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut Ve
     if st.objects[o].isMap {
         base = "Map(" + keys.toString() + ")"
     }
-    if depth > 2 {
+    if depth > st.inspectMaxDepth {
         if st.objects[o].isMap {
             return "[Map]"
         }
@@ -10334,7 +10365,7 @@ fn inspectObjBody(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut V
     if st.objExtras[st.objects[o].extra].taBuf >= 0 && !st.objects[o].isDataView {
         let tkind = st.objExtras[st.objects[o].extra].taKind
         let tlen = taCurrentLen(st, o)
-        if depth > 2 {
+        if depth > st.inspectMaxDepth {
             return "[" + taName(tkind) + "]"
         }
         var tparts: Vec<string> = Vec.new()
@@ -10407,7 +10438,7 @@ fn inspectObjBody(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut V
             }
         }
     }
-    if depth > 2 {
+    if depth > st.inspectMaxDepth {
         return "[Object]"
     }
     // An object with no prototype is not an ordinary object and node says so
