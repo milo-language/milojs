@@ -8,6 +8,54 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## The five key walks are one walk
+
+The unification the previous entry filed. `ownStringKeys(st, h, enumOut, propOut)`
+answers "which own string keys does this object have, are they enumerable, and
+where did each come from", in [[OwnPropertyKeys]] order. `ownKeysOf`,
+`Object.keys`, `Object.values`/`entries` and for-in all drive off it;
+`JSON.stringify` follows through `Object.keys`. A representation added later has
+one place to be taught instead of five.
+
+It reads `st` only: no descriptors, no getters, nothing allocated on the JS heap.
+That is what makes it usable from `Object.keys` and for-in rather than only from
+the cold paths.
+
+**`propOut` is what makes it fast enough, and I only found that by measuring.**
+The first version returned keys and enumerability alone, and enumeration ran
+**40% slower**: `Object.values` had to do a full [[Get]] per key because it could
+no longer tell a data property from an accessor, and for-in had to look each key
+up to find out whether the property table already held it (the chain walk emits
+those itself). Reporting each key's property-table slot -- or -1 for an array
+element or typed-array index -- removes both lookups. 40% became **13.7%**:
+
+```
+bench            base_ms    new_ms     delta
+enumKeys             117       133      13.7%
+numRead              151       149      -1.3%
+propMany             148       146      -1.4%
+```
+
+The 13.7% that remains is one extra string clone per key: the helper materialises
+the key list, and the caller then copies it into the JS array. The old code pushed
+straight from the property table. `bench/enumKeys.js` is 200 rounds of
+keys+values+for-in over a 200-key object and a 2000-element array, so it is a
+deliberately enumeration-heavy shape; nothing in the fixture suite or either sweep
+moved. I am taking the 13.7% for collapsing five divergent implementations into
+one, and recording it here rather than burying it -- if enumeration ever shows up
+in a profile, the fix is to let the caller take ownership of the key strings
+instead of cloning them.
+
+One case worth keeping in mind: an index can be in the element vector AND the
+property table at once (`const a = [1]; a[3] = 4`). It is emitted once, in index
+order, but still reports its property-table slot, because for-in needs to know it
+will see that key again from the chain walk. The lookup that costs is skipped
+entirely for an array with no properties, which is nearly all of them.
+
+Gates: dev.sh 6/6, GC-stress 287/288 fixtures, fuzz 200 seeds clean, QuickJS
+103/149 and node-compat sample 203/400 unchanged, all five differentials clean.
+
+
 ## Eight enumeration surfaces x 22 object kinds: six disagreed with node
 
 The typed-array entry above ended with "five separate key walks each carry their

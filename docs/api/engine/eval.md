@@ -525,9 +525,37 @@ through the ownKeys and getOwnPropertyDescriptor traps instead.
 pub fn ownKeysOf(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string>
 ```
 
+_Undocumented._
+
+### `ownStringKeys`
+
+```milo
+pub fn ownStringKeys(st: &Interp, h: i64, enumOut: &mut Vec<bool>, propOut: &mut Vec<i64>): Vec<string>
+```
+
 [[OwnPropertyKeys]] over any value, as raw keys — symbols included, in the
 "@@sym:" spelling they are stored under. A proxy consults its ownKeys trap
 and with no trap forwards to its target, which may itself be a proxy.
+The ONE answer to "which own string keys does this object have, and which of
+them are enumerable", in [[OwnPropertyKeys]] order: integer indices first, then
+`length` for an array, then the remaining string properties in insertion order.
+
+It exists because that question was answered independently in five places --
+ownKeysOf, Object.keys, Object.values/entries, for-in, and (through for-in) the
+JS-level JSON.stringify -- each with its own idea of which representations
+carry keys. When typed arrays grew index enumeration, four of the five were
+still wrong, in four different ways. A new representation should have to be
+taught this once.
+
+Reads `st` only: no descriptors are built, no getters run, nothing is allocated
+on the JS heap. That is what lets the hot callers (Object.keys, for-in) use it.
+`enumOut` and `propOut` are filled in step with the returned keys: `propOut` is
+the key's index in the object's property table, or -1 when the key came from
+the element vector or a typed array's buffer. Callers need that to avoid
+re-deriving it -- for-in wants only the keys the property table cannot hold,
+and Object.values wants to read a data property's slot directly rather than
+going through a full [[Get]]. Without it both paid a lookup per key and
+enumeration ran 40% slower.
 
 ### `parkOnPromise`
 

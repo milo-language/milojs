@@ -6135,75 +6135,43 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                     popTemp(st)
                     return JSValue.Obj(arr)
                 }
-                if !st.objects[o].isDataView && taCurrentLen(st, o) > 0 {
-                    let tl2 = taCurrentLen(st, o)
-                    var tv: i64 = 0
-                    while tv < tl2 {
-                        let tval = taElemValue(st, o, tv)
-                        if wantPairs {
-                            let tpair = newArray(st)
-                            pushTemp(st, JSValue.Obj(tpair))
-                            arrPush(st, tpair, JSValue.Str(i64ToStr(tv)))
-                            arrPush(st, tpair, tval)
-                            popTemp(st)
-                            arrPush(st, arr, JSValue.Obj(tpair))
-                        } else {
-                            arrPush(st, arr, tval)
-                        }
-                        tv = tv + 1
-                    }
-                }
-                if st.objects[o].isArray {
-                    var i: i64 = 0
-                    let n = st.objects[o].elems.len()
-                    while i < n {
-                        if arrIsHole(st, o, i) {
-                            i = i + 1
-                            continue
-                        }
-                        let v = arrGet(st, o, i)
-                        if wantPairs {
-                            let pair = newArray(st)
-                            pushTemp(st, JSValue.Obj(pair))
-                            arrPush(st, pair, JSValue.Str(i64ToStr(i)))
-                            arrPush(st, pair, v)
-                            popTemp(st)
-                            arrPush(st, arr, JSValue.Obj(pair))
-                        } else {
-                            arrPush(st, arr, v)
-                        }
-                        i = i + 1
-                    }
-                }
-                let order = enumOrder(st, o)
-                var oi: i64 = 0
-                while oi < order.len() {
-                    let k = order[oi]
-                    oi = oi + 1
-                    if !st.objects[o].props[k].enumerable {
+                // One walk for the keys, then Get() per key: the spec's
+                // EnumerableOwnPropertyNames followed by Get, which is also what
+                // makes an own accessor run.
+                var vEnum: Vec<bool> = Vec.new()
+                var vProp: Vec<i64> = Vec.new()
+                let vKeys = ownStringKeys(st, o, vEnum, vProp)
+                var vi: i64 = 0
+                while vi < vKeys.len() && !st.throwing {
+                    if !vEnum[vi] {
+                        vi = vi + 1
                         continue
                     }
-                    let key = st.objects[o].props[k].key.clone()
-                    // The spec does Get(O, key) per key, so an own ACCESSOR runs
-                    // its getter. Copying the property's value slot returned the
-                    // unused slot behind a getter, which is undefined:
-                    // Object.values({get acc(){return 9}}) gave [undefined] while
-                    // JSON.stringify of the same object correctly gave 9.
-                    var v = JSValue.Undefined
-                    if propIsAccessor(st, o, k) {
-                        v = getMemberDyn(gProg, o, key.clone(), st)
+                    let vkey = vKeys[vi].clone()
+                    let vpi = vProp[vi]
+                    vi = vi + 1
+                    // A plain data property answers from its slot; only an
+                    // accessor (or a key that is not in the property table at all,
+                    // i.e. an array element or typed-array index) needs a real
+                    // [[Get]].
+                    var vval = JSValue.Undefined
+                    if vpi >= 0 && !propIsAccessor(st, o, vpi) {
+                        vval = cloneValue(st.objects[o].props[vpi].value)
                     } else {
-                        v = cloneValue(st.objects[o].props[k].value)
+                        vval = getMemberDyn(gProg, o, vkey.clone(), st)
+                    }
+                    if st.throwing {
+                        continue
                     }
                     if wantPairs {
-                        let pair = newArray(st)
-                        pushTemp(st, JSValue.Obj(pair))
-                        arrPush(st, pair, JSValue.Str(key))
-                        arrPush(st, pair, v)
+                        let vpair = newArray(st)
+                        pushTemp(st, JSValue.Obj(vpair))
+                        arrPush(st, vpair, JSValue.Str(vkey))
+                        arrPush(st, vpair, vval)
                         popTemp(st)
-                        arrPush(st, arr, JSValue.Obj(pair))
+                        arrPush(st, arr, JSValue.Obj(vpair))
                     } else {
-                        arrPush(st, arr, v)
+                        arrPush(st, arr, vval)
                     }
                 }
             }
@@ -6246,34 +6214,16 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                     popTemp(st)
                     return JSValue.Obj(arr)
                 }
-                if st.objects[o].isArray {
-                    var i: i64 = 0
-                    let n = st.objects[o].elems.len()
-                    while i < n {
-                        if !arrIsHole(st, o, i) {
-                            arrPush(st, arr, JSValue.Str(i64ToStr(i)))
-                        }
-                        i = i + 1
+                // one walk, shared with getOwnPropertyNames / for-in / values
+                var kEnum: Vec<bool> = Vec.new()
+                var kProp: Vec<i64> = Vec.new()
+                let kKeys = ownStringKeys(st, o, kEnum, kProp)
+                var ki: i64 = 0
+                while ki < kKeys.len() {
+                    if kEnum[ki] {
+                        arrPush(st, arr, JSValue.Str(kKeys[ki].clone()))
                     }
-                }
-                // A typed array's indices are own enumerable properties, and
-                // they are not in the property bag: they live in the buffer.
-                if !st.objects[o].isDataView {
-                    let tl = taCurrentLen(st, o)
-                    var ti: i64 = 0
-                    while ti < tl {
-                        arrPush(st, arr, JSValue.Str(i64ToStr(ti)))
-                        ti = ti + 1
-                    }
-                }
-                let order = enumOrder(st, o)
-                var oi: i64 = 0
-                while oi < order.len() {
-                    let k = order[oi]
-                    if st.objects[o].props[k].enumerable {
-                        arrPush(st, arr, JSValue.Str(st.objects[o].props[k].key.clone()))
-                    }
-                    oi = oi + 1
+                    ki = ki + 1
                 }
             }
             popTemp(st)
@@ -11451,6 +11401,90 @@ fn reflectSet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, v: &
 // [[OwnPropertyKeys]] over any value, as raw keys — symbols included, in the
 // "@@sym:" spelling they are stored under. A proxy consults its ownKeys trap
 // and with no trap forwards to its target, which may itself be a proxy.
+// The ONE answer to "which own string keys does this object have, and which of
+// them are enumerable", in [[OwnPropertyKeys]] order: integer indices first, then
+// `length` for an array, then the remaining string properties in insertion order.
+//
+// It exists because that question was answered independently in five places --
+// ownKeysOf, Object.keys, Object.values/entries, for-in, and (through for-in) the
+// JS-level JSON.stringify -- each with its own idea of which representations
+// carry keys. When typed arrays grew index enumeration, four of the five were
+// still wrong, in four different ways. A new representation should have to be
+// taught this once.
+//
+// Reads `st` only: no descriptors are built, no getters run, nothing is allocated
+// on the JS heap. That is what lets the hot callers (Object.keys, for-in) use it.
+// `enumOut` and `propOut` are filled in step with the returned keys: `propOut` is
+// the key's index in the object's property table, or -1 when the key came from
+// the element vector or a typed array's buffer. Callers need that to avoid
+// re-deriving it -- for-in wants only the keys the property table cannot hold,
+// and Object.values wants to read a data property's slot directly rather than
+// going through a full [[Get]]. Without it both paid a lookup per key and
+// enumeration ran 40% slower.
+pub fn ownStringKeys(st: &Interp, h: i64, enumOut: &mut Vec<bool>, propOut: &mut Vec<i64>): Vec<string> {
+    var out: Vec<string> = Vec.new()
+    if h < 0 {
+        return out
+    }
+    if st.objects[h].isArray {
+        var e: i64 = 0
+        while e < arrLen(st, h) {
+            if !arrIsHole(st, h, e) {
+                let ekey = i64ToStr(e)
+                // An index can be in the element vector AND the property table at
+                // once (`const a = [1]; a[3] = 4`). It is emitted here, in index
+                // order, but it must still REPORT its property-table slot: for-in
+                // takes the property keys from its own chain walk, and without
+                // this the key came out twice. Only looked up when the array has
+                // any properties at all, which most do not.
+                var eprop: i64 = -1
+                if st.objects[h].props.len() > 0 {
+                    eprop = objOwnIndex(st, h, ekey.clone())
+                }
+                out.push(ekey)
+                enumOut.push(true)
+                propOut.push(eprop)
+            }
+            e = e + 1
+        }
+        // `length` is an own property of an array and is NOT enumerable, so it
+        // belongs in getOwnPropertyNames and nowhere else.
+        out.push("length")
+        enumOut.push(false)
+        propOut.push(-1)
+    }
+    // A typed array's indices live in the buffer rather than the property table.
+    // There is no `length` among them: that is an accessor on the prototype.
+    if !st.objects[h].isDataView {
+        let tlen = taCurrentLen(st, h)
+        var te: i64 = 0
+        while te < tlen {
+            out.push(i64ToStr(te))
+            enumOut.push(true)
+            propOut.push(-1)
+            te = te + 1
+        }
+    }
+    let order = enumOrder(st, h)
+    var oi: i64 = 0
+    while oi < order.len() {
+        let k = order[oi]
+        oi = oi + 1
+        let pkey = st.objects[h].props[k].key.clone()
+        // An index of a SPARSE array can live in BOTH the element vector and the
+        // property table -- `const a = [1]; a[3] = 4` leaves 3 in each -- and the
+        // element loop above already emitted it. Only checked for a key that looks
+        // like an index, so an ordinary object pays nothing.
+        if st.objects[h].isArray && asArrayIndex(pkey) >= 0 && vecHasStr(out, pkey) {
+            continue
+        }
+        out.push(pkey)
+        enumOut.push(st.objects[h].props[k].enumerable)
+        propOut.push(k)
+    }
+    return out
+}
+
 pub fn ownKeysOf(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string> {
     var out: Vec<string> = Vec.new()
     let o = objHandle(v)
@@ -11543,45 +11577,13 @@ pub fn ownKeysOf(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string> {
     }
     let h = propertyBagOf(st, v)
     if h >= 0 {
-        if st.objects[h].isArray {
-            var e: i64 = 0
-            while e < arrLen(st, h) {
-                if !arrIsHole(st, h, e) {
-                    out.push(i64ToStr(e))
-                }
-                e = e + 1
-            }
-            out.push("length")
-        }
-        // A typed array's integer indices ARE own properties: they come first, and
-        // there is no "length" among them (length is an accessor on the
-        // prototype). Missing them made Object.keys/values/entries, for-in,
-        // getOwnPropertyNames and JSON.stringify all treat a typed array as having
-        // no properties at all.
-        if !st.objects[h].isDataView {
-            let tlen = taCurrentLen(st, h)
-            if tlen > 0 {
-                var te: i64 = 0
-                while te < tlen {
-                    out.push(i64ToStr(te))
-                    te = te + 1
-                }
-            }
-        }
-        let order = enumOrder(st, h)
-        var oi: i64 = 0
-        while oi < order.len() {
-            let pkey = st.objects[h].props[order[oi]].key.clone()
-            oi = oi + 1
-            // An index of a SPARSE array can live in BOTH the element vector and
-            // the property table -- `const a = [1]; a[3] = 4` leaves 3 in each --
-            // and the element loop above already emitted it. Only checked for a
-            // key that actually looks like an index, so an ordinary object pays
-            // nothing.
-            if st.objects[h].isArray && asArrayIndex(pkey) >= 0 && vecHasStr(out, pkey) {
-                continue
-            }
-            out.push(pkey)
+        var keyEnum: Vec<bool> = Vec.new()
+        var keyProp: Vec<i64> = Vec.new()
+        let skeys = ownStringKeys(st, h, keyEnum, keyProp)
+        var si: i64 = 0
+        while si < skeys.len() {
+            out.push(skeys[si].clone())
+            si = si + 1
         }
         // enumOrder deliberately skips symbol keys; [[OwnPropertyKeys]] lists
         // them, after every string key
@@ -16088,27 +16090,23 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 if st.objects[o].isProxy {
                     keys = proxyOwnEnumKeys(prog, st, o)
                 }
-                if st.objects[o].isArray {
-                    var e: i64 = 0
-                    let ne = st.objects[o].elems.len()
-                    while e < ne {
-                        if !arrIsHole(st, o, e) {
-                            keys.push(i64ToStr(e))
-                        }
-                        e = e + 1
+                // The receiver's OWN enumerable keys, from the shared walk. The
+                // prototype chain is walked separately below, because for-in is
+                // the only surface that does that.
+                var fEnum: Vec<bool> = Vec.new()
+                var fProp: Vec<i64> = Vec.new()
+                let fKeys = ownStringKeys(st, o, fEnum, fProp)
+                var fi: i64 = 0
+                while fi < fKeys.len() {
+                    // Only the keys that are NOT in the property table: the chain
+                    // walk below starts at this object and emits those itself, so
+                    // taking them from here too listed every own property twice.
+                    // What is left is exactly the keys the property table cannot
+                    // hold -- array elements and typed-array indices.
+                    if fEnum[fi] && fProp[fi] < 0 && !isSymbolStr(fKeys[fi]) {
+                        keys.push(fKeys[fi].clone())
                     }
-                }
-                // A typed array's indices are enumerable own properties too, and
-                // they are in the buffer rather than the property bag. Without
-                // this, `for (k in u8)` produced nothing -- and so did the JS-level
-                // JSON.stringify in lib/engine-prelude.js, which walks with for-in.
-                if !st.objects[o].isDataView {
-                    let tlen = taCurrentLen(st, o)
-                    var tk: i64 = 0
-                    while tk < tlen {
-                        keys.push(i64ToStr(tk))
-                        tk = tk + 1
-                    }
+                    fi = fi + 1
                 }
                 // Own properties, then inherited ones (JS enumerates the chain).
                 // `seen` is what makes the chain walk correct, in two ways that
