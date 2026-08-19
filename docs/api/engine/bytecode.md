@@ -8,6 +8,9 @@ pub fn bodyChunkOf(prog: &Prog, fIdx: i64): i64
 
 The chunk index for this function's body, or -1 if its body does not compile.
 Compilation happens once per function, and the answer is cached either way.
+This is also the single point MILOJS_NO_BYTECODE turns the VM off at: with no
+chunk index there is no frame for the evaluator to enter and none for the VM's
+own Op.Call to enter either.
 
 ### `chunkUsesArguments`
 

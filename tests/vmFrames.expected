@@ -1,7 +1,7 @@
 write-through: 2 2
 reseed: 42
 fact: 3628800
-deep: 3000
+deep: 1000
 compiled throw: true 5
 nested throw: true 1
 native: 5

@@ -20,11 +20,15 @@ function setH() { h = 42; return 0; }
 function readAfter() { setH(); return h; }
 console.log("reseed:", readAfter());
 
-// ordinary recursion, and deeper than the native stack used to allow
+// ordinary recursion, and deeper than one native frame per JS frame allows.
+// The depth stops at 1000 because this fixture has to answer the same under
+// MILOJS_NO_BYTECODE=1, where the tree walker runs out of native stack at ~1800
+// (the compiled path reaches 10000, which is the depth COUNTER, and
+// tests/deepRecursion.js is where that ceiling is asserted).
 function fact(n) { if (n < 2) { return 1; } return n * fact(n - 1); }
 console.log("fact:", fact(10));
 function count(n) { if (n === 0) { return 0; } return 1 + count(n - 1); }
-console.log("deep:", count(3000));
+console.log("deep:", count(1000));
 
 // a throw from a compiled callee keeps the writes it made before throwing, and
 // does NOT resurrect the caller's pre-call snapshot of the same name

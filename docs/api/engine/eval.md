@@ -155,17 +155,23 @@ comparable number; whichever fires first wins. A call the VM keeps in its own
 frames spends no native stack at all, so there the counter is the only one of
 the two that can fire.
 
+### `callNativeAsFunction`
+
+```milo
+pub fn callNativeAsFunction(prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue
+```
+
+A native invoked as a PLAIN FUNCTION, as opposed to through `new` or from the
+engine's own construction paths -- which is the distinction the guard needs and
+which callNativeProg cannot make, because both arrive there.
+
 ### `callNativeProg`
 
 ```milo
 pub fn callNativeProg(prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue
 ```
 
-Native dispatch for the call sites that hold a Prog. callNative itself does
-not, so any native whose answer depends on re-entering user code has to be
-intercepted here — otherwise `String(obj)` reports "[object Object]" for an
-object whose toString says otherwise, while `${obj}` and `"" + obj` (both of
-which run the full ToPrimitive) disagree with it.
+_Undocumented._
 
 ### `callPlainValue`
 
