@@ -82,22 +82,6 @@ method-call path, so `s.match(/re/)` worked while
 callBuiltinByName goes straight to stringMethod, which knows nothing about
 regexes. Both paths call this now.
 
-### `jsIndexOf`
-
-```milo
-pub fn jsIndexOf(s: &string, sub: &string, start: i64): i64
-```
-
-First index of `sub` in `s` at or after `start`, or -1. (`from` is a reserved keyword.)
-
-### `jsStartsWith`
-
-```milo
-pub fn jsStartsWith(s: &string, sub: &string): bool
-```
-
-_Undocumented._
-
 ### `jsTrim`
 
 ```milo
@@ -286,14 +270,6 @@ literal-string forms, so they are deliberately absent here.
 
 ```milo
 pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue
-```
-
-_Undocumented._
-
-### `strSlice`
-
-```milo
-pub fn strSlice(s: &string, start: i64, end: i64): string
 ```
 
 _Undocumented._
