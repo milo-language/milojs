@@ -6,7 +6,7 @@ from "../runtime/host" import {
     doHttpFetch, buildChildCommand, readChildToCompletion, sqliteDbIdx, sqliteStmtIdx, parseDottedQuad, absolutePathOf
 }
 from "./bytecode" import {
-    tryRunFor
+    tryRunFor, tryRunBody
 }
 from "./methods" import {
     dateMethod, mapMethod, dataViewMethod, isDataViewMethodName, dataViewProto, arrayMethod, arrayMethodGeneric, isArrayMethod, arrayIterNext, typedArrayMethod, typedArrayOverride, typedArrayDataPtr, typedArrayFromBytes, bytesFromTypedArray, isTypedArrayMethodName, taIntegrityBlocked
@@ -9980,7 +9980,19 @@ fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
     let body = prog.funcs[fIdx].body
     // `var`s and nested function declarations belong to the whole call frame
     hoistBlock(prog, body, st, callScope)
-    let flow = execBlock(prog, body, st, callScope)
+    // A body that is entirely numeric arithmetic runs as bytecode instead
+    // (src/engine/bytecode.milo). It answers None for anything outside that
+    // subset, and for a compiled body whose outer names are not numbers at
+    // entry, and it decides that before any side effect.
+    var flow = Flow.Normal
+    match tryRunBody(prog, fIdx, st, callScope) {
+        Option.Some(rv) => {
+            flow = Flow.Ret(rv)
+        }
+        Option.None => {
+            flow = execBlock(prog, body, st, callScope)
+        }
+    }
     // a function BODY is a lexical scope too: `using` in it releases here
     runDisposals(prog, st, callScope)
     popActive(st)
