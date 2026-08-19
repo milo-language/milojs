@@ -576,6 +576,21 @@ fn stringArgsNeedCoercion(name: &string, args: &Vec<JSValue>): bool {
 // turn `s.replace(/a/g, "x")` into a search for the literal text "/a/g".
 fn coercedStringArgs(prog: &Prog, name: &string, args: &Vec<JSValue>, st: &mut Interp): Vec<JSValue> {
     var out: Vec<JSValue> = Vec.new()
+    // includes/startsWith/endsWith REJECT a RegExp argument rather than
+    // stringifying it: the spec says so precisely because the coercion below
+    // would otherwise turn the call into a substring search for "/re/" and
+    // answer false. The check has to happen here, before the coercion, because
+    // by the time stringMethod sees the argument it is already a string.
+    if name == "includes" || name == "startsWith" || name == "endsWith" {
+        if args.len() > 0 {
+            let rh = objHandle(args[0])
+            if rh >= 0 && st.objExtras[st.objects[rh].extra].regexId >= 0 {
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", "First argument to String.prototype." + name.clone() + " must not be a regular expression")
+                return out
+            }
+        }
+    }
     var i: i64 = 0
     while i < args.len() {
         if objHandle(args[i]) >= 0 && strArgWantsString(name, i) && !isCallableIn(st, args[i]) {
@@ -5740,7 +5755,18 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         var out = String.withCapacity(16)
         var i: i64 = 0
         while i < argVals.len() {
-            out = out + codePointToUtf8(toNum(argVals[i]) as i64)
+            // Each argument must be a NON-NEGATIVE INTEGER not above 0x10FFFF.
+            // Truncating instead turned fromCodePoint(1.5) into "\u0001" and
+            // fromCodePoint(-1) or (0x110000) into whatever the encoder made of
+            // them, where the spec requires a RangeError for all three.
+            let cpN = toNum(argVals[i])
+            let cpI = cpN as i64
+            if cpN != cpN || (cpI as f64) != cpN || cpI < 0 || cpI > 1114111 {
+                st.throwing = true
+                st.thrownValue = makeError(st, "RangeError", "Invalid code point " + numToStr(cpN) + currentModule(st))
+                return JSValue.Undefined
+            }
+            out = out + codePointToUtf8(cpI)
             i = i + 1
         }
         return JSValue.Str(out)

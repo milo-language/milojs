@@ -8,6 +8,60 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## milojs knew four whitespace characters; JS defines twenty-five
+
+Seventh pass. String methods against awkward arguments: 7 of 31 wrong, and then a
+follow-up probe of the whitespace set alone found 10 of 13.
+
+**The whitespace set was ASCII space, tab, LF and CR.** JS WhiteSpace is TAB, VT,
+FF, SP, NBSP, the Zs category (U+1680, U+2000-200A, U+202F, U+205F, U+3000) and
+the BOM U+FEFF, plus the LineTerminators LF, CR, U+2028 and U+2029. So
+`"\u00a0x".trim()`, `parseInt("\u00a05")` and `Number("\u30005")` all disagreed
+with node -- and `\v` and `\f`, which are plain ASCII, were missing from one of
+the two predicates that answered this question. That is the tell: `isWs` in
+builtins.milo and `isJsWs` in value.milo both existed, one had `\v`/`\f` and the
+other did not, and neither knew anything past ASCII. Two implementations of one
+rule, drifted, and wrong in different ways.
+
+Replaced by `wsRunAt`/`wsRunBefore` in value.milo, which answer the byte LENGTH of
+the whitespace character at (or ending at) an index. A byte predicate cannot do
+this job at all: NBSP is two bytes and U+3000 is three, so trim has to advance by
+the run rather than by one.
+
+**How it was found is worth recording.** It surfaced as a bizarre-looking bug: one
+`trim()` in a 31-case file returned `"  x"` while the same call in isolation
+returned `"x"`. I chased it as a source-offset bug in the lexer, shrank the file
+by execution and then by byte layout, and only when the minimised output printed
+`"\xa0 x"` did it become clear that my test file contained a NBSP I had typed by
+accident, and that node trimmed it while milojs did not. The "impossible"
+behaviour was a real bug the whole time, just not the one I was looking for.
+
+Six more string fixes, all the same permissive shape:
+
+- **`lastIndexOf` ignored its position argument.** `"abcabc".lastIndexOf("b", 2)`
+  answered 4 rather than 1.
+- **`includes`/`startsWith`/`endsWith` accepted a RegExp** and searched for its
+  source text, answering false. The spec rejects it explicitly, and the check has
+  to happen BEFORE argument coercion or the regex has already become a string.
+- **`replace` with a STRING pattern ignored `$&`, `` $` ``, `$'` and `$$`,**
+  inserting the replacement verbatim; the regex path had expanded them for a long
+  time. Same for `replaceAll`.
+- **`replace` with an EMPTY pattern did nothing**, where it matches at position 0:
+  `"abc".replace("", "X")` is "Xabc".
+- **`replaceAll` accepted a non-global RegExp**, replacing the first match only --
+  the opposite of what the name promises, which is why the spec makes it a
+  TypeError.
+- **`String.fromCodePoint` truncated instead of validating**: 1.5 became "\u0001",
+  and -1 and 0x110000 were encoded as whatever fell out. All three are RangeErrors.
+
+`normalize` stays wrong and is deliberately not in the fixture: NFC/NFD need
+Unicode composition tables this engine does not have, which is a backlog item
+rather than an oversight.
+
+Gates: dev.sh 6/6, GC-stress 295/296 fixtures, suite green with the compiler on
+and off, fuzz 200 seeds clean, QuickJS 104/149, node-compat sample 207/400.
+
+
 ## A destructure inside eval severs the scope chain when the collector runs
 
 Found by turning the GC-stress knob into something that actually stresses (see

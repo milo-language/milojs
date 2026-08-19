@@ -1214,8 +1214,9 @@ pub fn jsParseFloatPrefix(s: &string): f64 {
 fn jsParsePrefixNumEx(s: &string, radix: i64, autoHex: bool): f64 {
     var i: i64 = 0
     let n = s.len()
-    while i < n && (s[i] == ' ' || s[i] == 9 as u8 || s[i] == 10 as u8 || s[i] == 13 as u8) {
-        i = i + 1
+    // every JS whitespace, not just the four ASCII ones: `Number("\u00a05")` is 5
+    while i < n && wsRunAt(s, i) > 0 {
+        i = i + wsRunAt(s, i)
     }
     var neg = false
     if i < n && (s[i] == '+' || s[i] == '-') {
@@ -1647,11 +1648,11 @@ pub fn funcEnv(v: &JSValue): i64 {
 pub fn strToNum(s: &string): f64 {
     var a: i64 = 0
     var b = s.len()
-    while a < b && isJsWs(s[a]) {
-        a = a + 1
+    while a < b && wsRunAt(s, a) > 0 {
+        a = a + wsRunAt(s, a)
     }
-    while b > a && isJsWs(s[b - 1]) {
-        b = b - 1
+    while b > a && wsRunBefore(s, b) > 0 {
+        b = b - wsRunBefore(s, b)
     }
     if a >= b {
         return 0.0
@@ -1797,6 +1798,63 @@ fn isNumericLiteral(t: &string): bool {
         }
     }
     return i == n
+}
+
+// The JS WhiteSpace + LineTerminator set, over UTF-8 bytes: returns the LENGTH in
+// bytes of the whitespace character starting at `i`, or 0 when there is none.
+//
+// The set is bigger than most engines' first attempt at it, which is why trim,
+// parseInt and Number all disagreed with node here: TAB, VT, FF, SP, NBSP, the
+// Zs category (U+1680, U+2000-200A, U+202F, U+205F, U+3000), the two line
+// separators U+2028/U+2029, and the byte-order mark U+FEFF. Two predicates used
+// to answer this question, one of which had \v and \f and the other did not, and
+// neither knew anything past ASCII.
+pub fn wsRunAt(s: &string, i: i64): i64 {
+    let n = s.len()
+    if i < 0 || i >= n {
+        return 0
+    }
+    let c = s[i]
+    if c == ' ' || c == 9 as u8 || c == 10 as u8 || c == 11 as u8 || c == 12 as u8 || c == 13 as u8 {
+        return 1
+    }
+    if c == 0xC2 as u8 && i + 1 < n && s[i + 1] == 0xA0 as u8 {
+        return 2
+    }
+    if c == 0xE1 as u8 && i + 2 < n && s[i + 1] == 0x9A as u8 && s[i + 2] == 0x80 as u8 {
+        return 3
+    }
+    if c == 0xE2 as u8 && i + 2 < n && s[i + 1] == 0x80 as u8 {
+        let t = s[i + 2]
+        // U+2000..U+200A, U+2028, U+2029, U+202F
+        if (t >= 0x80 as u8 && t <= 0x8A as u8) || t == 0xA8 as u8 || t == 0xA9 as u8 || t == 0xAF as u8 {
+            return 3
+        }
+    }
+    if c == 0xE2 as u8 && i + 2 < n && s[i + 1] == 0x81 as u8 && s[i + 2] == 0x9F as u8 {
+        return 3
+    }
+    if c == 0xE3 as u8 && i + 2 < n && s[i + 1] == 0x80 as u8 && s[i + 2] == 0x80 as u8 {
+        return 3
+    }
+    if c == 0xEF as u8 && i + 2 < n && s[i + 1] == 0xBB as u8 && s[i + 2] == 0xBF as u8 {
+        return 3
+    }
+    return 0
+}
+
+// The same question asked backwards: the byte length of the whitespace character
+// ENDING at `i` (exclusive), or 0. Trailing trims need it, and a multi-byte
+// character cannot be recognised by looking at its last byte alone.
+pub fn wsRunBefore(s: &string, i: i64): i64 {
+    var back: i64 = 1
+    while back <= 3 {
+        if i - back >= 0 && wsRunAt(s, i - back) == back {
+            return back
+        }
+        back = back + 1
+    }
+    return 0
 }
 
 fn isJsWs(c: u8): bool {

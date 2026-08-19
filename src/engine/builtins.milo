@@ -21,7 +21,7 @@ from "./eval" import {
     toStrProg, callBuiltinByName, makeError, currentModule, isCallable, isSymbolStr, symbolDisplay, isBigIntVal, bigStrOf, callValue, makeArrayIterator, taCurrentLen, taElemValue
 }
 from "./value" import {
-    JSValue, hexDigitVal
+    JSValue, hexDigitVal, wsRunAt, wsRunBefore
 }
 from "./runtime" import {
     Interp, newObject, objSet
@@ -100,12 +100,20 @@ fn strLower(s: &string): string {
 pub fn jsTrim(s: &string): string {
     let n = s.len()
     var a: i64 = 0
-    while a < n && isWs(s[a]) {
-        a = a + 1
+    while a < n {
+        let run = wsRunAt(s, a)
+        if run == 0 {
+            break
+        }
+        a = a + run
     }
     var b = n
-    while b > a && isWs(s[b - 1]) {
-        b = b - 1
+    while b > a {
+        let back = wsRunBefore(s, b)
+        if back == 0 {
+            break
+        }
+        b = b - back
     }
     return strSlice(s, a, b)
 }
@@ -557,6 +565,64 @@ fn htmlAttrFor(n: &string): string {
     return ""
 }
 
+// `"s".includes(/re/)` and its two siblings are a TypeError: the spec rejects a
+// RegExp argument outright rather than stringifying it, because the method would
+// otherwise silently do a substring search for "/re/" and answer false. That is
+// exactly what happened here.
+fn rejectRegexArg(name: &string, args: &Vec<JSValue>, st: &mut Interp): bool {
+    if args.len() == 0 {
+        return false
+    }
+    let h = objHandle(args[0])
+    if h < 0 {
+        return false
+    }
+    if st.objExtras[st.objects[h].extra].regexId < 0 {
+        return false
+    }
+    st.throwing = true
+    st.thrownValue = makeError(st, "TypeError", "First argument to String.prototype." + name.clone() + " must not be a regular expression")
+    return true
+}
+
+// $-substitution for a STRING pattern. There are no capture groups, so only the
+// four positional forms apply: $$ (a literal dollar), $& (the match), $` (what
+// precedes it) and $' (what follows). The regex path has expanded these for a
+// long time; the string path inserted the replacement verbatim, so
+// `"abc".replace("b", "[$&]")` produced "a[$&]c".
+fn expandStringReplacement(rep: &string, whole: &string, matchStart: i64, matchLen: i64): string {
+    var out = String.withCapacity(rep.len())
+    var i: i64 = 0
+    while i < rep.len() {
+        if rep[i] == '$' && i + 1 < rep.len() {
+            let c = rep[i + 1]
+            if c == '$' {
+                out.push('$')
+                i = i + 2
+                continue
+            }
+            if c == '&' {
+                out.pushStr(strSlice(whole, matchStart, matchStart + matchLen))
+                i = i + 2
+                continue
+            }
+            if c == 0x60 as u8 {
+                out.pushStr(strSlice(whole, 0, matchStart))
+                i = i + 2
+                continue
+            }
+            if c == 0x27 as u8 {
+                out.pushStr(strSlice(whole, matchStart + matchLen, whole.len()))
+                i = i + 2
+                continue
+            }
+        }
+        out.push(rep[i])
+        i = i + 1
+    }
+    return out
+}
+
 pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     if name == "toUpperCase" || name == "toLocaleUpperCase" {
         // the locale forms are the locale-independent ones here: this engine has
@@ -654,6 +720,11 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         }
         return JSValue.Number(byteToUtf16(s, at) as f64)
     }
+    if name == "includes" || name == "startsWith" || name == "endsWith" {
+        if rejectRegexArg(name, args, st) {
+            return JSValue.Undefined
+        }
+    }
     if name == "includes" {
         return JSValue.Bool(jsContains(s, argStr(args, 0)))
     }
@@ -738,7 +809,23 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         if needle.len() > s.len() {
             return JSValue.Number(0.0 - 1.0)
         }
+        // The second argument caps where the match may START, counting in UTF-16
+        // units, and NaN means "search the whole string". It was ignored, so
+        // `"abcabc".lastIndexOf("b", 2)` answered 4 instead of 1.
         var i = s.len() - needle.len()
+        if args.len() > 1 {
+            let posN = toNum(args[1])
+            if posN == posN {
+                var capUnits = posN as i64
+                if capUnits < 0 {
+                    capUnits = 0
+                }
+                let capBytes = utf16Slice(s, 0, capUnits).len()
+                if capBytes < i {
+                    i = capBytes
+                }
+            }
+        }
         while i >= 0 {
             if jsSubstringAt(s, needle, i) {
                 return JSValue.Number(byteToUtf16(s, i) as f64)
@@ -796,17 +883,27 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         }
         return JSValue.Str(open + ">" + s.clone() + "</" + tag.clone() + ">")
     }
+    // wsRunAt/wsRunBefore, not a byte predicate: NBSP, the Zs category, U+2028/29
+    // and the BOM are all whitespace to trim, and none of them fit in one byte.
     if name == "trimStart" || name == "trimLeft" {
         var i: i64 = 0
-        while i < s.len() && isJsSpace(s[i]) {
-            i = i + 1
+        while i < s.len() {
+            let run = wsRunAt(s, i)
+            if run == 0 {
+                break
+            }
+            i = i + run
         }
         return JSValue.Str(strSlice(s, i, s.len()))
     }
     if name == "trimEnd" || name == "trimRight" {
         var e = s.len()
-        while e > 0 && isJsSpace(s[e - 1]) {
-            e = e - 1
+        while e > 0 {
+            let back = wsRunBefore(s, e)
+            if back == 0 {
+                break
+            }
+            e = e - back
         }
         return JSValue.Str(strSlice(s, 0, e))
     }
@@ -886,11 +983,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
                 out.push(s[k])
                 k = k + 1
             }
-            var r: i64 = 0
-            while r < rep.len() {
-                out.push(rep[r])
-                r = r + 1
-            }
+            out.pushStr(expandStringReplacement(rep, s, hit, pat.len()))
             at = hit + pat.len()
             hit = jsIndexOf(s, pat, at)
         }
@@ -958,10 +1051,12 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         let pat = argStr(args, 0)
         let rep = argStr(args, 1)
         let idx = jsIndexOf(s, pat, 0)
-        if idx < 0 || pat.len() == 0 {
+        if idx < 0 {
             return JSValue.Str(s.clone())
         }
-        return JSValue.Str(strSlice(s, 0, idx) + rep + strSlice(s, idx + pat.len(), s.len()))
+        // An EMPTY pattern matches at position 0 -- `"abc".replace("", "X")` is
+        // "Xabc" -- rather than not matching at all.
+        return JSValue.Str(strSlice(s, 0, idx) + expandStringReplacement(rep, s, idx, pat.len()) + strSlice(s, idx + pat.len(), s.len()))
     }
     return JSValue.Undefined
 }
@@ -2218,6 +2313,14 @@ pub fn regexArgFor(st: &mut Interp, name: &string, args: &Vec<JSValue>): Vec<JSV
 pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     let rid = regexIdOf(st, args[0])
     if name == "replace" || name == "replaceAll" {
+        // replaceAll REQUIRES a global regex: a non-global one would replace the
+        // first match only, which is the opposite of what the name promises, so
+        // the spec makes it a TypeError rather than letting it half-work.
+        if name == "replaceAll" && rid >= 0 && !st.regexes[rid].flagG {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "replaceAll must be called with a global RegExp")
+            return JSValue.Undefined
+        }
         if args.len() > 1 && isCallable(args[1]) {
             return regexReplaceFn(prog, st, s, rid, cloneValue(args[1]))
         }

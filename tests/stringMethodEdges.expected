@@ -1,0 +1,43 @@
+at ["a","c",null]
+charAt-oob ["","","b"]
+charCodeAt-oob [null,null]
+codePointAt-oob [null,97]
+indexOf-args [1,4,0,6,1]
+lastIndexOf [4,1,6]
+includes-regex "THREW:TypeError"
+startsWith-regex "THREW:TypeError"
+slice-neg ["bc","cab","","abcabc"]
+substring-swap ["bca","ab","bcabc"]
+substr-neg ["bc","","ab"]
+split-limit [["a"],["a","b","c"],["abcabc"],[]]
+split-regex-captures ["a","1","b","2","c"]
+split-empty-regex ["a","b","c"]
+replace-fn-args ["b",1,"abc"]
+replace-dollar ["a[b]c","a[a|c]c","a$c"]
+replaceAll-nonglobal "THREW:TypeError"
+padStart ["xyxya","a","abc","a"]
+padEnd ["axyxy","a"]
+repeat-edge ["","abab"]
+trim-variants ["x","x "," x"]
+localeCompare [-1,1,0]
+case-turkish ["i","I","SS"]
+concat-coerce "a1nullundefined[object Object]"
+match-nonglobal ["1","1",1,"a1"]
+matchAll-nonglobal "THREW:TypeError"
+search [1,-1,0]
+raw "a1b"
+fromCodePoint-bad "THREW:RangeError"
+wellFormed [true,"ab"]
+" " "x" 5 5
+" " "x" 5 5
+" " "x" 5 5
+" " "x" 5 5
+" " "x" 5 5
+"　" "x" 5 5
+"﻿" "x" 5 5
+" " "x" 5 5
+" " "x" 5 5
+"\t" "x" 5 5
+"\u000b" "x" 5 5
+"\f" "x" 5 5
+"\r" "x" 5 5

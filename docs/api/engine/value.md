@@ -351,3 +351,29 @@ pub fn uriHasBadEscape(s: &string): bool
 ```
 
 A '%' not followed by two hex digits is a URIError in JS, not a literal.
+
+### `wsRunAt`
+
+```milo
+pub fn wsRunAt(s: &string, i: i64): i64
+```
+
+The JS WhiteSpace + LineTerminator set, over UTF-8 bytes: returns the LENGTH in
+bytes of the whitespace character starting at `i`, or 0 when there is none.
+
+The set is bigger than most engines' first attempt at it, which is why trim,
+parseInt and Number all disagreed with node here: TAB, VT, FF, SP, NBSP, the
+Zs category (U+1680, U+2000-200A, U+202F, U+205F, U+3000), the two line
+separators U+2028/U+2029, and the byte-order mark U+FEFF. Two predicates used
+to answer this question, one of which had \v and \f and the other did not, and
+neither knew anything past ASCII.
+
+### `wsRunBefore`
+
+```milo
+pub fn wsRunBefore(s: &string, i: i64): i64
+```
+
+The same question asked backwards: the byte length of the whitespace character
+ENDING at `i` (exclusive), or 0. Trailing trims need it, and a multi-byte
+character cannot be recognised by looking at its last byte alone.
