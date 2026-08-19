@@ -1,0 +1,13 @@
+get() ERR_MISSING_ARGS | The "name" argument must be specified
+getAll() ERR_MISSING_ARGS | The "name" argument must be specified
+has() ERR_MISSING_ARGS | The "name" argument must be specified
+delete() ERR_MISSING_ARGS | The "name" argument must be specified
+append() ERR_MISSING_ARGS | The "name" and "value" arguments must be specified
+append(name only) ERR_MISSING_ARGS | The "name" and "value" arguments must be specified
+set() ERR_MISSING_ARGS | The "name" and "value" arguments must be specified
+get.call(undefined) ERR_INVALID_THIS | Value of "this" must be of type URLSearchParams
+get(obj throwing) undefined | toString
+get numeric name null
+set replaces first and drops the rest: a=z&b=2
+append stringifies: a=z&b=2&c=4
+has(name, value): true false
