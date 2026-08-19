@@ -8,6 +8,9 @@
 // the ESM forms that desugar onto it, so computed specifiers (require(someVar),
 // import(someVar)) are not discovered — a known limit.
 
+from "../engine/strutil" import {
+    strSlice, jsIndexOf
+}
 from "std/fs" import {
     readFile, currentDir
 }

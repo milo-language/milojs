@@ -47,7 +47,7 @@ from "./engine/runtime" import {
 from "./engine/driver" import {
     makeInterp, bootInterp
 }
-from "./engine/builtins" import {
+from "./engine/strutil" import {
     strSlice
 }
 from "std/process" import {

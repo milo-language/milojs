@@ -7,6 +7,9 @@
 // Milo permits circular imports, so a leaf can import the evaluator that
 // imports it back. That is what makes the seam cuttable at all.
 
+from "./strutil" import {
+    strSlice
+}
 from "./value" import {
     JSValue, Builtin, Native
 }

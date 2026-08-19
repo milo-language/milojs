@@ -20,6 +20,9 @@ from "./value" import {
 from "./runtime" import {
     Interp, Timer, Microtask, Reaction, PendingFetch, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn, TA_MAX, TA_I64, TA_U64, taIsBigKind, taLoadBig, taStoreBig, isPrivateKey
 }
+from "./strutil" import {
+    strSlice
+}
 from "./builtins" import {
     stringMethod, jsCharAt, mjStringifyVal, mjJsonParse, mjJsonOmitted, numToIndex, regexMethod, isRegexMethodName, makeRegex, regexArgFor, stringRegexOp, stringOpNeedsRegexArg, isStringRegexOp, primitiveMethod, isStringMethodName, isPrimitiveMethodName
 }

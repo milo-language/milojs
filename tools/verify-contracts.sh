@@ -47,8 +47,25 @@ UPDATE=0
 # file:proven:unknown:errors — proven is a gating FLOOR, errors a gating CEILING, unknown
 # is recorded for drift reporting only.
 EXPECTED="
-src/engine/builtins.milo:13:4:0
-src/engine/eval.milo:1:58:0
+src/engine/strutil.milo:13:4:0
+"
+
+# Files the prover cannot load at all, with the reason. NOT a way to silence a
+# regression: a listed file that starts proving again fails the gate, so the list
+# only shrinks. Same shape as tests/.node-oracle-exempt.
+#
+# src/engine/methods.milo — `milo prove` loads a module twice when the file it is
+#   given sits in a subdirectory AND takes part in an import cycle, so './eval'
+#   resolves to a partial duplicate and the run dies with
+#   "'symConcatSpreadableKey' not found in './eval'". Reproduced on milo 0.2.0
+#   (dev 5ac3cdc4) and on current main; does NOT reproduce before src/ gained
+#   subdirectories, and does NOT reproduce for a cycle-free file in the same
+#   subdirectory. Its two contract-bearing fns (arrayLikeLength,
+#   arrayLikeOwnLength) take Prog and Interp, so unlike the string helpers now in
+#   src/engine/strutil.milo they cannot be lifted out of the cycle. Blocked on the
+#   milo fix.
+BLOCKED="
+src/engine/methods.milo
 "
 
 fail=0
@@ -61,8 +78,20 @@ if [ -z "$files" ]; then
 fi
 
 for f in $files; do
-    out=$("$MILO" prove "$f" --solver=z3 2>&1)
+    blocked=$(echo "$BLOCKED" | grep -x "$f" || true)
+    # An absolute path, because a relative one makes the same double-load fatal
+    # rather than merely duplicated.
+    out=$("$MILO" prove "$PWD/$f" --solver=z3 2>&1)
     line=$(echo "$out" | grep -oE 'proven: [0-9]+  failed: [0-9]+  unknown: [0-9]+  errors: [0-9]+')
+    if [ -n "$blocked" ]; then
+        if [ -n "$line" ]; then
+            echo "FAIL $f: listed in BLOCKED but the prover loaded it — delete its entry"
+            fail=1
+        else
+            echo "$(printf '%-26s' "$f") BLOCKED (milo cannot load it; see the note in this script)"
+        fi
+        continue
+    fi
     if [ -z "$line" ]; then
         echo "FAIL $f: prove produced no tally (compile failure?)"
         echo "$out" | tail -20

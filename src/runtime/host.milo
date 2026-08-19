@@ -4,6 +4,9 @@
 // src/engine/eval.milo, which is the evaluator. `milojs-engine` links this file and
 // never calls into it; only the `milojs` runtime does.
 
+from "../engine/strutil" import {
+    strSlice, jsIndexOf, jsStartsWith
+}
 from "../engine/value" import {
     JSValue, Native, Builtin
 }
