@@ -40,7 +40,7 @@ from "./value" import {
     JSValue, cloneValue, truthy
 }
 from "./runtime" import {
-    Interp, scopeTryLookup, scopeAssign
+    Interp, scopeTryLookup, scopeAssign, newObject
 }
 from "./eval" import {
     evalBinValues, toNumProg, toNumArg, memberOfValue, setMemberOfValue
@@ -75,6 +75,12 @@ enum Op {
     // Write strs[a]. Stack is [receiver, value]; both are replaced by the value,
     // because an assignment is an expression whose result is what was assigned.
     SetMem,
+    // A fresh `{}`. It goes straight onto the frame, so it is rooted from the
+    // instant it exists: nothing allocates between newObject and the store.
+    NewObj,
+    // Copy the top of the stack. Only used to keep an object literal's receiver
+    // under each property write.
+    Dup,
     Pop,
     // Leave the chunk with the value on top of the stack as the function's
     // result. Only a body chunk may contain one: a loop chunk that swallowed a
@@ -232,6 +238,33 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
             compExpr(prog, c, objIdx)
             let k = strSlot(c, name)
             emitOp(c, Op.GetMem, k)
+        }
+        Expr.ObjLit(litIdx) => {
+            // Plain data properties with literal keys only. A computed key needs
+            // its own evaluation order, and a getter/setter is installed rather
+            // than assigned; both reject the chunk instead of being half-right.
+            var i: i64 = 0
+            while i < prog.objLits[litIdx.index].len() {
+                if prog.objLits[litIdx.index][i].kind > 0 {
+                    c.ok = false
+                    return
+                }
+                if let Option.Some(_ke) = prog.objLits[litIdx.index][i].keyExpr {
+                    c.ok = false
+                    return
+                }
+                i = i + 1
+            }
+            emitOp(c, Op.NewObj, 0)
+            var j: i64 = 0
+            while j < prog.objLits[litIdx.index].len() {
+                emitOp(c, Op.Dup, 0)
+                compExpr(prog, c, prog.objLits[litIdx.index][j].val)
+                let k = strSlot(c, prog.objLits[litIdx.index][j].key)
+                emitOp(c, Op.SetMem, k)
+                emitOp(c, Op.Pop, 0)
+                j = j + 1
+            }
         }
         Expr.SetMember(objIdx, keyIdx, valIdx) => {
             // Only a STATIC key (`o.x = v`). A computed one (`o[k] = v`) has to
@@ -568,6 +601,12 @@ pub fn runChunk(prog: &Prog, ch: &Chunk, st: &mut Interp, scope: i64): Option<JS
             Op.Str => {
                 need = need + 1
             }
+            Op.NewObj => {
+                need = need + 1
+            }
+            Op.Dup => {
+                need = need + 1
+            }
             _ => {
             }
         }
@@ -803,6 +842,19 @@ pub fn runChunk(prog: &Prog, ch: &Chunk, st: &mut Interp, scope: i64): Option<JS
                 let v = cloneValue(st.vmStack[sp])
                 let ov = cloneValue(st.vmStack[sp - 1])
                 st.vmStack[sp - 1] = setMemberOfValue(prog, ov, ch.strs[a].clone(), v, st)
+                pc = pc + 1
+            }
+            Op.NewObj => {
+                st.vmSp = sp
+                let o = newObject(st)
+                vmSet(st, sp, JSValue.Obj(o))
+                sp = sp + 1
+                st.vmSp = sp
+                pc = pc + 1
+            }
+            Op.Dup => {
+                vmSet(st, sp, cloneValue(st.vmStack[sp - 1]))
+                sp = sp + 1
                 pc = pc + 1
             }
             Op.Pop => {
