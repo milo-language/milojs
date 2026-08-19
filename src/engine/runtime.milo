@@ -2252,13 +2252,53 @@ fn pushMarkTargets(v: &JSValue, objs: &mut Vec<i64>, scopes: &mut Vec<i64>) {
     }
 }
 
-// The children are gathered into local Vecs before being marked because a borrow
-// of st.objects[i] cannot be held across the recursive markObject(st, ..) call.
-// Gather HANDLES, not values: this previously cloned every property and element
-// into a Vec<JSValue>, so each collection deep-copied the whole live heap
-// (strings included). That made marking, not tracing, the dominant cost of a
-// GC — 43% of matmul.
+// Children are gathered as HANDLES, not values: this previously cloned every
+// property and element into a Vec<JSValue>, so each collection deep-copied the
+// whole live heap (strings included). That made marking, not tracing, the
+// dominant cost of a GC — 43% of matmul.
+//
+// The traversal is a WORKLIST, not native recursion. It used to be mutually
+// recursive, one stack frame per edge of the object graph, and that graph is
+// whatever the program built: a 100k-deep linked list (or promise chain, or
+// nested JSON) walked the mark phase straight through the stack guard page and
+// died on SIGBUS mid-collection, with no message and nothing the program could
+// catch. Depth the user controls has to live on the heap.
 fn markObject(st: &mut Interp, i: i64) {
+    drainMarks(st, i, -1)
+}
+
+// Mark a scope live, then everything it can reach: its lexical parent and every
+// value bound in it (closures → their env, objects → their heap slot).
+fn markScope(st: &mut Interp, i: i64) {
+    drainMarks(st, -1, i)
+}
+
+// Marks everything reachable from one seed handle. Objects drain before scopes
+// for no reason beyond having to pick an order; the mark flags make a revisit
+// free, so a cyclic graph terminates either way.
+fn drainMarks(st: &mut Interp, seedObj: i64, seedScope: i64) {
+    var objs: Vec<i64> = Vec.new()
+    var scopes: Vec<i64> = Vec.new()
+    if seedObj >= 0 {
+        objs.push(seedObj)
+    }
+    if seedScope >= 0 {
+        scopes.push(seedScope)
+    }
+    while objs.len() > 0 || scopes.len() > 0 {
+        if objs.len() > 0 {
+            let o = objs.pop()!
+            markObjectShallow(st, o, objs, scopes)
+        } else {
+            let s = scopes.pop()!
+            markScopeShallow(st, s, objs, scopes)
+        }
+    }
+}
+
+// Mark one object live and APPEND what it reaches to the worklists. Every edge
+// this used to recurse across is now a push.
+fn markObjectShallow(st: &mut Interp, i: i64, objs: &mut Vec<i64>, scopes: &mut Vec<i64>) {
     if i < 0 {
         return
     }
@@ -2267,8 +2307,6 @@ fn markObject(st: &mut Interp, i: i64) {
     }
     st.objects[i].mark = true
     let proto = st.objects[i].proto
-    var objs: Vec<i64> = Vec.new()
-    var scopes: Vec<i64> = Vec.new()
     var k: i64 = 0
     let n = st.objects[i].props.len()
     while k < n {
@@ -2353,19 +2391,12 @@ fn markObject(st: &mut Interp, i: i64) {
     }
     // an object keeps its prototype alive
     if proto >= 0 {
-        markObject(st, proto)
-    }
-    for child in objs {
-        markObject(st, child)
-    }
-    for sc in scopes {
-        markScope(st, sc)
+        objs.push(proto)
     }
 }
 
-// Mark a scope live, then everything it can reach: its lexical parent and every
-// value bound in it (closures → their env, objects → their heap slot).
-fn markScope(st: &mut Interp, i: i64) {
+// Mark one scope live and APPEND what it reaches to the worklists.
+fn markScopeShallow(st: &mut Interp, i: i64, objs: &mut Vec<i64>, scopes: &mut Vec<i64>) {
     if i < 0 {
         return
     }
@@ -2375,12 +2406,9 @@ fn markScope(st: &mut Interp, i: i64) {
     st.scopes[i].mark = true
     // a `with` object is reachable only from its scope
     if st.scopes[i].withObj >= 0 {
-        markObject(st, st.scopes[i].withObj)
+        objs.push(st.scopes[i].withObj)
     }
     let parent = st.scopes[i].parent
-    // handles, not cloned values — see markObject
-    var objs: Vec<i64> = Vec.new()
-    var scopes: Vec<i64> = Vec.new()
     var k: i64 = 0
     let n = st.scopes[i].vars.len()
     while k < n {
@@ -2399,22 +2427,14 @@ fn markScope(st: &mut Interp, i: i64) {
         dk = dk + 1
     }
     // this scope's per-instance function statics are roots for anything they hold
-    var fsvals: Vec<i64> = Vec.new()
     var fk: i64 = 0
     let fn2 = st.scopes[i].fnStatVals.len()
     while fk < fn2 {
-        fsvals.push(st.scopes[i].fnStatVals[fk])
+        objs.push(st.scopes[i].fnStatVals[fk])
         fk = fk + 1
     }
-    markScope(st, parent)
-    for child in objs {
-        markObject(st, child)
-    }
-    for sc in scopes {
-        markScope(st, sc)
-    }
-    for fs in fsvals {
-        markObject(st, fs)
+    if parent >= 0 {
+        scopes.push(parent)
     }
 }
 
