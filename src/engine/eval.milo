@@ -6,7 +6,7 @@ from "../runtime/host" import {
     doHttpFetch, buildChildCommand, readChildToCompletion, sqliteDbIdx, sqliteStmtIdx, parseDottedQuad, absolutePathOf
 }
 from "./bytecode" import {
-    tryRunFor, tryRunBody
+    tryRunFor, bodyChunkOf, chunkUsesArguments, runChunk
 }
 from "./methods" import {
     dateMethod, mapMethod, dataViewMethod, isDataViewMethodName, dataViewProto, arrayMethod, arrayMethodGeneric, isArrayMethod, arrayIterNext, typedArrayMethod, typedArrayOverride, typedArrayDataPtr, typedArrayFromBytes, bytesFromTypedArray, isTypedArrayMethodName, taIntegrityBlocked
@@ -10499,7 +10499,12 @@ pub fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
 // Does NOT pushActive: the caller decides how the scope is rooted. A plain call
 // roots it on the dynamic stack; a generator roots it through Interp.genScope,
 // because the scope outlives the call that created it.
-pub fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JSValue>, thisVal: &JSValue, st: &mut Interp): i64 {
+// `wantArguments` is false only for a call whose body is COMPILED and never
+// names `arguments`. Building it is an array object plus a copy of every
+// argument, per call, and a compiled body cannot reach it any other way: every
+// identifier it mentions is a chunk slot, and the subset has no closure, no
+// `with` and no direct eval to smuggle a reference out of the frame.
+pub fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JSValue>, thisVal: &JSValue, st: &mut Interp, wantArguments: bool): i64 {
     let callScope = newScope(st, envIdx)
     // arrows have no own `this` — it stays lexical (resolved up the scope chain)
     if !prog.funcs[fIdx].isArrow {
@@ -10558,7 +10563,7 @@ pub fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JS
     }
     // `arguments` — ES5 libraries lean on it for variadics (path.join etc).
     // Arrows don't get their own, matching JS.
-    if !prog.funcs[fIdx].isArrow {
+    if !prog.funcs[fIdx].isArrow && wantArguments {
         let argsArr = newArray(st)
         var ai: i64 = 0
         while ai < argVals.len() {
@@ -10624,25 +10629,36 @@ fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
         return makeGenerator(fIdx, envIdx, argVals, thisVal, false, st)
     }
     st.callDepth = st.callDepth + 1
-    let callScope = bindActivationScope(prog, fIdx, envIdx, argVals, thisVal, st)
+    // Whether this body runs as bytecode is decided BEFORE the frame is built,
+    // because it decides how much of the frame is needed: a compiled body has no
+    // `var` and no nested function declaration to hoist, and usually no
+    // `arguments` to materialise.
+    let cid = bodyChunkOf(prog, fIdx)
+    let callScope = bindActivationScope(prog, fIdx, envIdx, argVals, thisVal, st, cid < 0 || chunkUsesArguments(cid))
     // root the frame across the whole call so a GC inside the body (or a nested
     // call) can't reclaim it
     pushActive(st, callScope)
     let body = prog.funcs[fIdx].body
-    // `var`s and nested function declarations belong to the whole call frame
-    hoistBlock(prog, body, st, callScope)
-    // A body that is entirely numeric arithmetic runs as bytecode instead
-    // (src/engine/bytecode.milo). It answers None for anything outside that
-    // subset, and for a compiled body whose outer names are not numbers at
-    // entry, and it decides that before any side effect.
+    // A body that is entirely within the compiled subset runs as bytecode
+    // instead (src/engine/bytecode.milo). runChunk answers None for a chunk whose
+    // free names are not all bound at entry, and it decides that before any side
+    // effect, so the tree walker can still run the body from the top.
     var flow = Flow.Normal
-    match tryRunBody(prog, fIdx, st, callScope) {
-        Option.Some(rv) => {
-            flow = Flow.Ret(rv)
+    var walked = true
+    if cid >= 0 {
+        match runChunk(prog, cid, st, callScope) {
+            Option.Some(rv) => {
+                flow = Flow.Ret(rv)
+                walked = false
+            }
+            Option.None => {
+            }
         }
-        Option.None => {
-            flow = execBlock(prog, body, st, callScope)
-        }
+    }
+    if walked {
+        // `var`s and nested function declarations belong to the whole call frame
+        hoistBlock(prog, body, st, callScope)
+        flow = execBlock(prog, body, st, callScope)
     }
     // a function BODY is a lexical scope too: `using` in it releases here
     runDisposals(prog, st, callScope)
@@ -12640,7 +12656,7 @@ fn makeGenerator(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue
     // The generator object is rooted across this: a default expression runs user
     // code, which can allocate and collect, and nothing else refers to `g` yet.
     pushTemp(st, JSValue.Obj(g))
-    let gscope = bindActivationScope(gProg, fIdx, envIdx, argVals, thisVal, st)
+    let gscope = bindActivationScope(gProg, fIdx, envIdx, argVals, thisVal, st, true)
     st.genScope[gi] = gscope
     if let Option.Some(unpack) = gProg.funcs[fIdx].paramPrelude {
         pushActive(st, gscope)

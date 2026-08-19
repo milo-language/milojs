@@ -115,9 +115,16 @@ pub struct Chunk {
     // are neither, because nothing outside can observe them.
     slotNames: Vec<string>,
     slotOuter: Vec<bool>,
+    // Slots this chunk ever STORES to. An outer slot it only reads still holds
+    // what the scope holds, so flushing it back is a no-op that costs a
+    // scope-chain walk per call (and, over a `with`, a spurious setter call).
+    slotWritten: Vec<bool>,
     // High-water mark of the operand area above the slots, counted once at
     // compile time. Every call used to rescan the whole op array for it.
     need: i64,
+    // Does the body name `arguments`? If not, the activation does not have to
+    // build one. See bindActivationScope.
+    usesArguments: bool,
 }
 
 struct Comp {
@@ -539,6 +546,38 @@ fn operandNeed(c: &Comp): i64 {
     return need
 }
 
+// Which slots the chunk stores to, read off the emitted code so no emit site can
+// forget to record it.
+fn writtenSlots(c: &Comp): Vec<bool> {
+    var w: Vec<bool> = Vec.new()
+    while w.len() < c.slotNames.len() {
+        w.push(false)
+    }
+    var d: i64 = 0
+    while d < c.ops.len() {
+        match c.ops[d] {
+            Op.Store => {
+                w[c.args[d]] = true
+            }
+            _ => {
+            }
+        }
+        d = d + 1
+    }
+    return w
+}
+
+fn namesArguments(c: &Comp): bool {
+    var i: i64 = 0
+    while i < c.slotNames.len() {
+        if c.slotNames[i] == "arguments" {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
 // Compile a `for` statement, or answer None when any part of it falls outside
 // the subset.
 pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
@@ -574,9 +613,12 @@ pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
                 return Option.None
             }
             let need = operandNeed(c)
+            let written = writtenSlots(c)
+            let usesArgs = namesArguments(c)
             return Option.Some(Chunk {
                 ops: c.ops, args: c.args, consts: c.consts, strs: c.strs,
-                slotNames: c.slotNames, slotOuter: c.slotOuter, need: need,
+                slotNames: c.slotNames, slotOuter: c.slotOuter,
+                slotWritten: written, need: need, usesArguments: usesArgs,
             })
         }
         _ => {
@@ -650,7 +692,7 @@ struct VmFrame {
 fn vmFlushOuter(st: &mut Interp, ch: &Chunk, base: i64, scope: i64) {
     var k: i64 = 0
     while k < ch.slotNames.len() {
-        if ch.slotOuter[k] {
+        if ch.slotOuter[k] && ch.slotWritten[k] {
             scopeAssign(st, scope, ch.slotNames[k], cloneValue(st.vmStack[base + k]))
         }
         k = k + 1
@@ -1025,7 +1067,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                             st.suppressAsyncSpawn = false
                             st.suppressGenSpawn = false
                             st.callDepth = st.callDepth + 1
-                            let callScope = bindActivationScope(prog, fIdx, envIdx, argVals, JSValue.Undefined, st)
+                            let callScope = bindActivationScope(prog, fIdx, envIdx, argVals, JSValue.Undefined, st, gChunks[cid2].usesArguments)
                             pushActive(st, callScope)
                             // The callee's frame goes ABOVE this one's operands,
                             // so every live value in every frame stays below vmSp
@@ -1237,9 +1279,12 @@ pub fn compileBody(prog: &Prog, fIdx: i64): Option<Chunk> {
         return Option.None
     }
     let need = operandNeed(c)
+    let written = writtenSlots(c)
+    let usesArgs = namesArguments(c)
     return Option.Some(Chunk {
         ops: c.ops, args: c.args, consts: c.consts, strs: c.strs,
-        slotNames: c.slotNames, slotOuter: c.slotOuter, need: need,
+        slotNames: c.slotNames, slotOuter: c.slotOuter,
+        slotWritten: written, need: need, usesArguments: usesArgs,
     })
 }
 
@@ -1277,15 +1322,10 @@ pub fn bodyChunkOf(prog: &Prog, fIdx: i64): i64 {
     return slot - 1
 }
 
-// Run this function body as bytecode, or answer None to say the tree walker
-// still has to run it. This is the entry the TREE WALKER uses; a compiled body
-// called from compiled code never comes through here, it gets a VmFrame instead.
-pub fn tryRunBody(prog: &Prog, fIdx: i64, st: &mut Interp, scope: i64): Option<JSValue> {
-    let cid = bodyChunkOf(prog, fIdx)
-    if cid < 0 {
-        return Option.None
-    }
-    return runChunk(prog, cid, st, scope)
+// Does this chunk name `arguments`? The activation an ordinary call builds can
+// skip materialising one when it does not.
+pub fn chunkUsesArguments(cid: i64): bool {
+    return gChunks[cid].usesArguments
 }
 
 // Drop every cached chunk. The cache is keyed by an index into the program

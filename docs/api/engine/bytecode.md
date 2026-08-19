@@ -9,6 +9,15 @@ pub fn bodyChunkOf(prog: &Prog, fIdx: i64): i64
 The chunk index for this function's body, or -1 if its body does not compile.
 Compilation happens once per function, and the answer is cached either way.
 
+### `chunkUsesArguments`
+
+```milo
+pub fn chunkUsesArguments(cid: i64): bool
+```
+
+Does this chunk name `arguments`? The activation an ordinary call builds can
+skip materialising one when it does not.
+
 ### `compileBody`
 
 ```milo
@@ -55,16 +64,6 @@ Answers None when the chunk cannot run and the caller must fall back to the
 tree walker; that decision is made before any side effect. Otherwise answers
 the value the body returned, or Undefined for a loop chunk and for a body that
 fell off its end.
-
-### `tryRunBody`
-
-```milo
-pub fn tryRunBody(prog: &Prog, fIdx: i64, st: &mut Interp, scope: i64): Option<JSValue>
-```
-
-Run this function body as bytecode, or answer None to say the tree walker
-still has to run it. This is the entry the TREE WALKER uses; a compiled body
-called from compiled code never comes through here, it gets a VmFrame instead.
 
 ### `tryRunFor`
 

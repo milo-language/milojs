@@ -67,7 +67,7 @@ the decimal string of a BigInt, or "" for anything else
 ### `bindActivationScope`
 
 ```milo
-pub fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JSValue>, thisVal: &JSValue, st: &mut Interp): i64
+pub fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JSValue>, thisVal: &JSValue, st: &mut Interp, wantArguments: bool): i64
 ```
 
 One activation's scope: `this`, `new.target`, the self-name of a named function
@@ -79,6 +79,11 @@ at its first next() — and two copies of this would drift.
 Does NOT pushActive: the caller decides how the scope is rooted. A plain call
 roots it on the dynamic stack; a generator roots it through Interp.genScope,
 because the scope outlives the call that created it.
+`wantArguments` is false only for a call whose body is COMPILED and never
+names `arguments`. Building it is an array object plus a copy of every
+argument, per call, and a compiled body cannot reach it any other way: every
+identifier it mentions is a chunk slot, and the subset has no closure, no
+`with` and no direct eval to smuggle a reference out of the frame.
 
 ### `builtinArityOn`
 
@@ -140,7 +145,7 @@ opcode (src/engine/bytecode.milo) so the two cannot drift into two different
 ceilings. Answers true having ALREADY set the pending RangeError.
 
 Without this, runaway recursion exhausts the native stack and the process dies
-with no JS-level error — express's error middleware expects a catchable
+with no JS-level error, and express's error middleware expects a catchable
 RangeError instead.
 stackHeadroom() is the guard that actually protects the stack: it measures the
 task we are standing on, so it is right on the 256 MB interpreter task and on
@@ -419,7 +424,7 @@ _Undocumented._
 pub fn isPlainCallable(st: &Interp, v: &JSValue): bool
 ```
 
-Is this value callable as a PLAIN call — `f(x)`, no receiver? Func and Native
+Is this value callable as a PLAIN call, `f(x)` with no receiver? Func and Native
 are the ordinary cases; bound methods, Node-API functions and proxies are
 callable objects instead. Answering this before the arguments are evaluated is
 what makes `x(boom())` on a non-function report the TypeError.
