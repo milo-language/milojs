@@ -26,11 +26,12 @@ A JavaScript engine and runtime written in the [Milo](https://github.com/milo-la
 
 | suite | score | evidence |
 |---|---|---|
-| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) | <!--fact:node-pct-->32.4%<!--/fact--> (<!--fact:node-pass-->790<!--/fact-->/<!--fact:node-ran-->2437<!--/fact-->) | [report](docs/conformance/node-compat.json) · [sweep](scripts/node-compat-sweep.ts) |
+| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) | <!--fact:node-pct-all-->23.4%<!--/fact--> (<!--fact:node-pass-->790<!--/fact-->/<!--fact:node-total-->3373<!--/fact-->) | [report](docs/conformance/node-compat.json) · [sweep](scripts/node-compat-sweep.ts) |
+| same corpus, same sweep: <!--fact:node-peer-name-->bun 1.3.10<!--/fact--> | <!--fact:node-peer-pct-all-->40.8%<!--/fact--> (<!--fact:node-peer-pass-->1377<!--/fact-->/<!--fact:node-peer-total-->3373<!--/fact-->) | [report](docs/conformance/node-compat-peer.json) |
 
-<!--fact:node-ran-->2437<!--/fact--> of node's tests run here. Another <!--fact:node-skipped-->936<!--/fact--> skip themselves, mostly for
-missing crypto, and are not counted either way. Every score above is compiled
-from its committed report and gated in CI, so it cannot drift from the tree.
+Every selected case counts, the <!--fact:node-skipped-->936<!--/fact--> that call `common.skip()` included: drop
+those and shipping crypto would LOWER the score. Scores compile from their
+committed reports and are gated in CI, so they cannot drift from the tree.
 
 **[Per-module table →](docs/node-compat.md)** · [status](docs/status.md) ·
 [open gaps](docs/backlog.md)
