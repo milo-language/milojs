@@ -46,7 +46,7 @@ complete its surface: exports alone are not evidence that anything works.
 | 🔴 | `fs` | 70/104 67% | 74/219 (+8 skipped) | 102/104 98% | `Dir`, `Dirent`, `FileReadStream`, `FileWriteStream`, `ReadStream`, `Stats` +28 more |
 | 🔴 | `stream` | 8/23 35% | 54/164 (+1 skipped) | 23/23 100% | `_isArrayBufferView`, `_isUint8Array`, `_uint8ArrayToBuffer`, `addAbortSignal`, `compose`, `destroy` +9 more |
 | 🔴 | `url` | 6/14 43% | 4/14 | 12/14 86% | `URLPattern`, `domainToASCII`, `domainToUnicode`, `fileURLToPath`, `fileURLToPathBuffer`, `pathToFileURL` +2 more |
-| 🔴 | `process` | 30/83 36% | 21/76 (+5 skipped) | 73/83 88% | `_debugEnd`, `_debugProcess`, `_events`, `_eventsCount`, `_exiting`, `_fatalException` +47 more |
+| 🔴 | `process` | 31/83 37% | 21/76 (+5 skipped) | 73/83 88% | `_debugEnd`, `_debugProcess`, `_events`, `_eventsCount`, `_exiting`, `_fatalException` +46 more |
 | 🔴 | `events` | 10/17 59% | 1/4 | 17/17 100% | `EventEmitterAsyncResource`, `captureRejections`, `getMaxListeners`, `init`, `kMaxEventTargetListeners`, `kMaxEventTargetListenersWarned` +1 more |
 | 🔴 | `perf_hooks` | 11/13 85% | 3/12 | 11/13 85% | `Performance`, `PerformanceResourceTiming` |
 | 🔴 | `net` | 13/17 76% | 27/133 (+3 skipped) | 16/17 94% | `BlockList`, `SocketAddress`, `_createServerHandle`, `_normalizeArgs` |
@@ -74,6 +74,6 @@ complete its surface: exports alone are not evidence that anything works.
 | 🔴 | `tty` | 3/3 100% | 0/2 | 3/3 100% | n/a |
 | 🔴 | `wasi` **(does not load)** | 0/1 0% | n/a | 1/1 100% | `WASI` |
 
-Across all 43 modules: **442/1056 exports present (42%)**: 🟢 0, 🟡 5, 🔴 38.
+Across all 43 modules: **443/1056 exports present (42%)**: 🟢 0, 🟡 5, 🔴 38.
 
 Modules that do not load at all: `http2`, `inspector`, `trace_events`, `wasi`.

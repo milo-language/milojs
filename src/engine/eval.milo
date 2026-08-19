@@ -13373,9 +13373,15 @@ fn drainMicrotasks(prog: &Prog, st: &mut Interp, limit: i64) {
             let _ = callValue(prog, task, args, JSValue.Undefined, st)
             popTemp(st)
             if st.throwing {
-                // Same rule as a timer callback: an uncaught exception is fatal.
-                eprint("Uncaught " + describeThrownValue(st, st.thrownValue))
-                exit(1)
+                // Same rule as a timer callback, INCLUDING the escape hatch: an
+                // uncaughtException listener is node's one documented way to
+                // survive this, and it was honoured for timers only. A throw
+                // from a microtask or a nextTick callback killed the process
+                // outright however many listeners were registered.
+                if !dispatchUncaught(prog, st) {
+                    eprint("Uncaught " + describeThrownValue(st, st.thrownValue))
+                    exit(1)
+                }
             }
         } else if !isCallable(task) {
             // no handler for this state: the value flows to the derived promise

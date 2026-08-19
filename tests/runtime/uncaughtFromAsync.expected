@@ -1,0 +1,9 @@
+nextTick 1         ERR_INVALID_ARG_TYPE | The "callback" argument must be of type function. Received type number (1)
+nextTick x         ERR_INVALID_ARG_TYPE | The "callback" argument must be of type function. Received type string ('x')
+nextTick null      ERR_INVALID_ARG_TYPE | The "callback" argument must be of type function. Received null
+nextTick [object Object] ERR_INVALID_ARG_TYPE | The "callback" argument must be of type function. Received an instance of Object
+nextTick undefined ERR_INVALID_ARG_TYPE | The "callback" argument must be of type function. Received undefined
+setSourceMapsEnabled: ERR_INVALID_ARG_TYPE
+caught: from nextTick
+caught: from timer
+still alive

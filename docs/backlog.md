@@ -109,6 +109,31 @@ Why it is not a one-line fix: it is the Readable rewrite, not a patch. `read(n)`
 has to pull through `_read`, buffer to a high water mark, and emit 'readable'
 against demand rather than on arrival.
 
+## process: `kill` does not exist, and an unhandled rejection is not an uncaught exception
+
+**`process.kill` is absent.** Adding a validating wrapper is easy and would be a
+lie: there is no signal-sending native under it, so it would accept a pid and a
+signal and do nothing. Reproduce: `test-process-kill-pid.js`, which also needs
+`internalBinding` interception to observe what was sent, so it is not winnable by
+adding the function alone.
+
+**An unhandled promise rejection prints and continues** where node's default
+routes it to `uncaughtException` and exits. `process.on('uncaughtException')`
+now catches a throw from a timer and from a nextTick callback, but not one from
+a promise reaction, which takes the rejection path instead.
+
+Reproduce:
+```js
+process.on('uncaughtException', (e) => console.log('caught:', e.message));
+Promise.resolve().then(() => { throw new Error('x'); });
+```
+node prints "caught: x", milojs prints "Unhandled promise rejection".
+
+Why it is not a one-line fix: the two paths are separate by design here, and
+joining them means deciding when a rejection is finally unhandled — node waits
+until the microtask queue drains before declaring it, so an await added later in
+the same tick must not trigger it.
+
 ## Async: `next()` on an async generator drives the body, and can HANG
 
 The only open item that can wedge the process. node returns a *pending* promise
