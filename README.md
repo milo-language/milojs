@@ -33,7 +33,7 @@ missing crypto, and are not counted either way. Every score above is compiled
 from its committed report and gated in CI, so it cannot drift from the tree.
 
 **[Per-module table →](docs/node-compat.md)** · [status](docs/status.md) ·
-[per-change attribution](docs/backlog.md)
+[open gaps](docs/backlog.md)
 
 ## Install
 

@@ -9,7 +9,7 @@ last-verified: 2026-08-19
 # milojs status
 
 Numbers are compiled from `docs/conformance/*.json` by `tools/gen-facts.mjs`.
-Narrative lives in [docs/backlog.md](backlog.md); per-module detail in
+Open gaps are listed in [docs/backlog.md](backlog.md); per-module detail in
 [docs/node-compat.md](node-compat.md).
 
 ## Conformance
@@ -65,7 +65,7 @@ conformance percentages.
 
 ## Size
 
-<!--fact:loc-milo-->47.6k<!--/fact--> lines of Milo, <!--fact:loc-js-->15.0k<!--/fact--> of JavaScript, <!--fact:loc-total-->62.7k<!--/fact--> total. No V8,
+<!--fact:loc-milo-->47.6k<!--/fact--> lines of Milo, <!--fact:loc-js-->15.1k<!--/fact--> of JavaScript, <!--fact:loc-total-->62.7k<!--/fact--> total. No V8,
 JavaScriptCore, or C JavaScript engine underneath. Layering: <!--fact:layering-exempt-edges-->4<!--/fact--> registered
 engine to runtime edges, <!--fact:layering-host-globals-->0<!--/fact--> host natives in the engine bootstrap.
 Node-API entry points: <!--fact:napi-entry-points-->84<!--/fact-->, ten of them stubs.

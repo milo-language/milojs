@@ -94,7 +94,7 @@ opening several.
 |---|---|
 | `docs/status.md` | canonical current capabilities, evidence, product gates, and immediate order |
 | `docs/conformance-reports.md` | how to produce revision-attributed test262 and QuickJS reports |
-| `docs/backlog.md` | what to work on next, measured conformance numbers, known gaps |
+| `docs/backlog.md` | the OPEN list: known gaps, ranked, with repro and why each is not a one-liner. A fixed item is deleted, not archived |
 | `docs/node-compat.md` | per-module Node compatibility. **Generated** — export diff against node plus the sweep's per-area pass rate; never edit by hand |
 | `docs/milojs-roadmap.md` | staged plan, what "done" means, scope decisions |
 | `docs/milojs-async-suspension.md` | await/park/resume, green tasks, the event loop |
@@ -354,8 +354,8 @@ above instead: a corpus under `/tmp` gets reaped, and the sweep then reports
 failing case and `--json <file>` writes the machine-readable form.
 
 Never type a score into prose — see `docs/conformance-reports.md` §Publication
-rule. `docs/backlog.md` carries the per-change attribution narrative; the headline
-numbers are compiled from the report.
+rule. `docs/backlog.md` carries no scores at all; the headline numbers are compiled
+from the report.
 
 ## Contracts
 
