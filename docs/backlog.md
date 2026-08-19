@@ -8,6 +8,53 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## A destructure inside eval severs the scope chain when the collector runs
+
+Found by turning the GC-stress knob into something that actually stresses (see
+`MILOJS_GC_GROWTH` in AGENTS.md: the old `MILOJS_GC_THRESHOLD=1` collected 5
+times over 2000 retained allocations, growth 0 collects 4672). Three fixtures
+fail under it and pass without it: `duplicateDeclarations`,
+`proxyArrayOperations`, `toNumberRunsValueOf`.
+
+One line reproduces it:
+
+```sh
+echo '(0,eval)("let [a]=[1]; let [b]=[2];")' > /tmp/q.js
+env -i PATH=$PATH MILOJS_GC_GROWTH=0 MILOJS_GC_THRESHOLD=1 ./.dev/mj-engine /tmp/q.js
+# Uncaught ReferenceError: __iterSteps is not defined
+```
+
+`__iterSteps` is the prelude helper array destructuring uses to drive the
+iteration protocol, but it is not the subject: after the FIRST destructure in an
+eval, the whole global scope is gone.
+
+```
+(0,eval)("let [a]=[1]; console.log(typeof __iterSteps, typeof console, typeof Object)")
+  -> undefined undefined undefined
+(0,eval)("let [a]=[1]; console.log(a)")   -> 1
+```
+
+The eval scope itself survives and its own bindings read fine; its PARENT link
+does not. That is the shape of the parent slot having been swept:
+`scopeLookup` walks `while s >= 0`, and a freed scope has `parent == GC_FREE`
+(-2), so the walk stops at the eval scope and never reaches global.
+
+Boundaries, all measured: two destructures in ONE eval fail; the same two in
+two separate evals pass; destructure-then-plain-`let` passes;
+plain-`let`-then-destructure passes; a destructure with no eval passes;
+`typeof __iterSteps` after 50 unrelated allocations is still `function`. So it
+needs a second destructure inside the same eval activation.
+
+Not the bytecode VM: `MILOJS_NO_BYTECODE=1` fails identically, so this is the
+evaluator. Not `TypedArray.prototype.with`, which allocates its result after
+coercing both arguments and roots it immediately.
+
+**Methodology note, because it cost two false conclusions.** The bug is
+allocation-phase sensitive: `env -i` changes how many allocations happen at
+startup, which shifts where a collection lands. The same binary passes under an
+interactive shell and fails under a clean environment. "It passes when I run it"
+is not evidence here; use `env -i`.
+
 ## Reflect was 23 of 24, and the one failure was mine
 
 Sixth pass. `Reflect.*` against the `Object.*` operations it mirrors, plus the
