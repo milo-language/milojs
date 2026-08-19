@@ -43,7 +43,7 @@ from "./runtime" import {
     Interp, scopeTryLookup, scopeAssign
 }
 from "./eval" import {
-    evalBinValues, toNumProg
+    evalBinValues, toNumProg, toNumArg
 }
 
 // An enum rather than integer opcodes so the dispatch `match` lowers to a jump
@@ -542,7 +542,11 @@ pub fn runChunk(prog: &Prog, ch: &Chunk, st: &mut Interp, scope: i64): Option<JS
     var retVal = JSValue.Undefined
     var sp = base + nslots
     var pc: i64 = 0
-    while pc < ch.ops.len() {
+    // An op's fallback can throw (a Symbol coerced, a getter that raises). Without
+    // this the loop kept executing the rest of the chunk with the exception
+    // pending, which both wasted work and let a later op overwrite the result the
+    // caller would have seen as thrown.
+    while pc < ch.ops.len() && !st.throwing {
         let a = ch.args[pc]
         match ch.ops[pc] {
             Op.Const => {
@@ -642,7 +646,12 @@ pub fn runChunk(prog: &Prog, ch: &Chunk, st: &mut Interp, scope: i64): Option<JS
                 } else {
                     st.vmSp = sp
                     let x = cloneValue(st.vmStack[sp - 1])
-                    let n = toNumProg(prog, x, st)
+                    // toNumArg, not toNumProg: unary minus on a Symbol is a
+                    // TypeError, and toNumProg answers NaN because loose equality
+                    // reaches it too (`Symbol() == 1` is false, not a throw). The
+                    // evaluator's own `-` arm has this guard; the compiled path
+                    // bypassed it and `-Symbol()` quietly produced NaN.
+                    let n = toNumArg(prog, x, st)
                     st.vmStack[sp - 1] = JSValue.Number(-n)
                 }
                 pc = pc + 1

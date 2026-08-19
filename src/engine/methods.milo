@@ -17,7 +17,7 @@ from "./runtime" import {
     Interp
 }
 from "./eval" import {
-    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, toNumArg, makeError, taIsDetached, currentModule, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, isSymbolStr, ARRAY_LIKE_MAX
+    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, toNumArg, makeError, taIsDetached, currentModule, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, valueIsArrayLike, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, isSymbolStr, ARRAY_LIKE_MAX
 }
 
 pub fn dataViewProto(st: &mut Interp): i64 {
@@ -1919,12 +1919,20 @@ fn arrayMethodMutates(name: &string): bool {
     return name == "push" || name == "pop" || name == "shift" || name == "unshift" || name == "splice" || name == "sort" || name == "reverse" || name == "fill" || name == "copyWithin"
 }
 
-fn writeBackArrayLike(st: &mut Interp, tmp: i64, o: i64) {
+// setMemberDyn, not objSet: the spec writes back with Set(O, k, v, true), which
+// runs a setter on the receiver and a Proxy's `set` trap. objSet stored straight
+// into the object's own slots, so a mutating method on a proxied array wrote to
+// the PROXY's element vector and the change was invisible through the target.
+fn writeBackArrayLike(prog: &Prog, st: &mut Interp, tmp: i64, o: i64) {
     let before = arrayLikeOwnLength(st, o)
     let n = arrLen(st, tmp)
     var i: i64 = 0
     while i < n {
-        objSet(st, o, numToStr(i as f64), arrGet(st, tmp, i))
+        // arrGet, NOT arrGetDyn: the scratch adapter carries arrayLikeOrig, so a
+        // dynamic read goes back THROUGH to the receiver and this loop would copy
+        // the receiver's old values onto itself. The scratch is precisely what the
+        // method just mutated, so it has to be read raw.
+        setMemberDyn(prog, o, numToStr(i as f64), arrGet(st, tmp, i), st)
         i = i + 1
     }
     // shrinking methods (pop/shift/splice) must DELETE the trailing indices,
@@ -1934,7 +1942,7 @@ fn writeBackArrayLike(st: &mut Interp, tmp: i64, o: i64) {
         let _ = objDeleteKey(st, o, numToStr(d as f64))
         d = d + 1
     }
-    objSet(st, o, "length", JSValue.Number(n as f64))
+    setMemberDyn(prog, o, "length", JSValue.Number(n as f64), st)
 }
 
 // The receiver's length BEFORE a mutating method ran, so write-back knows how far
@@ -1967,10 +1975,17 @@ pub fn arrayMethodGeneric(prog: &Prog, recv: &JSValue, name: &string, args: &Vec
     if !st.throwing && arrayMethodMutates(name) {
         let o = objHandle(recv)
         if o >= 0 && !st.objects[o].frozen {
-            writeBackArrayLike(st, tmp, o)
+            writeBackArrayLike(prog, st, tmp, o)
         }
     }
     popTemp(st)
+    // reverse/sort/fill/copyWithin are specified to return THE RECEIVER. Handing
+    // back the scratch adapter instead turned `Array.prototype.sort.call(obj)`
+    // into a plain array, so the caller lost the object it passed in (and every
+    // non-index property on it) even though the write-back had updated it.
+    if !st.throwing && arrayMethodReturnsReceiver(name) {
+        return cloneValue(recv)
+    }
     return r
 }
 
@@ -1982,6 +1997,13 @@ pub fn arrayMethodGeneric(prog: &Prog, recv: &JSValue, name: &string, args: &Vec
 // The check runs AFTER the receiver's length has been read: the spec orders
 // LengthOfArrayLike first, so a length getter that throws wins over the callback
 // TypeError. Two test262 cases assert exactly that ordering.
+// The mutating methods whose return value IS the receiver, as opposed to a
+// removed element (pop/shift), a new length (push/unshift) or a new array
+// (splice).
+fn arrayMethodReturnsReceiver(name: &string): bool {
+    return name == "reverse" || name == "sort" || name == "fill" || name == "copyWithin"
+}
+
 fn arrayNeedsCallback(name: &string): bool {
     return name == "map" || name == "filter" || name == "forEach" || name == "some" || name == "every"
         || name == "find" || name == "findIndex" || name == "findLast" || name == "findLastIndex"
@@ -2841,10 +2863,36 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         }
         let joined = newArray(st)
         pushTemp(st, JSValue.Obj(joined))
-        var i: i64 = 0
-        while i < n {
-            arrPushMaybeHole(prog, st, joined, o, i)
-            i = i + 1
+        // The RECEIVER is subject to IsConcatSpreadable like every argument is.
+        // A generic array-like receiver arrives here already adapted into a real
+        // scratch array, which made it look spreadable and flattened it:
+        // `Array.prototype.concat.call({0:1,length:1}, [9])` gave [1,9] where the
+        // spec gives [{0:1,length:1}, 9]. arrayLikeOrig is what distinguishes an
+        // adapter from an array the caller really passed.
+        let recvOrig = st.objExtras[st.objects[o].extra].arrayLikeOrig
+        var recvSpreads = true
+        if recvOrig >= 0 {
+            // A proxy of an array IS concat-spreadable, because IsConcatSpreadable
+            // falls back to IsArray and IsArray follows a proxy's target. Only a
+            // genuinely non-array receiver stops spreading.
+            recvSpreads = valueIsArrayLike(st, JSValue.Obj(recvOrig))
+            let rflag = getMemberDyn(prog, recvOrig, symConcatSpreadableKey(), st)
+            if st.throwing {
+                popTemp(st)
+                return JSValue.Undefined
+            }
+            if !isUndefinedValue(rflag) {
+                recvSpreads = truthy(rflag)
+            }
+        }
+        if !recvSpreads {
+            arrPush(st, joined, JSValue.Obj(recvOrig))
+        } else {
+            var i: i64 = 0
+            while i < n {
+                arrPushMaybeHole(prog, st, joined, o, i)
+                i = i + 1
+            }
         }
         var a: i64 = 0
         while a < args.len() {

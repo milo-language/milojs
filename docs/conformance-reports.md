@@ -3,7 +3,7 @@ system: conformance-reports
 purpose: reproducible procedure and format for the checked-in test262, QuickJS and Node sweep evidence
 key-files: scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, scripts/node-compat-sweep.ts, docs/status.md
 update-when: report flags, schema, corpus policy, or score publication policy changes
-last-verified: 2026-08-18 (node-compat sweep added: measures the RUNTIME, excludes the 606 node-internal tests no third party can run, and scores peer runtimes through the same harness)
+last-verified: 2026-08-19 (re-read after the sweeps grew a missing-binary guard and unified their default engine path on .dev/; the documented commands were already the .dev/ form and still run)
 -->
 
 # conformance reports
@@ -91,7 +91,10 @@ are `<!--fact:t262-pct-->`-style spans compiled from the committed report by
 disagree. Publishing a new score is therefore three steps and no typing:
 
 ```sh
-# 1. measure — from a CLEAN checkout, on an unfiltered run
+# 1. measure — from a CLEAN checkout, on an unfiltered run. MILOJS_ENGINE and
+#    MILOJS_RUNTIME both default to what tools/dev.sh builds, and every sweep
+#    exits 2 rather than scoring if the binary it was pointed at is missing
+#    (tools/check-sweeps.mjs is the gate on that).
 TEST262=~/git/test262 MILOJS_ENGINE=.dev/mj-engine bun scripts/test262-sweep.ts --sample 1500
 QUICKJS_TESTS=~/git/quickjs/tests MILOJS_ENGINE=.dev/mj-engine bun scripts/quickjs-sweep.ts
 NODE_TESTS=~/git/node/test MILOJS_RUNTIME=.dev/mj-runtime bun scripts/node-compat-sweep.ts --sample 400

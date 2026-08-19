@@ -3,10 +3,72 @@ system: backlog
 purpose: what to work on next, with measured conformance attribution per change
 key-files: src/engine/eval.milo, src/engine/builtins.milo, src/engine/parser.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts
 update-when: an item lands, a gap is discovered, or a sweep re-attributes a score
-last-verified: 2026-08-18 (re-read after the native id enum landed; the NATIVE_* names in the history below are the constants it replaced)
+last-verified: 2026-08-19 (entries added today for the capability split, the sweep guards, the gate-teeth auditor and three array differentials; the NATIVE_* names in the history below are the constants it replaced)
 -->
 
 # milojs backlog
+
+## main was red: `-Symbol()` returned NaN through the compiled path
+
+Caught by `tests/symbolAndNullishCoercion.js`, which the crash fuzzer produced
+earlier this session. `a7b4418` compiles unary minus to an `Op.Neg` whose
+non-number fallback calls `toNumProg`, and `toNumProg` answers NaN for a symbol
+ON PURPOSE, because loose equality reaches it too and `Symbol() == 1` is false
+rather than an exception. The throwing variant is `toNumArg`, which the
+evaluator's own `-` arm uses. The compiled path bypassed it, so `-Symbol()` gave
+NaN with no exception; every other symbol operation was fine because `-` is the
+only unary operator the compiler emits.
+
+Two notes on how this stayed hidden for a while:
+
+- The fixture only catches it in context. `-S` alone throws; it takes a PRIOR
+  caught throw (`+S` inside a try) for the missing guard to surface as NaN, which
+  is exactly the shape the fuzzer stumbled onto and not one anybody writes on
+  purpose.
+- I nearly misdiagnosed it as my own regression. My baseline binary was built by
+  a helper that hardcodes the worktree path, so "clean baseline" and "my changes"
+  were the same tree; and the main checkout's cached `.dev/mj-engine` predated the
+  commit, so it disagreed with the worktree for a reason that had nothing to do
+  with either change. Two binaries that should be identical and are not is worth
+  three minutes of `git log` before touching any code.
+
+**The wider bug behind it:** the VM loop was `while pc < ch.ops.len()`, with no
+check on `st.throwing`. An op whose fallback threw kept executing the rest of the
+chunk with the exception pending, so a later op could overwrite the value the
+caller would have seen as thrown. Now `while pc < ch.ops.len() && !st.throwing`.
+A/B against the pre-fix build shows no measurable cost: arith -2.7%, numRead
+-5.8%, loopNoDecl -5.7%, callFn +3.1%, arrayMethods +1.2% -- mixed signs, which
+is this harness's noise band, not a win.
+
+## Array methods on a generic array-like receiver
+
+Third differential in the series (after own index accessors and proxies): 36
+operations through `Array.prototype.<m>.call({0:1,1:2,2:3,3:4,length:4})`. Five
+disagreed with node, all in the adapt-and-write-back path:
+
+- **reverse/sort/fill/copyWithin returned the scratch adapter**, not the
+  receiver. The spec returns the receiver; the caller got a plain array and lost
+  every non-index property on the object it passed in, even though the write-back
+  had correctly updated that object.
+- **concat spread the receiver.** IsConcatSpreadable applies to the receiver as
+  much as to the arguments, and it is false for a plain object, so
+  `concat.call({0:1,length:1}, [9])` is `[{0:1,length:1}, 9]`. The adapter turned
+  the receiver into a real array, which looked spreadable. The check now consults
+  `arrayLikeOrig` to tell an adapter from an array the caller actually passed, and
+  falls back to `valueIsArrayLike` so a PROXY of an array still spreads.
+
+Write-back also moved from `objSet` to `setMemberDyn`, which is what the spec's
+Set(O, k, v, true) means: it runs a setter on the receiver and a Proxy's `set`
+trap. One trap on the way: the write-back READ must stay `arrGet`, because the
+scratch adapter carries `arrayLikeOrig` and a dynamic read goes back through to
+the receiver, so the loop would copy the receiver's old values onto itself. That
+regressed reverse/fill/copyWithin to no-ops for one build before the differential
+caught it.
+
+`tests/arrayLikeReceiver.js` is the 36-operation differential, byte-identical to
+node. Gates: dev.sh 6/6, GC-stress 285/286 fixtures, fuzz 200 seeds clean,
+QuickJS 103/149 and node-compat sample 203/400 unchanged.
+
 
 ## A Proxy wrapping an array was not an array
 
