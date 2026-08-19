@@ -43,6 +43,42 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## `await` never yields, and one failed attempt at fixing it
+
+An async/Promise/generator sweep found exactly one difference in 19 cases, and it
+is a real one. `tests/promises.js` already records it as a DIVERGENCE, but narrowly
+("await of an ALREADY-SETTLED promise resumes inline"); the effect is broader than
+that wording suggests. An async function runs to COMPLETION before its caller's
+next statement:
+
+```js
+(async function(){ o.push("a1"); await Promise.resolve(); o.push("a2"); })();
+o.push("sync");
+// node   a1, sync, a2
+// milojs a1, a2, sync
+```
+
+**Mechanism.** `parkOnPromise` returns early for an already-settled promise
+("parking would be permanent"), and the settled path in `awaitValue` calls
+`awaitYieldMicrotasks`, which DRAINS the queue but never calls
+`releaseCreatorOnce`. Releasing the creator is what makes the async call return to
+its caller, so on the settled path it never returns early at all. A non-promise
+await (`await null`) does not even reach that path.
+
+**Attempted and reverted:** route the settled value through a fresh PENDING promise
+settled by a queued microtask, then `parkOnPromise` on that, so the existing
+suspend/resume machinery does the work. The park half worked -- the caller got
+control back at the right point -- but the task NEVER WOKE: the relay microtask
+reaches `settlePromise(derived, ...)`, which is the same call that wakes an
+ordinary awaiter, yet the continuation was lost and the async function never
+finished. Reverted rather than shipped, because a half-understood change to
+suspension is worse than a known ordering divergence.
+
+Whoever picks this up: the missing piece is why a `settlePromise` on a promise
+parked via `parkOnPromise` does not resume when the park was entered from inside
+`awaitValue`'s settled branch, given the identical pattern works for the pending
+branch a few lines below. `docs/milojs-async-suspension.md` is the map.
+
 ## A string is iterable, and the Set constructor did not know
 
 31 Map/Set/Symbol/Proxy/Reflect/descriptor combinations against node found exactly
