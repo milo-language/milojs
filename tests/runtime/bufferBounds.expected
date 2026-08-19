@@ -1,0 +1,17 @@
+readDoubleBE on 4-byte: ERR_BUFFER_OUT_OF_BOUNDS | Attempt to access memory outside buffer bounds
+readUInt8(9): ERR_OUT_OF_RANGE | The value of "offset" is out of range. It must be >= 0 and <= 3. Received 9
+readUInt8(-1): ERR_OUT_OF_RANGE | The value of "offset" is out of range. It must be >= 0 and <= 3. Received -1
+readUInt8(1.5): ERR_OUT_OF_RANGE | The value of "offset" is out of range. It must be an integer. Received 1.5
+writeUInt8(256): ERR_OUT_OF_RANGE | The value of "value" is out of range. It must be >= 0 and <= 255. Received 256
+writeUInt8(-1): ERR_OUT_OF_RANGE | The value of "value" is out of range. It must be >= 0 and <= 255. Received -1
+writeInt8(128): ERR_OUT_OF_RANGE | The value of "value" is out of range. It must be >= -128 and <= 127. Received 128
+writeInt8(-129): ERR_OUT_OF_RANGE | The value of "value" is out of range. It must be >= -128 and <= 127. Received -129
+writeUInt16BE(65536): ERR_OUT_OF_RANGE | The value of "value" is out of range. It must be >= 0 and <= 65535. Received 65536
+writeFloatBE(1e40): no throw -> 4
+--- variable length ---
+readIntBE(0,0): ERR_OUT_OF_RANGE | The value of "byteLength" is out of range. It must be >= 1 and <= 6. Received 0
+readIntBE(0,7): ERR_OUT_OF_RANGE | The value of "byteLength" is out of range. It must be >= 1 and <= 6. Received 7
+readUIntBE(0,0): ERR_OUT_OF_RANGE | The value of "byteLength" is out of range. It must be >= 1 and <= 6. Received 0
+writeIntBE(1,0,0): ERR_OUT_OF_RANGE | The value of "byteLength" is out of range. It must be >= 1 and <= 6. Received 0
+readIntBE(3,2): ERR_OUT_OF_RANGE | The value of "offset" is out of range. It must be >= 0 and <= 2. Received 3
+readIntBE(0,3): no throw -> 8355840
