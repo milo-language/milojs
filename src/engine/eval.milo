@@ -2193,6 +2193,14 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
                 if st.objects[o].isArray {
                     return JSValue.Str(joinArray(st, o, ","))
                 }
+                // A PROXY of an array reaches Array.prototype.toString the same
+                // way, but its elements live behind the get trap, so joinArray
+                // (which reads the object's own slots) would see nothing. The
+                // generic array-method path adapts the receiver through [[Get]]
+                // first, which is what the spec's join does.
+                if valueIsArrayLike(st, JSValue.Obj(o)) {
+                    return arrayMethodGeneric(prog, JSValue.Obj(o), "toString", args, st)
+                }
                 // Error.prototype.toString is "Name: message", NOT the type tag —
                 // this is the path String(err) and `"" + err` take through
                 // ToPrimitive, and the tag made them print "[object Error]".
@@ -6225,6 +6233,13 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if t < 0 {
             return target
         }
+        // `target` is reachable only from this frame, and the proxy branch below
+        // allocates a descriptor object per key, so a collection mid-copy freed it
+        // and handed its slot to the next allocation: the descriptor's own keys
+        // (value/writable/enumerable/configurable) turned up in the result under
+        // MILOJS_GC_THRESHOLD=1. Latent before that branch existed, because only an
+        // accessor source allocated at all.
+        pushTemp(st, cloneValue(target))
         var s: i64 = 1
         while s < argVals.len() {
             var srcVal = cloneValue(argVals[s])
@@ -6243,7 +6258,9 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                     ai = ai + 1
                     let av = getMemberDyn(gProg, src, ak.clone(), st)
                     if !st.throwing {
+                        pushTemp(st, cloneValue(av))
                         setMemberDyn(gProg, t, ak, av, st)
+                        popTemp(st)
                     }
                 }
             } else if src >= 0 {
@@ -6305,6 +6322,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
             s = s + 1
         }
+        popTemp(st)
         return target
     }
     return JSValue.Undefined
@@ -10456,8 +10474,18 @@ pub fn ownEnumerableKeys(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string>
         }
         let d = getOwnPropDescOf(prog, st, v, k.clone())
         let dh = objHandle(d)
-        if dh >= 0 && truthy(getMember(st, dh, "enumerable")) {
-            out.push(k)
+        if dh >= 0 {
+            // The descriptor is a freshly allocated object reachable only from
+            // this frame. Under MILOJS_GC_THRESHOLD=1 a collection between the
+            // allocation and the read freed it and handed its slot to the next
+            // allocation, so Object.assign over a proxy copied the DESCRIPTOR's
+            // own keys (value/writable/enumerable/configurable) into the result.
+            pushTemp(st, JSValue.Obj(dh))
+            let isEnum = truthy(getMember(st, dh, "enumerable"))
+            popTemp(st)
+            if isEnum {
+                out.push(k)
+            }
         }
     }
     return out

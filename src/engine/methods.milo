@@ -1871,7 +1871,12 @@ fn arrayLikeToArray(prog: &Prog, recv: &JSValue, st: &mut Interp): i64 {
                 let key = numToStr(i as f64)
                 // absent index → a hole, so forEach/map/filter skip it the way
                 // they skip a hole in a sparse array
-                if objOwnIndex(st, o, key) >= 0 || st.objects[o].isArray || st.objects[o].proto >= 0 {
+                // A PROXY has no own properties and no `proto` of its own -- both
+                // live behind its traps -- so this presence test called every
+                // index absent and the adapter came out all holes. Every mutating
+                // method then wrote those holes back over the target:
+                // `new Proxy([1,2,3,4],{}).fill(7,3)` gave [null,null,null,7].
+                if objOwnIndex(st, o, key) >= 0 || st.objects[o].isArray || st.objects[o].isProxy || st.objects[o].proto >= 0 {
                     let v = getMemberDyn(prog, o, key, st)
                     arrPush(st, tmp, v)
                     if st.throwing {

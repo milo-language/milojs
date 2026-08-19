@@ -8,6 +8,47 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## The last two proxy divergences, and a rooting hole they exposed
+
+Both open items from the proxy sweep are closed, so every VALUE in that
+differential now matches node. Trap COUNTS still differ on 22 of 32 operations,
+which stays open.
+
+**`fill` on a proxied array wrote holes over the target.** The receiver goes
+through the array-like adapter, which copies the receiver index by index and
+writes the result back. Its presence test was
+`objOwnIndex(...) >= 0 || isArray || proto >= 0`, and a proxy satisfies none of
+those: it has no own properties and no `proto` of its own, both live behind its
+traps. So every index came out a hole, and the write-back copied those holes onto
+the target. `new Proxy([1,2,3,4],{}).fill(7,3)` gave `[null,null,null,7]`. The
+write-back was never the problem, which is why the set traps fired for all four
+indices; the adapter had already lost the values.
+
+**`Array.prototype.toString` answered `"[object Object]"`.** `toString` is
+intercepted before the array-method dispatch, and that branch tests
+`st.objects[o].isArray`, which a proxy fails. Routing it to `joinArray` would not
+have worked either: that reads the object's own slots, and a proxy has none. It
+goes to `arrayMethodGeneric` instead, which adapts through [[Get]] first, which
+is what the spec's join does. `join` itself was already correct, which is what
+made this look stranger than it was.
+
+**The rooting hole.** With `fill` fixed, `MILOJS_GC_THRESHOLD=1` failed
+`proxyArrayOperations`: `Object.assign({}, proxy)` produced
+`{"0":1,...,"value":4,"writable":true,"enumerable":true,"configurable":true}`.
+`Object.assign` never rooted its `target`, and the descriptor object that
+`ownEnumerableKeys` allocates per key is exactly the allocation that triggers a
+collection. Target freed, slot reused by the next descriptor, and the
+descriptor's own keys showed up in the result. Latent for as long as
+`Object.assign` has existed: before the proxy branch, only an accessor-valued
+source allocated at all, so the window never opened. `pushTemp` around the copy
+loop, and around the descriptor read.
+
+This is the third rooting bug this pattern has produced: an allocation added to a
+loop that previously did not allocate turns an unrooted local from harmless into a
+use-after-free. `MILOJS_GC_THRESHOLD=1` is the only thing that finds them, and it
+found this one on the first run after the change.
+
+
 ## main was red: `-Symbol()` returned NaN through the compiled path
 
 Caught by `tests/symbolAndNullishCoercion.js`, which the crash fuzzer produced
@@ -98,7 +139,7 @@ EnumerableOwnPropertyNames actually says.
 `tests/proxyArrayOperations.js` locks the results and asserts at least one trap
 ran per operation, so a future fast path cannot bypass the proxy and still pass.
 
-### OPEN: two proxy operations still wrong, and the trap counts
+### PARTLY FIXED: the two wrong operations are fixed; the trap counts are not
 
 - **`fill` writes to the proxy's own elements** instead of through the `set`
   trap: `new Proxy([1,2,3,4],{}).fill(7,3)` reads back `[null,null,null,7]`.

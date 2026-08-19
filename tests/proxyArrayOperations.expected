@@ -13,6 +13,8 @@ every true trapped
 reverse [4,3,2,1] trapped
 sort [1,2,3,4] trapped
 flat [1,2,3,4] trapped
+fill [1,2,3,7] trapped
+toString "1,2,3,4" trapped
 pop 4 trapped
 shift 1 trapped
 splice [2] trapped
