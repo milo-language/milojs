@@ -28,12 +28,12 @@ import { tmpdir } from "os";
 
 const T262 = process.env.TEST262 ?? "/tmp/test262";
 const HARNESS = join(T262, "harness");
-const ENGINE = process.env.MILOJS_ENGINE ?? "/tmp/mj-eng";
+const ENGINE = process.env.MILOJS_ENGINE ?? ".dev/mj-engine";
 // A missing engine makes every single case "crash", which reads as a catastrophic
 // conformance regression instead of as a setup mistake. Say what actually happened.
 if (!existsSync(ENGINE)) {
   console.error(`test262-sweep: engine not found at ${ENGINE}\n` +
-    `  build it first (tools/dev.sh) and copy .dev/mj-engine there, or set MILOJS_ENGINE.`);
+    `  build it first (tools/dev.sh), or set MILOJS_ENGINE.`);
   process.exit(2);
 }
 const verbose = process.argv.includes("-v");

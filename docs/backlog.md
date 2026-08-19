@@ -43,6 +43,19 @@ to three different paths (`/tmp/milojs-engine`, `/tmp/mj-eng`, `.dev/mj-runtime`
 quickjs-sweep now defaults to `.dev/mj-engine` (what `tools/dev.sh` actually
 produces) and exits 2 without writing JSON when it is absent.
 
+**This bug shipped twice.** It is already in this file, further down: test262-sweep
+read a nonexistent `/tmp/mj-eng` and reported 1347 crashes, was fixed, and
+quickjs-sweep carried the identical defect the whole time because the fix went to
+the one instance rather than the pattern. A third hand-fix would have been the
+wrong answer, so the invariant is now a gate: `tools/check-sweeps.mjs` points
+every `scripts/*-sweep.ts` at a missing binary and requires a nonzero exit with
+no JSON written. The check is behavioural, so a guard placed after the scoring
+loop still fails it, and a new sweep fails the coverage check until it is
+registered. Verified with teeth: removing the quickjs guard makes the gate fail.
+Defaults are unified on `.dev/mj-engine` / `.dev/mj-runtime`, what `tools/dev.sh`
+actually builds; the three different `/tmp` defaults were what made the trap easy
+to step in.
+
 A conformance number that can be produced by a setup mistake is not a
 measurement. Every sweep must fail loudly rather than score zero.
 

@@ -52,6 +52,13 @@ if command -v node >/dev/null 2>&1 && [ -x .dev/mj-engine ] && ! node tools/chec
     status=1
 fi
 
+# A sweep whose engine binary is missing recorded every case as a crash and wrote
+# a normal-looking score of 0. That shipped twice: fixed in test262-sweep, left
+# in quickjs-sweep. This checks the behaviour in every sweep instead. Needs bun.
+if command -v node >/dev/null 2>&1 && command -v bun >/dev/null 2>&1 && ! node tools/check-sweeps.mjs; then
+    status=1
+fi
+
 # src/engine/unicase.milo is generated from node's ICU and says "do not edit by hand",
 # which was a request until this ran. 0.1s.
 if command -v node >/dev/null 2>&1 && ! node tools/gen-unicase.mjs --check; then
