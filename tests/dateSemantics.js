@@ -27,4 +27,8 @@ t("setTime", () => { const d = new Date(0); d.setTime(1000); return [d.toISOStri
 t("getYear-legacy", () => { const d = new Date(Date.UTC(2026, 0, 1)); return typeof d.getYear; });
 t("utc-string", () => new Date(0).toUTCString());
 t("iso-roundtrip", () => { const s = "2026-08-19T13:45:30.250Z"; return new Date(s).toISOString() === s; });
-t("symbol-toPrimitive-call", () => { const d = new Date(5); return [d[Symbol.toPrimitive]("number"), d[Symbol.toPrimitive]("string").slice(0, 3), typeof Date.prototype[Symbol.toPrimitive]]; });
+// Compared against d.toString() rather than sliced: the weekday is rendered in
+// the LOCAL timezone, so slicing it wrote this laptop's offset into the
+// expected output and the fixture failed in CI's UTC. The semantic under test
+// is which conversion each hint selects, not what the local calendar says.
+t("symbol-toPrimitive-call", () => { const d = new Date(5); return [d[Symbol.toPrimitive]("number"), d[Symbol.toPrimitive]("string") === d.toString(), d[Symbol.toPrimitive]("default") === d.toString(), typeof Date.prototype[Symbol.toPrimitive]]; });

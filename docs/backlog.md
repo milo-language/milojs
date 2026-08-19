@@ -8,6 +8,47 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## fs validated nothing, and assert.throws could not match a type name
+
+- **A third of the fs area's failures were argument validation.** A bad path or
+  a bad callback went through and either succeeded or threw a plain assertion,
+  where node throws a TypeError carrying a stable `code`. Applied as one
+  wrapping pass over the exports driven by a table, not as sixty checks inside
+  sixty bodies. fs 74 -> 80 of 219, zero regressions.
+
+  Three details the table has to encode, each found by diffing against node:
+  - `existsSync`/`exists` never throw, they answer false, so validating their
+    path would turn a documented answer into an exception.
+  - `readFile`/`writeFile`/`appendFile` accept a NUMBER as their first argument
+    and treat it as an open fd, so a number there is not a bad path.
+  - The callback slot comes from the SIGNATURE, not from "the last argument":
+    `fs.stat("/tmp", 5)` treats 5 as the options bag and reports the callback as
+    undefined, while `fs.unlink(p, null)` — which has no options parameter —
+    reports null. A last-argument rule gets the first of those wrong.
+
+- **`assert.throws(fn, /re/)` matched the regex against `err.message`.** Node
+  matches `String(err)`, which is `"TypeError: boom"`. The type name lives in
+  the prefix that was being dropped, so the common
+  `assert.throws(fn, /TypeError/)` idiom could never pass no matter what was
+  thrown.
+
+- **`ERR_INVALID_ARG_TYPE` phrased its expected-type list wrongly.** Node
+  separates primitives from classes — "of type string or an instance of Buffer
+  or URL" — where this produced "one of type string, Buffer, URL". Tests compare
+  whole messages.
+
+## A fixture encoded this laptop's timezone, and CI caught it
+
+`dateSemantics`'s `symbol-toPrimitive-call` case sliced the weekday out of
+`d[Symbol.toPrimitive]("string")`, which renders in the LOCAL timezone: "Thu"
+here, "Wed" in CI's UTC. The case now compares against `d.toString()` instead,
+which tests the thing that was actually interesting (which conversion each hint
+selects) without encoding an offset. Verified identical under UTC, the local
+zone, and Asia/Tokyo.
+
+The file's own header already said it was "UTC-and-epoch only on purpose"; one
+case had slipped past that rule.
+
 ## EventTarget did not exist, and the compatibility table is now derived
 
 - **`Event`, `EventTarget` and `CustomEvent` were absent.** AbortSignal,

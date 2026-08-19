@@ -10,8 +10,6 @@ last-verified: 2026-08-19
 
 ## Inputs
 
-Three, and `milo build-lib` produces two of them:
-
 | input | where it comes from |
 |---|---|
 | `libmilojs.a` | `milo build-lib src/libmilojs.milo -o <dir>/libmilojs.a` |

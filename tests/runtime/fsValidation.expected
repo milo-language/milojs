@@ -1,0 +1,15 @@
+path=null: TypeError ERR_INVALID_ARG_TYPE | The "path" argument must be of type string or an instance of Buffer or URL. Received null
+path={}: TypeError ERR_INVALID_ARG_TYPE | The "path" argument must be of type string or an instance of Buffer or URL. Received an instance of Object
+rename oldPath: TypeError ERR_INVALID_ARG_TYPE | The "oldPath" argument must be of type string or an instance of Buffer or URL. Received undefined
+rename newPath: TypeError ERR_INVALID_ARG_TYPE | The "newPath" argument must be of type string or an instance of Buffer or URL. Received type number (7)
+fd=null: TypeError ERR_INVALID_ARG_TYPE | The "fd" argument must be of type number. Received null
+fd=-1: RangeError ERR_OUT_OF_RANGE | The value of "fd" is out of range. It must be >= 0 && <= 2147483647. Received -1
+fd=1.5: RangeError ERR_OUT_OF_RANGE | The value of "fd" is out of range. It must be an integer. Received 1.5
+async no callback: TypeError ERR_INVALID_ARG_TYPE | The "cb" argument must be of type function. Received undefined
+async bad callback: TypeError ERR_INVALID_ARG_TYPE | The "cb" argument must be of type function. Received undefined
+async null callback: TypeError ERR_INVALID_ARG_TYPE | The "cb" argument must be of type function. Received null
+existsSync(missing): false
+String(err): "TypeError: boom"
+regex on type name: matched
+regex on message: matched
+regex mismatch: rejected

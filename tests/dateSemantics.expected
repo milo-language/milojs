@@ -21,4 +21,4 @@ setTime ["1970-01-01T00:00:01.000Z",null,"NaN"]
 getYear-legacy "function"
 utc-string "Thu, 01 Jan 1970 00:00:00 GMT"
 iso-roundtrip true
-symbol-toPrimitive-call [5,"Wed","function"]
+symbol-toPrimitive-call [5,true,true,"function"]
