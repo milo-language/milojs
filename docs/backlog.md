@@ -43,6 +43,34 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## structuredClone, a class-naming bug it exposed, and a toFixed regression it caught
+
+`structuredClone` was missing entirely. Implemented in the prelude as a deep copy
+that preserves the reference GRAPH -- a cycle stays a cycle, and two properties
+pointing at one object still point at one object afterwards -- which is what
+separates it from a JSON round-trip. Prototypes are dropped, getters are evaluated,
+and a function or symbol at any depth is a DataCloneError.
+
+**It exposed a much wider bug.** Comparing the thrown error against node showed
+milojs calling `DOMException` "constructor". The cause is not DOMException: a class
+that declares a constructor took its NAME from that member, so
+`class B { constructor(){} }` had `B.name === "constructor"`. Most classes declare
+one. The class VALUE is the constructor's FuncDef, so its `name` field is what
+`C.name` and `new C().constructor.name` report; the parser now writes the class
+name there. An anonymous class still gets the empty name, so the existing inference
+for `const E = class {}` is untouched.
+
+**And it caught a regression of mine.** The QuickJS sweep dropped one case, and
+bisecting showed it was NOT this change: an earlier `toFixed` fix short-circuited
+above 2^53 to `numToStr`, but `toFixed` and `toString` DIVERGE there.
+`(1000000000000000128).toString()` is "1000000000000000100", the shortest form that
+round-trips, while `.toFixed(0)` must be "1000000000000000128", the exact value of
+the double. `bnFromF64` is no help -- it wraps `numToStr`. `exactIntDecimal` now
+halves the double until it fits an i64, where the cast is exact, and multiplies the
+powers of two back with bigint, which is exact past i64 as well:
+`(2**64).toFixed(0)` is right. `tests/numberFormatAndCycles.js` pins the divergence
+so it cannot silently come back.
+
 ## `await` never yields, and one failed attempt at fixing it
 
 An async/Promise/generator sweep found exactly one difference in 19 cases, and it

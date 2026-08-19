@@ -2665,6 +2665,18 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                     // the class CONSTRUCTOR is a class member syntactically but
                     // is the one that `new` must reach
                     prog.funcs[fidx].isMethod = false
+                    // The class VALUE is this FuncDef, so its `name` is what
+                    // `C.name` and `new C().constructor.name` report. Left as the
+                    // member name, every class that declared a constructor
+                    // answered "constructor" -- which is most of them, and it is
+                    // how DOMException came out named "constructor". A class with
+                    // no name keeps the empty one so the binding-name inference
+                    // that already handles `const E = class {}` still applies.
+                    if name.len() > 0 {
+                        prog.funcs[fidx].name = name.clone()
+                    } else {
+                        prog.funcs[fidx].name = ""
+                    }
                     ctorFn = fidx
                 } else {
                     members.push(ClassMember {

@@ -7,6 +7,10 @@ big-toFixed "9007199254740992.000000"
 1e21-toFixed "1e+21"
 1e21-toPrecision "1.00e+21"
 normal-formats ["123.5","0.100","ff"]
+exact-vs-shortest ["1000000000000000128","1000000000000000100"]
+exact-beyond-i64 "18446744073709551616"
+exact-with-decimals "1000000000000000128.0"
+exact-negative "-1000000000000000128"
 parseInt-decimal [0,1,-1,12]
 parseInt-leading-dot null
 parseInt-exp 1

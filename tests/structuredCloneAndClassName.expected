@@ -1,0 +1,22 @@
+A|B|C|D|E|Named
+B|D
+DOMException|N|m|true
+plain {"a":1,"b":[1,2]}
+nested {"a":{"b":{"c":[1,{"d":2}]}}}
+cycle [1,true]
+array-cycle [1,true]
+shared-ref-preserved true
+not-the-same-object true
+map [true,1]
+set [true,[1,2]]
+date [true,5,true]
+regexp [true,"ab","gi"]
+typedarray [true,[1,2]]
+arraybuffer [true,4]
+primitives [1,"s",true,null,null,null]
+bigint "1"
+function-throws ERR DOMException:DataCloneError
+symbol-throws ERR DOMException:DataCloneError
+nested-function-throws ERR DOMException:DataCloneError
+prototype-dropped [1,false,true]
+getter-evaluated [7,7]

@@ -1088,6 +1088,36 @@ pub fn numToExponential(n: f64, digits: i64, haveDigits: bool): string {
 }
 
 // Number.prototype.toFixed — fixed-point with `digits` decimals, half-up.
+// The EXACT decimal value of an integer-valued double, which is not the same as
+// its shortest round-trip form: (1000000000000000128).toString() is
+// "1000000000000000100" while .toFixed(0) must be "1000000000000000128".
+// numToStr answers the first, so it cannot be used for the second.
+//
+// Halving a double is exact (it only decrements the exponent), so the value is
+// reduced until it fits an i64 -- where the cast is exact -- and the powers of two
+// taken out are multiplied back with bigint arithmetic.
+pub fn exactIntDecimal(n: f64): string {
+    var neg = false
+    var v = n
+    if v < 0.0 {
+        neg = true
+        v = -v
+    }
+    var halvings: i64 = 0
+    while v >= 9.0e18 {
+        v = v / 2.0
+        halvings = halvings + 1
+    }
+    var out = i64ToStr(v as i64)
+    if halvings > 0 {
+        out = bnMul(out, bnPow("2", i64ToStr(halvings)))
+    }
+    if neg {
+        return "-" + out
+    }
+    return out
+}
+
 pub fn numToFixed(n: f64, digits: i64): string {
     if n != n {
         return "NaN"
@@ -1103,7 +1133,12 @@ pub fn numToFixed(n: f64, digits: i64): string {
     // (9007199254740992).toFixed(6) scaled to 9e21 and wrapped to
     // "9223372036854.775807". Render the integer and pad.
     if n >= 9007199254740992.0 || n <= -9007199254740992.0 {
-        var whole = numToStr(n)
+        // The EXACT value of the double, not its shortest round-trip form.
+        // toFixed and toString diverge here and the spec says so:
+        // (1000000000000000128).toString() is "1000000000000000100" while
+        // .toFixed(0) is "1000000000000000128". Using numToStr for both made
+        // toFixed answer the short form.
+        var whole = exactIntDecimal(n)
         if digits > 0 {
             whole = whole + "."
             var z: i64 = 0

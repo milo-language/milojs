@@ -23,6 +23,13 @@ t("big-toFixed", () => (9007199254740992).toFixed(6));
 t("1e21-toFixed", () => (1e21).toFixed(2));
 t("1e21-toPrecision", () => (1e21).toPrecision(3));
 t("normal-formats", () => [(123.456).toPrecision(4), (0.1).toFixed(3), (255).toString(16)]);
+// toFixed and toString DIVERGE above 2^53: toString gives the shortest form that
+// round-trips, toFixed the exact value of the double. Answering the short form for
+// both is a regression this pins.
+t("exact-vs-shortest", () => [(1000000000000000128).toFixed(0), String(1000000000000000128)]);
+t("exact-beyond-i64", () => (18446744073709551616).toFixed(0));
+t("exact-with-decimals", () => (1000000000000000128).toFixed(1));
+t("exact-negative", () => (-1000000000000000128).toFixed(0));
 
 t("parseInt-decimal", () => [parseInt("0.5"), parseInt("1.9"), parseInt("-1.9"), parseInt("12.5px")]);
 t("parseInt-leading-dot", () => parseInt(".5"));

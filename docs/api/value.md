@@ -24,6 +24,22 @@ pub fn daysFromCivil(y: i64, m: i64, d: i64): i64
 
 Days since 1970-01-01 (Howard Hinnant's civil-from-days, inverted).
 
+### `exactIntDecimal`
+
+```milo
+pub fn exactIntDecimal(n: f64): string
+```
+
+Number.prototype.toFixed — fixed-point with `digits` decimals, half-up.
+The EXACT decimal value of an integer-valued double, which is not the same as
+its shortest round-trip form: (1000000000000000128).toString() is
+"1000000000000000100" while .toFixed(0) must be "1000000000000000128".
+numToStr answers the first, so it cannot be used for the second.
+
+Halving a double is exact (it only decrements the exponent), so the value is
+reduced until it fits an i64 -- where the cast is exact -- and the powers of two
+taken out are multiplied back with bigint arithmetic.
+
 ### `funcEnv`
 
 ```milo
@@ -185,7 +201,7 @@ Number.prototype.toExponential — d.dddde±x, with `digits` fraction digits
 pub fn numToFixed(n: f64, digits: i64): string
 ```
 
-Number.prototype.toFixed — fixed-point with `digits` decimals, half-up.
+_Undocumented._
 
 ### `numToPrecision`
 
