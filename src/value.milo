@@ -173,6 +173,7 @@ pub enum Builtin {
     InflateRaw,
     InflateGzip,
     InflateZlib,
+    KillPid,
     UdpBind,
     UdpSend,
     UdpRecv,

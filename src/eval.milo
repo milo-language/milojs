@@ -28,7 +28,7 @@ from "./modules" import {
 }
 from "std/os" import {
     exit, readFd, read, write, open, close, lseek, fsync, ftruncate, fchmod,
-    socket, bindIn, setsockopt, getSockPort, ntohs, fflush
+    socket, bindIn, setsockopt, getSockPort, ntohs, fflush, kill
 }
 from "std/deflate" import {
     Deflate
@@ -5862,6 +5862,13 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             body = toStr(argVals[3])
         }
         let p = newPromise(st, 0, JSValue.Undefined)
+        // The child is spawned HERE, not inside the worker, so its pid is
+        // observable while it is still running. With the spawn inside the
+        // thread the pid never left it, kill() had nothing to signal and was a
+        // no-op that set a flag — so a test that killed a long-running child
+        // waited for an 'exit' that could never arrive, and the real process
+        // leaked.
+        var childPid: i64 = 0
         match Channel<string>.new(1) {
             Result.Ok(ch) => {
                 let chForTask = ch.clone()
@@ -5915,6 +5922,13 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
         }
         let p = newPromise(st, 0, JSValue.Undefined)
+        // The child is spawned HERE, not inside the worker, so its pid is
+        // observable while it is still running. With the spawn inside the
+        // thread the pid never left it, kill() had nothing to signal and was a
+        // no-op that set a flag — so a test that killed a long-running child
+        // waited for an 'exit' that could never arrive, and the real process
+        // leaked.
+        var childPid: i64 = 0
         match Channel<string>.new(1) {
             Result.Ok(ch) => {
                 let chForTask = ch.clone()
@@ -5925,21 +5939,50 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 // channel. The synchronous spawn could not be used for this at
                 // all: a child that outlives the call, which is every server a
                 // cluster worker starts, would hang the parent forever.
-                spawnOsThreadDetached(move(): void => {
-                    let r = runChildToCompletion(program, sargs, senv)
-                    let _s = chForTask.send(r)
+                match buildChildCommand(program, sargs, senv).spawn() {
+                    Result.Ok(child) => {
+                        childPid = child.pid as i64
+                        spawnOsThreadDetached(move(): void => {
+                            let r = readChildToCompletion(child)
+                            let _s = chForTask.send(r)
+                        }
+                        )
+                        st.fetches.push(PendingFetch {
+                            promise: p, chan: ch
+                        }
+                        )
+                    }
+                    Result.Err(_se) => {
+                        settlePromise(st, p, 1, JSValue.Str("E-1|spawn failed"))
+                    }
                 }
-                )
-                st.fetches.push(PendingFetch {
-                    promise: p, chan: ch
-                }
-                )
             }
             Result.Err(_e) => {
                 settlePromise(st, p, 1, JSValue.Str("E-1|cannot start process"))
             }
         }
-        return JSValue.Obj(p)
+        // Both halves come back: the promise settles at exit, the pid is usable
+        // immediately.
+        let out = newObject(st)
+        pushTemp(st, JSValue.Obj(out))
+        objSet(st, out, "promise", JSValue.Obj(p))
+        objSet(st, out, "pid", JSValue.Number(childPid as f64))
+        popTemp(st)
+        return JSValue.Obj(out)
+    }
+    if id == Builtin.KillPid {
+        if argVals.len() < 1 {
+            return JSValue.Bool(false)
+        }
+        var sig: i64 = 15
+        if argVals.len() > 1 {
+            sig = numToIndex(toNum(argVals[1]))
+        }
+        let target = numToIndex(toNum(argVals[0]))
+        if target <= 0 {
+            return JSValue.Bool(false)
+        }
+        return JSValue.Bool(kill(target as i32, sig as i32) == 0 as i32)
     }
     if id == Builtin.ExePath {
         match exePath() {
@@ -10208,6 +10251,7 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "__tcpRead", JSValue.Native(Native.Fn(Builtin.TcpRead)))
     scopeDefine(st, 0, "__spawnSync", JSValue.Native(Native.Fn(Builtin.SpawnSync)))
     scopeDefine(st, 0, "__spawnAsync", JSValue.Native(Native.Fn(Builtin.SpawnAsync)))
+    scopeDefine(st, 0, "__killPid", JSValue.Native(Native.Fn(Builtin.KillPid)))
     scopeDefine(st, 0, "__exePath", JSValue.Native(Native.Fn(Builtin.ExePath)))
     scopeDefine(st, 0, "__httpFetch", JSValue.Native(Native.Fn(Builtin.HttpFetch)))
     scopeDefine(st, 0, "__sqliteOpen", JSValue.Native(Native.Fn(Builtin.SqliteOpen)))
@@ -14606,6 +14650,62 @@ fn symbolDisplay(s: &string): string {
 // one string, because that is what the pending-work channel carries. The format
 // is "<status>|<output>": a status and the combined stdout/stderr, with the
 // first pipe separating them so output containing pipes survives intact.
+// Read to EOF then reap. Runs on the worker thread: both halves block, and the
+// interpreter loop owns the OS main thread and never parks.
+fn readChildToCompletion(child: Child): string {
+    var text = ""
+    var buf: [u8; 4096] = [0; 4096]
+    var reading = true
+    while reading {
+        var n: i64 = 0
+        unsafe {
+            n = child.readStdout(buf as *u8, 4096)
+        }
+        if n <= 0 {
+            reading = false
+        } else {
+            var bi: i64 = 0
+            while bi < n {
+                text.push(buf[bi])
+                bi = bi + 1
+            }
+        }
+    }
+    var code: i64 = 0
+    match child.wait() {
+        Result.Ok(c) => {
+            code = c as i64
+        }
+        Result.Err(_w) => {
+            code = 0 - 1
+        }
+    }
+    return i64ToStr(code) + "|" + text
+}
+
+fn buildChildCommand(program: string, args: Vec<string>, envPairs: Vec<string>): Command {
+    var cmd = Command.new(program).args(args).stderr(Stdio.Merge)
+    var ei: i64 = 0
+    while ei < envPairs.len() {
+        let pair = envPairs[ei].clone()
+        var eq: i64 = 0 - 1
+        var ci: i64 = 0
+        while ci < pair.len() {
+            if pair[ci] == '=' && eq < 0 {
+                eq = ci
+            }
+            ci = ci + 1
+        }
+        if eq > 0 {
+            let ename = pair.slice(0, eq).clone()
+            let eval_ = pair.slice(eq + 1, pair.len()).clone()
+            cmd = cmd.env(ename, eval_)
+        }
+        ei = ei + 1
+    }
+    return cmd
+}
+
 fn runChildToCompletion(program: string, args: Vec<string>, envPairs: Vec<string>): string {
     // Command rather than Child.spawn when the caller supplied environment
     // overrides: Child.spawn has no way to set one, and a cluster worker that
