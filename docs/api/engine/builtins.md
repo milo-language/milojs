@@ -201,7 +201,7 @@ NaN answers 0, which is ToIntegerOrInfinity's rule.
 ### `primitiveMethod`
 
 ```milo
-pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>): JSValue
+pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>, st: &mut Interp): JSValue
 ```
 
 _Undocumented._

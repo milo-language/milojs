@@ -2018,13 +2018,13 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
     if isPrimitiveMethodName(name) {
         match recv {
             JSValue.Number(_pn) => {
-                return primitiveMethod(name, recv, args)
+                return primitiveMethod(name, recv, args, st)
             }
             JSValue.Bool(_pb) => {
-                return primitiveMethod(name, recv, args)
+                return primitiveMethod(name, recv, args, st)
             }
             JSValue.BigInt(_pg) => {
-                return primitiveMethod(name, recv, args)
+                return primitiveMethod(name, recv, args, st)
             }
             _ => {
             }
@@ -2542,7 +2542,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             if isArrayMethod(name) {
                 return arrayMethodGeneric(prog, cloneValue(recv), name, args, st)
             }
-            return primitiveMethod(name, recv, args)
+            return primitiveMethod(name, recv, args, st)
         }
     }
 }
@@ -14472,7 +14472,7 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             if st.throwing {
                 return JSValue.Undefined
             }
-            return primitiveMethod(name, recv, argVals)
+            return primitiveMethod(name, recv, argVals, st)
         }
     }
     match recv {

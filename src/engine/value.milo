@@ -1165,28 +1165,41 @@ pub fn numToFixed(n: f64, digits: i64): string {
         }
         return i64ToStr(r)
     }
-    var scale = 1.0
-    var k: i64 = 0
-    while k < digits {
-        scale = scale * 10.0
-        k = k + 1
+    // EXACT decimal, not `n * 10^digits` in doubles. That multiply introduces its
+    // own rounding: 1.45 is really 1.44999999999999995559..., but 1.45 * 10 rounds
+    // UP to exactly 14.5, so the digit walk answered "1.5" where the spec (and
+    // node) say "1.4". A double is m * 2^k exactly, so the fraction is an exact
+    // ratio and the rounding decision is an integer comparison.
+    let a = Math.abs(n)
+    let ip = Math.floor(a)
+    var fr = a - ip
+    var k2: i64 = 0
+    while fr != Math.floor(fr) && k2 < 1100 {
+        fr = fr * 2.0
+        k2 = k2 + 1
     }
-    let scaled = roundHalfAwayFromZero(n * scale)
-    var neg = false
-    var v = scaled
-    if v < 0 {
-        neg = true
-        v = -v
+    // fraction == fr / 2^k2, so digits*10^d rounds as (fr * 10^d) / 2^k2
+    let pow10 = bnPow("10", i64ToStr(digits))
+    let num = bnMul(exactIntDecimal(fr), pow10.clone())
+    let den = bnPow("2", i64ToStr(k2))
+    var q = bnDiv(num.clone(), den.clone())
+    let rem = bnMod(num, den.clone())
+    // ties go to the LARGER value, which for a magnitude is away from zero
+    if bnCmp(bnMul(rem, "2"), den) >= 0 {
+        q = bnAdd(q, "1")
     }
-    if scaled == 0 && signNeg {
-        neg = true
+    var whole = exactIntDecimal(ip)
+    if bnCmp(q.clone(), pow10.clone()) >= 0 {
+        // the fraction rounded up to a whole unit
+        whole = bnAdd(whole, "1")
+        q = bnSub(q, pow10)
     }
-    var frac = i64ToStr(v % (scale as i64))
+    var frac = q
     while frac.len() < digits {
         frac = "0" + frac
     }
-    var out = i64ToStr(v / (scale as i64)) + "." + frac
-    if neg {
+    var out = whole + "." + frac
+    if signNeg {
         return "-" + out
     }
     return out

@@ -8,6 +8,40 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## toFixed rounded in doubles, so 1.45 came out 1.5
+
+Eighth pass: number formatting, radix conversion, parsing, BigInt and the Math
+edges. 4 of 21 wrong, and the part most engines get wrong -- shortest round-trip
+float printing -- was already right: `0.1 + 0.2`, `5e-324`, `1e21`,
+`1.7976931348623157e308` and a 30-digit integer literal all matched node exactly.
+
+**`toFixed` scaled by 10^digits in double arithmetic.** That multiply carries its
+own rounding: 1.45 is really 1.44999999999999995559..., but `1.45 * 10` rounds UP
+to exactly 14.5, so the digit walk answered "1.5" where the spec and node say
+"1.4". A double is m * 2^k EXACTLY, so the fraction is an exact ratio and the
+rounding decision is an integer comparison, not a float one. It now splits off the
+integer part, doubles the fraction until it is integral (at most ~1100 times, and
+it cannot overflow because a mantissa is 53 bits), and decides the last digit with
+`bnDiv`/`bnMod`/`bnCmp` on the exact numerator and denominator. Ties go to the
+larger magnitude, which is what the spec's "as close to zero as possible, ties to
+the larger n" reduces to.
+
+Two range checks that were missing entirely, both the usual permissive shape:
+`(5).toString(1)` answered "5" instead of a RangeError for a radix outside 2..36,
+and `(1).toFixed(101)` produced a 101-decimal string instead of a RangeError for
+digits outside 0..100. `primitiveMethod` had no `&mut Interp` and so could not
+throw at all, which is presumably why neither check existed; it takes one now.
+
+`Math.f16round` is absent. It belongs to the documented Float16Array gap rather
+than to this sweep, and closing it properly means the type, not just the rounding
+function.
+
+`tests/numberFormatEdges.js` covers all of it plus fourteen toFixed cases chosen
+to sit on rounding boundaries. Gates: dev.sh 6/6, GC-stress 296/297 fixtures,
+suite green with the compiler on and off, fuzz 200 seeds clean, QuickJS 104/149,
+node-compat sample 207/400.
+
+
 ## milojs knew four whitespace characters; JS defines twenty-five
 
 Seventh pass. String methods against awkward arguments: 7 of 31 wrong, and then a
