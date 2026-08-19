@@ -91,13 +91,26 @@ fi
 # than failed: the counts move on ordinary commits, and a hook that blocks on
 # "your line count changed" just trains people to use --no-verify. CI runs the
 # --check half, which catches a commit made without this hook installed.
+#
+# A recompile that merely moves a count exits 0 and is staged silently. A
+# recompile that FAILS — an uncomputable fact, a missing report, a report
+# measured on a dirty tree — is a different thing, and this step used to hide
+# both its message and its exit code behind `>/dev/null 2>&1 || true`. The
+# quickjs report was published from a dirty tree for thirteen commits that way:
+# CI ran the same check and went red, and nothing local ever said so.
 if command -v node >/dev/null 2>&1; then
     before=$(shasum README.md AGENTS.md docs/*.md | shasum)
-    node tools/gen-facts.mjs >/dev/null 2>&1 || true
+    facts_out=$(node tools/gen-facts.mjs 2>&1)
+    facts_code=$?
     after=$(shasum README.md AGENTS.md docs/*.md | shasum)
     if [ "$before" != "$after" ]; then
         git add README.md AGENTS.md docs/*.md
         echo "precommit: prose facts were stale; recompiled and staged"
+    fi
+    if [ "$facts_code" -ne 0 ]; then
+        echo "$facts_out" >&2
+        echo "precommit: gen-facts failed — a published number cannot be compiled" >&2
+        status=1
     fi
 fi
 

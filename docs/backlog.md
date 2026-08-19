@@ -8,6 +8,54 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## The published node score counted 930 tests that declined to run
+
+Not a conformance change: a measurement correction, and the largest one this
+repo has had. It came out of reading the http area's numbers rather than a
+gate going red, because none of the gates involved could go red.
+
+- **`common.skip()` exits 0, so a skipped test scored as a pass.** node's
+  harness writes the TAP plan `1..0 # Skipped: <reason>` to stdout and exits
+  successfully. `node-compat-sweep.ts` discarded stdout entirely and decided
+  pass/fail on the exit code, so every case that declined to run was credited.
+  All 238 http2 cases and all 60 https cases read 100% for exactly one reason:
+  there is no crypto, so all of them skip. The score was inflated by the
+  features the runtime is missing MOST, which is the worst possible direction
+  for a number to be wrong in.
+
+  Published 48.7% (1644/3373). Actual **29.6% (724/2443), 930 skipped**. Skips
+  are their own category now, outside the ratio, which is how node's own runner
+  reports them; counting them as failures would understate by as much as
+  counting them as passes overstated. Ranked skip reasons: 688 missing crypto,
+  139 inspector disabled, 23 ESLint, 15 SQLite, 9 Intl.
+
+Three gates were involved and not one of them could have caught it:
+
+- **`gitDirty` had drifted between the two sweeps.** `quickjs-sweep.ts` excludes
+  `docs/conformance` from its dirty check, because that is where the reports
+  themselves land; `node-compat-sweep.ts` never got that fix, so writing one
+  report made the next sweep record `dirty: true` and its score unpublishable.
+  The duplicate was not redundant, it was the wrong one.
+- **`pct()` wrote `NaN%` as a published score.** A report missing a field
+  produced `(a/b)*100` = NaN, `gen-facts` wrote "NaN%" into the README's
+  conformance table, and the pre-commit hook staged it without a word. It throws
+  now: a fact that cannot be computed must fail rather than be written.
+- **`precommit.sh` swallowed gen-facts entirely** — `>/dev/null 2>&1 || true`.
+  `docs/conformance/quickjs.json` had been published from a dirty tree for
+  thirteen commits, `gen-facts --check` had been exiting 1 that whole time, and
+  CI had been red on it, while every local commit went through clean. The hook
+  now still auto-stages a recompile that merely moves a count, and blocks when
+  the recompile FAILS.
+
+The skip scorer gets a two-sided behavioural probe in `tools/check-sweeps.mjs`:
+a stub runtime printing the TAP skip plan must be scored skipped, and one
+printing `ok 1` must be scored passed. `tools/check-gate-teeth.sh` deletes the
+detection and requires the gate to fail, which it does.
+
+Gates: quickjs re-measured on a clean tree, 104/149 unchanged and now
+`dirty: false` at HEAD. node-compat re-measured on a clean tree, 724/2443.
+gen-facts --check green for the first time in thirteen commits.
+
 ## AbortSignal never fired, and the events module had no statics
 
 Eleventh pass. Chosen from the node-compat failure histogram rather than a

@@ -26,7 +26,10 @@ A JavaScript engine and runtime written in the [Milo](https://github.com/milo-la
 
 | suite | score |
 |---|---|
-| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) (all <!--fact:node-available-->3373<!--/fact--> externally runnable tests, <!--fact:node-excluded-->606<!--/fact--> node-internal excluded) | <!--fact:node-pct-->48.7%<!--/fact--> (<!--fact:node-pass-->1644<!--/fact-->/<!--fact:node-total-->3373<!--/fact-->) |
+| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) (<!--fact:node-ran-->2443<!--/fact--> that ran, of <!--fact:node-available-->3373<!--/fact--> externally runnable; <!--fact:node-skipped-->930<!--/fact--> skipped, <!--fact:node-excluded-->606<!--/fact--> node-internal excluded) | <!--fact:node-pct-->29.6%<!--/fact--> (<!--fact:node-pass-->724<!--/fact-->/<!--fact:node-ran-->2443<!--/fact-->) |
+
+A test that calls node's `common.skip()` declined to run, so it is scored
+neither way. Most skips read `missing crypto`.
 
 For more details, see [docs/status.md](docs/status.md).
 
