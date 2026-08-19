@@ -33,29 +33,17 @@ from "./unicase" import {
     upperCp1, lowerCp1, upperSpecial, lowerSpecial
 }
 
-// A minimal error object. Predates makeError being importable here (the import
-// cycle was assumed to be illegal and is not); kept because it takes no Prog.
-fn throwRange(st: &mut Interp, msg: string): JSValue {
-    let o = newObject(st)
-    st.objects[o].isError = true
-    objSet(st, o, "name", JSValue.Str("RangeError"))
-    objSet(st, o, "message", JSValue.Str(msg))
+// Throw a built-in error of `kind`, the way a JS `throw` does. makeError in
+// eval.milo builds the object: the same prototype a constructed error of that
+// kind gets, a stack carrying real frames, and message/stack non-enumerable the
+// way node reports them. The two hand-rolled builders this replaces predated
+// makeError being reachable from here (an import cycle was assumed illegal and
+// is not) and were each less correct than it: an own `name` property that
+// Object.getOwnPropertyNames must not show, no prototype at all, and a stack
+// with no frames.
+fn throwErr(st: &mut Interp, kind: string, msg: string): JSValue {
     st.throwing = true
-    st.thrownValue = JSValue.Obj(o)
-    return JSValue.Undefined
-}
-
-// Same shape as throwRange, for the JSON reader's syntax errors. `.stack` is a
-// string headed "Name: message" (no real backtrace available), because a caught
-// error whose stack is undefined breaks ordinary logging.
-fn throwSyntax(st: &mut Interp, msg: string): JSValue {
-    let o = newObject(st)
-    st.objects[o].isError = true
-    objSet(st, o, "name", JSValue.Str("SyntaxError"))
-    objSet(st, o, "message", JSValue.Str(msg.clone()))
-    objSet(st, o, "stack", JSValue.Str("SyntaxError: " + msg))
-    st.throwing = true
-    st.thrownValue = JSValue.Obj(o)
+    st.thrownValue = makeError(st, kind, msg)
     return JSValue.Undefined
 }
 
@@ -890,7 +878,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         // V8's string cap is 2^29; a huge pad request (str-pad-leak.js asks for
         // 2^31) must throw, not grind through gigabytes of concatenation
         if target > 536870888 {
-            return throwRange(st, "Invalid string length")
+            return throwErr(st, "RangeError", "Invalid string length")
         }
         var pad = " "
         if argPresent(args, 1) {
@@ -960,7 +948,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         // below, if it is caught at all.
         let rawCnt = argNumF(args, 0, 0.0)
         if rawCnt == rawCnt && (rawCnt > 1.7e308 || rawCnt < -1.7e308) {
-            return throwRange(st, "Invalid count value")
+            return throwErr(st, "RangeError", "Invalid count value")
         }
         let cnt = argNum(args, 0, 0)
         if cnt < 0 {
@@ -978,7 +966,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         // ground through gigabytes and died with no output and exit 0, where node
         // throws. The product is what has to be bounded, not just the count.
         if cnt != 0 && s.len() != 0 && cnt > 536870888 / s.len() {
-            return throwRange(st, "Invalid string length")
+            return throwErr(st, "RangeError", "Invalid string length")
         }
         return JSValue.Str(jsRepeat(s, cnt))
     }
@@ -1082,7 +1070,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
                 _ => {
                     let form = toStr(args[0])
                     if form != "NFC" && form != "NFD" && form != "NFKC" && form != "NFKD" {
-                        return throwRange(st, "The normalization form should be one of NFC, NFD, NFKC, NFKD.")
+                        return throwErr(st, "RangeError", "The normalization form should be one of NFC, NFD, NFKC, NFKD.")
                     }
                 }
             }
@@ -1624,7 +1612,7 @@ pub fn mjJsonParse(s: &string, st: &mut Interp): JSValue {
         }
     }
     if c.err.len() > 0 {
-        return throwSyntax(st, c.err)
+        return throwErr(st, "SyntaxError", c.err)
     }
     return v
 }

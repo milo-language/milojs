@@ -15580,11 +15580,6 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
     let myLabel = st.pendingLabel.clone()
     st.pendingLabel = ""
     match prog.stmts[id.index] {
-        Stmt.Decl(name, e) => {
-            let v = evalExpr(prog, e, st, scope)
-            scopeDefine(st, scope, name.clone(), v)
-            return Flow.Normal
-        }
         Stmt.DoWhile(body, cond) => {
             var looping = true
             while looping {
@@ -16665,7 +16660,6 @@ fn stmtMayCapture(prog: &Prog, id: StmtId): bool {
         Stmt.ExprStmt(e) => { return exprMayCapture(prog, e) }
         Stmt.Ret(e) => { return exprMayCapture(prog, e) }
         Stmt.Throw(e) => { return exprMayCapture(prog, e) }
-        Stmt.Decl(_n, e) => { return exprMayCapture(prog, e) }
         Stmt.Block(b) => { return blockMayCapture(prog, b) }
         Stmt.Labeled(_l, inner) => { return stmtMayCapture(prog, inner) }
         Stmt.If(c, t, e) => {

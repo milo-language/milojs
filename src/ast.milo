@@ -143,7 +143,6 @@ pub struct PropInit {
 }
 
 pub enum Stmt {
-    Decl(string, ExprId),
     ExprStmt(ExprId),
     If(ExprId, StmtId, Option<StmtId>),
     While(ExprId, StmtId),
@@ -461,9 +460,6 @@ fn cloneExpr(e: &Expr): Expr {
 
 fn cloneStmt(s: &Stmt): Stmt {
     match s {
-        Stmt.Decl(name, e) => {
-            return Stmt.Decl(name.clone(), e)
-        }
         Stmt.ExprStmt(e) => {
             return Stmt.ExprStmt(e)
         }
