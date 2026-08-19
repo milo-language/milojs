@@ -65,19 +65,37 @@ o.push("sync");
 its caller, so on the settled path it never returns early at all. A non-promise
 await (`await null`) does not even reach that path.
 
-**Attempted and reverted:** route the settled value through a fresh PENDING promise
-settled by a queued microtask, then `parkOnPromise` on that, so the existing
-suspend/resume machinery does the work. The park half worked -- the caller got
-control back at the right point -- but the task NEVER WOKE: the relay microtask
-reaches `settlePromise(derived, ...)`, which is the same call that wakes an
-ordinary awaiter, yet the continuation was lost and the async function never
-finished. Reverted rather than shipped, because a half-understood change to
-suspension is worse than a known ordering divergence.
+**Attempted and reverted, but the mechanism is now fully mapped.** Three pieces are
+needed together, and the first two are correct and verified:
 
-Whoever picks this up: the missing piece is why a `settlePromise` on a promise
-parked via `parkOnPromise` does not resume when the park was entered from inside
-`awaitValue`'s settled branch, given the identical pattern works for the pending
-branch a few lines below. `docs/milojs-async-suspension.md` is the map.
+1. Route a settled (or non-thenable) await through a fresh PENDING promise settled
+   by a queued microtask, then `parkOnPromise` on it. Parking is what calls
+   `releaseCreatorOnce`, which is the step that hands control back to the caller.
+   Tracing confirmed the earlier "the task never woke" reading was WRONG: the wake
+   fires and the task does resume, just later than it should.
+2. In `runEventLoop`, move the woken-activation branch ABOVE `runDueTimer`. A
+   resumed async function belongs to the microtask checkpoint, not the timer phase,
+   and running due timers first put an `await` continuation after a `setTimeout(0)`
+   queued later.
+3. In `drainMicrotasks`, yield to a woken activation between queue entries, because
+   in the spec the resumed function IS the microtask and must run before the next
+   one. Without this a `.then` queued after an `await` still ran first.
+
+With all three, the four focused ordering cases match node exactly, including the
+full `a1, sync, a2, t1, a3` interleaving that motivated this.
+
+**Why it is still reverted: piece 3 hangs.** Yielding from inside a drain that was
+itself re-entered from an activation deadlocks the two activations; guarding it to
+the main task fixes the `async function*` + `for await` case, but a combination of
+pending phase-1 async state plus a later timer callback still wedges, and
+`tests/run.sh` times out. A hang is worse than an ordering divergence, so this does
+not ship until piece 3 is safe.
+
+The remaining question is narrow: how to let a woken activation run to its next
+suspension point during a microtask drain WITHOUT re-entering the drain from that
+activation. A one-shot re-entrancy flag on the drain, or draining only from the
+loop and never from an await, are the two obvious shapes.
+`docs/milojs-async-suspension.md` is the map.
 
 ## A string is iterable, and the Set constructor did not know
 
