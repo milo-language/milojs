@@ -1,0 +1,11 @@
+kill: function
+self probe: true
+unknown signal name ERR_UNKNOWN_SIGNAL | Unknown signal: SIGNOPE
+object signal ERR_UNKNOWN_SIGNAL | Unknown signal: {}
+non-integer pid ERR_INVALID_ARG_TYPE | The "pid" argument must be of type number. Received type string ('x')
+no such pid ESRCH | kill ESRCH
+builtin: object undefined
+capture: false
+capture: true
+capture: false
+capture bad arg ERR_INVALID_ARG_TYPE | The "fn" argument must be of type function or null. Received type number (5)

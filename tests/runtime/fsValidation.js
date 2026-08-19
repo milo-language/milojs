@@ -14,3 +14,8 @@ t('mkdir bad mode', () => fs.mkdirSync('/tmp/mjx', { mode: 'zz' }));
 // (lchmod/lchown argument checks are not asserted here: node opens the path
 // first, so on a symlinked /tmp it answers EPERM before it ever looks at them.)
 console.log('lchmod/lchown/promises:', typeof fs.lchmod, typeof fs.lchownSync, typeof fs.promises.lchown);
+// parseInt stops at the first character it cannot use, so a partly-octal mode
+// string parsed to its prefix and the file was chmod'd to a mode nobody asked
+// for. The path does not exist, so a mode that WAS accepted surfaces as ENOENT.
+t('chmod partial octal', () => fs.chmodSync('/tmp/mj-no-such-path', '755x'));
+t('chmod octal string', () => fs.chmodSync('/tmp/mj-no-such-path', '755'));

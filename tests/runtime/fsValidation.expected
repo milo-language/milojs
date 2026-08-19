@@ -4,3 +4,5 @@ null byte in path ERR_INVALID_ARG_VALUE | The argument 'path' must be a string, 
 exists non-function cb ERR_INVALID_ARG_TYPE | The "cb" argument must be of type function. Received type string ('nope')
 mkdir bad mode ERR_INVALID_ARG_VALUE | The property 'options.mode' must be a 32-bit unsigned integer or an octal string. Received 'zz'
 lchmod/lchown/promises: function function function
+chmod partial octal ERR_INVALID_ARG_VALUE | The argument 'mode' must be a 32-bit unsigned integer or an octal string. Received '755x'
+chmod octal string ENOENT | ENOENT: no such file or directory, chmod '/tmp/mj-no-such-path'
