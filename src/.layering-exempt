@@ -55,6 +55,7 @@ global: __markNotConstructor         engine-intrinsic marks a prelude-defined fu
 global: __promiseResolveValue        engine-intrinsic the Promise resolve/reject machinery the prelude's Promise combinators drive
 global: __reflectDefineProperty      engine-intrinsic Reflect.defineProperty; the prelude implements the Reflect namespace in JS over these
 global: __reflectGet                 engine-intrinsic Reflect.get, same reason
+global: __reflectDelete              engine-intrinsic Reflect.deleteProperty; it cannot be `delete target[key]` in the prelude because that file is strict and strict delete throws where Reflect must answer false
 global: __reflectOwnKeys             engine-intrinsic Reflect.ownKeys, same reason
 global: __reflectPreventExtensions   engine-intrinsic Reflect.preventExtensions, same reason
 global: __reflectSet                 engine-intrinsic Reflect.set, same reason
