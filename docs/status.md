@@ -217,12 +217,6 @@ is open.
 - **`BigInt64Array` / `BigUint64Array` have no `from`/`of`.** <!--gap:bigint64-from-->
   The types themselves exist and store and wrap 64-bit values correctly; it is
   the two static constructors that are still missing.
-- `Date` is UTC-only on purpose. <!--gap:date-utc-only--> The local getters used
-  to decompose in the host timezone while the setters used UTC, so
-  `d.setHours(d.getHours())` shifted the date. Everything is UTC now, which
-  makes milojs behave as node under `TZ=UTC`; a correct local setter family
-  needs `mktime`, which std does not expose. Anyone adding a timezone database
-  must do getters and setters together.
 - `toLocale*` is en-US only and ignores its arguments; `Intl` is not modelled.
   <!--gap:intl-->
 - `@@match`/`@@replace`/`@@split` delegate to the String methods, the reverse of
