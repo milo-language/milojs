@@ -7791,6 +7791,61 @@ fn evalIndexNode(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue 
 //
 // Effect: fallback frame 9264 -> ~2.9 KB, and max nested-expression depth roughly
 // triples (see docs/backlog.md).
+// The value-level half of a binary operator: everything after both operands
+// have been evaluated. Split out of evalBinArm so the bytecode VM runs the same
+// semantics rather than a second copy of them — a duplicated implementation of
+// ToPrimitive ordering is exactly the kind that drifts and is then wrong in one
+// place only.
+pub fn evalBinValues(prog: &Prog, op: &string, va: JSValue, vb: JSValue, st: &mut Interp): JSValue {
+    // a BigInt operand takes a dedicated path: arbitrary-precision math,
+    // its own mixing rules (BigInt + Number throws), and value equality
+    if isBigIntVal(va) || isBigIntVal(vb) {
+        return evalBigIntBin(op, va, vb, st)
+    }
+    // arithmetic/relational operators on an object operand need
+    // interp-aware ToPrimitive (a Date valueOf's to its ms, arrays join,
+    // objects call valueOf/toString). evalBin is a pure function with no
+    // interp access, so do the coercion here. Gated on an object operand
+    // to keep the hot number/string path free of overhead. Equality
+    // (==/!=/===/!==) is excluded — it has its own object rules.
+    // A SYMBOL has no implicit conversion: ToString and ToNumber of one both
+    // throw, and only `String(sym)` and `sym.toString()` are allowed. Symbols are
+    // modelled here as tagged strings, so `"x" + sym` took the ordinary
+    // concatenation path and produced "x@@sym:s:3", leaking the internal tag into
+    // user output. Equality compares without converting and stays allowed.
+    let symbolic = isSymbolValue(va) || isSymbolValue(vb)
+    if symbolic && op != "===" && op != "!==" && op != "==" && op != "!=" {
+    st.throwing = true
+    st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a string")
+    return JSValue.Undefined
+    }
+    let coerces = op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "<" || op == ">" || op == "<=" || op == ">="
+    if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0 || funcHandle(va) >= 0 || funcHandle(vb) >= 0 || isNativeValue(va) || isNativeValue(vb)) {
+        pushTemp(st, cloneValue(va))
+        pushTemp(st, cloneValue(vb))
+        // `+` uses the default hint (Date -> string); the arithmetic and
+        // relational operators use the number hint (Date -> epoch ms).
+        // Each operand coerced once, so a side-effecting valueOf runs once.
+        var pa = JSValue.Undefined
+        var pb = JSValue.Undefined
+        if op == "+" {
+            pa = toPrimitiveDefault(prog, va, st)
+            pushTemp(st, cloneValue(pa))
+            pb = toPrimitiveDefault(prog, vb, st)
+            popTemp(st)
+        } else {
+            pa = toPrimitiveNumber(prog, va, st)
+            pushTemp(st, cloneValue(pa))
+            pb = toPrimitiveNumber(prog, vb, st)
+            popTemp(st)
+        }
+        popTemp(st)
+        popTemp(st)
+        return evalBin(op, pa, pb)
+    }
+    return evalBin(op, va, vb)
+}
+
 fn evalBinArm(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Interp, scope: i64): JSValue {
         // && and || short-circuit and yield the operand value, JS-style
         if op == "&&" {
@@ -7839,53 +7894,7 @@ fn evalBinArm(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Interp, s
         pushTemp(st, cloneValue(va))
         let vb = evalExpr(prog, b, st, scope)
         popTemp(st)
-        // a BigInt operand takes a dedicated path: arbitrary-precision math,
-        // its own mixing rules (BigInt + Number throws), and value equality
-        if isBigIntVal(va) || isBigIntVal(vb) {
-            return evalBigIntBin(op, va, vb, st)
-        }
-        // arithmetic/relational operators on an object operand need
-        // interp-aware ToPrimitive (a Date valueOf's to its ms, arrays join,
-        // objects call valueOf/toString). evalBin is a pure function with no
-        // interp access, so do the coercion here. Gated on an object operand
-        // to keep the hot number/string path free of overhead. Equality
-        // (==/!=/===/!==) is excluded — it has its own object rules.
-        // A SYMBOL has no implicit conversion: ToString and ToNumber of one both
-        // throw, and only `String(sym)` and `sym.toString()` are allowed. Symbols are
-        // modelled here as tagged strings, so `"x" + sym` took the ordinary
-        // concatenation path and produced "x@@sym:s:3", leaking the internal tag into
-        // user output. Equality compares without converting and stays allowed.
-        let symbolic = isSymbolValue(va) || isSymbolValue(vb)
-        if symbolic && op != "===" && op != "!==" && op != "==" && op != "!=" {
-        st.throwing = true
-        st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a string")
-        return JSValue.Undefined
-        }
-        let coerces = op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "<" || op == ">" || op == "<=" || op == ">="
-        if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0 || funcHandle(va) >= 0 || funcHandle(vb) >= 0 || isNativeValue(va) || isNativeValue(vb)) {
-            pushTemp(st, cloneValue(va))
-            pushTemp(st, cloneValue(vb))
-            // `+` uses the default hint (Date -> string); the arithmetic and
-            // relational operators use the number hint (Date -> epoch ms).
-            // Each operand coerced once, so a side-effecting valueOf runs once.
-            var pa = JSValue.Undefined
-            var pb = JSValue.Undefined
-            if op == "+" {
-                pa = toPrimitiveDefault(prog, va, st)
-                pushTemp(st, cloneValue(pa))
-                pb = toPrimitiveDefault(prog, vb, st)
-                popTemp(st)
-            } else {
-                pa = toPrimitiveNumber(prog, va, st)
-                pushTemp(st, cloneValue(pa))
-                pb = toPrimitiveNumber(prog, vb, st)
-                popTemp(st)
-            }
-            popTemp(st)
-            popTemp(st)
-            return evalBin(op, pa, pb)
-        }
-        return evalBin(op, va, vb)
+        return evalBinValues(prog, op, va, vb, st)
 }
 
 fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): JSValue {
