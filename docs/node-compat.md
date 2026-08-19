@@ -44,7 +44,7 @@ Reference surface: node v25.3.0. Sweep at `3fcca363`.
 | 🟠 | `buffer` | 19/56 34% (+1 skipped) | 8/13 62% | `Blob`, `File`, `INSPECT_MAX_BYTES`, `resolveObjectURL`, `transcode` |
 | 🟠 | `fs` | 74/219 34% (+8 skipped) | 70/104 67% | `Dir`, `Dirent`, `FileReadStream`, `FileWriteStream`, `ReadStream`, `Stats` +28 more |
 | 🟠 | `stream` | 54/164 33% (+1 skipped) | 8/23 35% | `_isArrayBufferView`, `_isUint8Array`, `_uint8ArrayToBuffer`, `addAbortSignal`, `compose`, `destroy` +9 more |
-| 🔴 | `url` | 4/14 29% | 6/14 43% | `URLPattern`, `domainToASCII`, `domainToUnicode`, `fileURLToPath`, `fileURLToPathBuffer`, `pathToFileURL` +2 more |
+| 🔴 | `url` | 4/14 29% | 8/14 57% | `URLPattern`, `domainToASCII`, `domainToUnicode`, `fileURLToPathBuffer`, `resolveObject`, `urlToHttpOptions` |
 | 🔴 | `process` | 21/76 28% (+5 skipped) | 31/83 37% | `_debugEnd`, `_debugProcess`, `_events`, `_eventsCount`, `_exiting`, `_fatalException` +46 more |
 | 🔴 | `perf_hooks` | 3/12 25% | 11/13 85% | `Performance`, `PerformanceResourceTiming` |
 | 🔴 | `events` | 1/4 25% | 10/17 59% | `EventEmitterAsyncResource`, `captureRejections`, `getMaxListeners`, `init`, `kMaxEventTargetListeners`, `kMaxEventTargetListenersWarned` +1 more |
@@ -76,6 +76,6 @@ Reference surface: node v25.3.0. Sweep at `3fcca363`.
 | 🔴 | `trace_events` **(does not load)** | no cases | 0/2 0% | `createTracing`, `getEnabledCategories` |
 | 🔴 | `wasi` **(does not load)** | no cases | 0/1 0% | `WASI` |
 
-Across all 43 modules: **579/1954 node cases pass (30%)**, 🟢 0, 🟡 2, 🟠 10, 🔴 26, ⚪ 5. Surface: 447/1056 exports present (42%).
+Across all 43 modules: **579/1954 node cases pass (30%)**, 🟢 0, 🟡 2, 🟠 10, 🔴 26, ⚪ 5. Surface: 449/1056 exports present (43%).
 
 Modules that do not load at all: `http2`, `inspector`, `trace_events`, `wasi`.

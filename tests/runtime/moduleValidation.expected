@@ -1,0 +1,24 @@
+ERR_INVALID_ARG_TYPE      zlib.gzipSync(1)
+ERR_INVALID_ARG_TYPE      zlib.gzipSync(null)
+ERR_INVALID_ARG_TYPE      zlib.createGzip({level:'x'})
+ERR_SOCKET_BAD_TYPE       dgram.createSocket(1)
+ERR_SOCKET_BAD_TYPE       dgram.createSocket('bogus')
+NO THROW  querystring.parse(1)
+NO THROW  querystring.stringify(1)
+ERR_UNKNOWN_ENCODING      StringDecoder(1)
+ERR_UNKNOWN_ENCODING      StringDecoder('bogus')
+ERR_INVALID_ARG_TYPE      path.join(1)
+ERR_INVALID_ARG_TYPE      path.resolve(1)
+ERR_INVALID_ARG_TYPE      path.basename(1)
+ERR_INVALID_ARG_TYPE      os.setPriority('x')
+ERR_INVALID_ARG_TYPE      setTimeout(1)
+ERR_INVALID_ARG_TYPE      url.fileURLToPath(1)
+ERR_INVALID_ARG_TYPE      util.promisify(1)
+ERR_INVALID_ARG_TYPE      util.inherits(1)
+NO THROW  util.format()
+fileURLToPath('file:///a/b.txt'): /a/b.txt
+fileURLToPath(URL): /a/b c.txt
+fileURLToPath(1): ERR_INVALID_ARG_TYPE | The "path" argument must be of type string or an instance of URL. Received type number (1)
+fileURLToPath('http://x/'): ERR_INVALID_URL_SCHEME | The URL must be of scheme file
+pathToFileURL('/a/b c'): file:///a/b%20c
+pathToFileURL(1): ERR_INVALID_ARG_TYPE | The "path" argument must be of type string. Received type number (1)

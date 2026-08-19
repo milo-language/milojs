@@ -134,6 +134,26 @@ joining them means deciding when a rejection is finally unhandled — node waits
 until the microtask queue drains before declaring it, so an await added later in
 the same tick must not trigger it.
 
+## path: `path.win32` does not exist, and it costs the whole area
+
+`path.posix` is the module itself; `path.win32` is undefined. node's path tests
+exercise BOTH variants in one file, so eleven of them die on their first line
+with "cannot read property 'join' of undefined" without testing anything.
+
+Reproduce: `test-path-join.js`, `test-path-resolve.js`, `test-path-basename.js`,
+`test-path-normalize.js`, `test-path-relative.js`, `test-path-parse-format.js`,
+`test-path-extname.js`, `test-path-isabsolute.js`,
+`test-path-zero-length-strings.js`, `test-path-glob.js`,
+`test-path-makelong.js`.
+
+Why it is not a one-line fix: aliasing win32 to posix would be worse than the
+absence, because the tests would then compare posix answers against win32
+expectations and fail on content rather than on a missing object. A real one
+needs backslash AND forward slash as separators, drive letters (`C:`), the
+drive-relative form (`C:foo`), UNC paths (`\\server\share`), and
+case-insensitive drive comparison in `relative`. `path.matchesGlob` and
+`toNamespacedPath` are separate small gaps in the same area.
+
 ## Async: `next()` on an async generator drives the body, and can HANG
 
 The only open item that can wedge the process. node returns a *pending* promise
