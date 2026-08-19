@@ -258,6 +258,24 @@ per-function accessor that knows its own strictness. Same family as the strict
 rules still unimplemented: assignment to an undeclared name, duplicate parameter
 names, octal literals.
 
+## node:test: no `snapshot`, deliberately
+
+`require('node:test').snapshot` is the last missing export of that module (14 of
+15 present). Node's is `{setDefaultSnapshotSerializers, setResolveSnapshotPath}`,
+two setters that configure `t.assert.snapshot()`. Exporting the pair without the
+assertion behind it would raise the export count and do nothing, which is the one
+thing this repo's compat table exists to prevent.
+
+Real support means resolving `<testfile>.snapshot`, serializing with the
+configured serializers, comparing, and rewriting under
+`--test-update-snapshots`. Worth doing when something needs it; note that it
+cannot be gated today. The only node test that covers it,
+`test-runner-snapshot-tests.js`, requires `internal/test_runner/snapshot` under
+`--expose-internals`, so it is unwinnable whatever gets built, and a repo fixture
+cannot lock it either: node's TAP output carries per-test durations, so a
+`node:test` file is not byte-comparable against node the way every other fixture
+is.
+
 ## Timers: no `unref`
 
 Deliberately absent rather than stubbed. A no-op `unref` would let a program that

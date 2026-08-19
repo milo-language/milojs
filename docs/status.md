@@ -44,11 +44,11 @@ semantics. QuickJS parse gaps: <!--fact:qjs-parsefail-->0<!--/fact-->.
 | `built-ins/TypedArray` | 9 | 29/38 |
 <!--/fact-block-->
 
-### Node exports by module
+### Node compatibility by module
 
 **[docs/node-compat.md](node-compat.md)**: generated, one row per module,
-export diff against node plus that module's test rate, colour-banded on
-coverage. <!--fact:node-modules-shimmed-->47<!--/fact--> modules shimmed. The totals live there
+banded on that module's node test pass rate, with the export diff beside it as
+the worklist. <!--fact:node-modules-shimmed-->47<!--/fact--> modules shimmed. The totals live there
 rather than here so there is one copy of them.
 
 ## Fixtures
@@ -65,7 +65,7 @@ conformance percentages.
 
 ## Size
 
-<!--fact:loc-milo-->47.6k<!--/fact--> lines of Milo, <!--fact:loc-js-->15.6k<!--/fact--> of JavaScript, <!--fact:loc-total-->63.2k<!--/fact--> total. No V8,
+<!--fact:loc-milo-->47.6k<!--/fact--> lines of Milo, <!--fact:loc-js-->15.7k<!--/fact--> of JavaScript, <!--fact:loc-total-->63.3k<!--/fact--> total. No V8,
 JavaScriptCore, or C JavaScript engine underneath. Layering: <!--fact:layering-exempt-edges-->4<!--/fact--> registered
 engine to runtime edges, <!--fact:layering-host-globals-->0<!--/fact--> host natives in the engine bootstrap.
 Node-API entry points: <!--fact:napi-entry-points-->84<!--/fact-->, ten of them stubs.
