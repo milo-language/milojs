@@ -1,0 +1,26 @@
+String-of-symbol-allowed "Symbol(s)"
+toString-method-allowed "Symbol(s)"
+description "s"
+as-key 1
+template ERR TypeError
+concat ERR TypeError
+concat-reversed ERR TypeError
+array-join ERR TypeError
+array-toString ERR TypeError
+String-of-array ERR TypeError
+nested-array ERR TypeError
+unary-plus ERR TypeError
+unary-minus ERR TypeError
+bitwise-not ERR TypeError
+relational ERR TypeError
+strict-equal-allowed [true,false]
+json-drops ["{}","[null]"]
+tag "[object Symbol]"
+null.toString ERR TypeError
+undefined.toString ERR TypeError
+null.valueOf ERR TypeError
+null.prop ERR TypeError
+null-index ERR TypeError
+optional-chain-allowed undefined
+String(null)-allowed ["null","undefined"]
+primitives-still-work ["5","a","true","5.0"]

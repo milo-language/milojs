@@ -34,7 +34,13 @@ Two binaries, both written in [Milo](https://github.com/milo-language/milo):
 - `milojs` — a Node-compatible **runtime** on top of it: module loader, event
   loop, fs/http, Node-API addons. Like node/deno/bun.
 
+<<<<<<< HEAD
 ~<!--fact:loc-milo-->45.5k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
+||||||| parent of 12e3558 (crash fuzzer: symbols no longer leak their internal tag, nullish tostring throws)
+~<!--fact:loc-milo-->45.5k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
+=======
+~<!--fact:loc-milo-->45.5k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
+>>>>>>> 12e3558 (crash fuzzer: symbols no longer leak their internal tag, nullish tostring throws)
 own bigint. No V8, no JSC, no C engine underneath.
 
 ## Before you write any Milo
@@ -354,6 +360,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/check-docs.mjs` | doc-meta present, key-files real, AGENTS tables complete, and a staleness ratchet against each doc's key-files |
 | `tools/check-readme.mjs` | the README's allowed sections, in order, each within a prose budget — explanations belong in `docs/` |
 | `tools/gen-facts.mjs` | compiles the numbers prose quotes (line counts, fixture counts, entry points) into `<!--fact:...-->` spans. `--check` gates, `--list` prints them all. |
+| `tools/fuzz.sh` | crash fuzzer over the memory-managed core: random allocating programs under `MILOJS_GC_THRESHOLD=1`, compared to node on the SHAPE of the outcome (crash/hang, over-accept, over-reject) and never on output text. `tools/fuzz.sh [first] [last]`; flagged seeds are saved to `/tmp/fuzz-seed-<n>.js`. Not in CI: it is a sweep, not a gate. |
 | `tools/precommit.sh` | every cheap gate below, in one command. See "Wiring the hook". |
 
 Build more of these. If you find yourself running the same multi-step incantation

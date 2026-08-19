@@ -43,6 +43,39 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## Crash fuzzer: two bugs no suite or sweep had found
+
+`tools/fuzz.sh` generates random programs that allocate, capture, nest and discard,
+and runs them under `MILOJS_GC_THRESHOLD=1` so a collection happens at essentially
+every safepoint. It compares against node on the SHAPE of the outcome only, never
+on output text: a generated program is usually invalid somehow, and node's error
+banner is the last line of every failing run, which made an early version report
+40 of 60 "differing" while finding nothing. The three signals that matter are a
+crash or hang, milojs accepting what node rejects, and milojs rejecting what node
+accepts.
+
+220 seeds found two real bugs, neither caught by test262, QuickJS, or any of the
+six differential sweeps.
+
+**A symbol leaked its internal representation.** Symbols are modelled as tagged
+strings, so `"x" + Symbol("s")` took the ordinary concatenation path and produced
+`"x@@sym:s:3"`. ToString and ToNumber of a symbol both throw; only `String(sym)`
+and `sym.toString()` are allowed. Guarded at the binary-operator coercion (both
+sites), at the unary numeric operators, and inside `join`, which was answering
+undefined. Equality still compares without converting.
+
+**`(null).toString()` answered "null".** Property ACCESS on null already threw, but
+the primitive fast path for toString/valueOf/toFixed asked only "not an object and
+not a function", which null and undefined both satisfy, so it answered directly.
+
+`tests/symbolAndNullishCoercion.js` pins both, including the forms that must keep
+working (`String(sym)`, `sym.toString()`, symbol-as-key, optional chaining,
+`String(null)`, and toString on real primitives).
+
+Both are worth noting as a class: they are cases where the ENGINE's internal
+representation choice (a symbol is a string, a nullish value is not an object) is
+visible through a path that never asked what the value really was.
+
 ## Gate audit: every CI check, does it still FAIL when it should
 
 Ten gates, each given a defect it is supposed to catch, with the real exit code

@@ -649,6 +649,14 @@ fn joinArrayInner(prog: &Prog, st: &mut Interp, o: i64, sep: &string, seen: &mut
                         out = out + joinArrayInner(prog, st, eh, ",", seen)
                     }
                 } else {
+                    // ToString of a symbol throws; join must propagate that rather
+                    // than writing the internal tag or answering undefined.
+                    if isSymbolValue(e) {
+                        st.throwing = true
+                        st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a string")
+                        let _p = seen.pop()
+                        return out
+                    }
                     out = out + toStrProg(prog, e, st)
                 }
             }
@@ -7358,6 +7366,17 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Inter
         }
         return evalBin(op, ea, eb)
     }
+    // A SYMBOL has no implicit conversion: ToString and ToNumber of one both
+    // throw, and only `String(sym)` and `sym.toString()` are allowed. Symbols are
+    // modelled here as tagged strings, so `"x" + sym` took the ordinary
+    // concatenation path and produced "x@@sym:s:3", leaking the internal tag into
+    // user output. Equality compares without converting and stays allowed.
+    let symbolic = isSymbolValue(va) || isSymbolValue(vb)
+    if symbolic && op != "===" && op != "!==" && op != "==" && op != "!=" {
+    st.throwing = true
+    st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a string")
+    return JSValue.Undefined
+    }
     let coerces = op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "<" || op == ">" || op == "<=" || op == ">="
     if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0 || funcHandle(va) >= 0 || funcHandle(vb) >= 0 || isNativeValue(va) || isNativeValue(vb)) {
         pushTemp(st, cloneValue(va))
@@ -7745,6 +7764,17 @@ fn evalBinArm(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Interp, s
         // interp access, so do the coercion here. Gated on an object operand
         // to keep the hot number/string path free of overhead. Equality
         // (==/!=/===/!==) is excluded — it has its own object rules.
+        // A SYMBOL has no implicit conversion: ToString and ToNumber of one both
+        // throw, and only `String(sym)` and `sym.toString()` are allowed. Symbols are
+        // modelled here as tagged strings, so `"x" + sym` took the ordinary
+        // concatenation path and produced "x@@sym:s:3", leaking the internal tag into
+        // user output. Equality compares without converting and stays allowed.
+        let symbolic = isSymbolValue(va) || isSymbolValue(vb)
+        if symbolic && op != "===" && op != "!==" && op != "==" && op != "!=" {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a string")
+        return JSValue.Undefined
+        }
         let coerces = op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "<" || op == ">" || op == "<=" || op == ">="
         if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0 || funcHandle(va) >= 0 || funcHandle(vb) >= 0 || isNativeValue(va) || isNativeValue(vb)) {
             pushTemp(st, cloneValue(va))
@@ -7786,6 +7816,13 @@ fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): 
             }
         }
         let va = evalExpr(prog, a, st, scope)
+        // The numeric unary operators coerce, and ToNumber of a SYMBOL throws.
+        // `typeof` and `void` do not convert and are handled above/below.
+        if isSymbolValue(va) && (op == "-" || op == "+" || op == "~") {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a number")
+            return JSValue.Undefined
+        }
         if op == "-" {
             // BigInt negation stays a BigInt; unary + on a BigInt throws in JS
             if isBigIntVal(va) {
@@ -13790,6 +13827,25 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
     // Methods every primitive answers to. JS boxes the receiver for these; here
     // they are answered directly, which covers the cases real code uses.
     if name == "toString" || name == "valueOf" || name == "toFixed" || name == "toPrecision" || name == "toExponential" || name == "toLocaleString" {
+        // null and undefined are NOT primitives that box: there is nothing to
+        // read the method off, so this is the same TypeError that plain property
+        // access already raised. The fast path below only asked "not an object
+        // and not a function", which both of them satisfy, so `(null).toString()`
+        // answered "null" where node throws.
+        match recv {
+            JSValue.Null => {
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", "Cannot read properties of null (reading '" + name.clone() + "')" + currentModule(st))
+                return JSValue.Undefined
+            }
+            JSValue.Undefined => {
+                st.throwing = true
+                st.thrownValue = makeError(st, "TypeError", "Cannot read properties of undefined (reading '" + name.clone() + "')" + currentModule(st))
+                return JSValue.Undefined
+            }
+            _ => {
+            }
+        }
         var useDirectPrimitive = objHandle(recv) < 0 && funcHandle(recv) < 0
         match recv {
             JSValue.Str(_) => {
