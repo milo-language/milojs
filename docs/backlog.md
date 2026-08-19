@@ -43,6 +43,35 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## Gate audit: every CI check, does it still FAIL when it should
+
+Ten gates, each given a defect it is supposed to catch, with the real exit code
+captured (piping to `tail` reports the PIPE's status, which made two gates look
+broken when they were not). Nine were sound: lint-symbols, check-arity,
+gen-unicase --check, check-readme, verify-expected --structure, gen-facts --check,
+check-docs, verify-contracts, check-docs-exec.
+
+check-arity is worth calling out because its input format changed under it: the
+arity tables became `…ArityData()` strings, and the checker was updated with them.
+Perturbing an integer in the NEW format still fails correctly, which is the thing a
+format change most often silently breaks.
+
+**check-gaps had a hole.** It handles three of the four combinations of
+(gap still real?) x (documented?) and let the fourth fall through silently: a gap
+that is FIXED and whose bullet is already gone leaves a probe that can never fire
+again. Worse, the summary counted `GAPS.length`, so those dead entries were
+reported among the limits "still real".
+
+Two were sitting there: `atomics` (implemented) and `date-utc-only` (fixed when
+local time landed, bullet removed in the same session). So the gate was quietly
+checking four of its six entries while announcing six. Both entries deleted, the
+fourth case now reports DEAD, and the summary counts what is actually documented.
+Re-audited in all four directions afterwards.
+
+Method note for the next sweep: perturb, run the gate capturing `$?` with NO pipe,
+then restore. Restoring with `git checkout -- <file>` reverts the FIX too when the
+gate being audited is the file you just fixed.
+
 ## structuredClone, a class-naming bug it exposed, and a toFixed regression it caught
 
 `structuredClone` was missing entirely. Implemented in the prelude as a deep copy

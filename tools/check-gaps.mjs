@@ -23,11 +23,8 @@ const ENGINE = argEngine >= 0 ? process.argv[argEngine + 1] : ".dev/mj-engine";
 // id must match the <!--gap:id--> marker on the matching bullet in status.md.
 // `probe` is JS evaluated in the engine; it returns true while the gap is real.
 const GAPS = [
-  { id: "atomics", probe: `typeof Atomics === "undefined"` },
   { id: "float16", probe: `typeof Float16Array === "undefined"` },
   { id: "bigint64-from", probe: `typeof BigInt64Array.from !== "function"` },
-  { id: "date-utc-only",
-    probe: `new Date(Date.UTC(2020,0,1,12)).getHours() === new Date(Date.UTC(2020,0,1,12)).getUTCHours()` },
   { id: "intl",
     probe: `new Date(0).toLocaleString("de-DE") === new Date(0).toLocaleString("en-US")` },
   { id: "regexp-symbols",
@@ -65,7 +62,15 @@ for (const g of GAPS) {
     console.error(`  MISSING ${g.id}: still a real gap but no ${marker} in docs/status.md`);
     bad++;
   } else if (stillReal === "false" && documented) {
-    console.error(`  STALE   ${g.id}: FIXED — delete the ${marker} bullet from docs/status.md`);
+    console.error(`  STALE   ${g.id}: FIXED, delete the ${marker} bullet from docs/status.md`);
+    bad++;
+  } else if (stillReal === "false" && !documented) {
+    // The fourth case, and the one that used to fall through silently: the gap is
+    // fixed AND its bullet is already gone, so nothing here can ever fire again.
+    // That is a DEAD probe, and leaving it made the summary lie, counting it among
+    // the limits reported as "still real". Two were sitting here when this landed:
+    // `atomics` and `date-utc-only`, both fixed, both already undocumented.
+    console.error(`  DEAD    ${g.id}: fixed and no longer documented, delete its entry from tools/check-gaps.mjs`);
     bad++;
   }
 }
@@ -82,4 +87,7 @@ if (bad > 0) {
   console.error(`\ncheck-gaps: ${bad} problem(s). The limits list is a claim about the engine; keep it true.`);
   process.exit(1);
 }
-console.log(`check-gaps: ${GAPS.length} documented limits, all still real`);
+// Count what is actually DOCUMENTED rather than how many probes exist: the two
+// differ exactly when a probe has gone dead, which is the case above.
+const documentedCount = GAPS.filter((g) => status.includes(`<!--gap:${g.id}-->`)).length;
+console.log(`check-gaps: ${documentedCount} documented limits, all still real`);
