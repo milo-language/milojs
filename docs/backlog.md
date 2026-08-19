@@ -8,6 +8,37 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## The compat table was green for modules that only EXPORT the right names
+
+An export diff measures surface, not behaviour, and banding on it alone said
+`vm` was green at 10/10 exports while it failed two thirds of its tests. The
+band is the WORSE of the two columns now: green needs the names AND the
+behaviour, both at 90%. A module with no tests that ran is capped at yellow
+however complete its surface, because "unverified" with a green dot is the exact
+failure this file exists to prevent.
+
+Result: 🟢 0, 🟡 5, 🔴 38, where banding on exports alone had claimed 🟢 11.
+Sorted best first now, so the table reads as a ladder rather than opening on the
+worst rows.
+
+**A measured peer column.** Bun's compatibility page assigns each module a
+hand-picked mark. Rather than quote it, the generator runs the IDENTICAL export
+probe against the bun on PATH, so the two columns mean the same thing. It is
+optional: no bun, no column. What it shows is mostly that bun is at 100% where
+we are not, and occasionally the reverse (`domain`: ours 5/5, bun 2/5).
+
+## http's client is not the reason http hangs
+
+`docs/status.md` claimed `http.request`/`http.get` "are exported but never
+complete: a client request against our own in-process server hangs". That is
+stale: a server and a client in one process complete correctly and print the
+same thing node does. The prose outlived the defect, which is the same failure
+mode as the known-limits list.
+
+The 66 timeouts in the http area are still real and still the largest bucket,
+but they are not one cause. `ClientRequest.prototype.setTimeout` is a no-op
+returning `this`, which accounts for the `client-timeout` cluster on its own.
+
 ## fs validated nothing, and assert.throws could not match a type name
 
 - **A third of the fs area's failures were argument validation.** A bad path or

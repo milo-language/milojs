@@ -86,7 +86,7 @@ function probe(bin) {
   return JSON.parse(line.slice("__PROBE__".length));
 }
 
-let nodeSide, miloSide;
+let nodeSide, miloSide, bunSide = null;
 try {
   nodeSide = probe("node");
 } catch (e) {
@@ -98,6 +98,16 @@ try {
 } catch (e) {
   console.error(`gen-node-compat: could not probe ${RUNTIME}: ${e.message}`);
   process.exit(2);
+}
+
+// A peer measured the SAME way, rather than a number quoted from someone's
+// compatibility page. Bun publishes a hand-assigned per-module table; this runs
+// the identical probe against the bun on PATH so the column means the same
+// thing as ours. Absent bun, the column is simply omitted.
+try {
+  bunSide = probe("bun");
+} catch (e) {
+  bunSide = null;
 }
 
 const reportPath = join(ROOT, "docs/conformance/node-compat.json");
@@ -126,34 +136,55 @@ for (const m of MODULES) {
   const missing = [...wanted].filter((k) => !have.has(k));
   const covered = wanted.size === 0 ? 0 : wanted.size - missing.length;
   const area = areaByName.get(AREA_ALIAS[m] ?? m);
+  const b = bunSide?.[m];
   rows.push({
     module: m,
     loads: j.ok,
     wanted: wanted.size,
     covered,
     missing,
+    bun: b && b.ok ? [...wanted].filter((k) => b.names.includes(k)).length : (b ? 0 : null),
     tests: area ? { pass: area.pass, ran: area.total - (area.skipped ?? 0), skipped: area.skipped ?? 0 } : null,
   });
 }
 
-// Ranked by what is missing, so the table opens on the work rather than on the
-// alphabet.
+// Best first, so the table reads as a ladder from green down to red.
 const ranked = [...rows].sort((a, b) => {
-  if (a.loads !== b.loads) return a.loads ? 1 : -1;
-  return (b.wanted - b.covered) - (a.wanted - a.covered);
+  const d = bandRank(band(a)) - bandRank(band(b));
+  if (d !== 0) return d;
+  return score(b) - score(a);
 });
 
 const pct = (a, b) => (b === 0 ? "n/a" : `${((a / b) * 100).toFixed(0)}%`);
 
 // GitHub's markdown renders no table styling, so the "colour" of a row has to
-// be a glyph in it. Banded on export coverage: 90%+ green, 60-90% yellow, below
-// that red, and a module that does not load at all is red regardless.
-function band(loads, covered, wanted) {
-  if (!loads || wanted === 0) return "🔴";
-  const p = (covered / wanted) * 100;
-  if (p >= 90) return "🟢";
-  if (p >= 60) return "🟡";
+// be a glyph in it.
+//
+// Banded on the WORSE of the two measurements, not on exports alone. An export
+// diff measures surface: a module can export every name node does and pass
+// nothing, which is how `vm` looked green at 10/10 exports while failing two
+// thirds of its tests. Green has to mean the names are there AND they behave.
+//
+// A module with no tests that ran has no behavioural evidence at all, so it is
+// capped at yellow however complete its surface is. Saying "unverified" with a
+// green dot is the failure mode this whole file exists to avoid.
+function band(r) {
+  if (!r.loads || r.wanted === 0) return "🔴";
+  const exportPct = (r.covered / r.wanted) * 100;
+  const testPct = r.tests && r.tests.ran > 0 ? (r.tests.pass / r.tests.ran) * 100 : null;
+  if (testPct === null) return exportPct >= 60 ? "🟡" : "🔴";
+  const worst = Math.min(exportPct, testPct);
+  if (worst >= 90) return "🟢";
+  if (worst >= 60) return "🟡";
   return "🔴";
+}
+
+// Best first: the table should read as a ladder, green at the top down to red.
+function bandRank(b) { return b === "🟢" ? 0 : b === "🟡" ? 1 : 2; }
+function score(r) {
+  const e = r.wanted === 0 ? 0 : r.covered / r.wanted;
+  const t = r.tests && r.tests.ran > 0 ? r.tests.pass / r.tests.ran : null;
+  return t === null ? e : Math.min(e, t);
 }
 const testCell = (t) => {
   if (!t) return "n/a";
@@ -184,18 +215,32 @@ lines.push("- **exports**: how many of the names `node:<module>` exports under n
 lines.push("  under milojs. A high number here means the SURFACE is present, not that it works.");
 lines.push("- **tests**: node's own `test-<area>-*.js` cases that pass, out of those that ran.");
 lines.push("  Skipped cases are counted separately and scored neither way.");
+// A peer column only means something if it was measured the same way. Bun's own
+// compatibility page assigns each module a hand-picked mark; this runs our
+// probe against the bun binary instead, so the two columns are comparable.
+if (bunSide) {
+  lines.push("");
+  lines.push("The bun column is the SAME probe run against the bun on PATH, not a number");
+  lines.push("quoted from its compatibility page, which is hand-assigned per module. It is");
+  lines.push("there so our own column has something measured to sit beside it.");
+}
 lines.push("");
 lines.push(`Measured against node ${process.version}` + (report ? `, sweep at \`${(report.milojs?.revision ?? "").slice(0, 8)}\`` : "") + ".");
 lines.push("");
-lines.push("Row colour bands export coverage: 🟢 90%+, 🟡 60-90%, 🔴 below 60% or does not load.");
+lines.push("Colour bands the WORSE of the two columns: 🟢 both 90%+, 🟡 both 60%+, 🔴 below");
+lines.push("that or does not load. A module with no tests that ran is capped at 🟡 however");
+lines.push("complete its surface: exports alone are not evidence that anything works.");
 lines.push("");
-lines.push("| | module | exports | tests | notable missing exports |");
-lines.push("|---|---|---|---|---|");
+const bunHead = bunSide ? " bun exports |" : "";
+const bunDashes = bunSide ? "---|" : "";
+lines.push(`| | module | exports | tests |${bunHead} notable missing exports |`);
+lines.push(`|---|---|---|---|${bunDashes}---|`);
 for (const r of ranked) {
   const miss = r.missing.slice(0, 6).map((x) => `\`${x}\``).join(", ")
     + (r.missing.length > 6 ? ` +${r.missing.length - 6} more` : "");
   const name = r.loads ? `\`${r.module}\`` : `\`${r.module}\` **(does not load)**`;
-  lines.push(`| ${band(r.loads, r.covered, r.wanted)} | ${name} | ${r.covered}/${r.wanted} ${pct(r.covered, r.wanted)} | ${testCell(r.tests)} | ${miss || "n/a"} |`);
+  const bunCell = bunSide ? ` ${r.bun === null ? "n/a" : `${r.bun}/${r.wanted} ${pct(r.bun, r.wanted)}`} |` : "";
+  lines.push(`| ${band(r)} | ${name} | ${r.covered}/${r.wanted} ${pct(r.covered, r.wanted)} | ${testCell(r.tests)} |${bunCell} ${miss || "n/a"} |`);
 }
 lines.push("");
 
@@ -203,7 +248,7 @@ const totalWanted = rows.reduce((a, r) => a + r.wanted, 0);
 const totalCovered = rows.reduce((a, r) => a + r.covered, 0);
 const notLoading = rows.filter((r) => !r.loads).map((r) => r.module);
 const bandCount = { "🟢": 0, "🟡": 0, "🔴": 0 };
-for (const r of rows) bandCount[band(r.loads, r.covered, r.wanted)]++;
+for (const r of rows) bandCount[band(r)]++;
 lines.push(`Across all ${rows.length} modules: **${totalCovered}/${totalWanted} exports present (${pct(totalCovered, totalWanted)})**: ` +
   `🟢 ${bandCount["🟢"]}, 🟡 ${bandCount["🟡"]}, 🔴 ${bandCount["🔴"]}.`);
 if (notLoading.length) {

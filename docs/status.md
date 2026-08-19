@@ -89,7 +89,8 @@ that gate fail until the bullet is deleted.
   invokes `next()` without awaiting and the body then awaits. QuickJS
   `bug1355.js` is this shape. A queue fix was tried and reverted; see the
   backlog.
-- `http.request`/`http.get` are exported but never complete.
+- `ClientRequest.prototype.setTimeout` is a no-op, so no `timeout` event ever
+  fires on a client request.
 - `require()` of a computed specifier resolves against the preloaded graph only,
   so a specifier that appears nowhere as a literal is not found.
 - No `worker_threads.Worker`, no TLS serving, no `Intl`, no `crypto` beyond 7 of
