@@ -179,7 +179,7 @@ const areaOf = (f: string) => {
   return m ? m[1] : "other";
 };
 
-type Row = { file: string; ok: boolean; why: string };
+type Row = { file: string; ok: boolean; why: string; skipped: boolean; skipWhy: string };
 let done = 0;
 
 // Node's harness asserts that no unexpected globals exist, which fails EVERY
@@ -249,12 +249,18 @@ function runOne(f: string, index: number): Promise<Row> {
     });
     child.stdin?.end();
     let stderr = "";
+    let stdout = "";
     let timedOut = false;
     let settled = false;
     // Bounded: a test that loops on output would otherwise buffer until this
     // process is the one that runs the machine out of memory.
     const cap = 1 << 16;
-    child.stdout.on("data", () => {});
+    // stdout used to be discarded, which is how 298 skipped tests were scored
+    // as passes: node's common.skip() prints its TAP line to stdout and exits
+    // 0. Only the first chunk is needed — the marker is the first line — so
+    // the cap here is far below stderr's.
+    const outCap = 1 << 12;
+    child.stdout.on("data", (d) => { if (stdout.length < outCap) stdout += String(d); });
     child.stderr.on("data", (d) => { if (stderr.length < cap) stderr += String(d); });
 
     const killGroup = (sig: NodeJS.Signals) => {
@@ -307,14 +313,24 @@ function runOne(f: string, index: number): Promise<Row> {
       resolve(row);
     };
 
-    child.on("error", (e: any) => finish({ file: f, ok: false, why: String(e.message).slice(0, 200) }));
+    child.on("error", (e: any) => finish({ file: f, ok: false, why: String(e.message).slice(0, 200), skipped: false, skipWhy: "" }));
     child.on("close", (code, signal) => {
-      if (timedOut) { finish({ file: f, ok: false, why: "timeout" }); return; }
-      if (code === 0) { finish({ file: f, ok: true, why: "" }); return; }
+      if (timedOut) { finish({ file: f, ok: false, why: "timeout", skipped: false, skipWhy: "" }); return; }
+      if (code === 0) {
+        // A test that declines to run is not a test that passed. node's
+        // common.skip() writes the TAP "1..0 # Skipped: <reason>" plan and
+        // exits 0, so scoring on the exit code alone credited the runtime for
+        // every feature missing enough to skip the case: all 238 http2 tests
+        // and all 60 https tests scored as passes because there is no crypto.
+        const sk = /^1\.\.0\s*#\s*Skipped:?\s*(.*)$/m.exec(stdout);
+        if (sk) { finish({ file: f, ok: false, why: "", skipped: true, skipWhy: (sk[1] ?? "").trim() }); return; }
+        finish({ file: f, ok: true, why: "", skipped: false, skipWhy: "" });
+        return;
+      }
       const err = stderr.trim();
       const why = err.split("\n").filter((l) => l.trim().length > 0).slice(0, 1).join(" ").slice(0, 200)
         || (signal ? `signal ${signal}` : `exit ${code}`);
-      finish({ file: f, ok: false, why });
+      finish({ file: f, ok: false, why, skipped: false, skipWhy: "" });
     });
   });
 }
@@ -374,25 +390,33 @@ clearTempDirs("after");
 process.stdout.write("\n");
 
 const pass = rows.filter((r) => r.ok).length;
-const fail = rows.length - pass;
-const pct = rows.length ? ((pass / rows.length) * 100).toFixed(1) : "0.0";
+// A skipped case is neither a pass nor a failure: it declined to run, so it
+// belongs outside the ratio entirely, which is how node's own runner reports
+// them. Leaving them in the denominator would understate the runtime as much
+// as counting them as passes overstated it.
+const skipped = rows.filter((r) => r.skipped).length;
+const ran = rows.length - skipped;
+const fail = ran - pass;
+const pct = ran ? ((pass / ran) * 100).toFixed(1) : "0.0";
 
 // Per area, so the report says WHERE the runtime stands rather than only how
 // far: "fs 60%, http 20%" is actionable in a way one number is not.
-const areas = new Map<string, { pass: number; total: number }>();
+const areas = new Map<string, { pass: number; total: number; skipped: number }>();
 for (const r of rows) {
   const a = areaOf(r.file);
-  const e = areas.get(a) ?? { pass: 0, total: 0 };
+  const e = areas.get(a) ?? { pass: 0, total: 0, skipped: 0 };
   e.total++;
-  if (r.ok) e.pass++;
+  if (r.skipped) e.skipped++;
+  else if (r.ok) e.pass++;
   areas.set(a, e);
 }
-const areaRows = [...areas].map(([area, v]) => ({ area, pass: v.pass, fail: v.total - v.pass, total: v.total }))
+const areaRows = [...areas]
+  .map(([area, v]) => ({ area, pass: v.pass, fail: v.total - v.pass - v.skipped, skipped: v.skipped, total: v.total }))
   .sort((a, b) => b.fail - a.fail);
 
 const buckets = new Map<string, number>();
 for (const r of rows) {
-  if (r.ok) continue;
+  if (r.ok || r.skipped) continue;
   const key = r.why.replace(/\/[^ ]*\//g, "").replace(/[0-9]+/g, "N").slice(0, 90);
   buckets.set(key, (buckets.get(key) ?? 0) + 1);
 }
@@ -425,15 +449,31 @@ console.log("top failure reasons:");
 [...buckets].sort((a, b) => b[1] - a[1]).slice(0, 12)
   .forEach(([k, n]) => console.log(`  ${String(n).padStart(4)}  ${k}`));
 console.log("\nby area:");
-areaRows.slice(0, 15).forEach((a) => console.log(`  ${String(a.pass).padStart(4)}/${String(a.total).padEnd(5)} ${a.area}`));
+areaRows.slice(0, 15).forEach((a) => console.log(
+  `  ${String(a.pass).padStart(4)}/${String(a.total - a.skipped).padEnd(5)} ${a.area}` +
+  (a.skipped > 0 ? `  (${a.skipped} skipped)` : "")));
+
+// Ranked, because a skip reason names a whole missing subsystem: 298 of these
+// read "missing crypto", which is one gap, not 298.
+const skipReasons = new Map<string, number>();
+for (const r of rows) {
+  if (!r.skipped) continue;
+  const k = r.skipWhy.replace(/[0-9]+/g, "N").slice(0, 70) || "(no reason given)";
+  skipReasons.set(k, (skipReasons.get(k) ?? 0) + 1);
+}
+if (skipped > 0) {
+  console.log("\ntop skip reasons (these are NOT scored):");
+  [...skipReasons].sort((a, b) => b[1] - a[1]).slice(0, 10)
+    .forEach(([k, n]) => console.log(`  ${String(n).padStart(4)}  ${k}`));
+}
 if (verbose) {
   console.log("\nfailing:");
   rows.filter((r) => !r.ok).forEach((r) => console.log(`  ${r.file}  ${r.why}`));
 }
-console.log(`\nnode-compat-sweep: ${pass}/${rows.length} pass (${pct}%), of ${selected.length} selected from ${files.length} runnable (${excluded} node-internal tests excluded)`);
+console.log(`\nnode-compat-sweep: ${pass}/${ran} pass (${pct}%), ${skipped} skipped, of ${selected.length} selected from ${files.length} runnable (${excluded} node-internal tests excluded)`);
 
 if (failsPath) {
-  writeFileSync(failsPath, rows.filter((r) => !r.ok).map((r) => JSON.stringify({ file: r.file, why: r.why })).join("\n") + "\n");
+  writeFileSync(failsPath, rows.filter((r) => !r.ok && !r.skipped).map((r) => JSON.stringify({ file: r.file, why: r.why })).join("\n") + "\n");
   console.log(`wrote ${failsPath} (${fail} failures)`);
 }
 
@@ -444,7 +484,7 @@ const report = {
   milojs: { revision: gitRev("."), dirty: gitDirty(".") },
   runtime: tilde(RUNTIME),
   selection: { directory: subDir || null, sample: sampleN, seed: "0x5eed17", available: files.length, excludedNodeInternal: excluded },
-  totals: { pass, fail, total: rows.length },
+  totals: { pass, fail, skipped, ran, total: rows.length },
   areas: areaRows,
 };
 writeFileSync(jsonPath, JSON.stringify(report, null, 2) + "\n");
