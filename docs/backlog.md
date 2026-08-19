@@ -8,6 +8,35 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## Reflect was 23 of 24, and the one failure was mine
+
+Sixth pass. `Reflect.*` against the `Object.*` operations it mirrors, plus the
+`Object.*` counterparts that must THROW where Reflect returns false. Reflect's
+whole contract is answering instead of raising, and milojs already had it: frozen
+and sealed and non-extensible targets, `defineProperty` on a non-configurable
+property, `setPrototypeOf` on a frozen object, receivers on `get` and `set`,
+`construct` with a distinct newTarget, primitives rejected, a malformed descriptor
+rejected -- 23 of 24 matched node.
+
+**The failure was a regression I introduced the day before.** Making strict-mode
+`delete` throw on a non-configurable property broke `Reflect.deleteProperty`,
+because the prelude implemented it as `delete target[key]` and
+`lib/engine-prelude.js` is strict. The differential caught my own work one day
+later, which is the argument for writing these as fixtures rather than running
+them once.
+
+The fix is a `__reflectDelete` native performing [[Delete]] as a boolean. Then it
+needed a second correction: my first version went straight to the object's own
+property table, so a Proxy's `deleteProperty` trap did not run and `delete p.a`
+and `Reflect.deleteProperty(p, "a")` fired the trap a different number of times --
+the one thing a proxy exists to let a program observe. Caught by a two-line check
+written on a hunch after the first fix looked done.
+
+`tests/reflectSemantics.js` locks all 24 plus the proxy trap-count check. Gates:
+dev.sh 6/6, GC-stress 295/296 fixtures, suite green with the compiler on and off,
+fuzz 200 seeds clean, QuickJS 104/149, node-compat sample 207/400.
+
+
 ## The iteration protocol, sync and async: 3 of 26 wrong
 
 Fifth pass of the same question, and the first area that came back mostly CLEAN,
@@ -1941,7 +1970,7 @@ run by hand rather than in CI:
 | sweep | score | measured |
 |---|---:|---|
 | test262, <!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample | <!--fact:t262-pass-->1169<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = **<!--fact:t262-pct-->79.5%<!--/fact-->** | 2026-08-15 |
-| QuickJS `tests/` at `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->` | <!--fact:qjs-pass-->103<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = **<!--fact:qjs-pct-->69.1%<!--/fact-->** | 2026-08-15 |
+| QuickJS `tests/` at `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->` | <!--fact:qjs-pass-->104<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = **<!--fact:qjs-pct-->69.8%<!--/fact-->** | 2026-08-15 |
 
 Movement on 2026-08-15: the engine now runs the program on a green task, so
 generators work there (they threw "generators require the milojs runtime"

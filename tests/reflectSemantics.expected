@@ -1,0 +1,26 @@
+Reflect.set frozen OK false
+Reflect.set new on frozen OK false
+Reflect.set sealed existing OK true
+Reflect.set nonext new OK false
+Reflect.defineProperty nonconfig OK false
+Reflect.deleteProperty nonconfig OK false
+Reflect.setPrototypeOf frozen OK false
+Reflect.preventExtensions OK true
+Reflect.isExtensible frozen OK false
+Reflect.ownKeys OK 2
+Reflect.getPrototypeOf null-proto OK null
+Reflect.has inherited OK true
+Reflect.get with receiver OK 7
+Reflect.set with receiver OK [null,1]
+Reflect.apply OK 3
+Reflect.construct OK 0
+Reflect.construct newTarget OK true
+Reflect.construct non-ctor THREW TypeError
+Reflect.get on primitive THREW TypeError
+Reflect.ownKeys on primitive THREW TypeError
+Reflect.defineProperty bad desc THREW TypeError
+Object.defineProperty nonconfig THREW TypeError
+Object.setPrototypeOf frozen THREW TypeError
+trap a
+trap a
+true true

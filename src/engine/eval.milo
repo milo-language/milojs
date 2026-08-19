@@ -6058,6 +6058,29 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Bool(definePropOf(gProg, st, argVals[0], key, nd))
     }
+    if id == Builtin.ReflectDelete {
+        // [[Delete]] as a boolean: no strict-mode throw, and a non-configurable
+        // property answers false rather than raising.
+        if argVals.len() < 2 {
+            return JSValue.Bool(false)
+        }
+        let dh = propertyBagOf(st, argVals[0])
+        if dh < 0 {
+            return JSValue.Bool(false)
+        }
+        let dkey = toStr(argVals[1])
+        // A proxy's deleteProperty trap runs for Reflect.deleteProperty exactly as
+        // it does for the `delete` operator: skipping it made the two disagree on
+        // how many times the trap fired, which is the one thing a proxy exists to
+        // let a program observe.
+        if st.objects[dh].isProxy {
+            return proxyDelete(gProg, dh, dkey, st)
+        }
+        if st.objects[dh].frozen || st.objects[dh].sealed {
+            return JSValue.Bool(objOwnIndex(st, dh, dkey) < 0)
+        }
+        return JSValue.Bool(objDeleteKey(st, dh, dkey))
+    }
     if id == Builtin.ReflectSetProto {
         var proto = JSValue.Undefined
         if argVals.len() > 1 {

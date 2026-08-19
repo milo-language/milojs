@@ -303,6 +303,11 @@ pub enum Builtin {
     ReflectSet,
     ReflectGet,
     ReflectSetProto,
+    // Reflect.deleteProperty answers a BOOLEAN where the `delete` operator throws
+    // in strict code. The prelude is strict, so expressing it as `delete
+    // target[key]` made it throw on a non-configurable property instead of
+    // returning false.
+    ReflectDelete,
     ReflectPreventExt,
     // __reflectOwnKeys(target): [[OwnPropertyKeys]] verbatim. Composing it in JS as
     // getOwnPropertyNames+getOwnPropertySymbols re-sorts the list, and a proxy's

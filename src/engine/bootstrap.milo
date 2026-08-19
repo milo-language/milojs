@@ -961,6 +961,7 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(st, 0, "__reflectSet", JSValue.Native(Native.Fn(Builtin.ReflectSet)))
     scopeDefine(st, 0, "__reflectGet", JSValue.Native(Native.Fn(Builtin.ReflectGet)))
     scopeDefine(st, 0, "__reflectSetPrototypeOf", JSValue.Native(Native.Fn(Builtin.ReflectSetProto)))
+    scopeDefine(st, 0, "__reflectDelete", JSValue.Native(Native.Fn(Builtin.ReflectDelete)))
     scopeDefine(st, 0, "__reflectPreventExtensions", JSValue.Native(Native.Fn(Builtin.ReflectPreventExt)))
     scopeDefine(st, 0, "__construct", JSValue.Native(Native.Fn(Builtin.ReflectConstruct)))
     scopeDefine(st, 0, "__reflectOwnKeys", JSValue.Native(Native.Fn(Builtin.ReflectOwnKeys)))
