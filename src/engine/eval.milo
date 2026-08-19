@@ -3284,6 +3284,51 @@ fn errorCtorIdFor(kind: &string): Builtin {
 // intercepted here — otherwise `String(obj)` reports "[object Object]" for an
 // object whose toString says otherwise, while `${obj}` and `"" + obj` (both of
 // which run the full ToPrimitive) disagree with it.
+// The constructors that MUST be reached through `new`. Calling one as a plain
+// function is a TypeError in every engine: `Map()` and `Uint8Array()` are not
+// abbreviations for `new Map()`, they are mistakes, and answering an object hid
+// them. The list is the spec's: everything whose [[Call]] is defined to throw.
+// Date, Error, Array, Object, String, Number, Boolean, RegExp and Function all
+// have a real [[Call]] and are deliberately absent.
+fn nativeRequiresNew(n: &Native): bool {
+    match n {
+        Native.TypedArrayCtor(_k) => {
+            return true
+        }
+        Native.Fn(b) => {
+            return b == Builtin.Map || b == Builtin.Set || b == Builtin.Proxy
+                || b == Builtin.DataView || b == Builtin.ArrayBuffer
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+// A native invoked as a PLAIN FUNCTION, as opposed to through `new` or from the
+// engine's own construction paths -- which is the distinction the guard needs and
+// which callNativeProg cannot make, because both arrive there.
+pub fn callNativeAsFunction(prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
+    // `Date()` without `new` is specified to ignore its arguments entirely and
+    // return the CURRENT time as a string -- it is not `new Date()`. Returning a
+    // Date object meant `typeof Date()` was "object" and string concatenation
+    // with it went through the object's toString by accident rather than by rule.
+    if nativeEq(n, Native.Fn(Builtin.Date)) {
+        let nowObj = objHandle(callNativeProg(prog, n, argVals, st))
+        if nowObj >= 0 {
+            var noArgs: Vec<JSValue> = Vec.new()
+            return dateMethod(st, nowObj, "toString", noArgs)
+        }
+        return JSValue.Str("Invalid Date")
+    }
+    if nativeRequiresNew(n) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Constructor " + nativeCtorName(n) + " requires 'new'")
+        return JSValue.Undefined
+    }
+    return callNativeProg(prog, n, argVals, st)
+}
+
 pub fn callNativeProg(prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     if nativeEq(n, Native.Fn(Builtin.String)) && argVals.len() > 0 {
         let h = objHandle(argVals[0])
@@ -13936,7 +13981,7 @@ pub fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSVa
             return callFunction(prog, fIdx, envIdx, args, thisVal, st)
         }
         JSValue.Native(id) => {
-            return callNativeProg(prog, id, args, st)
+            return callNativeAsFunction(prog, id, args, st)
         }
         JSValue.Obj(o) => {
             if st.objects[o].isProxy {
@@ -14652,7 +14697,7 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
                     if st.throwing {
                         return JSValue.Undefined
                     }
-                    let r = callNativeProg(prog, id, argVals, st)
+                    let r = callNativeAsFunction(prog, id, argVals, st)
                     popTemp(st)
                     return r
                 }
@@ -15483,7 +15528,7 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                     if st.throwing {
                         return JSValue.Undefined
                     }
-                    return callNativeProg(prog, id, argVals, st)
+                    return callNativeAsFunction(prog, id, argVals, st)
                 }
                 JSValue.Obj(bo) => {
                     // bound methods, addon functions and proxies are all callable

@@ -35,11 +35,11 @@ Two binaries, both written in [Milo](https://github.com/milo-language/milo):
   loop, fs/http, Node-API addons. Like node/deno/bun.
 
 <<<<<<< HEAD
-~<!--fact:loc-milo-->46.4k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
+~<!--fact:loc-milo-->46.5k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
 ||||||| parent of 12e3558 (crash fuzzer: symbols no longer leak their internal tag, nullish tostring throws)
-~<!--fact:loc-milo-->46.4k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
+~<!--fact:loc-milo-->46.5k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
 =======
-~<!--fact:loc-milo-->46.4k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
+~<!--fact:loc-milo-->46.5k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
 >>>>>>> 12e3558 (crash fuzzer: symbols no longer leak their internal tag, nullish tostring throws)
 own bigint. No V8, no JSC, no C engine underneath.
 

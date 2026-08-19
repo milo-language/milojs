@@ -8,6 +8,45 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## Eleven native constructors accepted a plain call
+
+Direct follow-up to the class-constructor guard: if `class Foo {}; Foo()` was
+silently allowed, what else is? 24 constructors, called without `new`, against
+node. Eleven answered an object where node throws:
+
+```
+Map Set Proxy DataView ArrayBuffer Uint8Array Int32Array Float64Array
+BigInt64Array URL URLSearchParams
+```
+
+`Map()` is not an abbreviation for `new Map()`; it is a mistake, and answering an
+object hid it. The engine ones are a `nativeRequiresNew` list -- the spec's, being
+everything whose [[Call]] is defined to throw. `Date`, `Error`, `Array`, `Object`,
+`String`, `Number`, `Boolean`, `RegExp` and `Function` all have a real [[Call]]
+and are deliberately absent. `URL` and `URLSearchParams` are Web IDL and live in
+`lib/prelude.js`, where a `new.target` check was the whole fix.
+
+**Where the guard goes matters, and my first attempt put it in the wrong place.**
+Checking `st.newTarget` inside `callNativeProg` broke the prelude instantly: both
+`new X()` and `X()` arrive there, and so does the engine's own construction, which
+never sets a new.target. The distinction the guard needs is "invoked as a plain
+function", which only the CALL SITES know. `callNativeAsFunction` now wraps the
+three plain-call sites; `new` and the internal construction paths still go
+straight to `callNativeProg`.
+
+**`Date()` is the opposite bug.** It is specified to ignore its arguments entirely
+and return the current time as a STRING -- it is not `new Date()`. milojs returned
+a Date object, so `typeof Date()` was "object" and string concatenation with it
+went through the object's toString by accident rather than by rule.
+
+`tests/runtime/constructorsRequireNew.js` covers all 24. It is a runtime fixture
+because URL and URLSearchParams do not exist in the engine binary -- which is the
+capability split working as intended.
+
+Gates: dev.sh 6/6, GC-stress 289/290 fixtures, suite green with the compiler on
+and off, fuzz 200 seeds clean, QuickJS 104/149, node-compat sample 205/400.
+
+
 ## console.log printed `{}` for most exotic values, and a class was callable
 
 node-compat sample 203 -> 205, the first movement this session, and it came from
