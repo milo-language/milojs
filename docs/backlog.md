@@ -8,6 +8,54 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## Strict-mode violations that were still silent (+2 node-compat, then +3 more)
+
+Fourth pass of "what is silently allowed". 20 strict-mode violations; five were
+not reported. The most serious is not strict-specific at all:
+
+**Assignment consulted only the object's OWN properties.** With a non-writable
+property on the PROTOTYPE, `c.k = 2` created an own property that shadowed it and
+answered 2 -- in SLOPPY mode, where the spec drops the write entirely, and without
+the TypeError strict mode requires. `OrdinarySetWithOwnDescriptor` walks the chain
+before creating anything. Also fixed: `delete` of a non-configurable property is a
+TypeError in strict code rather than a `false` nobody reads, and creating a
+property on a primitive (`(5).foo = 1`) throws instead of vanishing.
+
+**The prototype walk cost 11-13% on the write benches**, which is not acceptable
+for a rule that fires almost never. `Object.prototype` is on nearly every chain
+and carries no non-writable data property unless the program puts one there, so
+`objectProtoPristine` -- the same pattern `arrayProtoPristine` already uses -- lets
+the common case exit after two comparisons. That brought it to a consistent 3-8%
+across three interleaved readings, which is what it costs today. Recorded rather
+than buried: the remaining cost is the branch itself on every property write. A
+global "user code has created a non-writable data property" flag would remove it
+entirely, at the cost of missing the non-writable data properties the BOOTSTRAP
+puts on builtin prototypes (`BYTES_PER_ELEMENT`), so it needs a decision about
+that trade rather than a quick patch.
+
+**Then the strict fix regressed a timer test, for the right reason.**
+`test-timers-timeout-to-interval.js` sets `t._repeat = 1` on the value setTimeout
+returned. node returns a **Timeout object**; milojs returned the numeric id, so
+under the new rule the write became a TypeError. Same shape as the Buffer break
+earlier: a correct engine change exposing a library that was wrong in a way
+nothing had asked about. `lib/prelude.js` now wraps the natives in a Timeout with
+`_id`, `_repeat`, `_idleTimeout`, `ref`, `hasRef`, `refresh`, `@@toPrimitive` and
+`toString`, and `clearTimeout`/`clearInterval` unwrap it.
+
+`unref` is deliberately NOT defined. A no-op `unref` would let a program that
+unrefs a long interval to allow exit HANG instead, and a hang is worse than the
+TypeError that calling an absent method already raises. Real unref support needs
+a timer flag the event loop honours.
+
+node-compat sample 205 -> 204 with the strict fix alone, then -> 207 with the
+Timeout object. Still open, and in the fixture's header rather than only here:
+`f.caller` and `arguments.callee` must throw in strict code and answer undefined,
+which needs a per-function accessor that knows its own strictness.
+
+Gates: dev.sh 6/6, GC-stress 291/292 fixtures, suite green with the compiler on
+and off, fuzz 200 seeds clean, vm-differential clean, QuickJS 104/149.
+
+
 ## Prototype methods accepted receivers they do not belong to
 
 Third pass of the same question -- what else is silently allowed. 27 cases:
