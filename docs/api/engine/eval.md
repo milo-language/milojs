@@ -209,17 +209,6 @@ _Undocumented._
 pub fn evalBinValues(prog: &Prog, op: &string, va: JSValue, vb: JSValue, st: &mut Interp): JSValue
 ```
 
-The three largest arms of evalExprFallback, lifted out of it. Dispatch is
-unchanged; the FRAME is the point. A function reserves the sum of every arm's
-locals, so the biggest arms set the entry price every OTHER node routed through
-the fallback pays. These three were chosen because the front dispatcher already
-handles Bin directly and Un/New are not on any hot path, so none of them gains
-a call it did not already make. ObjLit and SetMember were tried here too and
-REVERTED: both are reached only through the fallback, so extracting them added
-a real call to a hot node and cost 3-5% on objChurn for no further depth.
-
-Effect: fallback frame 9264 -> ~2.9 KB, and max nested-expression depth roughly
-triples (see docs/backlog.md).
 The value-level half of a binary operator: everything after both operands
 have been evaluated. Split out of evalBinArm so the bytecode VM runs the same
 semantics rather than a second copy of them — a duplicated implementation of
@@ -623,6 +612,28 @@ pub fn setMemberDyn(prog: &Prog, o: i64, key: string, v: JSValue, st: &mut Inter
 ```
 
 _Undocumented._
+
+### `setMemberOfValue`
+
+```milo
+pub fn setMemberOfValue(prog: &Prog, ov: JSValue, key: string, v: JSValue, st: &mut Interp): JSValue
+```
+
+The three largest arms of evalExprFallback, lifted out of it. Dispatch is
+unchanged; the FRAME is the point. A function reserves the sum of every arm's
+locals, so the biggest arms set the entry price every OTHER node routed through
+the fallback pays. These three were chosen because the front dispatcher already
+handles Bin directly and Un/New are not on any hot path, so none of them gains
+a call it did not already make. ObjLit and SetMember were tried here too and
+REVERTED: both are reached only through the fallback, so extracting them added
+a real call to a hot node and cost 3-5% on objChurn for no further depth.
+
+Effect: fallback frame 9264 -> ~2.9 KB, and max nested-expression depth roughly
+triples (see docs/backlog.md).
+The value-level half of a property WRITE: everything after the object, key and
+value have been evaluated. Split out of the Expr.SetMember arm for the same
+reason as memberOfValue and evalBinValues — the bytecode VM must hit the
+Buffer/typed-array fast paths and the setter rules, not a second copy of them.
 
 ### `setProtoOf`
 

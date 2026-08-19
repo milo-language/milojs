@@ -43,7 +43,7 @@ from "./runtime" import {
     Interp, scopeTryLookup, scopeAssign
 }
 from "./eval" import {
-    evalBinValues, toNumProg, toNumArg, memberOfValue
+    evalBinValues, toNumProg, toNumArg, memberOfValue, setMemberOfValue
 }
 
 // An enum rather than integer opcodes so the dispatch `match` lowers to a jump
@@ -72,6 +72,9 @@ enum Op {
     // Read strs[a] off the value on top, REPLACING it with the property. Used
     // for a plain `o.x`.
     GetMem,
+    // Write strs[a]. Stack is [receiver, value]; both are replaced by the value,
+    // because an assignment is an expression whose result is what was assigned.
+    SetMem,
     Pop,
     // Leave the chunk with the value on top of the stack as the function's
     // result. Only a body chunk may contain one: a loop chunk that swallowed a
@@ -229,6 +232,22 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
             compExpr(prog, c, objIdx)
             let k = strSlot(c, name)
             emitOp(c, Op.GetMem, k)
+        }
+        Expr.SetMember(objIdx, keyIdx, valIdx) => {
+            // Only a STATIC key (`o.x = v`). A computed one (`o[k] = v`) has to
+            // ToString the key expression, which is another evaluation order to
+            // get right; it is not here yet.
+            match prog.exprs[keyIdx.index] {
+                Expr.StrLit(key) => {
+                    compExpr(prog, c, objIdx)
+                    compExpr(prog, c, valIdx)
+                    let k = strSlot(c, key)
+                    emitOp(c, Op.SetMem, k)
+                }
+                _ => {
+                    c.ok = false
+                }
+            }
         }
         // A CALL is deliberately absent, and it is the next thing worth adding:
         // it covers 39 more points of node's test/parallel than anything else.
@@ -776,6 +795,14 @@ pub fn runChunk(prog: &Prog, ch: &Chunk, st: &mut Interp, scope: i64): Option<JS
                 st.vmSp = sp
                 let recv = cloneValue(st.vmStack[sp - 1])
                 st.vmStack[sp - 1] = memberOfValue(prog, recv, ch.strs[a], st)
+                pc = pc + 1
+            }
+            Op.SetMem => {
+                sp = sp - 1
+                st.vmSp = sp + 1
+                let v = cloneValue(st.vmStack[sp])
+                let ov = cloneValue(st.vmStack[sp - 1])
+                st.vmStack[sp - 1] = setMemberOfValue(prog, ov, ch.strs[a].clone(), v, st)
                 pc = pc + 1
             }
             Op.Pop => {
