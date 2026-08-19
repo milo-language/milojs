@@ -387,6 +387,14 @@ Symbol test on the raw string. The JSValue-level isSymbolValue cannot be used
 from inside a `match` arm on that same value: matching moves it, so reading the
 original binding afterwards sees a zeroed slot and the test silently fails.
 
+### `isSymbolValue`
+
+```milo
+pub fn isSymbolValue(v: &JSValue): bool
+```
+
+_Undocumented._
+
 ### `isUndefinedValue`
 
 ```milo
@@ -461,6 +469,23 @@ Box a primitive. A String wrapper materialises its index properties and
 length up front: the string is immutable, so there is nothing to keep in sync,
 and it makes `0 in s`, Object.keys and for-in work without a special case on
 every path that enumerates.
+
+### `memberOfValue`
+
+```milo
+pub fn memberOfValue(prog: &Prog, ov: JSValue, name: &string, st: &mut Interp): JSValue
+```
+
+Property read (`o.x`) and computed read (`o[k]`) are extracted from
+evalExprFallback for the same reason as assignment: they are among the most
+frequent nodes in real code, and reaching them through the fallback charged
+each one that function's multi-kilobyte frame. Their own arms were also the
+two largest in it, so moving them out shrinks the frame every REMAINING
+fallback node pays too.
+The value-level half of a property read: everything after the object
+expression has been evaluated. Split out of evalMemberExpr so the bytecode VM
+reads a property through the same primitive-receiver rules (a number's
+__proto__, a string's length, a boxed wrapper) instead of a second copy.
 
 ### `nativeErrorName`
 

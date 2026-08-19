@@ -43,7 +43,7 @@ from "./runtime" import {
     Interp, scopeTryLookup, scopeAssign
 }
 from "./eval" import {
-    evalBinValues, toNumProg, toNumArg
+    evalBinValues, toNumProg, toNumArg, memberOfValue
 }
 
 // An enum rather than integer opcodes so the dispatch `match` lowers to a jump
@@ -69,6 +69,9 @@ enum Op {
     Ne,
     Jmp,
     Jmpf,
+    // Read strs[a] off the value on top, REPLACING it with the property. Used
+    // for a plain `o.x`.
+    GetMem,
     Pop,
     // Leave the chunk with the value on top of the stack as the function's
     // result. Only a body chunk may contain one: a loop chunk that swallowed a
@@ -222,6 +225,21 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
             let s = slotOf(c, name, false)
             emitOp(c, Op.Load, s)
         }
+        Expr.Member(objIdx, name) => {
+            compExpr(prog, c, objIdx)
+            let k = strSlot(c, name)
+            emitOp(c, Op.GetMem, k)
+        }
+        // A CALL is deliberately absent, and it is the next thing worth adding:
+        // it covers 39 more points of node's test/parallel than anything else.
+        // Two things block it, both measured rather than guessed:
+        //   - callValue drops thisVal for a JSValue.Native (it forwards to
+        //     callNativeProg, which takes no receiver), so `h.call(o, "a")`
+        //     answered undefined. The tree walker avoids it because callMember
+        //     resolves the receiver at the call site.
+        //   - calling out of the VM and back into the tree walker ADDS native
+        //     frames per JS frame, so tests/deepRecursion.js stopped reaching
+        //     1000 frames. Calls have to stay inside the VM to pay off.
         Expr.Bin(op, a, b) => {
             let o = binOpFor(op)
             match o {
@@ -528,6 +546,9 @@ pub fn runChunk(prog: &Prog, ch: &Chunk, st: &mut Interp, scope: i64): Option<JS
             Op.Load => {
                 need = need + 1
             }
+            Op.Str => {
+                need = need + 1
+            }
             _ => {
             }
         }
@@ -751,6 +772,12 @@ pub fn runChunk(prog: &Prog, ch: &Chunk, st: &mut Interp, scope: i64): Option<JS
                     pc = a
                 }
             }
+            Op.GetMem => {
+                st.vmSp = sp
+                let recv = cloneValue(st.vmStack[sp - 1])
+                st.vmStack[sp - 1] = memberOfValue(prog, recv, ch.strs[a], st)
+                pc = pc + 1
+            }
             Op.Pop => {
                 sp = sp - 1
                 pc = pc + 1
@@ -763,6 +790,13 @@ pub fn runChunk(prog: &Prog, ch: &Chunk, st: &mut Interp, scope: i64): Option<JS
             Op.Halt => {
                 pc = ch.ops.len()
             }
+        }
+        // A callee that threw stops the chunk where it stands. Side effects up
+        // to here have happened, which is what the tree walker would also have
+        // done; st.throwing carries the exception out to whoever called us.
+        if st.throwing {
+            pc = ch.ops.len()
+            retVal = JSValue.Undefined
         }
     }
 
@@ -807,7 +841,12 @@ pub fn tryRunFor(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): bool {
     if slot < 0 {
         return false
     }
-    if let Option.Some(_v) = runChunk(prog, gLoopChunks[slot - 1], st, scope) {
+    // Take an OWNED copy before running. A nested call inside this chunk can
+    // compile another function, which pushes onto gLoopChunks/gBodyChunks and
+    // reallocates it: a &Chunk into the vector would be left dangling, and it
+    // showed up as `ch.args` reading length 0 mid-dispatch.
+    let ch = gLoopChunks[slot - 1]
+    if let Option.Some(_v) = runChunk(prog, ch, st, scope) {
         return true
     }
     return false
@@ -877,7 +916,9 @@ pub fn tryRunBody(prog: &Prog, fIdx: i64, st: &mut Interp, scope: i64): Option<J
     if slot < 0 {
         return Option.None
     }
-    return runChunk(prog, gBodyChunks[slot - 1], st, scope)
+    // Owned copy, for the reallocation reason spelled out in tryRunFor.
+    let ch = gBodyChunks[slot - 1]
+    return runChunk(prog, ch, st, scope)
 }
 
 // Drop every cached chunk. The cache is keyed by an index into the program

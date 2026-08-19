@@ -11599,7 +11599,7 @@ pub fn makeError(st: &mut Interp, kind: string, msg: string): JSValue {
     return JSValue.Obj(o)
 }
 
-fn isSymbolValue(v: &JSValue): bool {
+pub fn isSymbolValue(v: &JSValue): bool {
     match v {
         JSValue.Str(s) => {
             if s.len() < 6 {
