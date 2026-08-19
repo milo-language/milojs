@@ -20,7 +20,7 @@ Experimental, not yet a drop-in replacement for either.
 | suite | score |
 |---|---|
 | [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | <!--fact:t262-pct-->79.5%<!--/fact--> (<!--fact:t262-pass-->1169<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) |
-| [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | <!--fact:qjs-pct-->68.5%<!--/fact--> (<!--fact:qjs-pass-->102<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) |
+| [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | <!--fact:qjs-pct-->69.1%<!--/fact--> (<!--fact:qjs-pass-->103<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) |
 
 ## Node Conformance
 
