@@ -95,6 +95,7 @@ opening several.
 | `docs/status.md` | canonical current capabilities, evidence, product gates, and immediate order |
 | `docs/conformance-reports.md` | how to produce revision-attributed test262 and QuickJS reports |
 | `docs/backlog.md` | what to work on next, measured conformance numbers, known gaps |
+| `docs/node-compat.md` | per-module Node compatibility. **Generated** — export diff against node plus the sweep's per-area pass rate; never edit by hand |
 | `docs/milojs-roadmap.md` | staged plan, what "done" means, scope decisions |
 | `docs/milojs-async-suspension.md` | await/park/resume, green tasks, the event loop |
 | `docs/milojs-generators.md` | generator objects and how they suspend |
@@ -392,6 +393,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/check-docs.mjs` | doc-meta present, key-files real, AGENTS tables complete, and a staleness ratchet against each doc's key-files |
 | `tools/check-readme.mjs` | the README's allowed sections, in order, each within a prose budget — explanations belong in `docs/` |
 | `tools/gen-facts.mjs` | compiles the numbers prose quotes (line counts, fixture counts, entry points) into `<!--fact:...-->` spans. `--check` gates, `--list` prints them all. |
+| `tools/gen-node-compat.mjs` | writes `docs/node-compat.md` by diffing each `node:<module>`'s exports against the node on PATH and joining the sweep's per-area rate. `--check` gates. |
 | `tools/fuzz.sh` | crash fuzzer over the memory-managed core: random allocating programs under `MILOJS_GC_THRESHOLD=1` (see the growth note above: that is a mild setting, not every-allocation), compared to node on the SHAPE of the outcome (crash/hang, over-accept, over-reject) and never on output text. `tools/fuzz.sh [first] [last]`; flagged seeds are saved to `/tmp/fuzz-seed-<n>.js`. Not in CI: it is a sweep, not a gate. |
 | `tools/precommit.sh` | every cheap gate below, in one command. See "Wiring the hook". |
 

@@ -48,6 +48,20 @@ fi
 # been closed, because closing a gap never touches the file claiming it is open.
 # Each bullet now carries a probe; this fails if one is stale. Needs a built
 # engine, so it is skipped when there is not one.
+# The per-module compatibility table is derived from an export diff against the
+# node on PATH plus the committed sweep, so it moves whenever a lib/ module
+# grows an export. Regenerated and staged rather than failed, for the same
+# reason gen-facts is: the numbers move on ordinary commits.
+if command -v node >/dev/null 2>&1 && [ -x .dev/mj-runtime ]; then
+    before=$(shasum docs/node-compat.md 2>/dev/null | shasum)
+    MILOJS_RUNTIME=.dev/mj-runtime node tools/gen-node-compat.mjs >/dev/null 2>&1
+    after=$(shasum docs/node-compat.md 2>/dev/null | shasum)
+    if [ "$before" != "$after" ]; then
+        git add docs/node-compat.md
+        echo "precommit: node compatibility table was stale; regenerated and staged"
+    fi
+fi
+
 if command -v node >/dev/null 2>&1 && [ -x .dev/mj-engine ] && ! node tools/check-gaps.mjs; then
     status=1
 fi

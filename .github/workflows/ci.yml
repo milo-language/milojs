@@ -179,6 +179,9 @@ jobs:
       - name: js fixtures
         run: MILOJS_ENGINE_BIN=/tmp/milojs-engine MILOJS_RUNTIME_BIN=/tmp/milojs ./tests/run.sh
 
+      - name: Node compatibility table is derived, not typed
+        run: MILOJS_RUNTIME=/tmp/milojs node tools/gen-node-compat.mjs --check
+
       # The same suite again, collecting on EVERY allocation. This is the only
       # thing that finds the engine's unrooted-local class of bug, where a value
       # reachable only from a Milo stack frame is freed mid-operation and its slot

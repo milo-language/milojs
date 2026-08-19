@@ -8,6 +8,59 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## EventTarget did not exist, and the compatibility table is now derived
+
+- **`Event`, `EventTarget` and `CustomEvent` were absent.** AbortSignal,
+  MessagePort, FileReader and node's own process-level events are all specified
+  in terms of them, and node's tests construct EventTarget subclasses directly:
+  it is most of why the `whatwg` area scored 1 of 37. Implemented with the
+  listener bookkeeping programs actually observe — `once`, `signal`, `passive`,
+  duplicate `(type, callback, capture)` suppression, `handleEvent` objects,
+  `stopImmediatePropagation`, and `dispatchEvent` reporting cancellation. No
+  capture/bubble phases, because there is no tree here to propagate through;
+  every dispatch is AT_TARGET.
+- **AbortSignal is one of them now** rather than carrying its own parallel
+  listener list, so `signal instanceof EventTarget` holds and one piece of code
+  owns the dispatch rules.
+
+## docs/node-compat.md, generated
+
+Every runtime that publishes a per-module compatibility table writes it by hand.
+A hand-written matrix is the fastest-rotting document in a repo, because closing
+a gap never touches the file claiming it is open — the same failure mode as the
+"known engine limits" list, which had rotted to six wrong entries out of ten.
+
+`tools/gen-node-compat.mjs` compiles it from two measured sources:
+
+1. **Exports** — `require()` each `node:<module>` under the node on PATH and
+   under milojs, and diff the names. That is the "fully / partially / missing"
+   column other runtimes assert, derived instead. **442/1056 = 42%** across 43
+   modules.
+2. **Tests** — the per-area pass rate already in
+   `docs/conformance/node-compat.json`, skips reported separately.
+
+Two measurements rather than one because either alone lies: a module can export
+every name and work at nothing, or export few names and pass what it claims.
+
+Two details worth keeping:
+
+- The probe emits its requires as LITERALS. milojs pre-loads the module graph by
+  scanning literal require specifiers before running anything, so
+  `require("node:" + m)` in a loop resolves to nothing and the probe would have
+  reported all 43 modules missing — measuring the preloader rather than the
+  modules. (That limitation is itself worth fixing; it is why `require` of a
+  computed specifier fails at all.)
+- `last-verified` is dated from the sweep's own commit, not the wall clock. A
+  generated file stamped with today's date churns on every run and its `--check`
+  gate can never be satisfied twice.
+
+Ranked by missing exports, the table opens on: `http2`, `inspector`,
+`trace_events` and `wasi` (do not load at all), `constants` (0/230),
+`crypto` (7/69), `process` (30/83), `dns` (16/50), `fs` (70/104).
+
+Gates: dev.sh 6/6, verify-expected 297 checked, gen-node-compat --check green,
+and the table regenerates in precommit and is gated in CI.
+
 ## The published node score counted 930 tests that declined to run
 
 Not a conformance change: a measurement correction, and the largest one this

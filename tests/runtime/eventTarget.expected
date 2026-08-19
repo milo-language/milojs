@@ -1,0 +1,14 @@
+dispatch1: true a:ping obj:ping once
+dispatch2: true a:ping obj:ping
+cancelable: false
+not cancelable: true
+passive: true
+stopImmediate: 1
+signal removed listener
+fields: f true true 2 true true
+custom: c 1 true
+detail default: null
+no-arg: TypeError
+bad dispatch: TypeError
+signal is EventTarget: true
+phases: 0 1 2 3
