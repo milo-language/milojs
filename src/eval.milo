@@ -8309,16 +8309,22 @@ fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSV
         }
         return JSValue.Obj(o)
     }
-    if name == "test" {
-        let saves = regexExec(st.regexes[rid], subject, 0)
-        return JSValue.Bool(saves.len() > 0)
-    }
-    if name == "exec" {
+    // `test` IS `exec(s) !== null` per spec, so it must share the lastIndex
+    // handling below. It used to run its own bare search from 0, which meant a
+    // global or sticky regex never advanced lastIndex through test() and a sticky
+    // one was not anchored.
+    if name == "test" || name == "exec" {
         // a global (or sticky) regex resumes from lastIndex and advances it, so
         // `while ((m = re.exec(s)))` terminates instead of re-matching forever
         let isG = st.regexes[rid].flagG
+        let isY = st.regexes[rid].flagY
+        // A sticky regex uses lastIndex the same way a global one does, and adds
+        // the constraint that the match must START there. It was never wired up:
+        // `flagY` did not exist, so /a/y behaved as a plain search and lastIndex
+        // never moved.
+        let usesLastIndex = isG || isY
         var start: i64 = 0
-        if isG {
+        if usesLastIndex {
             // lastIndex is a STRING index the caller can read and write, so it
             // is in UTF-16 units; internally the matcher works in bytes. It was
             // stored raw, so after a non-ASCII match the value handed back was a
@@ -8327,18 +8333,29 @@ fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSV
             let lastU16 = toNum(objGet(st, o, "lastIndex")) as i64
             if lastU16 < 0 || lastU16 > utf16Length(subject) {
                 objSet(st, o, "lastIndex", JSValue.Number(0.0))
+                if name == "test" {
+                    return JSValue.Bool(false)
+                }
                 return JSValue.Null
             }
             start = utf16ToByte(subject, lastU16)
         }
-        let saves = regexExec(st.regexes[rid], subject, start)
+        var saves = regexExec(st.regexes[rid], subject, start)
+        // Sticky ANCHORS: regexExec searches forward from `start`, so a match
+        // found anywhere later is not a sticky match.
+        if isY && saves.len() > 0 && saves[0] != start {
+            saves = Vec.new()
+        }
         if saves.len() == 0 {
-            if isG {
+            if usesLastIndex {
                 objSet(st, o, "lastIndex", JSValue.Number(0.0))
+            }
+            if name == "test" {
+                return JSValue.Bool(false)
             }
             return JSValue.Null
         }
-        if isG {
+        if usesLastIndex {
             var next = saves[1]
             // a zero-width match must still advance, or the loop stalls; by a
             // whole character, or it resumes inside one
@@ -8347,12 +8364,15 @@ fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSV
             }
             objSet(st, o, "lastIndex", JSValue.Number(byteToUtf16(subject, next) as f64))
         }
+        if name == "test" {
+            return JSValue.Bool(true)
+        }
         return buildMatchArray(st, subject, saves, rid)
     }
     return JSValue.Undefined
 }
 
-// Expand $1..$9, $&, $$, and $<name> in a replacement string against a match's
+// Expand $1..$9, $&, $`, $', $$, and $<name> in a replacement string against a
 // saves. `re` supplies the named-capture map for $<name> (pass a regex with no
 // named groups to disable it).
 fn expandRepl(repl: &string, s: &string, saves: &Vec<i64>, re: &Regex): string {
@@ -8367,6 +8387,15 @@ fn expandRepl(repl: &string, s: &string, saves: &Vec<i64>, re: &Regex): string {
                 i = i + 2
             } else if n == '&' {
                 out = out + strSlice(s, saves[0], saves[1])
+                i = i + 2
+            } else if n == 96 as u8 {
+                // $` is everything BEFORE the match, $' everything after. Both
+                // were passed through literally, so a replacement using them
+                // emitted the dollar sequence itself.
+                out = out + strSlice(s, 0, saves[0])
+                i = i + 2
+            } else if n == 39 as u8 {
+                out = out + strSlice(s, saves[1], s.len())
                 i = i + 2
             } else if n == '<' {
                 // $<name>: substitute the named capture, empty when absent
@@ -8519,7 +8548,10 @@ fn regexReplaceFn(prog: &Prog, st: &mut Interp, s: &string, rid: i64, fn_: &JSVa
 // This follows the spec's shape: `p` is the start of the pending piece and `q`
 // the search cursor, and an empty match only advances `q` when it lands exactly
 // at `p`.
-fn regexSplit(st: &mut Interp, s: &string, rid: i64): JSValue {
+// `limit` bounds the result; -1 means unbounded. It was dropped entirely, so
+// `"a,b,c".split(/,/, 2)` returned three pieces where the string separator form
+// already returned two.
+fn regexSplit(st: &mut Interp, s: &string, rid: i64, limit: i64): JSValue {
     let arr = newArray(st)
     pushTemp(st, JSValue.Obj(arr))
     let size = s.len()
@@ -8532,9 +8564,18 @@ fn regexSplit(st: &mut Interp, s: &string, rid: i64): JSValue {
         popTemp(st)
         return JSValue.Obj(arr)
     }
+    if limit == 0 {
+        popTemp(st)
+        return JSValue.Obj(arr)
+    }
     var p: i64 = 0
     var q: i64 = 0
     while q < size {
+        if limit >= 0 && arrLen(st, arr) >= limit {
+            q = size
+            popTemp(st)
+            return JSValue.Obj(arr)
+        }
         let saves = regexExec(st.regexes[rid], s, q)
         // The spec matches AT q; regexExec SEARCHES from q, so it can report a
         // match starting at the end of the string, which the `q < size` loop is
@@ -8552,14 +8593,25 @@ fn regexSplit(st: &mut Interp, s: &string, rid: i64): JSValue {
                 q = mstart + utf8LenAt(s, mstart)
             } else {
                 arrPush(st, arr, JSValue.Str(strSlice(s, p, mstart)))
+                if limit >= 0 && arrLen(st, arr) >= limit {
+                    popTemp(st)
+                    return JSValue.Obj(arr)
+                }
                 // every capture in the separator becomes an element, undefined
-                // for one that did not participate
+                // for one that did not participate. The limit is checked after
+                // EACH of them, not once per iteration: a capture can be the
+                // element that reaches it, which is why `"a1b2c".split(/(\d)/, 3)`
+                // has to stop at ["a","1","b"].
                 var gi: i64 = 2
                 while gi + 1 < saves.len() {
                     if saves[gi] >= 0 && saves[gi + 1] >= 0 {
                         arrPush(st, arr, JSValue.Str(strSlice(s, saves[gi], saves[gi + 1])))
                     } else {
                         arrPush(st, arr, JSValue.Undefined)
+                    }
+                    if limit >= 0 && arrLen(st, arr) >= limit {
+                        popTemp(st)
+                        return JSValue.Obj(arr)
                     }
                     gi = gi + 2
                 }
@@ -9426,7 +9478,26 @@ fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>, st
         return regexStrMatchAll(st, s, rid)
     }
     if name == "split" {
-        return regexSplit(st, s, rid)
+        // limit is the SECOND argument here; args[0] is the separator
+        var splitLimit: i64 = -1
+        if args.len() > 1 {
+            match cloneValue(args[1]) {
+                JSValue.Undefined => {
+                }
+                _ => {
+                    let lv = toNum(args[1])
+                    if lv != lv {
+                        splitLimit = 0
+                    } else {
+                        splitLimit = lv as i64
+                        if splitLimit < 0 {
+                            splitLimit = 0
+                        }
+                    }
+                }
+            }
+        }
+        return regexSplit(st, s, rid, splitLimit)
     }
     // search: index of the first match, or -1 (UTF-16 units)
     let saves = regexExec(st.regexes[rid], s, 0)

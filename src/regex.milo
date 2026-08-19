@@ -76,6 +76,9 @@ pub struct Regex {
     flagM: bool,
     // dotAll: `.` also matches newline
     flagS: bool,
+    // the sticky flag: the match must start exactly at lastIndex rather than
+    // being searched for from there
+    flagY: bool,
     source: string,
     flags: string,
     valid: bool,
@@ -481,6 +484,17 @@ fn reUtf8Bytes(cp: i64, out: &mut Vec<u8>) {
     out.push((0x80 | (cp & 0x3F)) as u8)
 }
 
+// Inside a character class `\b` is BACKSPACE, U+0008, not the word-boundary
+// assertion it means everywhere else. That is the only difference, so this
+// delegates for the rest; sharing reEscapedChar meant `[\b]` matched the letter
+// 'b' and never a backspace.
+fn reEscapedCharInClass(e: u8): u8 {
+    if e == 'b' {
+        return 8 as u8
+    }
+    return reEscapedChar(e)
+}
+
 fn reEscapedChar(e: u8): u8 {
     if e == 'n' {
         return 10 as u8
@@ -549,7 +563,7 @@ fn reParseClass(p: &mut ReParse): i64 {
                     } else {
                         // not a property escape: back up and take it literally
                         p.pos = saved
-                        let ch = reEscapedChar(e) as i32
+                        let ch = reEscapedCharInClass(e) as i32
                         cls.lo.push(ch)
                         cls.hi.push(ch)
                         p.pos = p.pos + 2
@@ -570,7 +584,7 @@ fn reParseClass(p: &mut ReParse): i64 {
                         ch = num[0] as i32
                         p.pos = p.pos + num[1]
                     } else {
-                        ch = reEscapedChar(e) as i32
+                        ch = reEscapedCharInClass(e) as i32
                         p.pos = p.pos + 2
                     }
                     var hiCp = ch
@@ -582,7 +596,7 @@ fn reParseClass(p: &mut ReParse): i64 {
                                 hiCp = unum[0] as i32
                                 p.pos = after + unum[1]
                             } else if after + 1 < p.pat.len() {
-                                hiCp = reEscapedChar(p.pat[after + 1]) as i32
+                                hiCp = reEscapedCharInClass(p.pat[after + 1]) as i32
                                 p.pos = after + 2
                             }
                         } else {
@@ -1255,6 +1269,7 @@ pub fn regexCompile(source: string, flags: string): Regex {
     var fm = false
     var fs_ = false
     var fu = false
+    var fy = false
     var fj: i64 = 0
     while fj < flags.len() {
         let fc = flags[fj]
@@ -1270,6 +1285,9 @@ pub fn regexCompile(source: string, flags: string): Regex {
             fu = true
         }
         fj = fj + 1
+        if fc == 'y' {
+            fy = true
+        }
     }
     var p = ReParse {
         pat: patBytes, pos: 0, nodes: Vec.new(), lists: Vec.new(), classes: Vec.new(), ngroup: 0, groupNames: Vec.new(), groupNums: Vec.new(), unicode: fu, badProp: false, badSyntax: false
@@ -1287,7 +1305,7 @@ pub fn regexCompile(source: string, flags: string): Regex {
     reEmit(prog, RE_SAVE, 1, 0)
     reEmit(prog, RE_MATCH, 0, 0)
     return Regex {
-        prog: prog, classes: p.classes, nGroups: p.ngroup, flagI: fi, flagG: fg, flagM: fm, flagS: fs_, source: source, flags: flags, valid: !p.badProp && !p.badSyntax, badPropName: p.badProp, groupNames: p.groupNames, groupNums: p.groupNums
+        prog: prog, classes: p.classes, nGroups: p.ngroup, flagI: fi, flagG: fg, flagM: fm, flagS: fs_, flagY: fy, source: source, flags: flags, valid: !p.badProp && !p.badSyntax, badPropName: p.badProp, groupNames: p.groupNames, groupNums: p.groupNums
     }
 }
 

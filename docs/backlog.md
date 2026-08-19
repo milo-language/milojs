@@ -43,6 +43,37 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## Four regex bugs, found by differential testing rather than by a suite
+
+The remaining regex items on this list were all VALIDATION (rejecting patterns
+that should be errors), which does not affect working code. Differential-testing
+927 pattern/flag/input/API combinations against node found four that do, none of
+which either conformance suite had caught:
+
+- **The sticky flag `y` was never implemented.** `flagY` did not exist, so `/a/y`
+  searched forward like a plain regex and `lastIndex` never moved. It now anchors:
+  `regexExec` searches from `start`, so a match found anywhere later is discarded.
+- **`test` ran its own bare search from 0.** It is `exec(s) !== null` per spec, so
+  it must share the lastIndex handling; it did not, which meant a GLOBAL regex
+  never advanced lastIndex through `test()` either. The two share one path now.
+- **`split` with a regex separator dropped its limit.** The string-separator form
+  already honoured it. The limit is checked after each push INCLUDING capture
+  groups, because a capture can be the element that reaches it.
+- **`` $` `` and `$'` were passed through literally** in a replacement.
+
+Plus one from the first sweep: inside a character class `\b` is BACKSPACE, not the
+word-boundary assertion, so `[\b]` matched the letter 'b'. Fixed with a
+class-specific escape mapping, since the shared one is also used outside classes
+where `\b` must stay an assertion.
+
+All 927 combinations now match node. `tests/regexpStickySplitReplace.js` pins the
+cases.
+
+Worth noting how these were found: both suites were green on regex behaviour
+here, and the bugs only surfaced from generated differential comparison. The
+still-open validation gaps (`[\d-z]` under the u flag, `[a-]` under v, duplicate
+named groups in one alternative) stay open on purpose, being the milder failure.
+
 ## Local time exists now: the engine had no timezone at all
 
 `getTimezoneOffset()` returned 0 and every "local" accessor decomposed in UTC, so

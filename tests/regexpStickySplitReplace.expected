@@ -1,0 +1,19 @@
+y-anchors-at-lastIndex [true,2]
+y-does-not-search [false,0]
+y-failure-resets [false,0]
+y-loop ["a@1","b@2"]
+gy [true,2]
+flags-report ["gy",true,true]
+test-advances-g [true,2]
+test-plain-unchanged [true,0]
+split-limit ["a","b"]
+split-limit-zero []
+split-limit-big ["a","b","c"]
+split-limit-captures ["a","1","b"]
+split-no-limit ["a","b","c"]
+split-limit-undefined ["a","b","c"]
+replace-before-after "a[a|c|$|b]c"
+replace-before-global "x<x>y"
+replace-group-and-context "abacc"
+class-backspace [true,false,true]
+word-boundary-intact ["|a| |b|",true]
