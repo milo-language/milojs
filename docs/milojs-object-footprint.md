@@ -3,7 +3,7 @@ system: milojs-object-footprint
 purpose: measured per-object memory cost in milojs, and the JSObjExtra side table that shrank it
 key-files: src/engine/runtime.milo
 update-when: JSObj gains or loses fields, or the side-table split lands
-last-verified: 2026-08-18 (HashMap accessor claim re-checked against std/arena)
+last-verified: 2026-08-19 (re-measured with the recipe above: 277 bytes per empty object, 126 per property; JSObj itself is unchanged, the Interp field added for the prototype-write check is per-engine, not per-object)
 -->
 
 # milojs: object footprint
@@ -11,13 +11,18 @@ last-verified: 2026-08-18 (HashMap accessor claim re-checked against std/arena)
 ## Measured
 
 Measured with `/usr/bin/time -l`, 50,000 iterations each, differences against a
-baseline of 50,000 numbers pushed into an array. Re-measured 2026-08-15:
+baseline of 50,000 numbers pushed into an array. Re-measured 2026-08-19:
 
-| what | cost | was (2026-07-30) |
-|------|------|------|
-| baseline (50k numbers in an array) | 34.2 MB | 19.1 MB |
-| per empty object `{}` | **337 bytes** | 1008 bytes |
-| per added property `{a:1}` | 130 bytes | 145 bytes |
+| what | cost | was (2026-08-15) | was (2026-07-30) |
+|------|------|------|------|
+| baseline (50k numbers in an array) | 39.5 MB | 34.2 MB | 19.1 MB |
+| per empty object `{}` | **277 bytes** | 337 bytes | 1008 bytes |
+| per added property `{a:1}` | 126 bytes | 130 bytes | 145 bytes |
+
+The per-object figures fell without anyone aiming at them, and the baseline rose:
+peak RSS for the whole process is the measurement, so the growing engine binary and
+its bootstrap show up in the baseline column while the per-object deltas track the
+heap layout. Read the deltas, not the absolute numbers.
 
 ## Why it shrank: the side table landed
 

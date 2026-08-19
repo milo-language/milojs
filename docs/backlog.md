@@ -8,6 +8,37 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## The iteration protocol, sync and async: 3 of 26 wrong
+
+Fifth pass of the same question, and the first area that came back mostly CLEAN,
+which is worth recording as plainly as the failures. 19 sync cases and 7 async
+ones, tracing which protocol methods run and in what order.
+
+milojs already calls `return()` on `break`, on a `throw` out of the body, and on
+an early `return` from the enclosing function -- the part engines most often skip
+-- and gets partial destructuring, spread, `Array.from`, the `Map` constructor,
+`Promise.all`, every built-in iterator's shape, a null `@@iterator`, a
+non-callable `next`, a throwing `return()` and a getter-backed result object
+right. `for await` handles an async iterator, a sync iterable through
+CreateAsyncFromSyncIterator, promise-valued elements and an async generator.
+
+The three failures were one rule, three times: **an iterator result must be an
+OBJECT.** `next()` answering a primitive, `@@iterator` answering a primitive, and
+`@@asyncIterator` answering a primitive all ended the loop silently where node
+raises TypeError. The spread and `yield*` paths already enforced it -- there is a
+comment at each saying so -- so `for-of`, the most common consumer of the
+protocol, was the one place that did not, and `for await` matched it.
+
+That is the same shape as everything else in this run: not a wrong answer, an
+answer where there should have been a throw. A `for-of` over a broken iterator ran
+zero times and continued, which is indistinguishable from an empty collection.
+
+`tests/iteratorProtocol.js` and `tests/runtime/asyncIteratorProtocol.js` lock all
+26. Gates: dev.sh 6/6, GC-stress 294/295 fixtures, suite green with the compiler
+on and off, fuzz 200 seeds clean, vm-differential clean, QuickJS 104/149,
+node-compat sample 207/400.
+
+
 ## Strict-mode violations that were still silent (+2 node-compat, then +3 more)
 
 Fourth pass of "what is silently allowed". 20 strict-mode violations; five were

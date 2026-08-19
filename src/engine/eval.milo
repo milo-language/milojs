@@ -16123,9 +16123,18 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 if isCallableIn(st, aFn) {
                     var aArgs: Vec<JSValue> = Vec.new()
                     iterVal = callValue(prog, aFn, aArgs, cloneValue(ov), st)
+                    let aH = objHandle(iterVal)
+                    // GetIterator(async): what @@asyncIterator returns must be an
+                    // object. A primitive left the loop with nothing to drive, so
+                    // `for await` over it did nothing at all and the surrounding
+                    // try/catch never saw the TypeError node raises.
+                    if !st.throwing && aH < 0 {
+                        st.throwing = true
+                        st.thrownValue = makeError(st, "TypeError", "Result of the Symbol.asyncIterator method is not an object" + currentModule(st))
+                        return Flow.Normal
+                    }
                     driveIter = true
                     asyncIter = true
-                    let aH = objHandle(iterVal)
                     isGen = aH >= 0 && st.objects[aH].isGenerator
                 }
             }
@@ -16135,6 +16144,14 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 if isCallableIn(st, itFn) {
                     var noArgs: Vec<JSValue> = Vec.new()
                     iterVal = callValue(prog, itFn, noArgs, cloneValue(ov), st)
+                    // GetIterator: what @@iterator returns must be an object, so
+                    // `{[Symbol.iterator]() { return 5 }}` is a TypeError rather
+                    // than an empty iteration.
+                    if !st.throwing && objHandle(iterVal) < 0 {
+                        st.throwing = true
+                        st.thrownValue = makeError(st, "TypeError", "Result of the Symbol.iterator method is not an object" + currentModule(st))
+                        return Flow.Normal
+                    }
                     driveIter = true
                 }
             }
@@ -16182,6 +16199,14 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                     }
                     if running && !st.throwing {
                         let stepH = objHandle(step)
+                        if stepH < 0 && !st.throwing {
+                            // next() MUST answer an object. A primitive is a
+                            // TypeError, not a quiet end of iteration -- the spread
+                            // and yield* paths already said so, and for-of, the
+                            // most common consumer of the protocol, did not.
+                            st.throwing = true
+                            st.thrownValue = makeError(st, "TypeError", "Iterator result " + toStr(cloneValue(step)) + " is not an object" + currentModule(st))
+                        }
                         if stepH < 0 || st.throwing {
                             running = false
                             closed = true
