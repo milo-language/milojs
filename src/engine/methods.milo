@@ -17,7 +17,7 @@ from "./runtime" import {
     Interp
 }
 from "./eval" import {
-    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, toNumArg, makeError, taIsDetached, currentModule, taOutOfBounds, dataViewByteLen, getMemberDyn, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, isSymbolStr, ARRAY_LIKE_MAX
+    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, toNumArg, makeError, taIsDetached, currentModule, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, isSymbolStr, ARRAY_LIKE_MAX
 }
 
 pub fn dataViewProto(st: &mut Interp): i64 {
@@ -948,7 +948,7 @@ fn gmtOffsetLabel(epochSec: i64): string {
     return "GMT" + sign + hh + mm2 + " (UTC" + sign + hh + ":" + mm2 + ")"
 }
 
-pub fn arrayIterNext(st: &mut Interp, it: i64): JSValue {
+pub fn arrayIterNext(prog: &Prog, st: &mut Interp, it: i64): JSValue {
     let arrV = getMember(st, it, "__ai_arr")
     let arr = objHandle(arrV)
     let i = toNum(getMember(st, it, "__ai_i")) as i64
@@ -960,16 +960,22 @@ pub fn arrayIterNext(st: &mut Interp, it: i64): JSValue {
         objSet(st, res, "value", JSValue.Undefined)
     } else {
         objSet(st, it, "__ai_i", JSValue.Number((i + 1) as f64))
-        var v = arrGet(st, arr, i)
+        // Read the element ONCE, and only for the kinds that use it: an index
+        // getter is observable, so keys() must not touch it at all and entries()
+        // must call it once, not once for the value and again for the pair.
+        var v = JSValue.Undefined
         if kind == 1 {
             v = JSValue.Number(i as f64)
         } else if kind == 2 {
+            let el = arrGetDyn(prog, arr, i, st)
             let pair = newArray(st)
             pushTemp(st, JSValue.Obj(pair))
             arrPush(st, pair, JSValue.Number(i as f64))
-            arrPush(st, pair, arrGet(st, arr, i))
+            arrPush(st, pair, el)
             popTemp(st)
             v = JSValue.Obj(pair)
+        } else {
+            v = arrGetDyn(prog, arr, i, st)
         }
         objSet(st, res, "value", v)
         objSet(st, res, "done", JSValue.Bool(false))
@@ -1280,7 +1286,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>,
         if st.objects[sh].isArray {
             var i: i64 = 0
             while i < arrLen(st, sh) {
-                taSetElem(st, o, off + i, toNum(arrGet(st, sh, i)))
+                taSetElem(st, o, off + i, toNum(arrGetDyn(prog, sh, i, st)))
                 i = i + 1
             }
         } else if st.objExtras[st.objects[sh].extra].taBuf >= 0 {
@@ -1982,36 +1988,6 @@ fn arrayNeedsCallback(name: &string): bool {
         || name == "flatMap" || name == "reduce" || name == "reduceRight"
 }
 
-// Element read that honours the prototype chain including ACCESSORS. arrGet
-// has no Prog and so cannot call a getter: with a getter installed at
-// `Array.prototype[1]`, a hole at index 1 read as undefined and indexOf could
-// never find its value.
-fn arrGetDyn(prog: &Prog, o: i64, idx: i64, st: &mut Interp): JSValue {
-    // A scratch array adapting an array-like receiver reads THROUGH to the
-    // original. The adapter copies once up front, and the spec's methods do a real
-    // [[Get]] per index — so a callback that mutates the receiver mid-loop
-    // (`Array.prototype.forEach.call(o, function(){ o[1] = 99 })`) must be
-    // observed, and reading the copy could never see it.
-    let orig = st.objExtras[st.objects[o].extra].arrayLikeOrig
-    if orig >= 0 {
-        return getMemberDyn(prog, orig, i64ToStr(idx), st)
-    }
-    // An own ACCESSOR on an index shadows the dense slot: after
-    // `Object.defineProperty(a, 0, {get(){...}})` the element is still present in
-    // `elems`, so the fast path below returned the stale value it had before the
-    // getter was installed and every callback method saw the wrong element.
-    // Guarded on props being non-empty, so an ordinary array pays one length check.
-    if st.objects[o].props.len() > 0 {
-        let ai = objOwnIndex(st, o, i64ToStr(idx))
-        if ai >= 0 && propIsAccessor(st, o, ai) {
-            return getMemberDyn(prog, o, i64ToStr(idx), st)
-        }
-    }
-    if !arrIsHole(st, o, idx) {
-        return arrGet(st, o, idx)
-    }
-    return getMemberDyn(prog, o, i64ToStr(idx), st)
-}
 
 // HasProperty for the index a callback method is about to visit. Same
 // read-through as arrGetDyn: presence on the ORIGINAL is what decides whether the
@@ -2124,7 +2100,7 @@ fn transferToSpecies(prog: &Prog, from: i64, to: i64, st: &mut Interp): JSValue 
     var i: i64 = 0
     while i < n {
         if !arrIsHole(st, from, i) {
-            let v = arrGet(st, from, i)
+            let v = arrGetDyn(prog, from, i, st)
             setMemberDyn(prog, to, i64ToStr(i), v, st)
             if st.throwing {
                 return JSValue.Undefined
@@ -2213,7 +2189,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         if n == 0 {
             return JSValue.Undefined
         }
-        let result = arrGet(st, o, n - 1)
+        let result = arrGetDyn(prog, o, n - 1, st)
         setArrayLength(st, o, n - 1)
         return result
     }
@@ -2221,11 +2197,11 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         if n == 0 {
             return JSValue.Undefined
         }
-        let head = arrGet(st, o, 0)
+        let head = arrGetDyn(prog, o, 0, st)
         var rest: Vec<JSValue> = Vec.new()
         var i: i64 = 1
         while i < n {
-            rest.push(arrGet(st, o, i))
+            rest.push(arrGetDyn(prog, o, i, st))
             i = i + 1
         }
         st.objects[o].elems = rest
@@ -2240,7 +2216,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         }
         var i: i64 = 0
         while i < n {
-            merged.push(arrGet(st, o, i))
+            merged.push(arrGetDyn(prog, o, i, st))
             i = i + 1
         }
         st.objects[o].elems = merged
@@ -2267,6 +2243,11 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         var found = -1
         var allTrue = true
         var anyTrue = false
+        // `find` returns the element the predicate accepted, and the spec reads
+        // each index exactly once: re-reading at the end called an index getter
+        // a second time, which is observable. Keep the value the callback saw.
+        let isFind = name == "find"
+        var foundVal = JSValue.Undefined
         // `n` was read before the loop and the spec keeps it: an index the
         // callback APPENDS is not visited. Re-reading arrLen here visited it.
         while i < n && found < 0 {
@@ -2277,12 +2258,19 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
                 continue
             }
             let cbArgs = makeCbArgsDyn(prog, o, i, st)
+            var elem = JSValue.Undefined
+            if isFind && cbArgs.len() > 0 {
+                elem = cloneValue(cbArgs[0])
+            }
             let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             let t = truthy(r)
             if t {
                 anyTrue = true
                 if name == "find" || name == "findIndex" || name == "some" {
                     found = i
+                    if isFind {
+                        foundVal = elem
+                    }
                 }
             } else {
                 allTrue = false
@@ -2307,7 +2295,10 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
             return JSValue.Number(found as f64)
         }
         if found >= 0 {
-            return arrGet(st, o, found)
+            if isFind {
+                return foundVal
+            }
+            return arrGetDyn(prog, o, found, st)
         }
         return JSValue.Undefined
     }
@@ -2363,7 +2354,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         if idx < 0 || idx >= n {
             return JSValue.Undefined
         }
-        return arrGet(st, o, idx)
+        return arrGetDyn(prog, o, idx, st)
     }
     // ES2023 change-by-copy: build a new array, never touch the receiver. These
     // live here rather than in the prelude because array member lookup never
@@ -2395,7 +2386,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
             if wk == wi {
                 arrPush(st, wout, cloneValue(wv))
             } else {
-                arrPush(st, wout, arrGet(st, o, wk))
+                arrPush(st, wout, arrGetDyn(prog, o, wk, st))
             }
             wk = wk + 1
         }
@@ -2407,7 +2398,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         pushTemp(st, JSValue.Obj(rout))
         var rk = n - 1
         while rk >= 0 {
-            arrPush(st, rout, arrGet(st, o, rk))
+            arrPush(st, rout, arrGetDyn(prog, o, rk, st))
             rk = rk - 1
         }
         popTemp(st)
@@ -2418,7 +2409,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         pushTemp(st, JSValue.Obj(sout))
         var sk: i64 = 0
         while sk < n {
-            arrPush(st, sout, arrGet(st, o, sk))
+            arrPush(st, sout, arrGetDyn(prog, o, sk, st))
             sk = sk + 1
         }
         // sort the copy in place with the existing implementation, so the two
@@ -2457,7 +2448,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         pushTemp(st, JSValue.Obj(tout))
         var tk: i64 = 0
         while tk < ss {
-            arrPush(st, tout, arrGet(st, o, tk))
+            arrPush(st, tout, arrGetDyn(prog, o, tk, st))
             tk = tk + 1
         }
         var ta: i64 = 2
@@ -2467,7 +2458,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         }
         var tb = ss + sd
         while tb < n {
-            arrPush(st, tout, arrGet(st, o, tb))
+            arrPush(st, tout, arrGetDyn(prog, o, tb, st))
             tb = tb + 1
         }
         popTemp(st)
@@ -2486,11 +2477,21 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         pushTemp(st, cloneValue(thisArg))
         var i = n - 1
         var found: i64 = -1
+        // same one-read-per-index rule as `find` above
+        let isFindLast = name == "findLast"
+        var foundVal = JSValue.Undefined
         while i >= 0 && found < 0 {
             let cbArgs = makeCbArgsDyn(prog, o, i, st)
+            var elem = JSValue.Undefined
+            if isFindLast && cbArgs.len() > 0 {
+                elem = cloneValue(cbArgs[0])
+            }
             let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             if truthy(r) || st.throwing {
                 found = i
+                if isFindLast {
+                    foundVal = elem
+                }
             }
             i = i - 1
         }
@@ -2500,7 +2501,10 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
             return JSValue.Number(found as f64)
         }
         if found >= 0 {
-            return arrGet(st, o, found)
+            if isFindLast {
+                return foundVal
+            }
+            return arrGetDyn(prog, o, found, st)
         }
         return JSValue.Undefined
     }
@@ -2540,7 +2544,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         var snap: Vec<JSValue> = Vec.new()
         var s = start
         while s < end {
-            snap.push(arrGet(st, o, s))
+            snap.push(arrGetDyn(prog, o, s, st))
             s = s + 1
         }
         var k: i64 = 0
@@ -2625,9 +2629,9 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
                 }
             }
             if i >= start && i < start + delCount {
-                arrPush(st, removed, arrGet(st, o, i))
+                arrPush(st, removed, arrGetDyn(prog, o, i, st))
             } else {
-                kept.push(arrGet(st, o, i))
+                kept.push(arrGetDyn(prog, o, i, st))
             }
             i = i + 1
         }
@@ -2666,7 +2670,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         var vi: i64 = 0
         while vi < vn {
             if !arrIsHole(st, o, vi) {
-                let e = arrGet(st, o, vi)
+                let e = arrGetDyn(prog, o, vi, st)
                 if isUndefinedValue(e) {
                     undefs = undefs + 1
                 } else {
@@ -2768,7 +2772,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
     if name == "includes" {
         var i: i64 = 0
         while i < n {
-            let e = arrGet(st, o, i)
+            let e = arrGetDyn(prog, o, i, st)
             // includes uses SameValueZero, so it finds NaN (unlike indexOf's ===)
             if args.len() > 0 && sameValueZero(e, args[0]) {
                 return JSValue.Bool(true)
@@ -2809,7 +2813,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         let sliced = newArray(st)
         var i = a
         while i < b {
-            arrPushMaybeHole(st, sliced, o, i)
+            arrPushMaybeHole(prog, st, sliced, o, i)
             i = i + 1
         }
         if sliceSpecies >= 0 {
@@ -2821,8 +2825,8 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         var i: i64 = 0
         var j = n - 1
         while i < j {
-            let lo = arrGet(st, o, i)
-            let hi = arrGet(st, o, j)
+            let lo = arrGetDyn(prog, o, i, st)
+            let hi = arrGetDyn(prog, o, j, st)
             arrSet(st, o, i, hi)
             arrSet(st, o, j, lo)
             i = i + 1
@@ -2839,7 +2843,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         pushTemp(st, JSValue.Obj(joined))
         var i: i64 = 0
         while i < n {
-            arrPushMaybeHole(st, joined, o, i)
+            arrPushMaybeHole(prog, st, joined, o, i)
             i = i + 1
         }
         var a: i64 = 0
@@ -2870,7 +2874,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
                         }
                         while k < m {
                             if st.objects[other].isArray {
-                                arrPushMaybeHole(st, joined, other, k)
+                                arrPushMaybeHole(prog, st, joined, other, k)
                             } else {
                                 arrPush(st, joined, getMemberDyn(prog, other, i64ToStr(k), st))
                             }
@@ -2916,7 +2920,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
                 // the callback is not called for an ABSENT index, and the result
                 // stays sparse there. Absent is not the same as a hole: a hole
                 // over an inherited index (or an inherited getter) IS present.
-                arrPushMaybeHole(st, mapped, o, i)
+                arrPushMaybeHole(prog, st, mapped, o, i)
                 i = i + 1
                 continue
             }
@@ -2948,8 +2952,13 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
                 i = i + 1
                 continue
             }
-            let elem = arrGetDyn(prog, o, i, st)
+            // One [[Get]] per index: reading the element separately from the
+            // callback arguments called an index getter twice per element.
             let cbArgs = makeCbArgsDyn(prog, o, i, st)
+            var elem = JSValue.Undefined
+            if cbArgs.len() > 0 {
+                elem = cloneValue(cbArgs[0])
+            }
             let keep = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
             if truthy(keep) {
                 arrPush(st, kept, elem)
@@ -3099,7 +3108,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
             if rh >= 0 && st.objects[rh].isArray {
                 var j: i64 = 0
                 while j < arrLen(st, rh) {
-                    arrPush(st, out, arrGet(st, rh, j))
+                    arrPush(st, out, arrGetDyn(prog, rh, j, st))
                     j = j + 1
                 }
             } else {
@@ -3134,7 +3143,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         }
         let out = newArray(st)
         pushTemp(st, JSValue.Obj(out))
-        flattenInto(st, out, o, depth)
+        flattenInto(prog, st, out, o, depth)
         popTemp(st)
         popTemp(st)
         if flatSpecies >= 0 {
@@ -3149,9 +3158,9 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
 // Copy element `i` of `src` onto the end of `dst`, keeping a HOLE a hole.
 // slice/concat/map all preserve sparseness in their result; pushing arrGet's
 // undefined would silently fill the gap in.
-fn arrPushMaybeHole(st: &mut Interp, dst: i64, src: i64, i: i64) {
+fn arrPushMaybeHole(prog: &Prog, st: &mut Interp, dst: i64, src: i64, i: i64) {
     let at = arrLen(st, dst)
-    arrPush(st, dst, arrGet(st, src, i))
+    arrPush(st, dst, arrGetDyn(prog, src, i, st))
     if arrIsHole(st, src, i) {
         arrMarkHole(st, dst, at)
     }
@@ -3166,11 +3175,11 @@ fn arrPushMaybeHole(st: &mut Interp, dst: i64, src: i64, i: i64) {
 let FLATTEN_DEPTH_LIMIT: i64 = 4000
 
 // Flatten `arr` into `out` up to `depth` levels of nested arrays.
-fn flattenInto(st: &mut Interp, out: i64, arr: i64, depth: i64) {
-    flattenIntoAt(st, out, arr, depth, 0)
+fn flattenInto(prog: &Prog, st: &mut Interp, out: i64, arr: i64, depth: i64) {
+    flattenIntoAt(prog, st, out, arr, depth, 0)
 }
 
-fn flattenIntoAt(st: &mut Interp, out: i64, arr: i64, depth: i64, level: i64) {
+fn flattenIntoAt(prog: &Prog, st: &mut Interp, out: i64, arr: i64, depth: i64, level: i64) {
     if level > FLATTEN_DEPTH_LIMIT {
         st.throwing = true
         st.thrownValue = makeError(st, "RangeError", "Maximum call stack size exceeded")
@@ -3186,10 +3195,10 @@ fn flattenIntoAt(st: &mut Interp, out: i64, arr: i64, depth: i64, level: i64) {
             i = i + 1
             continue
         }
-        let v = arrGet(st, arr, i)
+        let v = arrGetDyn(prog, arr, i, st)
         let vh = objHandle(v)
         if depth > 0 && vh >= 0 && st.objects[vh].isArray {
-            flattenIntoAt(st, out, vh, depth - 1, level + 1)
+            flattenIntoAt(prog, st, out, vh, depth - 1, level + 1)
         } else {
             arrPush(st, out, v)
         }

@@ -3,7 +3,7 @@
 ### `arrayIterNext`
 
 ```milo
-pub fn arrayIterNext(st: &mut Interp, it: i64): JSValue
+pub fn arrayIterNext(prog: &Prog, st: &mut Interp, it: i64): JSValue
 ```
 
 _Undocumented._

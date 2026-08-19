@@ -33,6 +33,19 @@ pub fn arrayBufferProto(st: &mut Interp): i64
 
 _Undocumented._
 
+### `arrGetDyn`
+
+```milo
+pub fn arrGetDyn(prog: &Prog, o: i64, idx: i64, st: &mut Interp): JSValue
+```
+
+join with each element converted through `prog`. The prog-free joinArray
+remains for the coercion paths that have no Prog to re-enter user code with.
+Element read that honours the prototype chain including ACCESSORS. arrGet
+has no Prog and so cannot call a getter: with a getter installed at
+`Array.prototype[1]`, a hole at index 1 read as undefined and indexOf could
+never find its value.
+
 ### `awaitValue`
 
 ```milo
@@ -349,8 +362,7 @@ _Undocumented._
 pub fn joinArrayProg(prog: &Prog, st: &mut Interp, o: i64, sep: &string): string
 ```
 
-join with each element converted through `prog`. The prog-free joinArray
-remains for the coercion paths that have no Prog to re-enter user code with.
+_Undocumented._
 
 ### `localOffsetSecAt`
 

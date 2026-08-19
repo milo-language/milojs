@@ -8,6 +8,53 @@ last-verified: 2026-08-18 (re-read after the native id enum landed; the NATIVE_*
 
 # milojs backlog
 
+## 22 of 38 Array methods disagreed with node on an own index accessor
+
+The known `arrGet` vs `arrGetDyn` gap, measured instead of estimated. One script
+puts an own accessor at index 1 of `[1, undefined, 3, 4]`, runs 38 Array
+operations over it, and prints both the result and the getter call count.
+Twenty-two disagreed with node:
+
+```
+at includes find findLast slice concat join filter reverse sort flat copyWithin
+shift splice toString toSorted toReversed with entries values ArrayFrom spread
+```
+
+Both halves are observable and both were wrong. The value: a raw `arrGet` reads
+the dense element slot, which still holds whatever was there before
+`defineProperty` installed the getter, so `slice` produced `[1,null,3]` where
+node gives `[1,42,3]`. And the count: the spec does exactly one `[[Get]]` per
+index, so calling the getter twice is as visible as calling it zero times.
+
+Fixed in three passes, re-measuring after each:
+
+1. **22 sites inside `arrayMethod`** already had `prog` in scope and became
+   `arrGetDyn`. 22 divergences -> 12.
+2. **`find`, `findLast` and `filter` read twice**: once through
+   `makeCbArgsDyn` for the callback, then again to produce the result. They keep
+   the value the callback saw. The array iterator did the same for `entries`
+   (value, then pair) and read the element for `keys`, which must not touch it
+   at all. 12 -> 3.
+3. **Three helpers had no `prog`** so could not call a getter at all:
+   `arrayIterNext`, `arrPushMaybeHole` and `flattenIntoAt`, plus the
+   `Function.prototype.apply`, `Array.from` and `spreadBuiltin` fast paths.
+   Threaded through. 3 -> 0.
+
+`arrGetDyn` moved from `methods.milo` to `eval.milo`: `joinArrayProg` lives in
+eval and needed it, and eval importing from methods would have added an import
+cycle to a tree that already has trouble with one.
+
+Cost, A/B interleaved best-of-9 against a baseline built from the parent commit:
+`arrayMethods` (map/filter/slice/join/indexOf/spread/concat over 2000 elements,
+60 rounds) 75ms -> 76ms, +1.3%, with `numRead`, `localRead` and `callFn` flat.
+That is inside the noise band this harness's own header warns about, and the
+bench is new, so it is now the standing measurement for this path.
+
+`tests/arrayIndexAccessors.js` is the 38-line differential, byte-identical to
+node. Gates: dev.sh 6/6, GC-stress 283/284 fixtures, fuzz 200 seeds clean,
+QuickJS 103/149 and node-compat sample 203/400 both unchanged.
+
+
 ## A gate for the gates: `tools/check-gate-teeth.sh`
 
 Routine #1 is the highest-payoff maintenance sweep and the one nobody runs,
