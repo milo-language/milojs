@@ -3,6 +3,9 @@ self probe: true
 unknown signal name ERR_UNKNOWN_SIGNAL | Unknown signal: SIGNOPE
 object signal ERR_UNKNOWN_SIGNAL | Unknown signal: {}
 non-integer pid ERR_INVALID_ARG_TYPE | The "pid" argument must be of type number. Received type string ('x')
+infinite pid ERR_INVALID_ARG_TYPE | The "pid" argument must be of type number. Received type number (Infinity)
+pid past int32 ERR_INVALID_ARG_TYPE | The "pid" argument must be of type number. Received type number (2147483648)
+nan pid ERR_INVALID_ARG_TYPE | The "pid" argument must be of type number. Received type number (NaN)
 no such pid ESRCH | kill ESRCH
 builtin: object undefined
 capture: false

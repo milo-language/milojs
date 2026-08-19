@@ -4945,7 +4945,16 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             sig = numToIndex(toNum(argVals[1]))
         }
         let target = numToIndex(toNum(argVals[0]))
-        if target <= 0 {
+        // Range-checked BEFORE the i32 cast, because that cast WRAPS. numToIndex
+        // answers 2^53-1 for Infinity, whose low 32 bits are -1, and kill(-1, sig)
+        // signals every process the uid owns. The JS layer rejects such a pid
+        // first; this is the half that cannot be bypassed by another caller.
+        // Non-positive targets are refused for the same reason: 0 means "my whole
+        // process group", which for a test runner is the harness that started it.
+        if target <= 0 || target > 2147483647 {
+            return JSValue.Bool(false)
+        }
+        if sig < 0 || sig > 64 {
             return JSValue.Bool(false)
         }
         return JSValue.Bool(kill(target as i32, sig as i32) == 0 as i32)
