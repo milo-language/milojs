@@ -427,29 +427,25 @@ fn resolveAsFileOrDir(base: &string): string {
         return asCjs
     }
     let pkg = base + "/package.json"
-    match readFile(pkg.clone()) {
-        Result.Ok(txt) => {
-            let mainRel = scanPkgMain(txt)
-            if mainRel.len() > 0 {
-                let mp = normalizePath(base + "/" + mainRel)
-                if fileExists(mp) && endsWithJs(mp) {
-                    return mp
-                }
-                let mpJs = mp + ".js"
-                if fileExists(mpJs) {
-                    return mpJs
-                }
-                let mpCjs = mp + ".cjs"
-                if fileExists(mpCjs) {
-                    return mpCjs
-                }
-                let mpIdx = mp + "/index.js"
-                if fileExists(mpIdx) {
-                    return mpIdx
-                }
+    if let Result.Ok(txt) = readFile(pkg.clone()) {
+        let mainRel = scanPkgMain(txt)
+        if mainRel.len() > 0 {
+            let mp = normalizePath(base + "/" + mainRel)
+            if fileExists(mp) && endsWithJs(mp) {
+                return mp
             }
-        }
-        Result.Err(_e) => {
+            let mpJs = mp + ".js"
+            if fileExists(mpJs) {
+                return mpJs
+            }
+            let mpCjs = mp + ".cjs"
+            if fileExists(mpCjs) {
+                return mpCjs
+            }
+            let mpIdx = mp + "/index.js"
+            if fileExists(mpIdx) {
+                return mpIdx
+            }
         }
     }
     let asIndex = base + "/index.js"

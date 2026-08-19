@@ -525,14 +525,10 @@ fn nameNativesOf(st: &mut Interp, owner: i64) {
     while i < st.objects[owner].props.len() {
         let key = st.objects[owner].props[i].key.clone()
         let v = cloneValue(st.objects[owner].props[i].value)
-        match v {
-            JSValue.Native(nid) => {
-                let bag = getNativeProps(st, nid)
-                objDefineBuiltinAttr(st, bag, "length", JSValue.Number(builtinStaticArity(key) as f64))
-                objDefineBuiltinAttr(st, bag, "name", JSValue.Str(key))
-            }
-            _ => {
-            }
+        if let JSValue.Native(nid) = v {
+            let bag = getNativeProps(st, nid)
+            objDefineBuiltinAttr(st, bag, "length", JSValue.Number(builtinStaticArity(key) as f64))
+            objDefineBuiltinAttr(st, bag, "name", JSValue.Str(key))
         }
         i = i + 1
     }

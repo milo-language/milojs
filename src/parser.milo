@@ -2215,22 +2215,18 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
                 return addStmt(prog, Stmt.ForOf(forInName, objExpr, body, isForAwait, bindKind))
             }
             let loop = addStmt(prog, Stmt.ForIn(forInName.clone(), objExpr, body, bindKind))
-            match forInInit {
-                Option.Some(initExpr) => {
-                    // `{ var k = INIT; for (k in obj) BODY }`
-                    var initItems: Vec<DeclItem> = Vec.new()
-                    initItems.push(DeclItem {
-                        name: forInName.clone(), init: initExpr, isVar: true
-                    }
-                    )
-                    var seq: Vec<StmtId> = Vec.new()
-                    seq.push(declsToStmt(prog, initItems))
-                    seq.push(loop)
-                    let seqBlock = addBlock(prog, seq)
-                    return addStmt(prog, Stmt.Block(seqBlock))
+            if let Option.Some(initExpr) = forInInit {
+                // `{ var k = INIT; for (k in obj) BODY }`
+                var initItems: Vec<DeclItem> = Vec.new()
+                initItems.push(DeclItem {
+                    name: forInName.clone(), init: initExpr, isVar: true
                 }
-                Option.None => {
-                }
+                )
+                var seq: Vec<StmtId> = Vec.new()
+                seq.push(declsToStmt(prog, initItems))
+                seq.push(loop)
+                let seqBlock = addBlock(prog, seq)
+                return addStmt(prog, Stmt.Block(seqBlock))
             }
             return loop
         }
@@ -2284,20 +2280,16 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
                     _ => {
                     }
                 }
-                match lvAssign {
-                    Option.Some(lvSet) => {
-                        var lvSeq: Vec<StmtId> = Vec.new()
-                        lvSeq.push(addStmt(prog, Stmt.ExprStmt(lvSet)))
-                        lvSeq.push(lvBody)
-                        let lvBlockId = addBlock(prog, lvSeq)
-                        let lvWrapped = addStmt(prog, Stmt.Block(lvBlockId))
-                        if lvIsOf {
-                            return addStmt(prog, Stmt.ForOf(lvTmp, lvObj, lvWrapped, isForAwait, 2))
-                        }
-                        return addStmt(prog, Stmt.ForIn(lvTmp, lvObj, lvWrapped, 2))
+                if let Option.Some(lvSet) = lvAssign {
+                    var lvSeq: Vec<StmtId> = Vec.new()
+                    lvSeq.push(addStmt(prog, Stmt.ExprStmt(lvSet)))
+                    lvSeq.push(lvBody)
+                    let lvBlockId = addBlock(prog, lvSeq)
+                    let lvWrapped = addStmt(prog, Stmt.Block(lvBlockId))
+                    if lvIsOf {
+                        return addStmt(prog, Stmt.ForOf(lvTmp, lvObj, lvWrapped, isForAwait, 2))
                     }
-                    Option.None => {
-                    }
+                    return addStmt(prog, Stmt.ForIn(lvTmp, lvObj, lvWrapped, 2))
                 }
             }
             p.pos = lvStart
@@ -2711,12 +2703,8 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                     // construction, which is only observable for a key
                     // expression with side effects.
                     var keyE = addExpr(prog, Expr.StrLit(mname.clone()))
-                    match mkeyExpr {
-                        Option.Some(ke) => {
-                            keyE = ke
-                        }
-                        Option.None => {
-                        }
+                    if let Option.Some(ke) = mkeyExpr {
+                        keyE = ke
                     }
                     let setE = addExpr(prog, Expr.SetMember(thisE, keyE, initE))
                     fieldStmts.push(addStmt(prog, Stmt.ExprStmt(setE)))

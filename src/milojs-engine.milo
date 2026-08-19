@@ -91,27 +91,15 @@ fn main(): i32 {
             // same knob the runtime honours, so the GC-stress pass reaches the
             // engine binary too
             var gcThreshold: i64 = 1024
-            match Env.get("MILOJS_GC_THRESHOLD") {
-                Option.Some(tv) => {
-                    match parseInt(tv) {
-                        Option.Some(n) => {
-                            if n > 0 {
-                                gcThreshold = n
-                            }
-                        }
-                        Option.None => {
-                        }
+            if let Option.Some(tv) = Env.get("MILOJS_GC_THRESHOLD") {
+                if let Option.Some(n) = parseInt(tv) {
+                    if n > 0 {
+                        gcThreshold = n
                     }
                 }
-                Option.None => {
-                }
             }
-            match Env.get("MILOJS_GC_STATS") {
-                Option.Some(_v) => {
-                    gcStats = true
-                }
-                Option.None => {
-                }
+            if let Option.Some(_v) = Env.get("MILOJS_GC_STATS") {
+                gcStats = true
             }
             gInterp = makeInterp(gcStats, gcThreshold, 2)
             bootInterp(gInterp)

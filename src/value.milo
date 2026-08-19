@@ -612,13 +612,9 @@ pub fn numToStr(n: f64): string {
     var p: i32 = 1
     while p <= 17 {
         let s = floatG(n, p)
-        match parseFloat(s.clone()) {
-            Option.Some(v) => {
-                if v == n {
-                    return jsExpandExpForm(s)
-                }
-            }
-            Option.None => {
+        if let Option.Some(v) = parseFloat(s.clone()) {
+            if v == n {
+                return jsExpandExpForm(s)
             }
         }
         p = p + 1
@@ -1028,13 +1024,9 @@ pub fn numToExponential(n: f64, digits: i64, haveDigits: bool): string {
             unsafe {
                 snprintf(sbuf, 64, "%.*e", k as i32, n)
                 let s = _cstrToString(sbuf as *u8)
-                match parseFloat(s.clone()) {
-                    Option.Some(x) => {
-                        if x == n {
-                            return stripExpZeros(s)
-                        }
-                    }
-                    Option.None => {
+                if let Option.Some(x) = parseFloat(s.clone()) {
+                    if x == n {
+                        return stripExpZeros(s)
                     }
                 }
             }

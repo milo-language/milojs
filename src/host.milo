@@ -93,12 +93,8 @@ pub fn doHttpFetch(method: &string, url: &string, headersRaw: &string, body: &st
     if tls {
         match TlsStream.connect(ip, port as u16, host) {
             Result.Ok(conn) => {
-                match conn.send(req) {
-                    Result.Ok(_n) => {
-                    }
-                    Result.Err(_e) => {
-                        return "Esend failed"
-                    }
+                if let Result.Err(_e) = conn.send(req) {
+                    return "Esend failed"
                 }
                 var resp = ""
                 var reading = true
@@ -125,12 +121,8 @@ pub fn doHttpFetch(method: &string, url: &string, headersRaw: &string, body: &st
     }
     match TcpStream.connect(ip, port as u16) {
         Result.Ok(conn) => {
-            match conn.send(req) {
-                Result.Ok(_n) => {
-                }
-                Result.Err(_e) => {
-                    return "Esend failed"
-                }
+            if let Result.Err(_e) = conn.send(req) {
+                return "Esend failed"
             }
             var resp = ""
             var reading = true

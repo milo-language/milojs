@@ -70,12 +70,8 @@ from "./repl" import {
 }
 
 fn addEnvVar(st: &mut Interp, envObj: i64, name: string) {
-    match Env.get(name.clone()) {
-        Option.Some(v) => {
-            objSet(st, envObj, name, JSValue.Str(v))
-        }
-        Option.None => {
-        }
+    if let Option.Some(v) = Env.get(name.clone()) {
+        objSet(st, envObj, name, JSValue.Str(v))
     }
 }
 
@@ -275,63 +271,35 @@ fn main(): i32 {
     }
 
     var gcStats = false
-    match Env.get("MILOJS_GC_STATS") {
-        Option.Some(_v) => {
-            gcStats = true
-        }
-        Option.None => {
-        }
+    if let Option.Some(_v) = Env.get("MILOJS_GC_STATS") {
+        gcStats = true
     }
     // MILOJS_GC_THRESHOLD=1 collects at every safepoint — used by the GC-stress
     // test pass to catch values left unrooted across a nested call
     var gcThreshold: i64 = 1024
-    match Env.get("MILOJS_GC_THRESHOLD") {
-        Option.Some(v) => {
-            match parseInt(v) {
-                Option.Some(n) => {
-                    if n > 0 {
-                        gcThreshold = n
-                    }
-                }
-                Option.None => {
-                }
+    if let Option.Some(v) = Env.get("MILOJS_GC_THRESHOLD") {
+        if let Option.Some(n) = parseInt(v) {
+            if n > 0 {
+                gcThreshold = n
             }
-        }
-        Option.None => {
         }
     }
     // Headroom multiple over the live set between collections (see collect).
     var gcGrowth: i64 = 2
-    match Env.get("MILOJS_GC_GROWTH") {
-        Option.Some(gv) => {
-            match parseInt(gv) {
-                Option.Some(n) => {
-                    if n > 0 {
-                        gcGrowth = n
-                    }
-                }
-                Option.None => {
-                }
+    if let Option.Some(gv) = Env.get("MILOJS_GC_GROWTH") {
+        if let Option.Some(n) = parseInt(gv) {
+            if n > 0 {
+                gcGrowth = n
             }
-        }
-        Option.None => {
         }
     }
     gInterp = makeInterp(gcStats, gcThreshold, gcGrowth)
     // MILOJS_AWAIT_BUDGET_MS shortens the stuck-await deadline for debugging
-    match Env.get("MILOJS_AWAIT_BUDGET_MS") {
-        Option.Some(bv) => {
-            match parseInt(bv) {
-                Option.Some(n) => {
-                    if n > 0 {
-                        gInterp.awaitBudgetMs = n as f64
-                    }
-                }
-                Option.None => {
-                }
+    if let Option.Some(bv) = Env.get("MILOJS_AWAIT_BUDGET_MS") {
+        if let Option.Some(n) = parseInt(bv) {
+            if n > 0 {
+                gInterp.awaitBudgetMs = n as f64
             }
-        }
-        Option.None => {
         }
     }
     bootInterp(gInterp)

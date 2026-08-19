@@ -347,14 +347,10 @@ pub fn makeWrapper(st: &mut Interp, v: &JSValue): JSValue {
         _ => {
         }
     }
-    match protoNative {
-        Option.Some(pn) => {
-            let pr = nativeProtoHandle(st, pn)
-            if pr >= 0 {
-                st.objects[o].proto = pr
-            }
-        }
-        Option.None => {
+    if let Option.Some(pn) = protoNative {
+        let pr = nativeProtoHandle(st, pn)
+        if pr >= 0 {
+            st.objects[o].proto = pr
         }
     }
     let _ = ensureExtra(st, o)
@@ -370,12 +366,8 @@ fn toPrimitiveNumber(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     }
     let h = objHandle(v)
     if h >= 0 {
-        match trySymToPrimitive(prog, h, "number", st) {
-            Option.Some(r) => {
-                return r
-            }
-            Option.None => {
-            }
+        if let Option.Some(r) = trySymToPrimitive(prog, h, "number", st) {
+            return r
         }
         if st.objects[h].isDate {
             return JSValue.Number(st.objExtras[st.objects[h].extra].dateMs)
@@ -405,12 +397,8 @@ fn toPrimitiveDefault(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     if h < 0 {
         return cloneValue(v)
     }
-    match trySymToPrimitive(prog, h, "default", st) {
-        Option.Some(r) => {
-            return r
-        }
-        Option.None => {
-        }
+    if let Option.Some(r) = trySymToPrimitive(prog, h, "default", st) {
+        return r
     }
     // arrays join directly — reading their toString as a bound value does not
     // route back to the join, so short-circuit here
@@ -460,12 +448,8 @@ fn toPrimitiveString(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     if h < 0 {
         return cloneValue(v)
     }
-    match trySymToPrimitive(prog, h, "string", st) {
-        Option.Some(r) => {
-            return r
-        }
-        Option.None => {
-        }
+    if let Option.Some(r) = trySymToPrimitive(prog, h, "string", st) {
+        return r
     }
     if st.objects[h].isArray {
         return JSValue.Str(joinArrayProg(prog, st, h, ","))
@@ -1187,12 +1171,8 @@ fn builtinIsConstructor(id: Builtin): bool {
 // Mirrors the arms of the `new` evaluation below, which is what makes the two
 // agree.
 pub fn valueIsConstructor(prog: &Prog, st: &Interp, v: &JSValue): bool {
-    match nativeHandle(v) {
-        Option.Some(n) => {
-            return nativeIsConstructor(n)
-        }
-        Option.None => {
-        }
+    if let Option.Some(n) = nativeHandle(v) {
+        return nativeIsConstructor(n)
     }
     let f = funcHandle(v)
     if f >= 0 {
@@ -1749,12 +1729,8 @@ fn taSetElemValue(st: &mut Interp, view: i64, i: i64, v: &JSValue) {
         return
     }
     var digits = "0"
-    match v {
-        JSValue.BigInt(bs) => {
-            digits = bs.clone()
-        }
-        _ => {
-        }
+    if let JSValue.BigInt(bs) = v {
+        digits = bs.clone()
     }
     taStoreBig(st.objExtras[st.objects[buf].extra].bytes, at, digits)
 }
@@ -1888,23 +1864,15 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             // a user [Symbol.toStringTag] (a plain string, possibly via a getter)
             // wins over the built-in tag: class { get [Symbol.toStringTag](){…} }
             let tag = getMemberDyn(prog, o, symToStringTagKey(), st)
-            match tag {
-                JSValue.Str(ts) => {
-                    if !isSymbolStr(ts) {
-                        return JSValue.Str("[object " + ts + "]")
-                    }
-                }
-                _ => {
+            if let JSValue.Str(ts) = tag {
+                if !isSymbolStr(ts) {
+                    return JSValue.Str("[object " + ts + "]")
                 }
             }
             return JSValue.Str("[object " + objectTag(st, o) + "]")
         }
-        match recv {
-            JSValue.Func(fi, _fe) => {
-                return JSValue.Str("[object " + funcTag(prog, fi) + "]")
-            }
-            _ => {
-            }
+        if let JSValue.Func(fi, _fe) = recv {
+            return JSValue.Str("[object " + funcTag(prog, fi) + "]")
         }
         return JSValue.Str("[object " + objectTypeTag(recv) + "]")
     }
@@ -2172,13 +2140,9 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
                 // a Symbol WRAPPER prints its description, not the object tag:
                 // Symbol.prototype.toString.call(Object(sym)) is "Symbol(x)"
                 if isWrapperObj(st, o) {
-                    match boxedPrimitive(st, o) {
-                        JSValue.Str(ws) => {
-                            if isSymbolStr(ws) {
-                                return JSValue.Str(symbolDisplay(ws))
-                            }
-                        }
-                        _ => {
+                    if let JSValue.Str(ws) = boxedPrimitive(st, o) {
+                        if isSymbolStr(ws) {
+                            return JSValue.Str(symbolDisplay(ws))
                         }
                     }
                 }
@@ -2883,15 +2847,11 @@ fn destructElement(_prog: &Prog, value: &JSValue, i: i64, st: &mut Interp): JSVa
     if vh >= 0 {
         return getMember(st, vh, i64ToStr(i))
     }
-    match value {
-        JSValue.Str(s) => {
-            // s[i] indexes UTF-16 code units like charAt, not raw UTF-8 bytes —
-            // "café"[3] is "é", not the first byte of its 2-byte encoding
-            if i >= 0 && i < utf16Length(s) {
-                return JSValue.Str(utf16Slice(s, i, i + 1))
-            }
-        }
-        _ => {
+    if let JSValue.Str(s) = value {
+        // s[i] indexes UTF-16 code units like charAt, not raw UTF-8 bytes —
+        // "café"[3] is "é", not the first byte of its 2-byte encoding
+        if i >= 0 && i < utf16Length(s) {
+            return JSValue.Str(utf16Slice(s, i, i + 1))
         }
     }
     return JSValue.Undefined
@@ -3181,19 +3141,11 @@ pub fn nativeErrorName(id: Builtin): string {
 // one. Used to initialise the instance in place rather than let the base build
 // and return an object of its own.
 fn nativeErrorCtorOf(v: &JSValue): Option<Builtin> {
-    match nativeHandle(v) {
-        Option.Some(n) => {
-            match n {
-                Native.Fn(b) => {
-                    if isErrorCtor(b) {
-                        return Option.Some(b)
-                    }
-                }
-                _ => {
-                }
+    if let Option.Some(n) = nativeHandle(v) {
+        if let Native.Fn(b) = n {
+            if isErrorCtor(b) {
+                return Option.Some(b)
             }
-        }
-        Option.None => {
         }
     }
     return Option.None
@@ -3496,13 +3448,9 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         // String(sym) is the one conversion the spec allows for a symbol, and it
         // must show Symbol(desc) rather than the internal tagged string
-        match argVals[0] {
-            JSValue.Str(sv) => {
-                if isSymbolStr(sv) {
-                    return JSValue.Str(symbolDisplay(sv))
-                }
-            }
-            _ => {
+        if let JSValue.Str(sv) = argVals[0] {
+            if isSymbolStr(sv) {
+                return JSValue.Str(symbolDisplay(sv))
             }
         }
         // arrays coerce to their join, not "[object Object]"
@@ -3894,14 +3842,10 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                     }
                 }
             } else {
-                match cloneValue(argVals[0]) {
-                    JSValue.Str(sv) => {
-                        // code points, not bytes — Array.from("café") is 4 chars
-                        for cp in strCodePoints(sv) {
-                            elems.push(JSValue.Str(cp.clone()))
-                        }
-                    }
-                    _ => {
+                if let JSValue.Str(sv) = cloneValue(argVals[0]) {
+                    // code points, not bytes — Array.from("café") is 4 chars
+                    for cp in strCodePoints(sv) {
+                        elems.push(JSValue.Str(cp.clone()))
                     }
                 }
             }
@@ -5342,15 +5286,11 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // inspectTop, not inspectInner: util.inspect('x') is "'x'", but that is
         // the quoted form only because a bare string is the whole value — node
         // quotes it here and NOT in console.log, which is why the two differ.
-        match argVals[0] {
-            JSValue.Str(sv) => {
-                if isSymbolStr(sv) {
-                    return JSValue.Str(symbolDisplay(sv))
-                }
-                return JSValue.Str(inspectQuoteStr(sv))
+        if let JSValue.Str(sv) = argVals[0] {
+            if isSymbolStr(sv) {
+                return JSValue.Str(symbolDisplay(sv))
             }
-            _ => {
-            }
+            return JSValue.Str(inspectQuoteStr(sv))
         }
         return JSValue.Str(inspectTop(st, cloneValue(argVals[0])))
     }
@@ -5610,12 +5550,8 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 // Object.create(null) is the standard "bare dictionary" idiom;
                 // without the flag the result still inherited Object.prototype,
                 // so `"toString" in dict` was true for every such dictionary.
-                match argVals[0] {
-                    JSValue.Null => {
-                        st.objects[o].protoNull = true
-                    }
-                    _ => {
-                    }
+                if let JSValue.Null = argVals[0] {
+                    st.objects[o].protoNull = true
                 }
             }
         }
@@ -6075,77 +6011,69 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if argVals.len() > 0 {
             pushTemp(st, JSValue.Obj(arr))
             // a string enumerates as its characters, keyed by index
-            match cloneValue(argVals[0]) {
-                JSValue.Str(sv) => {
-                    if !isSymbolStr(sv) {
-                        var si: i64 = 0
-                        let slen = utf16Length(sv)
-                        while si < slen {
-                            let ch = JSValue.Str(strSlice(sv, si, si + 1))
-                            if wantPairs {
-                                let spair = newArray(st)
-                                pushTemp(st, JSValue.Obj(spair))
-                                arrPush(st, spair, JSValue.Str(i64ToStr(si)))
-                                arrPush(st, spair, ch)
-                                popTemp(st)
-                                arrPush(st, arr, JSValue.Obj(spair))
-                            } else {
-                                arrPush(st, arr, ch)
-                            }
-                            si = si + 1
+            if let JSValue.Str(sv) = cloneValue(argVals[0]) {
+                if !isSymbolStr(sv) {
+                    var si: i64 = 0
+                    let slen = utf16Length(sv)
+                    while si < slen {
+                        let ch = JSValue.Str(strSlice(sv, si, si + 1))
+                        if wantPairs {
+                            let spair = newArray(st)
+                            pushTemp(st, JSValue.Obj(spair))
+                            arrPush(st, spair, JSValue.Str(i64ToStr(si)))
+                            arrPush(st, spair, ch)
+                            popTemp(st)
+                            arrPush(st, arr, JSValue.Obj(spair))
+                        } else {
+                            arrPush(st, arr, ch)
                         }
+                        si = si + 1
                     }
-                }
-                _ => {
                 }
             }
-            match cloneValue(argVals[0]) {
-                JSValue.Obj(o) => {
-                    if st.objects[o].isArray {
-                        var i: i64 = 0
-                        let n = st.objects[o].elems.len()
-                        while i < n {
-                            if arrIsHole(st, o, i) {
-                                i = i + 1
-                                continue
-                            }
-                            let v = arrGet(st, o, i)
-                            if wantPairs {
-                                let pair = newArray(st)
-                                pushTemp(st, JSValue.Obj(pair))
-                                arrPush(st, pair, JSValue.Str(i64ToStr(i)))
-                                arrPush(st, pair, v)
-                                popTemp(st)
-                                arrPush(st, arr, JSValue.Obj(pair))
-                            } else {
-                                arrPush(st, arr, v)
-                            }
+            if let JSValue.Obj(o) = cloneValue(argVals[0]) {
+                if st.objects[o].isArray {
+                    var i: i64 = 0
+                    let n = st.objects[o].elems.len()
+                    while i < n {
+                        if arrIsHole(st, o, i) {
                             i = i + 1
-                        }
-                    }
-                    let order = enumOrder(st, o)
-                    var oi: i64 = 0
-                    while oi < order.len() {
-                        let k = order[oi]
-                        oi = oi + 1
-                        if !st.objects[o].props[k].enumerable {
                             continue
                         }
-                        let key = st.objects[o].props[k].key.clone()
-                        let v = cloneValue(st.objects[o].props[k].value)
+                        let v = arrGet(st, o, i)
                         if wantPairs {
                             let pair = newArray(st)
                             pushTemp(st, JSValue.Obj(pair))
-                            arrPush(st, pair, JSValue.Str(key))
+                            arrPush(st, pair, JSValue.Str(i64ToStr(i)))
                             arrPush(st, pair, v)
                             popTemp(st)
                             arrPush(st, arr, JSValue.Obj(pair))
                         } else {
                             arrPush(st, arr, v)
                         }
+                        i = i + 1
                     }
                 }
-                _ => {
+                let order = enumOrder(st, o)
+                var oi: i64 = 0
+                while oi < order.len() {
+                    let k = order[oi]
+                    oi = oi + 1
+                    if !st.objects[o].props[k].enumerable {
+                        continue
+                    }
+                    let key = st.objects[o].props[k].key.clone()
+                    let v = cloneValue(st.objects[o].props[k].value)
+                    if wantPairs {
+                        let pair = newArray(st)
+                        pushTemp(st, JSValue.Obj(pair))
+                        arrPush(st, pair, JSValue.Str(key))
+                        arrPush(st, pair, v)
+                        popTemp(st)
+                        arrPush(st, arr, JSValue.Obj(pair))
+                    } else {
+                        arrPush(st, arr, v)
+                    }
                 }
             }
             popTemp(st)
@@ -6159,60 +6087,52 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             // A string exposes its character indices; any other primitive has no
             // own keys. Neither has a property bag, and indexing the heap with
             // the -1 that stands for "none" crashed the engine outright.
-            match cloneValue(argVals[0]) {
-                JSValue.Str(sv) => {
-                    if !isSymbolStr(sv) {
-                        var si: i64 = 0
-                        let slen = utf16Length(sv)
-                        while si < slen {
-                            arrPush(st, arr, JSValue.Str(i64ToStr(si)))
-                            si = si + 1
-                        }
+            if let JSValue.Str(sv) = cloneValue(argVals[0]) {
+                if !isSymbolStr(sv) {
+                    var si: i64 = 0
+                    let slen = utf16Length(sv)
+                    while si < slen {
+                        arrPush(st, arr, JSValue.Str(i64ToStr(si)))
+                        si = si + 1
                     }
-                }
-                _ => {
                 }
             }
             let keysBag = propertyBagOf(st, argVals[0])
-            match JSValue.Obj(keysBag) {
-                JSValue.Obj(o) => {
-                    if keysBag < 0 {
-                        popTemp(st)
-                        return JSValue.Obj(arr)
+            if let JSValue.Obj(o) = JSValue.Obj(keysBag) {
+                if keysBag < 0 {
+                    popTemp(st)
+                    return JSValue.Obj(arr)
+                }
+                if st.objects[o].isProxy {
+                    // ownKeys/getOwnPropertyDescriptor traps decide, not
+                    // the proxy object's (empty) own bag
+                    let pk = proxyOwnEnumKeys(gProg, st, o)
+                    var i: i64 = 0
+                    while i < pk.len() {
+                        arrPush(st, arr, JSValue.Str(pk[i].clone()))
+                        i = i + 1
                     }
-                    if st.objects[o].isProxy {
-                        // ownKeys/getOwnPropertyDescriptor traps decide, not
-                        // the proxy object's (empty) own bag
-                        let pk = proxyOwnEnumKeys(gProg, st, o)
-                        var i: i64 = 0
-                        while i < pk.len() {
-                            arrPush(st, arr, JSValue.Str(pk[i].clone()))
-                            i = i + 1
+                    popTemp(st)
+                    return JSValue.Obj(arr)
+                }
+                if st.objects[o].isArray {
+                    var i: i64 = 0
+                    let n = st.objects[o].elems.len()
+                    while i < n {
+                        if !arrIsHole(st, o, i) {
+                            arrPush(st, arr, JSValue.Str(i64ToStr(i)))
                         }
-                        popTemp(st)
-                        return JSValue.Obj(arr)
-                    }
-                    if st.objects[o].isArray {
-                        var i: i64 = 0
-                        let n = st.objects[o].elems.len()
-                        while i < n {
-                            if !arrIsHole(st, o, i) {
-                                arrPush(st, arr, JSValue.Str(i64ToStr(i)))
-                            }
-                            i = i + 1
-                        }
-                    }
-                    let order = enumOrder(st, o)
-                    var oi: i64 = 0
-                    while oi < order.len() {
-                        let k = order[oi]
-                        if st.objects[o].props[k].enumerable {
-                            arrPush(st, arr, JSValue.Str(st.objects[o].props[k].key.clone()))
-                        }
-                        oi = oi + 1
+                        i = i + 1
                     }
                 }
-                _ => {
+                let order = enumOrder(st, o)
+                var oi: i64 = 0
+                while oi < order.len() {
+                    let k = order[oi]
+                    if st.objects[o].props[k].enumerable {
+                        arrPush(st, arr, JSValue.Str(st.objects[o].props[k].key.clone()))
+                    }
+                    oi = oi + 1
                 }
             }
             popTemp(st)
@@ -6381,13 +6301,9 @@ fn builtinConstructorOf(st: &Interp, o: i64): JSValue {
     if st.objects[o].isError {
         // the specific constructor named by the error's `name` (TypeError, …)
         let nm = getMember(st, o, "name")
-        match nm {
-            JSValue.Str(s) => {
-                if scopeHasOwn(st, 0, s) {
-                    return scopeLookup(st, 0, s)
-                }
-            }
-            _ => {
+        if let JSValue.Str(s) = nm {
+            if scopeHasOwn(st, 0, s) {
+                return scopeLookup(st, 0, s)
             }
         }
         if scopeHasOwn(st, 0, "Error") {
@@ -6898,12 +6814,8 @@ fn requireModuleFrom(prog: &Prog, spec: &string, st: &mut Interp, dirIn: string)
             addonPath = dir + "/" + spec
         }
         let cached = findNapiAddon(st, addonPath)
-        match cached {
-            Option.Some(v) => {
-                return v
-            }
-            Option.None => {
-            }
+        if let Option.Some(v) = cached {
+            return v
         }
         match napiLoadAddon(addonPath) {
             Result.Ok(v) => {
@@ -7043,13 +6955,9 @@ fn nativeInstanceOf(st: &Interp, o: i64, nv: &Native): bool {
 fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
     // `f instanceof Function` for a plain function value: functions are not Objs
     // here, so the object walk below never saw them and answered false.
-    match ctor {
-        JSValue.Native(cid) => {
-            if nativeEq(cid, Native.Fn(Builtin.FunctionCtor)) {
-                return isCallableIn(st, val)
-            }
-        }
-        _ => {
+    if let JSValue.Native(cid) = ctor {
+        if nativeEq(cid, Native.Fn(Builtin.FunctionCtor)) {
+            return isCallableIn(st, val)
         }
     }
     match val {
@@ -7381,35 +7289,31 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Inter
         // not an expression: evaluating it as an identifier is a ReferenceError,
         // which is what this used to do. Private names are stored as ordinary
         // own properties keyed with the leading '#', so presence is the answer.
-        match prog.exprs[a.index] {
-            Expr.Ident(pn) => {
-                if pn.len() > 0 && pn[0] == '#' {
-                    let ov0 = evalExpr(prog, b, st, scope)
-                    // a class VALUE is a Func here, and `#s in C` for a private
-                    // static asks about it
-                    let oh = propertyBagOf(st, ov0)
-                    if oh < 0 {
-                        // the right side of `in` must be an object, private name
-                        // or not
-                        st.throwing = true
-                        st.thrownValue = makeError(st, "TypeError", "Cannot use 'in' operator to search for '" + pn.clone() + "' in " + toStr(ov0) + currentModule(st))
-                        return JSValue.Undefined
-                    }
-                    // private METHODS are installed on the prototype rather
-                    // than per instance, so the brand is "somewhere on this
-                    // object's own chain" — a different class's instance has a
-                    // different mangled key and still answers false
-                    var ph = oh
-                    while ph >= 0 {
-                        if objOwnIndex(st, ph, pn) >= 0 {
-                            return JSValue.Bool(true)
-                        }
-                        ph = st.objects[ph].proto
-                    }
-                    return JSValue.Bool(false)
+        if let Expr.Ident(pn) = prog.exprs[a.index] {
+            if pn.len() > 0 && pn[0] == '#' {
+                let ov0 = evalExpr(prog, b, st, scope)
+                // a class VALUE is a Func here, and `#s in C` for a private
+                // static asks about it
+                let oh = propertyBagOf(st, ov0)
+                if oh < 0 {
+                    // the right side of `in` must be an object, private name
+                    // or not
+                    st.throwing = true
+                    st.thrownValue = makeError(st, "TypeError", "Cannot use 'in' operator to search for '" + pn.clone() + "' in " + toStr(ov0) + currentModule(st))
+                    return JSValue.Undefined
                 }
-            }
-            _ => {
+                // private METHODS are installed on the prototype rather
+                // than per instance, so the brand is "somewhere on this
+                // object's own chain" — a different class's instance has a
+                // different mangled key and still answers false
+                var ph = oh
+                while ph >= 0 {
+                    if objOwnIndex(st, ph, pn) >= 0 {
+                        return JSValue.Bool(true)
+                    }
+                    ph = st.objects[ph].proto
+                }
+                return JSValue.Bool(false)
             }
         }
         let kv = evalExpr(prog, a, st, scope)
@@ -7752,12 +7656,8 @@ fn evalIndexExpr(prog: &Prog, objIdx: ExprId, keyIdx: ExprId, st: &mut Interp, s
 }
 
 fn evalMemberNode(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue {
-    match prog.exprs[id.index] {
-        Expr.Member(objIdx, name) => {
-            return evalMemberExpr(prog, objIdx, name, st, scope)
-        }
-        _ => {
-        }
+    if let Expr.Member(objIdx, name) = prog.exprs[id.index] {
+        return evalMemberExpr(prog, objIdx, name, st, scope)
     }
     // Unreachable: evalExpr only calls this after matching Member. Falling through
     // to the full dispatcher rather than answering undefined keeps a future
@@ -7766,12 +7666,8 @@ fn evalMemberNode(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue
 }
 
 fn evalIndexNode(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue {
-    match prog.exprs[id.index] {
-        Expr.Index(objIdx, keyIdx) => {
-            return evalIndexExpr(prog, objIdx, keyIdx, st, scope)
-        }
-        _ => {
-        }
+    if let Expr.Index(objIdx, keyIdx) = prog.exprs[id.index] {
+        return evalIndexExpr(prog, objIdx, keyIdx, st, scope)
     }
     // Unreachable: evalExpr only calls this after matching Index. Falling through
     // to the full dispatcher rather than answering undefined keeps a future
@@ -7883,13 +7779,9 @@ fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): 
         }
         // typeof is the one context where an undeclared name is legal
         if op == "typeof" {
-            match prog.exprs[a.index] {
-                Expr.Ident(iname) => {
-                    if !scopeHas(st, scope, iname) {
-                        return JSValue.Str("undefined")
-                    }
-                }
-                _ => {
+            if let Expr.Ident(iname) = prog.exprs[a.index] {
+                if !scopeHas(st, scope, iname) {
+                    return JSValue.Str("undefined")
                 }
             }
         }
@@ -8333,12 +8225,8 @@ fn evalNewArm(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inter
                         return JSValue.Undefined
                     }
                     let inst = newObject(st)
-                    match objGet(st, co, "prototype") {
-                        JSValue.Obj(pr) => {
-                            st.objects[inst].proto = pr
-                        }
-                        _ => {
-                        }
+                    if let JSValue.Obj(pr) = objGet(st, co, "prototype") {
+                        st.objects[inst].proto = pr
                     }
                     pushTemp(st, JSValue.Obj(inst))
                     let r = napiInvoke(st.objExtras[st.objects[co].extra].napiFn, argVals, JSValue.Obj(inst))
@@ -8574,12 +8462,8 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             let n = prog.objLits[litIdx.index].len()
             while i < n {
                 var key = prog.objLits[litIdx.index][i].key.clone()
-                match prog.objLits[litIdx.index][i].keyExpr {
-                    Option.Some(keyExprId) => {
-                        key = toStr(evalExpr(prog, keyExprId, st, scope))
-                    }
-                    Option.None => {
-                    }
+                if let Option.Some(keyExprId) = prog.objLits[litIdx.index][i].keyExpr {
+                    key = toStr(evalExpr(prog, keyExprId, st, scope))
                 }
                 let valIdx = prog.objLits[litIdx.index][i].val
                 let v = evalExpr(prog, valIdx, st, scope)
@@ -8646,15 +8530,11 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             }
             // String(sym) is legal, `${sym}` is not — the template's implicit
             // ToString has no symbol case, so it throws where String() does not
-            match cloneValue(hv) {
-                JSValue.Str(hs) => {
-                    if isSymbolStr(hs) {
-                        st.throwing = true
-                        st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a string")
-                        return JSValue.Undefined
-                    }
-                }
-                _ => {
+            if let JSValue.Str(hs) = cloneValue(hv) {
+                if isSymbolStr(hs) {
+                    st.throwing = true
+                    st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a string")
+                    return JSValue.Undefined
                 }
             }
             return JSValue.Str(toStrProg(prog, hv, st))
@@ -8970,16 +8850,12 @@ fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp)
     // with its own iterator must yield what the override yields, not the
     // string's characters.
     if h >= 0 && isWrapperObj(st, h) && objOwnIndex(st, h, symIteratorKey()) < 0 {
-        match boxedPrimitive(st, h) {
-            JSValue.Str(bs) => {
-                if !isSymbolStr(bs) {
-                    for cp in strCodePoints(bs) {
-                        out.push(JSValue.Str(cp.clone()))
-                    }
-                    return
+        if let JSValue.Str(bs) = boxedPrimitive(st, h) {
+            if !isSymbolStr(bs) {
+                for cp in strCodePoints(bs) {
+                    out.push(JSValue.Str(cp.clone()))
                 }
-            }
-            _ => {
+                return
             }
         }
     }
@@ -9154,23 +9030,19 @@ fn iterableToArray(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     // it is not an object: `new Set("aab")` came out empty where node gives
     // ["a","b"]. spreadInto already knows how to walk one, which is why `[..."ab"]`
     // worked while the Set constructor did not.
-    match v {
-        JSValue.Str(sv) => {
-            if !isSymbolStr(sv) {
-                var chars: Vec<JSValue> = Vec.new()
-                spreadInto(prog, chars, cloneValue(v), st)
-                let sarr = newArray(st)
-                pushTemp(st, JSValue.Obj(sarr))
-                var ci: i64 = 0
-                while ci < chars.len() {
-                    arrPush(st, sarr, cloneValue(chars[ci]))
-                    ci = ci + 1
-                }
-                popTemp(st)
-                return JSValue.Obj(sarr)
+    if let JSValue.Str(sv) = v {
+        if !isSymbolStr(sv) {
+            var chars: Vec<JSValue> = Vec.new()
+            spreadInto(prog, chars, cloneValue(v), st)
+            let sarr = newArray(st)
+            pushTemp(st, JSValue.Obj(sarr))
+            var ci: i64 = 0
+            while ci < chars.len() {
+                arrPush(st, sarr, cloneValue(chars[ci]))
+                ci = ci + 1
             }
-        }
-        _ => {
+            popTemp(st)
+            return JSValue.Obj(sarr)
         }
     }
     let h = objHandle(v)
@@ -9816,13 +9688,9 @@ fn inspectObjBody(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut V
         // console.log(error) prints the stack, which already begins with the
         // "Name: message" header (node appends the trace after it); fall back to
         // the header when there is no stack
-        match estack {
-            JSValue.Str(sv) => {
-                if sv.len() > 0 {
-                    return sv
-                }
-            }
-            _ => {
+        if let JSValue.Str(sv) = estack {
+            if sv.len() > 0 {
+                return sv
             }
         }
         return head
@@ -10055,12 +9923,8 @@ fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
     popActive(st)
     st.callDepth = st.callDepth - 1
     var result = JSValue.Undefined
-    match flow {
-        Flow.Ret(v) => {
-            result = v
-        }
-        _ => {
-        }
+    if let Flow.Ret(v) = flow {
+        result = v
     }
     // Not for an async GENERATOR body: its completion is delivered through the
     // generator protocol (genFinish), so wrapping the return in a promise made
@@ -11042,12 +10906,8 @@ pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec
     let inst = newObject(st)
     let th = propertyBagOf(st, ctor)
     if th >= 0 {
-        match getMemberDyn(prog, th, "prototype", st) {
-            JSValue.Obj(pr) => {
-                st.objects[inst].proto = pr
-            }
-            _ => {
-            }
+        if let JSValue.Obj(pr) = getMemberDyn(prog, th, "prototype", st) {
+            st.objects[inst].proto = pr
         }
     }
     if st.throwing {
@@ -11059,12 +10919,8 @@ pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec
     let cr = callValue(prog, ctor, argVals, JSValue.Obj(inst), st)
     st.newTarget = saved
     var out = JSValue.Obj(inst)
-    match cr {
-        JSValue.Obj(ro) => {
-            out = JSValue.Obj(ro)
-        }
-        _ => {
-        }
+    if let JSValue.Obj(ro) = cr {
+        out = JSValue.Obj(ro)
     }
     popTemp(st)
     if st.throwing {
@@ -11559,13 +11415,9 @@ fn serviceFetches(st: &mut Interp) {
     while i < st.fetches.len() {
         var done = false
         var payload = ""
-        match st.fetches[i].chan.tryRecv() {
-            Option.Some(v) => {
-                payload = v
-                done = true
-            }
-            Option.None => {
-            }
+        if let Option.Some(v) = st.fetches[i].chan.tryRecv() {
+            payload = v
+            done = true
         }
         if done {
             let p = st.fetches[i].promise
@@ -12018,14 +11870,10 @@ fn makeGenerator(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue
     pushTemp(st, JSValue.Obj(g))
     let gscope = bindActivationScope(gProg, fIdx, envIdx, argVals, thisVal, st)
     st.genScope[gi] = gscope
-    match gProg.funcs[fIdx].paramPrelude {
-        Option.Some(unpack) => {
-            pushActive(st, gscope)
-            let _f = execStmt(gProg, unpack, st, gscope)
-            popActive(st)
-        }
-        Option.None => {
-        }
+    if let Option.Some(unpack) = gProg.funcs[fIdx].paramPrelude {
+        pushActive(st, gscope)
+        let _f = execStmt(gProg, unpack, st, gscope)
+        popActive(st)
     }
     popTemp(st)
     return JSValue.Obj(g)
@@ -12056,12 +11904,8 @@ fn runGeneratorBody(prog: &Prog, fIdx: i64, scope: i64, st: &mut Interp): JSValu
     st.strict = savedStrict
     let _popped = st.fnFileStack.pop()
     var result = JSValue.Undefined
-    match flow {
-        Flow.Ret(v) => {
-            result = v
-        }
-        _ => {
-        }
+    if let Flow.Ret(v) = flow {
+        result = v
     }
     return result
 }
@@ -13200,17 +13044,13 @@ fn evalDelete(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
 fn makeArrayFromCtor(st: &mut Interp, argVals: &Vec<JSValue>): JSValue {
     let arr = newArray(st)
     if argVals.len() == 1 {
-        match cloneValue(argVals[0]) {
-            JSValue.Number(n) => {
-                var i: i64 = 0
-                while i < (n as i64) {
-                    arrPush(st, arr, JSValue.Undefined)
-                    i = i + 1
-                }
-                return JSValue.Obj(arr)
+        if let JSValue.Number(n) = cloneValue(argVals[0]) {
+            var i: i64 = 0
+            while i < (n as i64) {
+                arrPush(st, arr, JSValue.Undefined)
+                i = i + 1
             }
-            _ => {
-            }
+            return JSValue.Obj(arr)
         }
     }
     var k: i64 = 0
@@ -13298,12 +13138,8 @@ fn propertyBagOf(st: &mut Interp, v: &JSValue): i64 {
         }
         return bag
     }
-    match nativeHandle(v) {
-        Option.Some(n) => {
-            return getNativeProps(st, n)
-        }
-        Option.None => {
-        }
+    if let Option.Some(n) = nativeHandle(v) {
+        return getNativeProps(st, n)
     }
     return -1
 }
@@ -13566,12 +13402,8 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
             // resolve. Only the instance side was linked, so a static method or
             // accessor declared on the base was invisible on the subclass.
             var baseEnv: i64 = -1
-            match baseVal {
-                JSValue.Func(_bf, be) => {
-                    baseEnv = be
-                }
-                _ => {
-                }
+            if let JSValue.Func(_bf, be) = baseVal {
+                baseEnv = be
             }
             let baseStatics = getFuncStatics(st, baseFn, baseEnv)
             let ownStatics = getFuncStatics(st, ctorFn, classScope)
@@ -13600,12 +13432,8 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
         var mName = prog.classes[classIdx].members[i].name.clone()
         // a computed key (`[Symbol.iterator]() {}`) is evaluated once here, in the
         // class scope, exactly as an object literal evaluates its computed keys
-        match prog.classes[classIdx].members[i].keyExpr {
-            Option.Some(keyExprId) => {
-                mName = toStr(evalExpr(prog, keyExprId, st, classScope))
-            }
-            Option.None => {
-            }
+        if let Option.Some(keyExprId) = prog.classes[classIdx].members[i].keyExpr {
+            mName = toStr(evalExpr(prog, keyExprId, st, classScope))
         }
         let mFn = prog.classes[classIdx].members[i].fnIdx
         let mv = JSValue.Func(mFn, classScope)
@@ -13646,13 +13474,9 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
         var sfName = prog.classes[classIdx].staticFieldNames[sf].clone()
         // `static [expr] = init`: the key is evaluated first, and in the class
         // scope, so it can see the class binding
-        match prog.classes[classIdx].staticFieldKeys[sf] {
-            Option.Some(keyExpr) => {
-                let kv = evalExpr(prog, keyExpr, st, classScope)
-                sfName = toStrProg(prog, kv, st)
-            }
-            Option.None => {
-            }
+        if let Option.Some(keyExpr) = prog.classes[classIdx].staticFieldKeys[sf] {
+            let kv = evalExpr(prog, keyExpr, st, classScope)
+            sfName = toStrProg(prog, kv, st)
         }
         let sfInit = prog.classes[classIdx].staticFieldInits[sf]
         let statics = getFuncStatics(st, ctorFn, classScope)
@@ -14338,12 +14162,8 @@ fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st:
             // override (a Func) still wins and falls through.
             if isWrapperObj(st, o) && objOwnIndex(st, o, name) < 0 {
                 var wrapperOverridden = false
-                match getMemberDyn(prog, o, name, st) {
-                    JSValue.Func(_wf, _we) => {
-                        wrapperOverridden = true
-                    }
-                    _ => {
-                    }
+                if let JSValue.Func(_wf, _we) = getMemberDyn(prog, o, name, st) {
+                    wrapperOverridden = true
                 }
                 if !wrapperOverridden {
                     // valueOf unwraps, and there is no primitive method to
@@ -14720,14 +14540,10 @@ pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
     // parser, which has no way to tell the two apart.
     var ri: i64 = 0
     while ri < gProg.blocks[top.index].len() {
-        match getStmt(gProg, gProg.blocks[top.index][ri]) {
-            Stmt.Ret(_rv) => {
-                st.throwing = true
-                st.thrownValue = makeError(st, "SyntaxError", "Illegal return statement")
-                return JSValue.Undefined
-            }
-            _ => {
-            }
+        if let Stmt.Ret(_rv) = getStmt(gProg, gProg.blocks[top.index][ri]) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "SyntaxError", "Illegal return statement")
+            return JSValue.Undefined
         }
         ri = ri + 1
     }
@@ -14960,45 +14776,41 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                 // and return its own object, discarding `this`. Initialise the
                 // instance in place instead, so this.message is set and the
                 // instance is recognised by instanceof Error.
-                match nativeErrorCtorOf(baseVal) {
-                    Option.Some(baseNative) => {
-                        let selfObj = objHandle(thisVal)
-                        if selfObj >= 0 {
-                            st.objects[selfObj].isError = true
-                            // no own `name`, and `message` only when one was passed
-                            // — the same shape `new Error()` produces. A subclass
-                            // that means to override the name puts it on its own
-                            // prototype, and an own copy here would defeat that.
-                            var msg = ""
-                            var hasMsg = false
-                            if argVals.len() > 0 {
-                                match cloneValue(argVals[0]) {
-                                    JSValue.Undefined => {
-                                    }
-                                    _ => {
-                                        msg = toStr(argVals[0])
-                                        hasMsg = true
-                                    }
+                if let Option.Some(baseNative) = nativeErrorCtorOf(baseVal) {
+                    let selfObj = objHandle(thisVal)
+                    if selfObj >= 0 {
+                        st.objects[selfObj].isError = true
+                        // no own `name`, and `message` only when one was passed
+                        // — the same shape `new Error()` produces. A subclass
+                        // that means to override the name puts it on its own
+                        // prototype, and an own copy here would defeat that.
+                        var msg = ""
+                        var hasMsg = false
+                        if argVals.len() > 0 {
+                            match cloneValue(argVals[0]) {
+                                JSValue.Undefined => {
+                                }
+                                _ => {
+                                    msg = toStr(argVals[0])
+                                    hasMsg = true
                                 }
                             }
-                            if hasMsg {
-                                objSet(st, selfObj, "message", JSValue.Str(msg.clone()))
-                                objSetNonEnumerable(st, selfObj, "message")
-                            }
-                            // `class E extends Error {}` produced an instance with
-                            // NO stack at all, so the one thing a caller reaches for
-                            // when logging a custom error was undefined
-                            var subHead = nativeErrorName(baseNative)
-                            if msg.len() > 0 {
-                                subHead = subHead + ": " + msg
-                            }
-                            objSet(st, selfObj, "stack", JSValue.Str(subHead + errorStackFrames(st)))
-                            objSetNonEnumerable(st, selfObj, "stack")
                         }
-                        return JSValue.Undefined
+                        if hasMsg {
+                            objSet(st, selfObj, "message", JSValue.Str(msg.clone()))
+                            objSetNonEnumerable(st, selfObj, "message")
+                        }
+                        // `class E extends Error {}` produced an instance with
+                        // NO stack at all, so the one thing a caller reaches for
+                        // when logging a custom error was undefined
+                        var subHead = nativeErrorName(baseNative)
+                        if msg.len() > 0 {
+                            subHead = subHead + ": " + msg
+                        }
+                        objSet(st, selfObj, "stack", JSValue.Str(subHead + errorStackFrames(st)))
+                        objSetNonEnumerable(st, selfObj, "stack")
                     }
-                    Option.None => {
-                    }
+                    return JSValue.Undefined
                 }
                 // Any OTHER builtin base (Promise, Map, Set, Array, Date, ...)
                 // has to be CONSTRUCTED, not called: calling it as a function
@@ -15068,53 +14880,49 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
             }
         }
         Expr.Member(objIdx, name) => {
-            match prog.exprs[objIdx.index] {
-                Expr.Ident(objName) => {
-                    // The fast path only applies while console.<name> is still
-                    // the ORIGINAL native. It used to fire on the name alone, so
-                    // assigning `console.log = fn` had no effect at all: the
-                    // call went straight to the builtin and the replacement was
-                    // never consulted. Monkey-patching console is how loggers,
-                    // test harnesses and output capture all work.
-                    if objName == "console" && (name == "log" || name == "error" || name == "warn" || name == "info" || name == "debug" || name == "trace" || name == "dir") && consoleMethodIsPristine(st, scope, name) {
-                        let argVals = evalArgs(prog, argsIdx, st, scope)
-                        // An argument expression that threw ABORTS the call: without this the
-                        // callee still ran with the arguments evaluated so far, so
-                        // `arr.push(boom())` pushed a value and a Promise executor's
-                        // `resolve(boom())` settled the promise with undefined.
-                        if st.throwing {
-                            return JSValue.Undefined
-                        }
-                        // an argument that threw must not still be printed
-                        if st.throwing {
-                            return JSValue.Undefined
-                        }
-                        var line = ""
-                        var j: i64 = 0
-                        while j < argVals.len() {
-                            if j > 0 {
-                                line = line + " "
-                            }
-                            line = line + inspectTop(st, argVals[j])
-                            j = j + 1
-                        }
-                        // same split as the native: diagnostics on stderr
-                        if name == "error" || name == "warn" {
-                            eprint(line)
-                        } else {
-                            print(line)
-                        }
-                        // node line-buffers to a terminal; without flushing here
-                        // a Ctrl-C or SIGKILL discards everything the program
-                        // printed, which makes a long-running server look silent.
-                        // fflush(NULL), not the `flush` builtin — see above.
-                        unsafe {
-                            fflush(0 as *u8)
-                        }
+            if let Expr.Ident(objName) = prog.exprs[objIdx.index] {
+                // The fast path only applies while console.<name> is still
+                // the ORIGINAL native. It used to fire on the name alone, so
+                // assigning `console.log = fn` had no effect at all: the
+                // call went straight to the builtin and the replacement was
+                // never consulted. Monkey-patching console is how loggers,
+                // test harnesses and output capture all work.
+                if objName == "console" && (name == "log" || name == "error" || name == "warn" || name == "info" || name == "debug" || name == "trace" || name == "dir") && consoleMethodIsPristine(st, scope, name) {
+                    let argVals = evalArgs(prog, argsIdx, st, scope)
+                    // An argument expression that threw ABORTS the call: without this the
+                    // callee still ran with the arguments evaluated so far, so
+                    // `arr.push(boom())` pushed a value and a Promise executor's
+                    // `resolve(boom())` settled the promise with undefined.
+                    if st.throwing {
                         return JSValue.Undefined
                     }
-                }
-                _ => {
+                    // an argument that threw must not still be printed
+                    if st.throwing {
+                        return JSValue.Undefined
+                    }
+                    var line = ""
+                    var j: i64 = 0
+                    while j < argVals.len() {
+                        if j > 0 {
+                            line = line + " "
+                        }
+                        line = line + inspectTop(st, argVals[j])
+                        j = j + 1
+                    }
+                    // same split as the native: diagnostics on stderr
+                    if name == "error" || name == "warn" {
+                        eprint(line)
+                    } else {
+                        print(line)
+                    }
+                    // node line-buffers to a terminal; without flushing here
+                    // a Ctrl-C or SIGKILL discards everything the program
+                    // printed, which makes a long-running server look silent.
+                    // fflush(NULL), not the `flush` builtin — see above.
+                    unsafe {
+                        fflush(0 as *u8)
+                    }
+                    return JSValue.Undefined
                 }
             }
         }
@@ -15128,28 +14936,24 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
         Expr.Member(objIdx, name) => {
             // super.method() — the base's *prototype* holds the method, and it
             // must run against the current `this`, not against the base itself
-            match prog.exprs[objIdx.index] {
-                Expr.Ident(bname) => {
-                    if isSuperName(bname) {
-                        let baseVal = scopeLookup(st, scope, bname)
-                        let bf = funcHandle(baseVal)
-                        if bf >= 0 {
-                            let baseProto = getFuncProto(st, bf)
-                            let m = getMember(st, baseProto, name)
-                            let thisVal = scopeLookup(st, scope, "this")
-                            let argVals = evalArgs(prog, argsIdx, st, scope)
-                            // An argument expression that threw ABORTS the call: without this the
-                            // callee still ran with the arguments evaluated so far, so
-                            // `arr.push(boom())` pushed a value and a Promise executor's
-                            // `resolve(boom())` settled the promise with undefined.
-                            if st.throwing {
-                                return JSValue.Undefined
-                            }
-                            return callValue(prog, m, argVals, thisVal, st)
+            if let Expr.Ident(bname) = prog.exprs[objIdx.index] {
+                if isSuperName(bname) {
+                    let baseVal = scopeLookup(st, scope, bname)
+                    let bf = funcHandle(baseVal)
+                    if bf >= 0 {
+                        let baseProto = getFuncProto(st, bf)
+                        let m = getMember(st, baseProto, name)
+                        let thisVal = scopeLookup(st, scope, "this")
+                        let argVals = evalArgs(prog, argsIdx, st, scope)
+                        // An argument expression that threw ABORTS the call: without this the
+                        // callee still ran with the arguments evaluated so far, so
+                        // `arr.push(boom())` pushed a value and a Promise executor's
+                        // `resolve(boom())` settled the promise with undefined.
+                        if st.throwing {
+                            return JSValue.Undefined
                         }
+                        return callValue(prog, m, argVals, thisVal, st)
                     }
-                }
-                _ => {
                 }
             }
             let recv = evalExpr(prog, objIdx, st, scope)
@@ -15294,22 +15098,18 @@ fn execTryBody(prog: &Prog, tryB: BlockId, param: &string, catchB: Option<BlockI
     // `st.genReturning` deliberately skips catch: a gen.return(v) unwind runs
     // every `finally` but is not a catchable exception in JS
     if st.throwing && !st.genReturning {
-        match catchB {
-            Option.Some(catchBlock) => {
-                let caught = cloneValue(st.thrownValue)
-                st.throwing = false
-                st.thrownValue = JSValue.Undefined
-                let catchScope = newScope(st, scope)
-                pushActive(st, catchScope)
-                if param.len() > 0 {
-                    scopeDefine(st, catchScope, param.clone(), caught)
-                }
-                flow = execBlock(prog, catchBlock, st, catchScope)
-                runDisposals(prog, st, catchScope)
-                popActive(st)
+        if let Option.Some(catchBlock) = catchB {
+            let caught = cloneValue(st.thrownValue)
+            st.throwing = false
+            st.thrownValue = JSValue.Undefined
+            let catchScope = newScope(st, scope)
+            pushActive(st, catchScope)
+            if param.len() > 0 {
+                scopeDefine(st, catchScope, param.clone(), caught)
             }
-            Option.None => {
-            }
+            flow = execBlock(prog, catchBlock, st, catchScope)
+            runDisposals(prog, st, catchScope)
+            popActive(st)
         }
     }
     return flow
@@ -15993,57 +15793,53 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
         Stmt.ForIn(name, objExpr, body, bindKind) => {
             let ov = evalExpr(prog, objExpr, st, scope)
             var keys: Vec<string> = Vec.new()
-            match ov {
-                JSValue.Obj(o) => {
-                    if st.objects[o].isProxy {
-                        keys = proxyOwnEnumKeys(prog, st, o)
-                    }
-                    if st.objects[o].isArray {
-                        var e: i64 = 0
-                        let ne = st.objects[o].elems.len()
-                        while e < ne {
-                            if !arrIsHole(st, o, e) {
-                                keys.push(i64ToStr(e))
-                            }
-                            e = e + 1
+            if let JSValue.Obj(o) = ov {
+                if st.objects[o].isProxy {
+                    keys = proxyOwnEnumKeys(prog, st, o)
+                }
+                if st.objects[o].isArray {
+                    var e: i64 = 0
+                    let ne = st.objects[o].elems.len()
+                    while e < ne {
+                        if !arrIsHole(st, o, e) {
+                            keys.push(i64ToStr(e))
                         }
-                    }
-                    // Own properties, then inherited ones (JS enumerates the chain).
-                    // `seen` is what makes the chain walk correct, in two ways that
-                    // both showed up as wrong output:
-                    //   - a name already emitted must not repeat, so an own property
-                    //     shadowing an enumerable one on the prototype yields ONE key
-                    //     (`{p:1}` under `Object.create({p:1})` gave "p,p");
-                    //   - a NON-enumerable own property still shadows an enumerable
-                    //     one of the same name further up, so it has to be recorded
-                    //     even though it is never emitted (the QuickJS case gave
-                    //     "1,y,x" where the inherited enumerable `x` must stay hidden
-                    //     behind a non-enumerable own `x`).
-                    // Only names are tracked, not dense array indices: nothing on
-                    // Array.prototype is an enumerable index, and seeding every index
-                    // would make `for (i in bigArray)` quadratic.
-                    var seen: Vec<string> = Vec.new()
-                    var cur = o
-                    var level: i64 = 0
-                    while cur >= 0 {
-                        let order = enumOrder(st, cur)
-                        var oi: i64 = 0
-                        while oi < order.len() {
-                            let k = order[oi]
-                            let nm = st.objects[cur].props[k].key.clone()
-                            if level == 0 || !nameInList(seen, nm) {
-                                seen.push(nm.clone())
-                                if st.objects[cur].props[k].enumerable {
-                                    keys.push(nm)
-                                }
-                            }
-                            oi = oi + 1
-                        }
-                        cur = st.objects[cur].proto
-                        level = level + 1
+                        e = e + 1
                     }
                 }
-                _ => {
+                // Own properties, then inherited ones (JS enumerates the chain).
+                // `seen` is what makes the chain walk correct, in two ways that
+                // both showed up as wrong output:
+                //   - a name already emitted must not repeat, so an own property
+                //     shadowing an enumerable one on the prototype yields ONE key
+                //     (`{p:1}` under `Object.create({p:1})` gave "p,p");
+                //   - a NON-enumerable own property still shadows an enumerable
+                //     one of the same name further up, so it has to be recorded
+                //     even though it is never emitted (the QuickJS case gave
+                //     "1,y,x" where the inherited enumerable `x` must stay hidden
+                //     behind a non-enumerable own `x`).
+                // Only names are tracked, not dense array indices: nothing on
+                // Array.prototype is an enumerable index, and seeding every index
+                // would make `for (i in bigArray)` quadratic.
+                var seen: Vec<string> = Vec.new()
+                var cur = o
+                var level: i64 = 0
+                while cur >= 0 {
+                    let order = enumOrder(st, cur)
+                    var oi: i64 = 0
+                    while oi < order.len() {
+                        let k = order[oi]
+                        let nm = st.objects[cur].props[k].key.clone()
+                        if level == 0 || !nameInList(seen, nm) {
+                            seen.push(nm.clone())
+                            if st.objects[cur].props[k].enumerable {
+                                keys.push(nm)
+                            }
+                        }
+                        oi = oi + 1
+                    }
+                    cur = st.objects[cur].proto
+                    level = level + 1
                 }
             }
             let loopScope = newScope(st, scope)
@@ -16155,12 +15951,8 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             if truthy(vc) {
                 return execStmt(prog, t, st, scope)
             }
-            match f {
-                Option.Some(elseStmt) => {
-                    return execStmt(prog, elseStmt, st, scope)
-                }
-                Option.None => {
-                }
+            if let Option.Some(elseStmt) = f {
+                return execStmt(prog, elseStmt, st, scope)
             }
             return Flow.Normal
         }
@@ -16210,26 +16002,18 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             let loopScope = newScope(st, scope)
             pushActive(st, loopScope)
             var letNames: Vec<string> = Vec.new()
-            match init {
-                Option.Some(initStmt) => {
+            if let Option.Some(initStmt) = init {
                 execStmt(prog, initStmt, st, loopScope)
                 // names the init clause declared with let/const need re-binding
                 // per iteration
-                match prog.stmts[initStmt.index] {
-                    Stmt.MultiDecl(listIdx) => {
-                        var di: i64 = 0
-                        while di < prog.declLists[listIdx.index].len() {
-                            if !prog.declLists[listIdx.index][di].isVar {
-                                letNames.push(prog.declLists[listIdx.index][di].name.clone())
-                            }
-                            di = di + 1
+                if let Stmt.MultiDecl(listIdx) = prog.stmts[initStmt.index] {
+                    var di: i64 = 0
+                    while di < prog.declLists[listIdx.index].len() {
+                        if !prog.declLists[listIdx.index][di].isVar {
+                            letNames.push(prog.declLists[listIdx.index][di].name.clone())
                         }
+                        di = di + 1
                     }
-                    _ => {
-                    }
-                }
-                }
-                Option.None => {
                 }
             }
             // The per-iteration copy below exists only so a closure made in the
@@ -16244,13 +16028,9 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                     looping = false
                 } else {
                     var run = true
-                    match cond {
-                        Option.Some(condExpr) => {
-                            let vc = evalExpr(prog, condExpr, st, loopScope)
-                            run = truthy(vc)
-                        }
-                        Option.None => {
-                        }
+                    if let Option.Some(condExpr) = cond {
+                        let vc = evalExpr(prog, condExpr, st, loopScope)
+                        run = truthy(vc)
                     }
                     if !run || st.throwing {
                         looping = false
@@ -16305,12 +16085,8 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                         } else if st.throwing {
                             looping = false
                         } else {
-                            match update {
-                                Option.Some(updateExpr) => {
-                                    evalExpr(prog, updateExpr, st, loopScope)
-                                }
-                                Option.None => {
-                                }
+                            if let Option.Some(updateExpr) = update {
+                                evalExpr(prog, updateExpr, st, loopScope)
                             }
                         }
                     }
@@ -16528,13 +16304,9 @@ fn exprMayCapture(prog: &Prog, id: ExprId): bool {
         Expr.ArrLit(li) => {
             var i: i64 = 0
             while i < prog.arrLits[li.index].len() {
-                match prog.arrLits[li.index][i] {
-                    Option.Some(e) => {
-                        if exprMayCapture(prog, e) {
-                            return true
-                        }
-                    }
-                    Option.None => {
+                if let Option.Some(e) = prog.arrLits[li.index][i] {
+                    if exprMayCapture(prog, e) {
+                        return true
                     }
                 }
                 i = i + 1
@@ -16551,13 +16323,9 @@ fn exprMayCapture(prog: &Prog, id: ExprId): bool {
                 if exprMayCapture(prog, prog.objLits[li.index][i].val) {
                     return true
                 }
-                match prog.objLits[li.index][i].keyExpr {
-                    Option.Some(ke) => {
-                        if exprMayCapture(prog, ke) {
-                            return true
-                        }
-                    }
-                    Option.None => {
+                if let Option.Some(ke) = prog.objLits[li.index][i].keyExpr {
+                    if exprMayCapture(prog, ke) {
+                        return true
                     }
                 }
                 i = i + 1
@@ -16593,13 +16361,9 @@ fn callMayCapture(prog: &Prog, callee: ExprId, args: ArgListId): bool {
     // A call to a function defined elsewhere cannot capture THIS scope; it runs
     // in its own closure environment. Direct `eval` is the exception the spec
     // carves out: it evaluates in the caller's scope.
-    match prog.exprs[callee.index] {
-        Expr.Ident(n) => {
-            if n == "eval" {
-                return true
-            }
-        }
-        _ => {
+    if let Expr.Ident(n) = prog.exprs[callee.index] {
+        if n == "eval" {
+            return true
         }
     }
     if exprMayCapture(prog, callee) {
@@ -16620,34 +16384,22 @@ fn blockMayCapture(prog: &Prog, b: BlockId): bool {
 }
 
 fn optStmtMayCapture(prog: &Prog, s: Option<StmtId>): bool {
-    match s {
-        Option.Some(inner) => {
-            return stmtMayCapture(prog, inner)
-        }
-        Option.None => {
-        }
+    if let Option.Some(inner) = s {
+        return stmtMayCapture(prog, inner)
     }
     return false
 }
 
 fn optExprMayCapture(prog: &Prog, e: Option<ExprId>): bool {
-    match e {
-        Option.Some(inner) => {
-            return exprMayCapture(prog, inner)
-        }
-        Option.None => {
-        }
+    if let Option.Some(inner) = e {
+        return exprMayCapture(prog, inner)
     }
     return false
 }
 
 fn optBlockMayCapture(prog: &Prog, b: Option<BlockId>): bool {
-    match b {
-        Option.Some(inner) => {
-            return blockMayCapture(prog, inner)
-        }
-        Option.None => {
-        }
+    if let Option.Some(inner) = b {
+        return blockMayCapture(prog, inner)
     }
     return false
 }
@@ -16772,12 +16524,8 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64, nested: bool,
         }
         Stmt.If(_c, thenS, elseS) => {
             hoistStmt(prog, thenS, st, scope, true, shadow)
-            match elseS {
-                Option.Some(elseStmt) => {
-                    hoistStmt(prog, elseStmt, st, scope, true, shadow)
-                }
-                Option.None => {
-                }
+            if let Option.Some(elseStmt) = elseS {
+                hoistStmt(prog, elseStmt, st, scope, true, shadow)
             }
         }
         Stmt.While(_c, body) => {
@@ -16787,12 +16535,8 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64, nested: bool,
             hoistStmt(prog, body, st, scope, true, shadow)
         }
         Stmt.For(init, _c, _u, body) => {
-            match init {
-                Option.Some(initStmt) => {
-                    hoistStmt(prog, initStmt, st, scope, nested, shadow)
-                }
-                Option.None => {
-                }
+            if let Option.Some(initStmt) = init {
+                hoistStmt(prog, initStmt, st, scope, nested, shadow)
             }
             hoistStmt(prog, body, st, scope, true, shadow)
         }
@@ -16812,19 +16556,11 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64, nested: bool,
         }
         Stmt.Try(tryB, _p, catchB, finallyB) => {
             hoistNestedBlock(prog, tryB, st, scope, shadow)
-            match catchB {
-                Option.Some(catchBlock) => {
-                    hoistNestedBlock(prog, catchBlock, st, scope, shadow)
-                }
-                Option.None => {
-                }
+            if let Option.Some(catchBlock) = catchB {
+                hoistNestedBlock(prog, catchBlock, st, scope, shadow)
             }
-            match finallyB {
-                Option.Some(finallyBlock) => {
-                    hoistNestedBlock(prog, finallyBlock, st, scope, shadow)
-                }
-                Option.None => {
-                }
+            if let Option.Some(finallyBlock) = finallyB {
+                hoistNestedBlock(prog, finallyBlock, st, scope, shadow)
             }
         }
         Stmt.Switch(_d, casesIdx) => {

@@ -997,23 +997,19 @@ fn relIndex(raw: f64, n: i64): i64 {
 // use Uint8Array, whose storage is raw bytes.
 pub fn bytesFromTypedArray(st: &Interp, v: &JSValue): string {
     var out: string = ""
-    match v {
-        JSValue.Obj(o) => {
-            let ex = st.objects[o].extra
-            if ex < 0 {
-                return out
-            }
-            if st.objExtras[ex].taBuf < 0 || st.objects[o].isDataView {
-                return out
-            }
-            let n = st.objExtras[ex].taLen
-            var i: i64 = 0
-            while i < n {
-                out.push(taElem(st, o, i) as u8)
-                i = i + 1
-            }
+    if let JSValue.Obj(o) = v {
+        let ex = st.objects[o].extra
+        if ex < 0 {
+            return out
         }
-        _ => {
+        if st.objExtras[ex].taBuf < 0 || st.objects[o].isDataView {
+            return out
+        }
+        let n = st.objExtras[ex].taLen
+        var i: i64 = 0
+        while i < n {
+            out.push(taElem(st, o, i) as u8)
+            i = i + 1
         }
     }
     return out
@@ -1809,15 +1805,11 @@ ensures result >= -1 && result <= ARRAY_LIKE_MAX
     }
     // ToLength on a Symbol is a TypeError, not NaN: the tests read `length` from a
     // poisoned object precisely to check the abrupt completion propagates.
-    match cloneValue(lenVal) {
-        JSValue.Str(ls) => {
-            if isSymbolStr(ls) {
-                st.throwing = true
-                st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a number" + currentModule(st))
-                return -1
-            }
-        }
-        _ => {
+    if let JSValue.Str(ls) = cloneValue(lenVal) {
+        if isSymbolStr(ls) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a number" + currentModule(st))
+            return -1
         }
     }
     let raw = toNumProg(prog, lenVal, st)
@@ -2083,12 +2075,8 @@ fn arraySpeciesCreate(prog: &Prog, o: i64, len: i64, st: &mut Interp): i64 {
             return -1
         }
         // the spec maps null to undefined here, which means "plain Array"
-        match species {
-            JSValue.Null => {
-                return -1
-            }
-            _ => {
-            }
+        if let JSValue.Null = species {
+            return -1
         }
         if isUndefinedValue(species) {
             return -1
