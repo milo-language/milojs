@@ -44,7 +44,7 @@ reproducible release artifact.
 |---|---:|---|
 | deterministic test262 sample (<!--fact:t262-sample-->1500<!--/fact--> selected, <!--fact:t262-skipped-->30<!--/fact--> skipped) | **<!--fact:t262-pass-->1169<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> = <!--fact:t262-pct-->79.5%<!--/fact-->** | test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->` |
 | QuickJS `tests/` | **<!--fact:qjs-pass-->103<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> = <!--fact:qjs-pct-->69.1%<!--/fact-->** | quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`, 58 files |
-| test262 failures that are PARSE failures | <!--fact:t262-parsefail-->21<!--/fact--> of <!--fact:t262-fail-->301<!--/fact--> | <!--fact:t262-parsefail-pct-->7.0%<!--/fact--> of the gap is missing syntax; the rest is semantics |
+| test262 failures that are PARSE failures | <!--fact:t262-parsefail-->23<!--/fact--> of <!--fact:t262-fail-->301<!--/fact--> | <!--fact:t262-parsefail-pct-->7.6%<!--/fact--> of the gap is missing syntax; the rest is semantics |
 | QuickJS cases that never ran (parse gaps) | <!--fact:qjs-parsefail-->0<!--/fact--> | of those that ran, <!--fact:qjs-ran-pct-->69.1%<!--/fact--> of <!--fact:qjs-ran-->149<!--/fact--> pass |
 | locked engine fixtures (`tests/*.js`) | <!--fact:fixtures-engine-->254<!--/fact--> | byte-exact differential output vs node |
 | locked runtime fixtures (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->35<!--/fact--> | module, async, fetch, HTTP, sqlite, host behavior |
@@ -100,14 +100,14 @@ sweep moved:
 <!--fact-block:t262-areas-->
 | area | failing | passing |
 |---|---:|---:|
-| `language/expressions` | 45 | 289/334 |
-| `language/statements` | 37 | 245/282 |
+| `language/expressions` | 47 | 287/334 |
+| `language/statements` | 40 | 242/282 |
 | `built-ins/Object` | 32 | 95/127 |
-| `built-ins/Array` | 24 | 67/91 |
+| `built-ins/Array` | 22 | 69/91 |
 | `built-ins/RegExp` | 19 | 54/73 |
 | `built-ins/Temporal` | 18 | 113/131 |
-| `built-ins/TypedArray` | 12 | 26/38 |
 | `built-ins/String` | 11 | 28/39 |
+| `built-ins/TypedArray` | 9 | 29/38 |
 <!--/fact-block-->
 
 Reading it: the two `language/` rows are one area split in the corpus, and

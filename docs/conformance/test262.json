@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "cd7696e0b5e77e30add4f424d701cc2be386ccb3",
+    "revision": "9b3168a74a38ccc028f41988e86af1f64297b1a5",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -19,7 +19,7 @@
   "totals": {
     "pass": 1169,
     "fail": 301,
-    "parseFail": 21,
+    "parseFail": 23,
     "skip": 30,
     "scored": 1470,
     "selected": 1500
@@ -27,14 +27,14 @@
   "areas": [
     {
       "area": "language/expressions",
-      "pass": 289,
-      "fail": 45,
+      "pass": 287,
+      "fail": 47,
       "total": 334
     },
     {
       "area": "language/statements",
-      "pass": 245,
-      "fail": 37,
+      "pass": 242,
+      "fail": 40,
       "total": 282
     },
     {
@@ -51,8 +51,8 @@
     },
     {
       "area": "built-ins/Array",
-      "pass": 67,
-      "fail": 24,
+      "pass": 69,
+      "fail": 22,
       "total": 91
     },
     {
@@ -69,8 +69,8 @@
     },
     {
       "area": "built-ins/TypedArray",
-      "pass": 26,
-      "fail": 12,
+      "pass": 29,
+      "fail": 9,
       "total": 38
     },
     {
@@ -518,6 +518,18 @@
       ]
     },
     {
+      "reason": "Test262:AsyncTestFailure:Error: Cannot find module '…'",
+      "count": 6,
+      "cases": [
+        "language/expressions/dynamic-import/usage/nested-function-import-then-is-call-expression-square-brackets.js",
+        "language/expressions/dynamic-import/namespace/promise-then-ns-prop-descs.js",
+        "language/expressions/dynamic-import/namespace/promise-then-ns-prevent-extensions-reflect.js",
+        "language/expressions/dynamic-import/usage/top-level-import-then-eval-gtbndng-indirect-update-dflt.js",
+        "language/expressions/dynamic-import/namespace/await-ns-get-own-property-sym.js",
+        "language/expressions/dynamic-import/usage/nested-async-arrow-function-return-await-eval-gtbndng-indirect-update-dflt.js"
+      ]
+    },
+    {
       "reason": "Uncaught TypeError: createRealm is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103",
       "count": 6,
       "cases": [
@@ -542,6 +554,17 @@
       ]
     },
     {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: TypeError Expected SameValue(«functio",
+      "count": 5,
+      "cases": [
+        "language/statements/class/async-gen-method/yield-star-getiter-async-not-callable-string-throw.js",
+        "language/expressions/object/method-definition/async-gen-yield-star-getiter-sync-returns-boolean-throw.js",
+        "language/statements/class/async-gen-method/yield-star-next-not-callable-undefined-throw.js",
+        "language/statements/class/async-gen-method/yield-star-getiter-sync-returns-symbol-throw.js",
+        "language/statements/class/elements/async-gen-private-method/yield-star-getiter-async-not-callable-boolean-throw.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Expected SameValue(«N», «N») to be true",
       "count": 5,
       "cases": [
@@ -563,7 +586,7 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:TypeError: [object Object] is not iterable",
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: it should not get Symbol.iterator",
       "count": 3,
       "cases": [
         "language/statements/class/elements/async-gen-private-method/yield-star-next-then-non-callable-null-fulfillpromise.js",
@@ -642,11 +665,19 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: TypeError Expected SameValue(«functio",
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«\"Error\"», «\"Synta",
       "count": 2,
       "cases": [
-        "language/expressions/object/method-definition/async-gen-yield-star-getiter-sync-returns-boolean-throw.js",
-        "language/statements/class/async-gen-method/yield-star-getiter-sync-returns-symbol-throw.js"
+        "language/expressions/dynamic-import/catch/nested-while-import-catch-instn-iee-err-circular.js",
+        "language/expressions/dynamic-import/catch/nested-async-function-await-instn-iee-err-ambiguous-import.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«N», «N») to be tr",
+      "count": 2,
+      "cases": [
+        "built-ins/Promise/all/S25.4.4.1_A7.2_T1.js",
+        "language/expressions/async-generator/yield-star-getiter-async-null-sync-get-abrupt.js"
       ]
     },
     {
@@ -655,30 +686,6 @@
       "cases": [
         "built-ins/Promise/allSettledKeyed/getownproperty-not-enumerable.js",
         "built-ins/Promise/allSettledKeyed/get-value-throws-reject.js"
-      ]
-    },
-    {
-      "reason": "Test262:AsyncTestFailure:TypeError: cannot read property '…' of a non-object (in /case.js)",
-      "count": 2,
-      "cases": [
-        "language/expressions/dynamic-import/usage/top-level-import-then-eval-gtbndng-indirect-update-dflt.js",
-        "language/expressions/dynamic-import/usage/nested-async-arrow-function-return-await-eval-gtbndng-indirect-update-dflt.js"
-      ]
-    },
-    {
-      "reason": "Test262:AsyncTestFailure:TypeError: cannot read property '…' of undefined",
-      "count": 2,
-      "cases": [
-        "language/expressions/dynamic-import/usage/nested-function-import-then-is-call-expression-square-brackets.js",
-        "language/expressions/dynamic-import/namespace/promise-then-ns-prop-descs.js"
-      ]
-    },
-    {
-      "reason": "Uncaught Error: Cannot find module '…'",
-      "count": 2,
-      "cases": [
-        "language/expressions/dynamic-import/syntax/valid/nested-do-while-import-source-script-code-valid.js",
-        "language/expressions/dynamic-import/syntax/valid/nested-while-empty-str-is-valid-assign-expr.js"
       ]
     },
     {
@@ -847,10 +854,17 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«\"undefined\"», «tr",
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«\"Error\"», «\"TypeE",
       "count": 1,
       "cases": [
-        "language/expressions/dynamic-import/namespace/await-ns-get-own-property-sym.js"
+        "language/expressions/dynamic-import/catch/nested-while-import-catch-eval-rqstd-abrupt-typeerror.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«\"Error\"», «\"URIEr",
+      "count": 1,
+      "cases": [
+        "language/expressions/dynamic-import/catch/nested-async-function-return-await-eval-rqstd-abrupt-urierror.js"
       ]
     },
     {
@@ -858,13 +872,6 @@
       "count": 1,
       "cases": [
         "language/statements/async-generator/yield-star-return-missing-value-is-awaited.js"
-      ]
-    },
-    {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«N», «N») to be tr",
-      "count": 1,
-      "cases": [
-        "built-ins/Promise/all/S25.4.4.1_A7.2_T1.js"
       ]
     },
     {
@@ -882,13 +889,6 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: reject reason Expected SameValue(«Typ",
-      "count": 1,
-      "cases": [
-        "language/expressions/async-generator/yield-star-getiter-async-null-sync-get-abrupt.js"
-      ]
-    },
-    {
       "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: The promise should be rejected",
       "count": 1,
       "cases": [
@@ -903,13 +903,6 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:TypeError: Reflect.preventExtensions called on non-object",
-      "count": 1,
-      "cases": [
-        "language/expressions/dynamic-import/namespace/promise-then-ns-prevent-extensions-reflect.js"
-      ]
-    },
-    {
       "reason": "Uncaught '…' had incorrect value!",
       "count": 1,
       "cases": [
@@ -921,6 +914,13 @@
       "count": 1,
       "cases": [
         "built-ins/Temporal/PlainTime/compare/use-internal-slots.js"
+      ]
+    },
+    {
+      "reason": "Uncaught Error: Cannot find module '…'",
+      "count": 1,
+      "cases": [
+        "language/expressions/dynamic-import/syntax/valid/nested-do-while-import-source-script-code-valid.js"
       ]
     },
     {
@@ -1155,13 +1155,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: #N: -new Boolean(true) === -N. Actual: NaN",
-      "count": 1,
-      "cases": [
-        "language/expressions/unary-minus/S11.4.7_A3_T1.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: #N: [object, object].sort(); counter < N. Actual: N",
       "count": 1,
       "cases": [
@@ -1173,13 +1166,6 @@
       "count": 1,
       "cases": [
         "built-ins/decodeURI/S15.1.3.1_A3_T1.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: #N: Object.prototype[N] = N; Object.prototype.length = N; Object.proto",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/reverse/S15.4.4.8_A4_T1.js"
       ]
     },
     {
@@ -1281,7 +1267,7 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Actual [get originalIter.next, get originalIter[Symbol.iterator]] and ",
+      "reason": "Uncaught undefined: Actual [get originalIter.next, get originalIter[Symbol.iterator], get ",
       "count": 1,
       "cases": [
         "built-ins/Iterator/from/get-return-method-when-call-return.js"
@@ -1299,13 +1285,6 @@
       "count": 1,
       "cases": [
         "built-ins/Temporal/PlainMonthDay/prototype/with/order-of-operations.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Actual [N, N, N, N] and expected [N, N, undefined, undefined] should h",
-      "count": 1,
-      "cases": [
-        "built-ins/TypedArray/prototype/forEach/resizable-buffer-shrink-mid-iteration.js"
       ]
     },
     {
@@ -1355,13 +1334,6 @@
       "count": 1,
       "cases": [
         "built-ins/Array/from/iter-set-length-err.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Array.isArray(new Proxy([], {})) must return true Expected SameValue(«",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/isArray/proxy.js"
       ]
     },
     {
@@ -1558,13 +1530,6 @@
       "count": 1,
       "cases": [
         "language/expressions/function/named-no-strict-reassign-fn-name-in-body-in-eval.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Expected SameValue(«N», «N») to be true (Testing with Float64Array and",
-      "count": 1,
-      "cases": [
-        "built-ins/TypedArray/prototype/includes/search-undefined-after-shrinking-buffer-index-is-oob.js"
       ]
     },
     {
@@ -1852,13 +1817,6 @@
       "count": 1,
       "cases": [
         "built-ins/Object/defineProperty/15.2.3.6-4-333-7.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: results[N][N] - kValue Expected SameValue(«N», «42n») to be true (Test",
-      "count": 1,
-      "cases": [
-        "built-ins/TypedArray/prototype/map/BigInt/callbackfn-arguments-without-thisarg.js"
       ]
     },
     {
