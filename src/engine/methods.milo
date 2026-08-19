@@ -17,7 +17,7 @@ from "./runtime" import {
     Interp
 }
 from "./eval" import {
-    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, toNumArg, makeError, taIsDetached, currentModule, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, valueIsArrayLike, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, isSymbolStr, ARRAY_LIKE_MAX
+    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, toNumArg, makeError, taIsDetached, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, valueIsArrayLike, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, isSymbolStr, ARRAY_LIKE_MAX
 }
 
 pub fn dataViewProto(st: &mut Interp): i64 {
@@ -92,12 +92,12 @@ pub fn dataViewMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, s
     // wrong error) or indexed past the byte vector and took the engine out.
     if taIsDetached(st, o) {
         st.throwing = true
-        st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a detached ArrayBuffer" + currentModule(st))
+        st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a detached ArrayBuffer")
         return JSValue.Undefined
     }
     if taOutOfBounds(st, o) {
         st.throwing = true
-        st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a DataView whose buffer has shrunk out of bounds" + currentModule(st))
+        st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a DataView whose buffer has shrunk out of bounds")
         return JSValue.Undefined
     }
     if byteOffset < 0 || byteOffset + width > dataViewByteLen(st, o) {
@@ -696,7 +696,7 @@ pub fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): 
         // than inventing one: `new Date(NaN).toISOString()` is a RangeError.
         if ms != ms {
             st.throwing = true
-            st.thrownValue = makeError(st, "RangeError", "Invalid time value" + currentModule(st))
+            st.thrownValue = makeError(st, "RangeError", "Invalid time value")
             return JSValue.Undefined
         }
         return JSValue.Str(isoFromMillis(ms))
@@ -1181,7 +1181,7 @@ fn taCallbackArg(args: &Vec<JSValue>): JSValue {
 pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     if taIsDetached(st, o) {
         st.throwing = true
-        st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a detached ArrayBuffer" + currentModule(st))
+        st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a detached ArrayBuffer")
         return JSValue.Undefined
     }
     // ValidateTypedArray also rejects a view left OUT OF BOUNDS by a resizable
@@ -1189,7 +1189,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>,
     // zeroes off the end of the buffer, which reads as a successful call.
     if taOutOfBounds(st, o) {
         st.throwing = true
-        st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a typed array whose buffer has shrunk out of bounds" + currentModule(st))
+        st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a typed array whose buffer has shrunk out of bounds")
         return JSValue.Undefined
     }
     // taCurrentLen, not the stored taLen: a tracking view over a resizable
@@ -1242,7 +1242,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>,
         // zeros into a detached view and answered as if it had worked.
         if taIsDetached(st, o) {
             st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "Cannot perform fill on a detached ArrayBuffer" + currentModule(st))
+            st.thrownValue = makeError(st, "TypeError", "Cannot perform fill on a detached ArrayBuffer")
             return JSValue.Undefined
         }
         var i = start
@@ -1409,7 +1409,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>,
     if isTypedArrayCallbackMethod(name) {
         if args.len() == 0 || !isCallableIn(st, args[0]) {
             st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", toStr(taCallbackArg(args)) + " is not a function" + currentModule(st))
+            st.thrownValue = makeError(st, "TypeError", toStr(taCallbackArg(args)) + " is not a function")
             return JSValue.Undefined
         }
     }
@@ -1860,7 +1860,7 @@ ensures result >= -1 && result <= ARRAY_LIKE_MAX
     if let JSValue.Str(ls) = cloneValue(lenVal) {
         if isSymbolStr(ls) {
             st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a number" + currentModule(st))
+            st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a number")
             return -1
         }
     }
@@ -2150,7 +2150,7 @@ fn arraySpeciesCreate(prog: &Prog, o: i64, len: i64, st: &mut Interp): i64 {
     }
     if !valueIsConstructor(prog, st, species) {
         st.throwing = true
-        st.thrownValue = makeError(st, "TypeError", "object.constructor[Symbol.species] is not a constructor" + currentModule(st))
+        st.thrownValue = makeError(st, "TypeError", "object.constructor[Symbol.species] is not a constructor")
         return -1
     }
     let made = constructWithLength(prog, species, len, st)
@@ -2197,17 +2197,17 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
     if arrayMethodMutates(name) && st.objects[o].isArray {
         if st.objects[o].frozen {
             st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "Cannot modify a frozen array" + currentModule(st))
+            st.thrownValue = makeError(st, "TypeError", "Cannot modify a frozen array")
             return JSValue.Undefined
         }
         if st.objects[o].lengthNonWritable && arrayMethodResizes(name) {
             st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "Cannot assign to read only property 'length' of object" + currentModule(st))
+            st.thrownValue = makeError(st, "TypeError", "Cannot assign to read only property 'length' of object")
             return JSValue.Undefined
         }
         if st.objects[o].sealed && arrayMethodResizes(name) {
             st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "Cannot add property, object is not extensible" + currentModule(st))
+            st.thrownValue = makeError(st, "TypeError", "Cannot add property, object is not extensible")
             return JSValue.Undefined
         }
     }
@@ -2219,20 +2219,20 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         }
         if !isCallableIn(st, cb) {
             st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", toStr(cb) + " is not a function" + currentModule(st))
+            st.thrownValue = makeError(st, "TypeError", toStr(cb) + " is not a function")
             return JSValue.Undefined
         }
         // reduce over an empty array with no seed has nothing to return
         if (name == "reduce" || name == "reduceRight") && args.len() < 2 && arrCountPresent(st, o) == 0 {
             st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "Reduce of empty array with no initial value" + currentModule(st))
+            st.thrownValue = makeError(st, "TypeError", "Reduce of empty array with no initial value")
             return JSValue.Undefined
         }
     }
     // a comparator, when given, must be callable too
     if name == "sort" && args.len() > 0 && !isUndefinedValue(args[0]) && !isCallableIn(st, args[0]) {
         st.throwing = true
-        st.thrownValue = makeError(st, "TypeError", "The comparison function must be either a function or undefined" + currentModule(st))
+        st.thrownValue = makeError(st, "TypeError", "The comparison function must be either a function or undefined")
         return JSValue.Undefined
     }
     // the mutating methods write through arrPush/elems directly, bypassing

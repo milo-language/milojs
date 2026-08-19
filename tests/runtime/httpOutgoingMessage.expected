@@ -1,0 +1,16 @@
+setHeader() ERR_INVALID_HTTP_TOKEN | Header name must be a valid HTTP token ["undefined"]
+setHeader('test') ERR_HTTP_INVALID_HEADER_VALUE | Invalid value "undefined" for header "test"
+setHeader(404) ERR_INVALID_HTTP_TOKEN | Header name must be a valid HTTP token ["404"]
+setHeader after sent ERR_HTTP_HEADERS_SENT | Cannot set headers after they are sent to the client
+setHeader('200','あ') ERR_INVALID_CHAR | Invalid character in header content ["200"]
+write('') with no _implicitHeader ERR_METHOD_NOT_IMPLEMENTED | The _implicitHeader() method is not implemented
+write undefined chunk ERR_INVALID_ARG_TYPE | The "chunk" argument must be of type string or an instance of Buffer or Uint8Array. Received undefined
+write number chunk ERR_INVALID_ARG_TYPE | The "chunk" argument must be of type string or an instance of Buffer or Uint8Array. Received type number (1)
+write null chunk ERR_STREAM_NULL_VALUES | May not write null values to stream
+addTrailers() undefined | Cannot convert undefined or null to object
+addTrailers bad name ERR_INVALID_HTTP_TOKEN | Trailer name must be a valid HTTP token ["あ"]
+addTrailers bad value ERR_INVALID_CHAR | Invalid character in trailer content ["x"]
+[ 'x-foo' ] [ 'bar', 'baz' ] true false 0
+[] false
+function function
+true

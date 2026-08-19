@@ -1,0 +1,13 @@
+keys(undefined) TypeError | Cannot convert undefined or null to object
+keys(null) TypeError | Cannot convert undefined or null to object
+keys() TypeError | Cannot convert undefined or null to object
+values(null) TypeError | Cannot convert undefined or null to object
+entries(undefined) TypeError | Cannot convert undefined or null to object
+getOwnPropertyNames(null) TypeError | Cannot convert undefined or null to object
+getOwnPropertySymbols(null) TypeError | Cannot convert undefined or null to object
+keys(1) []
+keys("ab") ["0","1"]
+keys(true) []
+getOwnPropertyNames(5) []
+read of undefined TypeError | Cannot read properties of undefined (reading 'x')
+read of null TypeError | Cannot read properties of null (reading 'foo')

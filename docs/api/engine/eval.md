@@ -228,14 +228,6 @@ The table, embedded at compile time. A fn rather than a global because a
 global string needs an initializer that runs, and the embeddable library is
 built with --no-entry (same reason src/engine/uniprops.milo spells its data upData()).
 
-### `currentModule`
-
-```milo
-pub fn currentModule(st: &Interp): string
-```
-
-_Undocumented._
-
 ### `dataViewByteLen`
 
 ```milo

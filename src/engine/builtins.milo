@@ -18,7 +18,7 @@ from "./strutil" import {
     clampIndex, strSlice, jsIndexOf, jsStartsWith, jsEndsWith
 }
 from "./eval" import {
-    toStrProg, callBuiltinByName, makeError, currentModule, isCallable, isSymbolStr, symbolDisplay, isBigIntVal, bigStrOf, callValue, makeArrayIterator, taCurrentLen, taElemValue
+    toStrProg, callBuiltinByName, makeError, isCallable, isSymbolStr, symbolDisplay, isBigIntVal, bigStrOf, callValue, makeArrayIterator, taCurrentLen, taElemValue
 }
 from "./value" import {
     JSValue, hexDigitVal, wsRunAt, wsRunBefore, truthy
@@ -1657,7 +1657,7 @@ pub fn makeRegex(st: &mut Interp, pattern: string, flags: string): JSValue {
     // compile time rather than letting it match nothing or match something else.
     if !re.valid {
         st.throwing = true
-        st.thrownValue = makeError(st, "SyntaxError", "Invalid regular expression: /" + pattern.clone() + "/: " + regexInvalidReason(re) + currentModule(st))
+        st.thrownValue = makeError(st, "SyntaxError", "Invalid regular expression: /" + pattern.clone() + "/: " + regexInvalidReason(re))
         return JSValue.Undefined
     }
     let isGlobal = re.flagG
