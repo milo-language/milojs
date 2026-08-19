@@ -68,6 +68,17 @@ const proxied = new Proxy(function (x) { return x * 3; }, {});
 function useProxy(x) { return proxied(x); }
 console.log("proxy:", useProxy(4));
 
+// callees whose whole point is a check the VM's own frame would skip: a class
+// constructor may only be reached through `new`, and so may most native
+// constructors. Both rules live in the evaluator's call path, so the VM hands
+// these back to it rather than keeping a second copy of the rule.
+class K { constructor() {} }
+function callClass() { return K(); }
+try { callClass(); console.log("class without new: NO THROW"); } catch (e) { console.log("class without new:", e instanceof TypeError); }
+const M = Map;
+function callMap() { return M(); }
+try { callMap(); console.log("native ctor without new: NO THROW"); } catch (e) { console.log("native ctor without new:", e instanceof TypeError); }
+
 // a non-callable identifier is a TypeError naming the callee
 const notFn = 5;
 function callNotFn() { return notFn(1); }

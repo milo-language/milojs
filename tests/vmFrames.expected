@@ -9,6 +9,8 @@ bound: 15
 array without new: 3
 generator: 7
 proxy: 12
+class without new: true
+native ctor without new: true
 not a function: true notFn is not a function
 arguments: 3
 strict: true

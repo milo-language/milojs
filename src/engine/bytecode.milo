@@ -1070,7 +1070,11 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                 var handled = false
                 if let JSValue.Func(fIdx, envIdx) = calleeVal {
                     let cid2 = bodyChunkOf(prog, fIdx)
-                    if cid2 >= 0 {
+                    // A CLASS constructor takes the slow path even when its body
+                    // compiles: callFunction is where "cannot be invoked without
+                    // 'new'" is raised, and an empty constructor body compiles, so
+                    // a frame here would run it and answer undefined instead.
+                    if cid2 >= 0 && !prog.funcs[fIdx].isClassCtor {
                         handled = true
                         // The same guard callFunctionBody applies. A frame here
                         // costs no native stack, so the depth counter is the only
