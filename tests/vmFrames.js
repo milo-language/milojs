@@ -74,7 +74,7 @@ function argCount(a) { return arguments.length; }
 console.log("arguments:", argCount(1, 2, 3));
 
 // a strict callee assigning an undeclared name is a ReferenceError, which only
-// the tree walker can raise — the VM declines the frame rather than inventing one
+// the tree walker can raise, so the VM declines the frame rather than inventing one
 function strictSet(x) { "use strict"; nope = x; return nope; }
 try { strictSet(1); } catch (e) { console.log("strict:", e instanceof ReferenceError); }
 

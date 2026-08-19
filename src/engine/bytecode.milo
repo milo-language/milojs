@@ -13,8 +13,8 @@
 // else compiles to None and the tree walker runs it exactly as before.
 //
 // THE STACK IS A GC ROOT, and only up to `st.vmSp`: `collect` marks 0..vmSp and
-// nothing above it. So every op that can allocate — or that can re-enter the
-// evaluator, which can allocate — must publish its EXACT live top into st.vmSp
+// nothing above it. So every op that can allocate (or that can re-enter the
+// evaluator, which can allocate) must publish its EXACT live top into st.vmSp
 // first. Anything left above vmSp is swept, and the symptom is an intermittent
 // wrong answer rather than a crash. Run the fixtures under
 // MILOJS_GC_THRESHOLD=1 after touching any op that calls out.
@@ -37,8 +37,10 @@
 // it paid for boxing but not for the per-operand type check and slow path a
 // general VM also needs.
 //
-// There is no per-op `maybeGc` safepoint. Collection happens where it always
-// does — inside the allocators the ops call — and nothing else rides on that
+// The VM's one `maybeGc` safepoint is Op.Call, because a call is where a
+// compiled program allocates: a scope and an `arguments` array per frame. There
+// is none per op and none per loop iteration, so a compiled loop that allocates
+// runs to its end before the heap is looked at. Nothing else rides on the
 // safepoint: no interrupt, no deadline check.
 
 from "./ast" import {
@@ -299,11 +301,11 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                 }
             }
         }
-        // `f(x)` only — a PLAIN identifier callee, where `this` genuinely is
+        // `f(x)` only: a PLAIN identifier callee, where `this` genuinely is
         // undefined. A method call `o.m(x)` is deliberately absent: callValue
         // DROPS thisVal for a JSValue.Native (it forwards to callNativeProg,
         // which takes no receiver), so `h.call(o, "a")` answered undefined, and
-        // routing natives through callBuiltinByName instead is not equivalent —
+        // routing natives through callBuiltinByName instead is not equivalent:
         // that is one branch of callMember's per-object-kind dispatch, and using
         // it generally broke Reflect.apply. Method calls need callValue to carry
         // `this` to natives first.
@@ -643,8 +645,8 @@ struct VmFrame {
 }
 
 // Publish every outer slot back into the scope it came from. A frame keeps free
-// names in slots, so nothing it has written is visible to a callee — or to the
-// tree walker — until this runs.
+// names in slots, so nothing it has written is visible to a callee (or to the
+// tree walker) until this runs.
 fn vmFlushOuter(st: &mut Interp, ch: &Chunk, base: i64, scope: i64) {
     var k: i64 = 0
     while k < ch.slotNames.len() {
@@ -1094,7 +1096,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
             //
             // The frame whose own op threw still flushes: its writes since its
             // last call live only in its slots. A frame whose CALLEE threw must
-            // NOT — it flushed immediately before that call, so flushing again
+            // NOT: it flushed immediately before that call, so flushing again
             // would put a stale snapshot back over whatever the callee wrote
             // before it threw.
             if !threwInCallee {

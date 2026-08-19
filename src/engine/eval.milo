@@ -10576,7 +10576,7 @@ pub fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JS
 // ceilings. Answers true having ALREADY set the pending RangeError.
 //
 // Without this, runaway recursion exhausts the native stack and the process dies
-// with no JS-level error — express's error middleware expects a catchable
+// with no JS-level error, and express's error middleware expects a catchable
 // RangeError instead.
 // stackHeadroom() is the guard that actually protects the stack: it measures the
 // task we are standing on, so it is right on the 256 MB interpreter task and on
@@ -15879,7 +15879,7 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
     }
 }
 
-// Is this value callable as a PLAIN call — `f(x)`, no receiver? Func and Native
+// Is this value callable as a PLAIN call, `f(x)` with no receiver? Func and Native
 // are the ordinary cases; bound methods, Node-API functions and proxies are
 // callable objects instead. Answering this before the arguments are evaluated is
 // what makes `x(boom())` on a non-function report the TypeError.
