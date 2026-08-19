@@ -1,0 +1,7 @@
+["ERR_ASSERTION",true,"fail"]
+["ERR_ASSERTION",false,"fail"]
+["ERR_ASSERTION",true,"=="]
+["ERR_ASSERTION",false,"=="]
+["ERR_ASSERTION",false,"strictEqual"]
+["ERR_ASSERTION",false,"throws"]
+fake dates compared without throwing
