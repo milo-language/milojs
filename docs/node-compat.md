@@ -43,7 +43,7 @@ Reference surface: node v25.3.0. Sweep at `f13cef81`.
 | 🟠 | `console` | 9/21 43% | 19/25 76% | `context`, `createTask`, `dirxml`, `profile`, `profileEnd`, `timeStamp` |
 | 🟠 | `stream` | 60/164 37% (+1 skipped) | 8/23 35% | `_isArrayBufferView`, `_isUint8Array`, `_uint8ArrayToBuffer`, `addAbortSignal`, `compose`, `destroy` +9 more |
 | 🟠 | `dgram` | 22/60 37% (+4 skipped) | 2/2 100% | none |
-| 🟠 | `fs` | 78/219 36% (+8 skipped) | 70/104 67% | `Dir`, `Dirent`, `FileReadStream`, `FileWriteStream`, `ReadStream`, `Stats` +28 more |
+| 🟠 | `fs` | 78/219 36% (+8 skipped) | 76/104 73% | `Dir`, `FileReadStream`, `FileWriteStream`, `ReadStream`, `Utf8Stream`, `WriteStream` +22 more |
 | 🟠 | `vm` | 23/67 34% | 10/10 100% | none |
 | 🟠 | `perf_hooks` | 4/12 33% | 11/13 85% | `Performance`, `PerformanceResourceTiming` |
 | 🔴 | `url` | 4/14 29% | 8/14 57% | `URLPattern`, `domainToASCII`, `domainToUnicode`, `fileURLToPathBuffer`, `resolveObject`, `urlToHttpOptions` |
@@ -76,7 +76,7 @@ Reference surface: node v25.3.0. Sweep at `f13cef81`.
 | 🔴 | `trace_events` **(does not load)** | no cases | 0/2 0% | `createTracing`, `getEnabledCategories` |
 | 🔴 | `wasi` **(does not load)** | no cases | 0/1 0% | `WASI` |
 
-Across all 43 modules: **629/1948 node cases pass (32%)**, 🟢 0, 🟡 2, 🟠 14, 🔴 22, ⚪ 5. Surface: 452/1056 exports present (43%).
+Across all 43 modules: **629/1948 node cases pass (32%)**, 🟢 0, 🟡 2, 🟠 14, 🔴 22, ⚪ 5. Surface: 458/1056 exports present (43%).
 
 Whole suite, every selected case counted: **790/3373 (23%)**. This is the number to quote. The per-module column above is scored against what RAN, which forgives whatever an engine declines: milojs skips 936 cases, so that rate rises and falls with how much milojs is able to attempt.
 

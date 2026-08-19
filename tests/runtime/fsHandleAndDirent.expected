@@ -1,0 +1,9 @@
+instanceof Stats: true isFile: true size: 11
+Stats.prototype: function Dirent: function
+a.txt:file,sub:dir
+parentPath ok: true true
+writev: 4
+after writev: ABCDo world
+handle read: 5 "ABCDo"
+handle stat size: 11
+promises.readFile: ABCDo world
