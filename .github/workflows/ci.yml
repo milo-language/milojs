@@ -179,6 +179,16 @@ jobs:
       - name: js fixtures
         run: MILOJS_ENGINE_BIN=/tmp/milojs-engine MILOJS_RUNTIME_BIN=/tmp/milojs ./tests/run.sh
 
+      # The same suite again, collecting on EVERY allocation. This is the only
+      # thing that finds the engine's unrooted-local class of bug, where a value
+      # reachable only from a Milo stack frame is freed mid-operation and its slot
+      # handed to the next allocation. Three have been found this way, each one
+      # dormant until an allocation was added to a loop that had not allocated
+      # before -- so the trigger is a routine change somewhere else entirely, and
+      # nothing about the normal pass hints at it. ~22s on top of the ~21s pass.
+      - name: js fixtures, collecting at every allocation
+        run: MILOJS_GC_THRESHOLD=1 MILOJS_ENGINE_BIN=/tmp/milojs-engine MILOJS_RUNTIME_BIN=/tmp/milojs ./tests/run.sh
+
       # The README's examples, run against the binaries just built. A doc that
       # promises output the engine no longer produces fails here instead of in
       # front of whoever followed the README.

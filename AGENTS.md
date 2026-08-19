@@ -288,7 +288,16 @@ MILOJS_ENGINE_BIN=/tmp/mj-engine MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run.
 MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run-repl.sh
 ./tests/run-embed.sh
 MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run-napi.sh
+# and the same fixtures again, collecting on EVERY allocation
+MILOJS_GC_THRESHOLD=1 MILOJS_ENGINE_BIN=/tmp/mj-engine MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run.sh
 ```
+
+Run the last one after any change that adds an allocation to a loop. It is the
+only thing that finds an unrooted local: a value reachable only from a Milo stack
+frame, freed mid-operation, its slot handed to the next allocation. Three have
+been found that way, each dormant until an unrelated change started allocating
+where nothing allocated before, and the normal pass was green for all three. It
+is a CI step, and it costs ~22s.
 
 Build once and reuse the binaries — `run.sh` otherwise compiles per fixture and
 an LLVM build per test dwarfs the test time. `run.sh` itself runs fixtures in

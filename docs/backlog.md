@@ -8,6 +8,29 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## The GC-stress pass is now a CI step
+
+`tests/run.sh` under `MILOJS_GC_THRESHOLD=1` is what found all three unrooted-local
+bugs in this engine, and it was not in CI. It ran when someone remembered, which
+today meant "when I remembered", and the failure it catches is invisible to every
+other gate: the normal pass was green for all three.
+
+Teeth-checked against the real bug rather than a synthetic one -- with the
+`Object.assign` root from the previous entry removed:
+
+```
+normal pass:     285 passed, 0 failed
+gc-stress pass:  284 passed, 1 failed
+```
+
+~22s on top of the ~21s normal pass, which is nothing for the only detector of a
+whole bug class. The trigger for that class is worth restating because it is
+counter-intuitive: the bug is not introduced by the code that holds the unrooted
+value. It is introduced by adding an allocation to a loop somewhere else, which
+opens a collection window that was closed before. So the change that breaks it and
+the code that is wrong are in different functions, and often different files.
+
+
 ## The last two proxy divergences, and a rooting hole they exposed
 
 Both open items from the proxy sweep are closed, so every VALUE in that
