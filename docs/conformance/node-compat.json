@@ -6,7 +6,7 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "2efc8eb911ecb8e27167193b5b40728e9fbbe9a2",
+    "revision": "2cb762611400fee269affdc27b07304b960f06af",
     "dirty": false
   },
   "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
@@ -18,33 +18,33 @@
     "excludedNodeInternal": 606
   },
   "totals": {
-    "pass": 1623,
-    "fail": 1750,
+    "pass": 1642,
+    "fail": 1731,
     "total": 3373
   },
   "areas": [
     {
       "area": "http",
-      "pass": 75,
-      "fail": 302,
+      "pass": 78,
+      "fail": 299,
       "total": 377
     },
     {
       "area": "fs",
-      "pass": 80,
-      "fail": 147,
+      "pass": 81,
+      "fail": 146,
       "total": 227
     },
     {
       "area": "stream",
-      "pass": 50,
-      "fail": 115,
+      "pass": 55,
+      "fail": 110,
       "total": 165
     },
     {
       "area": "net",
-      "pass": 28,
-      "fail": 108,
+      "pass": 30,
+      "fail": 106,
       "total": 136
     },
     {
@@ -84,16 +84,16 @@
       "total": 48
     },
     {
-      "area": "child",
-      "pass": 59,
-      "fail": 41,
-      "total": 100
-    },
-    {
       "area": "buffer",
       "pass": 19,
       "fail": 38,
       "total": 57
+    },
+    {
+      "area": "child",
+      "pass": 62,
+      "fail": 38,
+      "total": 100
     },
     {
       "area": "dgram",
@@ -109,8 +109,8 @@
     },
     {
       "area": "cluster",
-      "pass": 50,
-      "fail": 31,
+      "pass": 51,
+      "fail": 30,
       "total": 81
     },
     {
@@ -174,22 +174,10 @@
       "total": 21
     },
     {
-      "area": "stream2",
-      "pass": 10,
-      "fail": 16,
-      "total": 26
-    },
-    {
       "area": "path",
       "pass": 2,
       "fail": 15,
       "total": 17
-    },
-    {
-      "area": "console",
-      "pass": 7,
-      "fail": 14,
-      "total": 21
     },
     {
       "area": "fastutf8stream",
@@ -198,10 +186,22 @@
       "total": 14
     },
     {
+      "area": "stream2",
+      "pass": 12,
+      "fail": 14,
+      "total": 26
+    },
+    {
       "area": "util",
       "pass": 3,
       "fail": 14,
       "total": 17
+    },
+    {
+      "area": "console",
+      "pass": 8,
+      "fail": 13,
+      "total": 21
     },
     {
       "area": "v8",
@@ -288,12 +288,6 @@
       "total": 9
     },
     {
-      "area": "pipe",
-      "pass": 5,
-      "fail": 5,
-      "total": 10
-    },
-    {
       "area": "stdin",
       "pass": 6,
       "fail": 5,
@@ -316,6 +310,12 @@
       "pass": 5,
       "fail": 4,
       "total": 9
+    },
+    {
+      "area": "pipe",
+      "pass": 6,
+      "fail": 4,
+      "total": 10
     },
     {
       "area": "querystring",
