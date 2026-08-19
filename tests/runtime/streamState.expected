@@ -1,0 +1,13 @@
+r objectMode: true hwm: 5
+r flowing: null ended: false
+r encoding: utf8
+readableListening: false
+readableListening after: true
+w ending: false ended: false finished: false
+corked: 1
+write returned: true buffered: 1
+buffered after 2: 2 needDrain: false
+after uncork corked: 0 buffered: 0
+w ended: true finished: false
+pipes: 2
+pipes after unpipe: 1

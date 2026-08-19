@@ -80,6 +80,35 @@ are already buffered when the socket is adopted, versus one that arrives after â
 but that was not established, and guessing again is how this attempt went.
 Instrument the drain loop first.
 
+## streams: no `_writev` batching, and the Readable state machine is missing
+
+Two separate holes left after the state views landed.
+
+**`_writev` batching.** `test-stream-writev.js` counts write calls and gets one
+fewer than node. Corking now buffers for real and calls `_writev` with the held
+chunks, but node's split between the first `_write` and the batched `_writev` is
+not the one here. Reproduce: `test-stream-writev.js`, which reports `6 === 7`.
+
+**The pull-based Readable state machine.** `_readableState` reports every field
+this implementation genuinely maintains and deliberately omits the ones it does
+not: `reading`, `needReadable`, `emittedReadable`, `resumeScheduled`,
+`awaitDrainWriters`. Those are not properties that can be added to the view â€”
+they are the bookkeeping of node's demand-driven read cycle, which this
+implementation does not have (it pushes on `push()` and drains when flowing).
+Tests reading them fail with a clear "cannot read property of undefined" rather
+than against an invented value, which is the intended outcome until the read
+cycle exists.
+
+Reproduce: `test-stream-readable-event.js`, `test-stream-readable-needReadable.js`,
+`test-stream-readable-emittedReadable.js`,
+`test-stream-readable-resumeScheduled.js`,
+`test-stream-readable-reading-readingMore.js`,
+`test-stream-pipe-await-drain-manual-resume.js`.
+
+Why it is not a one-line fix: it is the Readable rewrite, not a patch. `read(n)`
+has to pull through `_read`, buffer to a high water mark, and emit 'readable'
+against demand rather than on arrival.
+
 ## Async: `next()` on an async generator drives the body, and can HANG
 
 The only open item that can wedge the process. node returns a *pending* promise
