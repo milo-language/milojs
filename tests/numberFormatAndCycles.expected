@@ -1,0 +1,23 @@
+inf-toPrecision "Infinity"
+inf-toFixed "Infinity"
+inf-toExponential "Infinity"
+neginf-toPrecision "-Infinity"
+nan-formats ["NaN","NaN","NaN"]
+big-toFixed "9007199254740992.000000"
+1e21-toFixed "1e+21"
+1e21-toPrecision "1.00e+21"
+normal-formats ["123.5","0.100","ff"]
+parseInt-decimal [0,1,-1,12]
+parseInt-leading-dot null
+parseInt-exp 1
+parseInt-hex 31
+parseFloat-still-decimal [0.5,150,0.5,2.5]
+json-self-cycle ERR TypeError
+json-indirect-cycle ERR TypeError
+json-array-cycle ERR TypeError
+json-sibling-twice "{\"p\":{\"v\":1},\"q\":{\"v\":1}}"
+json-array-sibling "[[1],[1]]"
+json-deep-ok "{\"a\":{\"b\":{\"c\":[1,2,{\"d\":3}]}}}"
+json-indent "{\n  \"a\": [\n    1\n  ]\n}"
+json-replacer "{\"a\":1}"
+json-toJSON "\"X\""

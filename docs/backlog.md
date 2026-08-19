@@ -43,6 +43,38 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## Number and JSON: a second hang, an i64 wrap, parseInt, and a third cycle
+
+515 Number/JSON/Object combinations against node. Four bugs.
+
+**`(Infinity).toPrecision(1)` HUNG.** `numToPrecision` and `numToFixed` guarded NaN
+but not Infinity, and their normalisation loops divide and multiply by ten, where
+Infinity/10 is still Infinity. `numToExponential` and `numToRadix` already carried
+the check; these two did not.
+
+**`toFixed` wrapped an i64.** It scales by 10^digits, which overflows above 2^53:
+`(9007199254740992).toFixed(6)` gave "9223372036854.775807". At and above 2^53
+every double IS an integer, so the fraction is zeros and the integer form is the
+answer. A separate 1e21 fallback covers the case the spec hands to ToString.
+
+**`parseInt` accepted a decimal point.** `parseInt("0.5")` answered 0.5 and
+`parseInt(".5")` answered 0.5, where node gives 0 and NaN. The dot travels with the
+exponent: parseFloat and ToNumber accept both, parseInt accepts neither, and the
+existing `allowExp` flag already distinguished exactly those two callers.
+
+**JSON.stringify recursed on a cycle** until the call-depth guard fired, giving
+RangeError where the spec requires TypeError. The fix went in the PRELUDE, not the
+native: `JSON.stringify` is overridden there to support replacer/space/toJSON,
+which a native cannot do because natives cannot call user code. The Milo-side
+writer is never reached for objects, so a fix there did nothing (and double-ran the
+serialiser). Third cycle bug of the campaign, after Array.join and the earlier
+parser recursion.
+
+Three differences remain, all last-digit float precision at the extremes:
+`(1e21).toString(36)`, `(1e-7).toString(36)` and `parseFloat("1e-7")` round-trip.
+Closing them means a correct shortest-round-trip algorithm (Ryu or Grisu) rather
+than the repeated multiply/divide walk, which is a project rather than a patch.
+
 ## Array.prototype.join: nested separator, and a cycle that killed the process
 
 754 Array method/argument combinations against node, same technique as the regex
