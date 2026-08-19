@@ -2018,6 +2018,31 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
         }
         return JSValue.Str("/" + rsrc + "/" + rflags)
     }
+    // Date.prototype[@@toPrimitive](hint): "number" gives the time value, and both
+    // "string" and "default" give the date text -- Date is the only built-in whose
+    // DEFAULT hint is string rather than number.
+    if name == "__dateToPrimitive" {
+        let dh = objHandle(recv)
+        if dh < 0 {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Date.prototype[Symbol.toPrimitive] called on non-object")
+            return JSValue.Undefined
+        }
+        var hint = "default"
+        if args.len() > 0 {
+            hint = toStr(args[0])
+        }
+        if hint != "number" && hint != "string" && hint != "default" {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Invalid hint: " + hint)
+            return JSValue.Undefined
+        }
+        var dargs: Vec<JSValue> = Vec.new()
+        if hint == "number" {
+            return dateMethod(st, dh, "valueOf", dargs)
+        }
+        return dateMethod(st, dh, "toString", dargs)
+    }
     // Error.prototype.toString: `name ?? "Error"` and `message ?? ""`, read off
     // whatever receiver it was given. It is not restricted to Errors -- the spec
     // requires only an object -- so it cannot be the same "toString" every other
@@ -14364,17 +14389,32 @@ pub fn isoFromMillis(ms: f64): string {
     if ms != ms {
         return "Invalid Date"
     }
-    let total = (ms / 1000.0) as i64
-    let dt = DateTime.fromEpoch(total)
+    // FLOOR, not truncate: for a negative epoch `(-1 / 1000) as i64` is 0, so
+    // `new Date(-1).toISOString()` came out as 1970-01-01T00:00:00.999Z instead of
+    // 1969-12-31T23:59:59.999Z. The millisecond remainder below already floors.
+    let total = Math.floor(ms / 1000.0) as i64
     var frac = Math.mod(ms, 1000.0) as i64
     if frac < 0 {
         frac = frac + 1000
     }
+    // Split into whole DAYS plus a non-negative second-of-day before asking the
+    // std decomposition: fromEpoch answers a negative second for a negative
+    // epoch inside the first day (-1 came back as second == -1, printing
+    // "00:00:0-1"), while a day boundary decomposes correctly at any sign.
+    var day = total / 86400
+    if total < 0 && total != day * 86400 {
+        day = day - 1
+    }
+    let sod = total - day * 86400
+    let dt = DateTime.fromEpoch(day * 86400)
+    let hh = sod / 3600
+    let mm = (sod % 3600) / 60
+    let ssec = sod % 60
     // A year outside 0..9999 is written in the EXTENDED form, a sign followed by
     // six digits, which is what makes the string round-trip through Date.parse.
     // A negative year got its sign from i64ToStr by accident, but a large positive
     // one came out bare (`275760-09-13...`), which parses back as NaN.
-    return isoYear(dt.year as i64) + "-" + pad2(dt.month as i64) + "-" + pad2(dt.day as i64) + "T" + pad2(dt.hour as i64) + ":" + pad2(dt.minute as i64) + ":" + pad2(dt.second as i64) + "." + pad3(frac) + "Z"
+    return isoYear(dt.year as i64) + "-" + pad2(dt.month as i64) + "-" + pad2(dt.day as i64) + "T" + pad2(hh) + ":" + pad2(mm) + ":" + pad2(ssec) + "." + pad3(frac) + "Z"
 }
 
 fn isoYear(y: i64): string {
@@ -14519,6 +14559,25 @@ pub fn isCallableIn(st: &Interp, v: &JSValue): bool {
 pub let ARRAY_LIKE_MAX: i64 = 1 << 24
 
 fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {
+    // A SYMBOL-keyed member resolves through the ordinary property machinery and
+    // is then called with the receiver, rather than being routed by the built-in
+    // kind dispatch below -- that dispatch is keyed on ordinary method names and
+    // answered undefined for `d[Symbol.toPrimitive]("number")`, dropping both the
+    // method and its `this`. Only symbol keys take this path, so nothing that
+    // works today changes route.
+    if isSymbolStr(name) && objHandle(recv) >= 0 {
+        let symM = getMemberDyn(prog, objHandle(recv), name.clone(), st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        if isCallableIn(st, symM) {
+            let symArgs = evalArgs(prog, argsIdx, st, scope)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            return callValue(prog, symM, symArgs, cloneValue(recv), st)
+        }
+    }
     // Methods every primitive answers to. JS boxes the receiver for these; here
     // they are answered directly, which covers the cases real code uses.
     if name == "toString" || name == "valueOf" || name == "toFixed" || name == "toPrecision" || name == "toExponential" || name == "toLocaleString" {

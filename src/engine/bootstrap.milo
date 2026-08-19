@@ -823,6 +823,13 @@ pub fn setupGlobals(st: &mut Interp) {
         objSet(st, dateProto, dm.clone(), makeBrandedMethod(st, dm.clone(), BRAND_DATE))
         objSetNonEnumerable(st, dateProto, dm)
     }
+    // Date.prototype[@@toPrimitive]: the one built-in that prefers "string" for a
+    // default hint, which is why `date + ""` concatenates the text while
+    // `date - 0` is numeric. Its absence made `d[Symbol.toPrimitive]("number")`
+    // undefined -- code that calls it explicitly, and any polyfill checking for
+    // it, saw a Date as having no primitive conversion at all.
+    objSet(st, dateProto, symToPrimitiveKey(), makeBrandedMethod(st, "__dateToPrimitive", BRAND_DATE))
+    objSetNonEnumerable(st, dateProto, symToPrimitiveKey())
     objDefineProtoAttr(st, dateCtorObj, "prototype", JSValue.Obj(dateProto))
     objSet(st, dateProto, "constructor", JSValue.Native(Native.Fn(Builtin.Date)))
     objSetNonEnumerable(st, dateProto, "constructor")

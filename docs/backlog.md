@@ -8,6 +8,53 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## Date: 4 of 24, and a symbol-keyed call that lost its receiver
+
+Tenth pass. Parsing (ISO, offsets, extended years, legacy formats), UTC
+construction and getters, setter overflow, the +-8.64e15 range, and the primitive
+conversions. Parsing and the setter family were already right, including
+`Date.UTC(2026, 12, 1)` rolling into the next year and the two-digit-year rule.
+
+- **`new Date(-1).toISOString()` was "1970-01-01T00:00:00.999Z".** Dividing the
+  epoch by 1000 TRUNCATES toward zero, so a millisecond before 1970 landed on the
+  wrong second while the remainder was correctly floored. Splitting into whole
+  DAYS plus a non-negative second-of-day fixes it and also sidesteps the std
+  decomposition, which answers a negative second for a negative epoch inside the
+  first day (-1 came back as second == -1, printing "00:00:0-1").
+- **`new Date(NaN).toISOString()` returned "Invalid Date"** where the spec raises
+  RangeError, and **`toJSON` returned that string too** instead of null -- so
+  `JSON.stringify({d: new Date(NaN)})` produced a quoted "Invalid Date" rather
+  than `{"d":null}`. They shared one branch; they are two different operations.
+- **`Date.prototype[Symbol.toPrimitive]` did not exist.** Date is the only
+  built-in whose DEFAULT hint is string rather than number, which is why
+  `date + ""` concatenates while `date - 0` is arithmetic. Implicit coercion
+  already behaved correctly through other paths, so the absence only showed when
+  code called it explicitly -- which polyfills and feature detectors do.
+
+Adding it surfaced a separate bug worth more than the method: **`obj[sym](args)`
+dropped the receiver for a BUILT-IN symbol-keyed method.** `d[Symbol.toPrimitive]
+("number")` answered undefined while `Date.prototype[Symbol.toPrimitive].call(d,
+"number")` answered 5, and a user-defined symbol method was fine. `callMember`
+routes by built-in KIND on ordinary method names, and a symbol key matched
+nothing, so the call fell through to undefined. Symbol-keyed members now resolve
+through the ordinary property machinery and are called with the receiver; only
+symbol keys take that path, so nothing that worked before changes route.
+
+**On the node-compat number**: the sample reads 206 rather than 207, and it is
+timing noise, not a regression. `test-fs-promises-writefile-typedarray.js` takes
+~4.4 seconds against a 12-second timeout on BOTH this build and the baseline
+(4395ms vs 4426ms), and the sweep runs tests in parallel, so under load it can
+cross the line. Individually it passes three times out of three on both binaries.
+Worth stating rather than reporting a phantom regression -- and worth remembering
+when reading +-1 movements in this sample at all.
+
+`tests/dateSemantics.js` is UTC-and-epoch only on purpose: local formatting would
+encode this laptop's timezone into the expected output.
+
+Gates: dev.sh 6/6, GC-stress 298/299 fixtures, suite green with the compiler on
+and off, fuzz 200 seeds clean, vm-differential clean, QuickJS 104/149.
+
+
 ## RegExp: 8 of 29, and one of them was mine again
 
 Ninth pass. lastIndex across exec/test/sticky, named groups, replace-callback

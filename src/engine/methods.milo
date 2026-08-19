@@ -691,7 +691,23 @@ pub fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): 
         st.objExtras[st.objects[o].extra].dateMs = v
         return JSValue.Number(v)
     }
-    if name == "toISOString" || name == "toJSON" {
+    if name == "toISOString" {
+        // A non-finite time has no ISO representation, and the spec raises rather
+        // than inventing one: `new Date(NaN).toISOString()` is a RangeError.
+        if ms != ms {
+            st.throwing = true
+            st.thrownValue = makeError(st, "RangeError", "Invalid time value" + currentModule(st))
+            return JSValue.Undefined
+        }
+        return JSValue.Str(isoFromMillis(ms))
+    }
+    if name == "toJSON" {
+        // toJSON answers NULL for a non-finite date, which is what makes
+        // `JSON.stringify({d: new Date(NaN)})` produce {"d":null} rather than
+        // throwing the RangeError toISOString would.
+        if ms != ms {
+            return JSValue.Null
+        }
         return JSValue.Str(isoFromMillis(ms))
     }
     // the set*/setUTC* family. milojs keeps dates in UTC with a 0 offset, so the

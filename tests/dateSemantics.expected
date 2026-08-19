@@ -1,0 +1,24 @@
+parse-iso [1787097600000,1787140800000,1787140800500]
+parse-offsets [1787133600000,1787160600000]
+parse-extended-year [1787097600000,-62198755200000]
+parse-invalid [null,null,1772409600000]
+parse-legacy ["number","number"]
+utc-static [1787097600000,1767225600000,1767225600000,823219200000]
+ctor-overflow ["2027-01-01T00:00:00.000Z","2026-02-01T00:00:00.000Z"]
+ctor-two-digit-year "1999-01-01T00:00:00.000Z"
+getters-utc [2026,7,19,3,13,45,30,250]
+setters-utc "2026-08-19T00:00:00.000Z"
+setter-overflow "2026-02-01T00:00:00.000Z"
+setter-returns-time [1767225600000,"number"]
+invalid-date ["NaN","Invalid Date","THREW:RangeError"]
+range-limit ["+275760-09-13T00:00:00.000Z","NaN"]
+toJSON ["1970-01-01T00:00:00.000Z","{\"d\":\"1970-01-01T00:00:00.000Z\"}",null]
+toISOString-neg ["1969-12-31T23:59:59.999Z","-000001-01-01T00:00:00.000Z"]
+valueOf-primitive [0,true,0]
+compare [true,true,true]
+date-arith ["1970-01-01T00:00:01.000Z",0]
+setTime ["1970-01-01T00:00:01.000Z",null,"NaN"]
+getYear-legacy "function"
+utc-string "Thu, 01 Jan 1970 00:00:00 GMT"
+iso-roundtrip true
+symbol-toPrimitive-call [5,"Wed","function"]
