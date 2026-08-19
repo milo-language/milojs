@@ -835,6 +835,14 @@ pub struct Interp {
     // method receiver while its arguments — which can themselves be calls — are
     // evaluated). Rooted by collect so an in-flight object/closure isn't swept.
     tempRoots: Vec<JSValue>,
+    // The bytecode VM's frame stack (src/bytecode.milo): locals first, then the
+    // operand stack, one contiguous run per active chunk. It lives here rather
+    // than in a local so collect can root it by construction — the point of
+    // moving to a VM is that "what is live" becomes one array instead of
+    // whatever the evaluator happened to be holding. vmSp is the live extent;
+    // everything at or above it is dead and must not be marked.
+    vmStack: Vec<JSValue>,
+    vmSp: i64,
     // Values retained by the public embedding ABI. A live slot is an explicit
     // root until the C host releases its handle or destroys the context.
     hostRoots: Vec<JSValue>,
@@ -1059,7 +1067,7 @@ pub struct Interp {
 // that main() overwrites with makeInterp().
 pub var gInterp: Interp = Interp {
     scopes: Vec.new(), freeList: Vec.new(), active: Vec.new(),
-    nonCtorFns: Vec.new(), strict: false, objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: Arena { id: 0, data: Vec.new(), gens: Vec.new(), freeList: Vec.new(), live: 0 }, funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), hostRoots: Vec.new(), hostRootLive: Vec.new(),
+    nonCtorFns: Vec.new(), strict: false, objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: Arena { id: 0, data: Vec.new(), gens: Vec.new(), freeList: Vec.new(), live: 0 }, funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), vmStack: Vec.new(), vmSp: 0, hostRoots: Vec.new(), hostRootLive: Vec.new(),
     modPaths: Vec.new(), modBlocks: Vec.new(), modStrict: Vec.new(), modExports: Vec.new(), modState: Vec.new(), modDirStack: Vec.new(), modPathStack: Vec.new(), fnFileStack: Vec.new(),
     throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 10000,
@@ -2434,6 +2442,12 @@ pub fn collect(st: &mut Interp) {
         let tv = cloneValue(st.tempRoots[t])
         markValue(st, tv)
         t = t + 1
+    }
+    var vs: i64 = 0
+    while vs < st.vmSp {
+        let vv = cloneValue(st.vmStack[vs])
+        markValue(st, vv)
+        vs = vs + 1
     }
     var hr: i64 = 0
     while hr < st.hostRoots.len() {

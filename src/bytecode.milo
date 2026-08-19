@@ -335,12 +335,8 @@ pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
                 ops: Vec.new(), args: Vec.new(), consts: Vec.new(),
                 slotNames: Vec.new(), slotOuter: Vec.new(), ok: true,
             }
-            match init {
-                Option.Some(s) => {
-                    compStmt(prog, c, s)
-                }
-                Option.None => {
-                }
+            if let Option.Some(s) = init {
+                compStmt(prog, c, s)
             }
             let top = c.ops.len()
             match cond {
@@ -354,13 +350,9 @@ pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
             }
             let jf = emitOp(c, Op.Jmpf, 0)
             compStmt(prog, c, body)
-            match update {
-                Option.Some(e) => {
-                    compExpr(prog, c, e)
-                    emitOp(c, Op.Pop, 0)
-                }
-                Option.None => {
-                }
+            if let Option.Some(e) = update {
+                compExpr(prog, c, e)
+                emitOp(c, Op.Pop, 0)
             }
             emitOp(c, Op.Jmp, top)
             c.args[jf] = c.ops.len()
@@ -379,159 +371,194 @@ pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
     }
 }
 
+fn boolNum(b: bool): JSValue {
+    if b {
+        return JSValue.Number(1.0)
+    }
+    return JSValue.Number(0.0)
+}
+
+// The compiled subset only ever produces numbers, so a non-number can only come
+// from a seeding bug. 0.0 keeps the loop total rather than adding a branch per
+// operand.
+fn vmNum(st: &Interp, at: i64): f64 {
+    match st.vmStack[at] {
+        JSValue.Number(n) => {
+            return n
+        }
+        _ => {
+            return 0.0
+        }
+    }
+}
+
+// Write one slot, growing the stack the first time that depth is reached.
+fn vmSet(st: &mut Interp, at: i64, v: JSValue) {
+    while st.vmStack.len() <= at {
+        st.vmStack.push(JSValue.Undefined)
+    }
+    st.vmStack[at] = v
+}
+
+fn vmPush(st: &mut Interp, v: JSValue) {
+    let at = st.vmSp
+    vmSet(st, at, v)
+    st.vmSp = at + 1
+}
+
 // Run a compiled loop. Answers false without touching anything when an outer
 // name the loop reads is missing or is not a number, in which case the caller
 // must run the tree walker instead.
 pub fn runChunk(ch: &Chunk, st: &mut Interp, scope: i64): bool {
-    var locals: Vec<f64> = Vec.new()
+    let nslots = ch.slotNames.len()
+    let base = st.vmSp
+
+    // Seed the frame's locals. An outer name that is missing, or is bound to
+    // anything but a number, means this chunk cannot run: the caller falls back
+    // to the tree walker, and nothing has been written yet.
     var i: i64 = 0
-    while i < ch.slotNames.len() {
+    while i < nslots {
+        var seed = JSValue.Number(0.0)
         if ch.slotOuter[i] {
             match scopeTryLookup(st, scope, ch.slotNames[i]) {
                 Option.Some(v) => {
                     match v {
                         JSValue.Number(n) => {
-                            locals.push(n)
+                            seed = JSValue.Number(n)
                         }
                         _ => {
+                            st.vmSp = base
                             return false
                         }
                     }
                 }
                 Option.None => {
+                    st.vmSp = base
                     return false
                 }
             }
-        } else {
-            locals.push(0.0)
         }
+        vmPush(st, seed)
         i = i + 1
     }
 
-    // The value stack is a plain Vec with an explicit pointer rather than
-    // push/pop, so a pop is an index read instead of an Option unwrap. It grows
-    // on demand: the branch is taken once per depth and never again.
-    var stack: Vec<f64> = Vec.new()
-    var sp: i64 = 0
+    // Reserve the frame's whole operand range up front and root it once, rather
+    // than restating vmSp after every instruction. Sound because no op in this
+    // subset allocates, so no collect can land mid-loop, and every reserved slot
+    // holds a number, so rooting a slot the loop is not using costs nothing.
+    // A widened subset that can allocate must go back to an exact vmSp at each
+    // op that can collect, or clear the slots above the live top.
+    var need: i64 = 0
+    var d: i64 = 0
+    while d < ch.ops.len() {
+        match ch.ops[d] {
+            Op.Const => {
+                need = need + 1
+            }
+            Op.Load => {
+                need = need + 1
+            }
+            _ => {
+            }
+        }
+        d = d + 1
+    }
+    var reserved: i64 = 0
+    while reserved < need {
+        vmPush(st, JSValue.Number(0.0))
+        reserved = reserved + 1
+    }
+
+    var sp = base + nslots
     var pc: i64 = 0
     while pc < ch.ops.len() {
         let a = ch.args[pc]
         match ch.ops[pc] {
             Op.Const => {
-            if sp >= stack.len() {
-                stack.push(ch.consts[a])
-            } else {
-                stack[sp] = ch.consts[a]
-            }
-            sp = sp + 1
+                vmSet(st, sp, JSValue.Number(ch.consts[a]))
+                sp = sp + 1
                 pc = pc + 1
             }
             Op.Load => {
-            if sp >= stack.len() {
-                stack.push(locals[a])
-            } else {
-                stack[sp] = locals[a]
-            }
-            sp = sp + 1
+                vmSet(st, sp, JSValue.Number(vmNum(st, base + a)))
+                sp = sp + 1
                 pc = pc + 1
             }
             Op.Store => {
                 sp = sp - 1
-                locals[a] = stack[sp]
+                let v = vmNum(st, sp)
+                st.vmStack[base + a] = JSValue.Number(v)
                 pc = pc + 1
             }
             Op.Add => {
                 sp = sp - 1
-                let y = stack[sp]
-                stack[sp - 1] = stack[sp - 1] + y
+                let v = vmNum(st, sp - 1) + vmNum(st, sp)
+                st.vmStack[sp - 1] = JSValue.Number(v)
                 pc = pc + 1
             }
             Op.Sub => {
                 sp = sp - 1
-                let y = stack[sp]
-                stack[sp - 1] = stack[sp - 1] - y
+                let v = vmNum(st, sp - 1) - vmNum(st, sp)
+                st.vmStack[sp - 1] = JSValue.Number(v)
                 pc = pc + 1
             }
             Op.Mul => {
                 sp = sp - 1
-                let y = stack[sp]
-                stack[sp - 1] = stack[sp - 1] * y
+                let v = vmNum(st, sp - 1) * vmNum(st, sp)
+                st.vmStack[sp - 1] = JSValue.Number(v)
                 pc = pc + 1
             }
             Op.Div => {
                 sp = sp - 1
-                let y = stack[sp]
-                stack[sp - 1] = stack[sp - 1] / y
+                let v = vmNum(st, sp - 1) / vmNum(st, sp)
+                st.vmStack[sp - 1] = JSValue.Number(v)
                 pc = pc + 1
             }
             Op.Mod => {
                 sp = sp - 1
-                let y = stack[sp]
-                stack[sp - 1] = stack[sp - 1] % y
+                let v = vmNum(st, sp - 1) % vmNum(st, sp)
+                st.vmStack[sp - 1] = JSValue.Number(v)
                 pc = pc + 1
             }
             Op.Neg => {
-                stack[sp - 1] = -stack[sp - 1]
+                let v = -vmNum(st, sp - 1)
+                st.vmStack[sp - 1] = JSValue.Number(v)
                 pc = pc + 1
             }
             Op.Lt => {
                 sp = sp - 1
-                let y = stack[sp]
-                if stack[sp - 1] < y {
-                    stack[sp - 1] = 1.0
-                } else {
-                    stack[sp - 1] = 0.0
-                }
+                let r = vmNum(st, sp - 1) < vmNum(st, sp)
+                st.vmStack[sp - 1] = boolNum(r)
                 pc = pc + 1
             }
             Op.Gt => {
                 sp = sp - 1
-                let y = stack[sp]
-                if stack[sp - 1] > y {
-                    stack[sp - 1] = 1.0
-                } else {
-                    stack[sp - 1] = 0.0
-                }
+                let r = vmNum(st, sp - 1) > vmNum(st, sp)
+                st.vmStack[sp - 1] = boolNum(r)
                 pc = pc + 1
             }
             Op.Le => {
                 sp = sp - 1
-                let y = stack[sp]
-                if stack[sp - 1] <= y {
-                    stack[sp - 1] = 1.0
-                } else {
-                    stack[sp - 1] = 0.0
-                }
+                let r = vmNum(st, sp - 1) <= vmNum(st, sp)
+                st.vmStack[sp - 1] = boolNum(r)
                 pc = pc + 1
             }
             Op.Ge => {
                 sp = sp - 1
-                let y = stack[sp]
-                if stack[sp - 1] >= y {
-                    stack[sp - 1] = 1.0
-                } else {
-                    stack[sp - 1] = 0.0
-                }
+                let r = vmNum(st, sp - 1) >= vmNum(st, sp)
+                st.vmStack[sp - 1] = boolNum(r)
                 pc = pc + 1
             }
             Op.Eq => {
                 sp = sp - 1
-                let y = stack[sp]
-                if stack[sp - 1] == y {
-                    stack[sp - 1] = 1.0
-                } else {
-                    stack[sp - 1] = 0.0
-                }
+                let r = vmNum(st, sp - 1) == vmNum(st, sp)
+                st.vmStack[sp - 1] = boolNum(r)
                 pc = pc + 1
             }
             Op.Ne => {
                 sp = sp - 1
-                let y = stack[sp]
-                if stack[sp - 1] != y {
-                    stack[sp - 1] = 1.0
-                } else {
-                    stack[sp - 1] = 0.0
-                }
+                let r = vmNum(st, sp - 1) != vmNum(st, sp)
+                st.vmStack[sp - 1] = boolNum(r)
                 pc = pc + 1
             }
             Op.Jmp => {
@@ -539,7 +566,7 @@ pub fn runChunk(ch: &Chunk, st: &mut Interp, scope: i64): bool {
             }
             Op.Jmpf => {
                 sp = sp - 1
-                if stack[sp] == 0.0 {
+                if vmNum(st, sp) == 0.0 {
                     pc = a
                 } else {
                     pc = pc + 1
@@ -556,12 +583,16 @@ pub fn runChunk(ch: &Chunk, st: &mut Interp, scope: i64): bool {
     }
 
     var k: i64 = 0
-    while k < ch.slotNames.len() {
+    while k < nslots {
         if ch.slotOuter[k] {
-            scopeAssign(st, scope, ch.slotNames[k], JSValue.Number(locals[k]))
+            let v = vmNum(st, base + k)
+            scopeAssign(st, scope, ch.slotNames[k], JSValue.Number(v))
         }
         k = k + 1
     }
+    // Drop the whole frame in one move: everything at or above vmSp is dead and
+    // collect stops marking there.
+    st.vmSp = base
     return true
 }
 
