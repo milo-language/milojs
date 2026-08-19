@@ -11,8 +11,6 @@ A JavaScript engine and runtime written in the [Milo](https://github.com/milo-la
 - **`milojs-engine`** — an embeddable JavaScript engine. Raw JS, no host bindings, links into a native program as a static library.
 - **`milojs`** — a full runtime in the same space as Node, Deno and Bun: modules, event loop, filesystem and network, Node-API addons.
 
-Experimental, not yet a drop-in replacement for either.
-
 ## Engine Conformance
 
 `milojs-engine` — the ECMAScript language.
@@ -29,10 +27,6 @@ Experimental, not yet a drop-in replacement for either.
 | suite | score |
 |---|---|
 | [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) (all <!--fact:node-available-->3373<!--/fact--> externally runnable tests, <!--fact:node-excluded-->606<!--/fact--> node-internal excluded) | <!--fact:node-pct-->48.7%<!--/fact--> (<!--fact:node-pass-->1644<!--/fact-->/<!--fact:node-total-->3373<!--/fact-->) |
-
-Node's own tests, unmodified, through Node's `test/common` harness, each invoked
-as a plain `<binary> test.js`. The same harness scores any node-compatible
-binary: node itself 87.5%, bun 45.5%.
 
 For more details, see [docs/status.md](docs/status.md).
 

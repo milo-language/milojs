@@ -64,10 +64,13 @@ const MB_PER_JOB = 1200;
 const totalMb = os.totalmem() / 1024 / 1024;
 const memJobs = Math.max(2, Math.floor((totalMb * 0.5) / MB_PER_JOB));
 const jobs = arg("--jobs") ? parseInt(arg("--jobs")!) : Math.min(8, memJobs);
-// A --dir run is a DIAGNOSTIC, not the published number: the same rule the
-// test262 sweep follows, and for the same reason. Only a whole-suite run may
-// write the committed report.
-const isCanonical = !subDir;
+// A --dir or --sample run is a DIAGNOSTIC, not the published number: the same
+// rule the test262 sweep follows, and for the same reason. Only a whole-suite
+// run may write the committed report. --sample belongs here as much as --dir:
+// a 400-case sample scores 51.7% where the full 3373 score 48.7%, and it used
+// to overwrite the committed report with that number, so gen-facts published a
+// sample as the suite.
+const isCanonical = !subDir && sampleN === null;
 const jsonPath = arg("--json") ?? (isCanonical ? "docs/conformance/node-compat.json" : ".dev/node-compat-partial.json");
 const failsPath = arg("--fails");
 // --leaks names the cases that leave processes behind. A sweep that slowly eats

@@ -1,0 +1,15 @@
+once: [ 1, 2 ]
+once rejects: boom
+once on error: wanted
+monitor: watched
+handler: watched
+emit error returned: true
+getEventListeners: 1
+listenerCount: 1
+eventNames: 2
+defaultMax: 10
+afterSetMax: 3
+captured: async boom event: x
+on: a,b
+abort: AbortError ABORT_ERR
+addAbortListener fired

@@ -8,6 +8,56 @@ last-verified: 2026-08-19 (entries added today for the capability split, the swe
 
 # milojs backlog
 
+## AbortSignal never fired, and the events module had no statics
+
+Eleventh pass. Chosen from the node-compat failure histogram rather than a
+feature list: the tail is flat (no bucket past 19), so the wins are whatever is
+absent and reached often.
+
+- **`AbortController.abort()` set `aborted` and dispatched nothing.** The shim's
+  `addEventListener` was an empty function and `signal.reason` was never
+  assigned, so every consumer that waits for the 'abort' event waited forever.
+  That is worse than an absent AbortController: absent fails fast, this hangs.
+  Replaced with a real `AbortSignal` carrying listeners, `reason`,
+  `throwIfAborted`, `dispatchEvent`, and the three statics (`abort`, `timeout`
+  with a `TimeoutError` rather than an `AbortError`, and `any`).
+  `onabort` is registered as an ordinary listener at ASSIGNMENT time, not fired
+  as a separate hook first — node's dispatch order is registration order, and
+  a handler added before `signal.onabort = fn` runs before it.
+- **`events` had no static surface at all.** No `once`, no `on`, no
+  `errorMonitor`, no `captureRejectionSymbol`, no `getEventListeners`, no
+  max-listener accessors. `await once(emitter, 'x')` is how modern node code
+  waits for an event, so its absence is worth more than the emitter methods that
+  were already there.
+  `events.on` is a hand-rolled async iterator, not an async generator: an async
+  generator's body is driven by `next()` here, and a consumer calling `next()`
+  without awaiting it is exactly the shape that deadlocks (see "the one shape
+  that can hang" in `docs/status.md`).
+- **`os.constants` was assigned twice**, so the second assignment silently
+  dropped `signals` and `errno` — `os.constants.signals.SIGTERM` was undefined
+  and node's tests index it directly. Both halves now live in one object, with
+  `priority` added. `os.arch()` also hardcoded `'arm64'` rather than reading
+  `process.arch`.
+- Added `os.availableParallelism`/`machine`/`version`/`devNull`/`getPriority`/
+  `setPriority`, and the POSIX id getters on `process`. node's own harness
+  branches on `process.getuid && process.getuid() === 0` to decide whether a
+  root-only case can run, and several tests call them unconditionally.
+
+**A gate that scored a sample as the suite**: `node-compat-sweep.ts` gated the
+committed report on `--dir` alone, so a `--sample 400` run overwrote the
+whole-suite report with the sample's number and `gen-facts` published it. The
+two differ by three points (51.7% against 48.7%), which is exactly the size of
+movement these entries report, so the published number would have drifted
+without any code changing. `isCanonical` now requires no sample as well as no
+directory.
+
+Gates: dev.sh 6/6, verify-expected 296 checked, precommit green, node-compat
+sample 207 -> 210/400, zero regressions in the sample's fail set
+(`test-child-process-uid-gid.js`, `test-cluster-concurrent-disconnect.js`,
+`test-events-list.js` newly pass). The abort fix does not show in this sample
+— the seed does not select the abort-heavy cases — but the two new fixtures
+lock it against node.
+
 ## Date: 4 of 24, and a symbol-keyed call that lost its receiver
 
 Tenth pass. Parsing (ISO, offsets, extended years, legacy formats), UTC

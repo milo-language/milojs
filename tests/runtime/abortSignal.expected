@@ -1,0 +1,14 @@
+initial: false undefined
+listener: abort true
+onabort
+once-listener
+after: true AbortError 20
+throwIfAborted: AbortError
+custom reason: mine
+AbortSignal.abort: true AbortError
+any fired: from b
+any aborted: true
+any short-circuit: true already
+removed listener did not run
+timeout: true TimeoutError
+end
