@@ -15,23 +15,25 @@ A JavaScript engine and runtime written in the [Milo](https://github.com/milo-la
 
 `milojs-engine` — the ECMAScript language.
 
-| suite | score |
-|---|---|
-| [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | <!--fact:t262-pct-->79.5%<!--/fact--> (<!--fact:t262-pass-->1169<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) |
-| [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | <!--fact:qjs-pct-->69.8%<!--/fact--> (<!--fact:qjs-pass-->104<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) |
+| suite | score | evidence |
+|---|---|---|
+| [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | <!--fact:t262-pct-->79.5%<!--/fact--> (<!--fact:t262-pass-->1169<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) | [report](docs/conformance/test262.json) · [sweep](scripts/test262-sweep.ts) |
+| [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | <!--fact:qjs-pct-->69.8%<!--/fact--> (<!--fact:qjs-pass-->104<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) | [report](docs/conformance/quickjs.json) · [sweep](scripts/quickjs-sweep.ts) |
 
 ## Node Conformance
 
 `milojs` — modules, event loop, host bindings.
 
-| suite | score |
-|---|---|
-| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) (<!--fact:node-ran-->2443<!--/fact--> that ran, of <!--fact:node-available-->3373<!--/fact--> externally runnable; <!--fact:node-skipped-->930<!--/fact--> skipped, <!--fact:node-excluded-->606<!--/fact--> node-internal excluded) | <!--fact:node-pct-->29.6%<!--/fact--> (<!--fact:node-pass-->724<!--/fact-->/<!--fact:node-ran-->2443<!--/fact-->) |
+| suite | score | evidence |
+|---|---|---|
+| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) | <!--fact:node-pct-->29.6%<!--/fact--> (<!--fact:node-pass-->724<!--/fact-->/<!--fact:node-ran-->2443<!--/fact-->) | [report](docs/conformance/node-compat.json) · [sweep](scripts/node-compat-sweep.ts) |
 
-A test that calls node's `common.skip()` declined to run, so it is scored
-neither way. Most skips read `missing crypto`.
+<!--fact:node-ran-->2443<!--/fact--> of node's tests run here. Another <!--fact:node-skipped-->930<!--/fact--> skip themselves, mostly for
+missing crypto, and are not counted either way. Every score above is compiled
+from its committed report and gated in CI, so it cannot drift from the tree.
 
-For more details, see [docs/status.md](docs/status.md).
+**[Per-module table →](docs/node-compat.md)** · [status](docs/status.md) ·
+[per-change attribution](docs/backlog.md)
 
 ## Install
 

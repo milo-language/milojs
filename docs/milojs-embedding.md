@@ -1,6 +1,6 @@
 <!-- doc-meta
 system: milojs-embedding
-purpose: how to link libmilojs.a into a C program — inputs, build, and where the callable API is listed
+purpose: how to link libmilojs.a into a C program: inputs, build, and where the callable API is listed
 key-files: src/libmilojs.milo, include/milojs.h, examples/embed/hello.c, tests/run-embed.sh
 update-when: an ABI function lands or the build inputs change
 last-verified: 2026-08-19
@@ -14,7 +14,7 @@ last-verified: 2026-08-19
 |---|---|
 | `libmilojs.a` | `milo build-lib src/libmilojs.milo -o <dir>/libmilojs.a` |
 | `libmilojs.h` | written by that same command, next to the `.a` |
-| `milojs.h` | checked in at `include/milojs.h` — copy it next to the other two |
+| `milojs.h` | checked in at `include/milojs.h`; copy it next to the other two |
 
 `milojs.h` includes `libmilojs.h`, so both must be on the include path. Include
 `milojs.h`; it is the one with the status and value-kind enums.
@@ -30,7 +30,7 @@ cc -std=c11 -I/tmp/embed your.c /tmp/embed/libmilojs.a \
 ```
 
 On macOS drop `-lm -ldl`, and add `-I$(brew --prefix openssl@3)/include
--L$(brew --prefix openssl@3)/lib` — Homebrew's OpenSSL is keg-only.
+-L$(brew --prefix openssl@3)/lib`, because Homebrew's OpenSSL is keg-only.
 
 The extra libraries are not optional: the archive has undefined `sqlite3_*` and
 `SSL_*` symbols because `node:sqlite` and TLS call them directly. Milo adds

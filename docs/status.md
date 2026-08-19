@@ -9,7 +9,8 @@ last-verified: 2026-08-19
 # milojs status
 
 Numbers are compiled from `docs/conformance/*.json` by `tools/gen-facts.mjs`.
-Narrative lives in `docs/backlog.md`; per-module detail in `docs/node-compat.md`.
+Narrative lives in [docs/backlog.md](backlog.md); per-module detail in
+[docs/node-compat.md](node-compat.md).
 
 ## Conformance
 
@@ -45,8 +46,9 @@ semantics. QuickJS parse gaps: <!--fact:qjs-parsefail-->0<!--/fact-->.
 
 ### Node exports by module
 
-`docs/node-compat.md` — generated, one row per module, export diff against node
-plus that module's test rate. <!--fact:node-modules-shimmed-->47<!--/fact--> modules shimmed. The totals live there
+**[docs/node-compat.md](node-compat.md)**: generated, one row per module,
+export diff against node plus that module's test rate, colour-banded on
+coverage. <!--fact:node-modules-shimmed-->47<!--/fact--> modules shimmed. The totals live there
 rather than here so there is one copy of them.
 
 ## Fixtures
@@ -97,11 +99,11 @@ that gate fail until the bullet is deleted.
 
 | gate | state |
 |---|---|
-| 0 — green and measurable | **RED**. `linux-arm64` release job aborts on the runtime smoke test with `free(): invalid pointer`, exit 134, since `0f167c5`. Engine binary clean. Rolling tarballs stuck at 2026-08-15. |
-| 1 — embeddable engine preview | partial. C ABI builds, handles survive forced GC, no native-function registration. Reports are now pinned and committed. |
-| 2 — credible QuickJS alternative | partial. Every constructor has a real prototype; raw arena indices remain. |
-| 3 — Node runtime preview | partial. A real express 4 app boots and serves byte-identical output. See `docs/node-compat.md` for the surface. |
-| 4 — performance architecture | decided and underway. Bytecode VM owns its call frames; recursion depth 2156 to 10000. Tree walker stays as fallback and differential oracle. |
+| 0, green and measurable | **RED**. `linux-arm64` release job aborts on the runtime smoke test with `free(): invalid pointer`, exit 134, since `0f167c5`. Engine binary clean. Rolling tarballs stuck at 2026-08-15. |
+| 1, embeddable engine preview | partial. C ABI builds, handles survive forced GC, no native-function registration. Reports are now pinned and committed. |
+| 2, credible QuickJS alternative | partial. Every constructor has a real prototype; raw arena indices remain. |
+| 3, Node runtime preview | partial. A real express 4 app boots and serves byte-identical output. See `docs/node-compat.md` for the surface. |
+| 4, performance architecture | decided and underway. Bytecode VM owns its call frames; recursion depth 2156 to 10000. Tree walker stays as fallback and differential oracle. |
 
 ## Next
 

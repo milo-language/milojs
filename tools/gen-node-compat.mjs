@@ -143,10 +143,21 @@ const ranked = [...rows].sort((a, b) => {
   return (b.wanted - b.covered) - (a.wanted - a.covered);
 });
 
-const pct = (a, b) => (b === 0 ? "—" : `${((a / b) * 100).toFixed(0)}%`);
+const pct = (a, b) => (b === 0 ? "n/a" : `${((a / b) * 100).toFixed(0)}%`);
+
+// GitHub's markdown renders no table styling, so the "colour" of a row has to
+// be a glyph in it. Banded on export coverage: 90%+ green, 60-90% yellow, below
+// that red, and a module that does not load at all is red regardless.
+function band(loads, covered, wanted) {
+  if (!loads || wanted === 0) return "🔴";
+  const p = (covered / wanted) * 100;
+  if (p >= 90) return "🟢";
+  if (p >= 60) return "🟡";
+  return "🔴";
+}
 const testCell = (t) => {
-  if (!t) return "—";
-  if (t.ran === 0) return t.skipped > 0 ? `0/0 (${t.skipped} skipped)` : "—";
+  if (!t) return "n/a";
+  if (t.ran === 0) return t.skipped > 0 ? `0/0 (${t.skipped} skipped)` : "n/a";
   return `${t.pass}/${t.ran}${t.skipped ? ` (+${t.skipped} skipped)` : ""}`;
 };
 
@@ -155,7 +166,7 @@ lines.push("<!-- doc-meta");
 lines.push("system: node-compat");
 lines.push("purpose: per-module Node compatibility, derived from an export diff against node and from the test sweep");
 lines.push("key-files: tools/gen-node-compat.mjs, docs/conformance/node-compat.json, lib/");
-lines.push("update-when: generated — run `node tools/gen-node-compat.mjs`; never edit by hand");
+lines.push("update-when: generated; run `node tools/gen-node-compat.mjs`, never edit by hand");
 // Dated from the sweep's own commit rather than from today: a generated file
 // stamped with the wall clock churns on every run and its --check gate can
 // never be satisfied twice.
@@ -169,26 +180,32 @@ lines.push("`--check` fails if it is stale; both run in CI.");
 lines.push("");
 lines.push("Two independent measurements per module, because either one alone lies:");
 lines.push("");
-lines.push("- **exports** — how many of the names `node:<module>` exports under node also exist");
+lines.push("- **exports**: how many of the names `node:<module>` exports under node also exist");
 lines.push("  under milojs. A high number here means the SURFACE is present, not that it works.");
-lines.push("- **tests** — node's own `test-<area>-*.js` cases that pass, out of those that ran.");
+lines.push("- **tests**: node's own `test-<area>-*.js` cases that pass, out of those that ran.");
 lines.push("  Skipped cases are counted separately and scored neither way.");
 lines.push("");
 lines.push(`Measured against node ${process.version}` + (report ? `, sweep at \`${(report.milojs?.revision ?? "").slice(0, 8)}\`` : "") + ".");
 lines.push("");
-lines.push("| module | loads | exports | tests | notable missing exports |");
+lines.push("Row colour bands export coverage: 🟢 90%+, 🟡 60-90%, 🔴 below 60% or does not load.");
+lines.push("");
+lines.push("| | module | exports | tests | notable missing exports |");
 lines.push("|---|---|---|---|---|");
 for (const r of ranked) {
   const miss = r.missing.slice(0, 6).map((x) => `\`${x}\``).join(", ")
     + (r.missing.length > 6 ? ` +${r.missing.length - 6} more` : "");
-  lines.push(`| \`${r.module}\` | ${r.loads ? "yes" : "**no**"} | ${r.covered}/${r.wanted} ${pct(r.covered, r.wanted)} | ${testCell(r.tests)} | ${miss || "—"} |`);
+  const name = r.loads ? `\`${r.module}\`` : `\`${r.module}\` **(does not load)**`;
+  lines.push(`| ${band(r.loads, r.covered, r.wanted)} | ${name} | ${r.covered}/${r.wanted} ${pct(r.covered, r.wanted)} | ${testCell(r.tests)} | ${miss || "n/a"} |`);
 }
 lines.push("");
 
 const totalWanted = rows.reduce((a, r) => a + r.wanted, 0);
 const totalCovered = rows.reduce((a, r) => a + r.covered, 0);
 const notLoading = rows.filter((r) => !r.loads).map((r) => r.module);
-lines.push(`Across all ${rows.length} modules: **${totalCovered}/${totalWanted} exports present (${pct(totalCovered, totalWanted)})**.`);
+const bandCount = { "🟢": 0, "🟡": 0, "🔴": 0 };
+for (const r of rows) bandCount[band(r.loads, r.covered, r.wanted)]++;
+lines.push(`Across all ${rows.length} modules: **${totalCovered}/${totalWanted} exports present (${pct(totalCovered, totalWanted)})**: ` +
+  `🟢 ${bandCount["🟢"]}, 🟡 ${bandCount["🟡"]}, 🔴 ${bandCount["🔴"]}.`);
 if (notLoading.length) {
   lines.push("");
   lines.push(`Modules that do not load at all: ${notLoading.map((m) => `\`${m}\``).join(", ")}.`);
