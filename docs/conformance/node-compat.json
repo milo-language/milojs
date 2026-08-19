@@ -6,10 +6,10 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "2cb762611400fee269affdc27b07304b960f06af",
+    "revision": "248502c05328e148ea6bfa4b88ef36fcd444a33b",
     "dirty": false
   },
-  "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
+  "runtime": "/private/tmp/claude-501/-Users-csmith-git-milo-language-milojs/1239e78d-dcec-44d2-bfaf-b746172c20fe/scratchpad/wt-main/.dev/mj-runtime",
   "selection": {
     "directory": null,
     "sample": null,
@@ -18,8 +18,8 @@
     "excludedNodeInternal": 606
   },
   "totals": {
-    "pass": 1642,
-    "fail": 1731,
+    "pass": 1644,
+    "fail": 1729,
     "total": 3373
   },
   "areas": [
@@ -31,8 +31,8 @@
     },
     {
       "area": "fs",
-      "pass": 81,
-      "fail": 146,
+      "pass": 82,
+      "fail": 145,
       "total": 227
     },
     {
@@ -216,16 +216,16 @@
       "total": 13
     },
     {
-      "area": "cli",
-      "pass": 3,
-      "fail": 11,
-      "total": 14
-    },
-    {
       "area": "readline",
       "pass": 4,
       "fail": 11,
       "total": 15
+    },
+    {
+      "area": "cli",
+      "pass": 4,
+      "fail": 10,
+      "total": 14
     },
     {
       "area": "perf",
