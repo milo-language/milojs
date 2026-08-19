@@ -1,0 +1,6 @@
+server: request
+client: status 200 chunked: chunked
+client: chunk "first"
+server: aborted, req.aborted = true
+1.0 chunked framing used: false
+1.0 body: "hello"

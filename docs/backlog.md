@@ -42,28 +42,24 @@ intuition: the 1500-case sample is too thin to rank causes.
    mostly stage-2 proposals (`zip`, `zipKeyed`, `concat`, `chunks`, `windows`)
    that node does not have either.
 
-## http: the server cannot tell that a client went away
+## http: no keep-alive, so every response closes its connection
 
-`req.on('aborted')` and `req.on('close')` never fire on the SERVER's request
-object when a client disconnects mid-response, so node's abort tests wait for an
-event that cannot arrive and are killed by the harness. This is the largest
-remaining cluster of hangs in the http area.
+`Connection: close` goes out on every response and the socket is destroyed after
+it, so a client that asks for `Connection: keep-alive` does not get it and a
+second request on the same connection is never read.
 
-Reproduce: `test-http-client-abort.js`, `test-http-client-aborted-event.js`,
-`test-http-server-close-destroy-timeout.js`.
+Reproduce: `test-http-keep-alive-max-requests.js`, which sets
+`server.maxRequestsPerSocket` and expects the first responses to carry
+`Connection: keep-alive`.
 
-Why it is not a one-line fix: `Server.prototype._serveOnce` in `lib/http.js`
-accepts a connection, reads the whole request with a single `__tcpRecv`, and
-dispatches. The accepted connection is a raw id, never wrapped in a
-`net.Socket`, so there is nothing that emits 'close' and nothing watching for
-one. Serving a request is not an event stream on the server side the way it is
-on the client side, where `sendOverSocket` does use a real Socket. Closing this
-means giving the server the same connection model as the client, which also
-unblocks keep-alive and request bodies that arrive in more than one packet.
-
-Related and cheaper, same file: `req.setTimeout`, `res.setTimeout` and
-`server.setTimeout` are still no-ops on the server side. The client's versions
-now work and can be copied.
+Why it is not a one-line fix: answering "keep-alive" without honouring it is
+worse than answering "close", because the client then waits on a connection
+nobody will read. Honouring it means `Server.prototype._serveOnce` in
+`lib/http.js` must stop treating one accepted connection as one request: it
+reads a whole request with a single `__tcpRecv` and closes at `res.end()`. The
+connection is now wrapped in a `net.Socket`, which is the piece that was missing;
+what remains is parsing successive requests out of that socket's stream rather
+than out of one blocking read. Multi-packet request bodies need the same change.
 
 ## Async: `next()` on an async generator drives the body, and can HANG
 
