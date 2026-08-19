@@ -1,0 +1,1691 @@
+// A small backtracking regex engine (JS flavor), pure Milo — no C library. The
+// pattern is parsed to a node tree, compiled to a flat instruction program, and
+// matched by a recursive backtracking VM. Capture groups are recorded in a saves
+// array (slot 2g = start, 2g+1 = end; group 0 = whole match).
+//
+// Supported: literals, ., char classes [ ] with ranges/negation, \d \w \s (and
+// negations), anchors ^ $, groups ( ) and (?: ), alternation |, quantifiers
+// * + ? {n} {n,} {n,m} greedy and lazy, \b \B, common escapes. Flags i, g, m, s,
+// lookahead (?=) / (?!), lookbehind (?<=) / (?<!), and backreferences \1..\9.
+// Named groups (?<name>...) supported (.groups on the result + $<name> in a
+// replacement). Not yet: Unicode property escapes.
+//
+// Lookbehind is variable-width: since the body's length is unknown, it is retried
+// from every earlier start position and must finish exactly at the current one.
+// That check rides in a scratch save slot appended past the capture slots, which
+// is why regexExec allocates 2*(nGroups+1)+1 of them.
+
+from "./uniprops" import {
+    uniPropExists, uniPropRanges
+}
+
+from "./value" import {
+    JSValue
+}
+
+// ── node tree ──
+enum ReNode {
+    Char(u8),
+    Any,
+    ClassRef(i64),
+    Bol,
+    Eol,
+    WordB,
+    NWordB,
+    Concat(i64),
+    Alt(i64),
+    Star(i64, bool),
+    Plus(i64, bool),
+    Quest(i64, bool),
+    Repeat(i64, i64, i64, bool),
+    Group(i64, i64),
+    // (?=inner) / (?!inner): match inner at the current position without
+    // consuming input. `negated` inverts the result.
+    Look(i64, bool),
+    // (?<=inner) / (?<!inner): inner must match ENDING at the current position
+    LookBehind(i64, bool),
+    // \1 .. \9 — matches the text a previous capture group captured
+    Backref(i64),
+    Empty,
+}
+
+// A character class: parallel range bounds [lo[i], hi[i]] plus a negation flag.
+// Shorthands (\d etc) are expanded into ranges at parse time.
+// Ranges are CODE POINTS, not bytes. They were u8, so a class compared one byte
+// at a time: `[à-ÿ]` never matched é (its two bytes are outside the range) and
+// `[^a]` failed on any multibyte character. The whole class machinery, including
+// the shorthand complements, works over code points now.
+struct ReClass {
+    negated: bool,
+    lo: Vec<i32>,
+    hi: Vec<i32>,
+}
+
+struct ReInst {
+    op: i32,
+    a: i64,
+    b: i64,
+}
+
+pub struct Regex {
+    prog: Vec<ReInst>,
+    classes: Vec<ReClass>,
+    nGroups: i64,
+    flagI: bool,
+    flagG: bool,
+    flagM: bool,
+    // dotAll: `.` also matches newline
+    flagS: bool,
+    // the sticky flag: the match must start exactly at lastIndex rather than
+    // being searched for from there
+    flagY: bool,
+    source: string,
+    flags: string,
+    valid: bool,
+    // Which check rejected the pattern, so the message can say. A bad property
+    // name and malformed syntax read very differently to whoever hits one.
+    badPropName: bool,
+    // named capture groups: parallel arrays mapping (?<name>...) to its 1-based
+    // group number, so exec/match can build the result's `.groups` object
+    groupNames: Vec<string>,
+    groupNums: Vec<i64>,
+}
+
+let RE_CHAR: i32 = 0
+let RE_ANY: i32 = 1
+let RE_CLASS: i32 = 2
+let RE_MATCH: i32 = 3
+let RE_JMP: i32 = 4
+let RE_SPLIT: i32 = 5
+let RE_SAVE: i32 = 6
+// Clear capture slots a..=b. The spec's RepeatMatcher clears every capture
+// INSIDE a quantified body at the start of each iteration, so a group that does
+// not participate in the last pass reads undefined rather than keeping what an
+// earlier pass put there: /(z)((a+)?(b+)?(c))*/ on "zaacbbbcac" leaves group 4
+// undefined, and without this it kept "bbb" from the first iteration.
+let RE_RESET: i32 = 16
+let RE_BOL: i32 = 7
+let RE_EOL: i32 = 8
+let RE_WORDB: i32 = 9
+let RE_NWORDB: i32 = 10
+// zero-width assertion: a = pc of the inner sub-program, b = 1 when negated.
+// The inner program is compiled inline after a jump so normal flow skips it.
+let RE_LOOK: i32 = 11
+// terminator of a lookahead sub-program — succeeds without consuming
+let RE_LOOKEND: i32 = 12
+// backreference: a = group number
+let RE_BACKREF: i32 = 13
+// lookbehind: a = pc of the inner sub-program, b = 1 when negated. The inner
+// program is run from each earlier start position and must finish exactly here;
+// RE_LOOKBEND checks that, reading the required end from the scratch save slot.
+let RE_LOOKBEHIND: i32 = 14
+let RE_LOOKBEND: i32 = 15
+
+struct ReParse {
+    pat: Vec<u8>,
+    pos: i64,
+    nodes: Vec<ReNode>,
+    lists: Vec<Vec<i64>>,
+    classes: Vec<ReClass>,
+    ngroup: i64,
+    groupNames: Vec<string>,
+    groupNums: Vec<i64>,
+    // `\p{...}` is a property escape only under the u/v flag; without it Annex B
+    // says the backslash is dropped and `p` is a literal. So the flags have to be
+    // known BEFORE the pattern is parsed.
+    unicode: bool,
+    // an unknown property name is an early SyntaxError, not a pattern that
+    // matches nothing — recorded here and reported by regexCompile
+    badProp: bool,
+    // The same channel for a MALFORMED pattern. Every site that used to tolerate
+    // a missing delimiter (an unclosed group, an unterminated class, a reversed
+    // {n,m}) sets this instead of quietly parsing something else, because
+    // `new RegExp("(")` is a SyntaxError rather than a regex that matches "(".
+    badSyntax: bool,
+}
+
+// Same as reCharLen, over the pattern's byte vector.
+fn reCharLenBytes(b: &Vec<u8>, at: i64): i64 {
+    if at >= b.len() {
+        return 1
+    }
+    let x = b[at] as i64
+    var n: i64 = 1
+    if x >= 240 {
+        n = 4
+    } else if x >= 224 {
+        n = 3
+    } else if x >= 192 {
+        n = 2
+    }
+    if at + n > b.len() {
+        return 1
+    }
+    return n
+}
+
+// Decode the UTF-8 sequence at `at` in the PATTERN's byte vector.
+fn reCodePointAtBytes(b: &Vec<u8>, at: i64): i32 {
+    let n = reCharLenBytes(b, at)
+    let b0 = b[at] as i32
+    if n == 1 {
+        return b0
+    }
+    if n == 2 {
+        return ((b0 & 31) << 6) | (b[at + 1] as i32 & 63)
+    }
+    if n == 3 {
+        return ((b0 & 15) << 12) | ((b[at + 1] as i32 & 63) << 6) | (b[at + 2] as i32 & 63)
+    }
+    return ((b0 & 7) << 18) | ((b[at + 1] as i32 & 63) << 12) | ((b[at + 2] as i32 & 63) << 6) | (b[at + 3] as i32 & 63)
+}
+
+fn reAddNode(p: &mut ReParse, n: ReNode): i64 {
+    p.nodes.push(n)
+    return p.nodes.len() - 1
+}
+
+fn reIsDigit(c: u8): bool {
+    return c >= '0' && c <= '9'
+}
+
+fn reIsWord(c: u8): bool {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
+}
+
+fn reIsSpace(c: u8): bool {
+    return c == ' ' || c == 9 as u8 || c == 10 as u8 || c == 13 as u8 || c == 12 as u8 || c == 11 as u8
+}
+
+// Add a shorthand's ranges into a class's lo/hi arrays. `kind`: 'd','w','s'.
+fn reAddShorthand(cls: &mut ReClass, kind: u8) {
+    if kind == 'd' {
+        cls.lo.push('0' as i32)
+        cls.hi.push('9' as i32)
+    } else if kind == 'w' {
+        cls.lo.push('a' as i32)
+        cls.hi.push('z' as i32)
+        cls.lo.push('A' as i32)
+        cls.hi.push('Z' as i32)
+        cls.lo.push('0' as i32)
+        cls.hi.push('9' as i32)
+        cls.lo.push('_' as i32)
+        cls.hi.push('_' as i32)
+    } else if kind == 's' {
+        cls.lo.push(' ' as i32)
+        cls.hi.push(' ' as i32)
+        cls.lo.push(9 as i32)
+        cls.hi.push(13 as i32)
+    }
+}
+
+// The NEGATED shorthands as they appear INSIDE a class — `[\s\S]`, the standard
+// "any character, newline included" idiom, plus `[\d\D]` and `[\w\W]`.
+//
+// reParseClass only recognised the lowercase forms, so `\S` fell through to
+// reEscapedChar and became the literal letter S. `[\s\S]` therefore meant
+// "whitespace or the letter S": it matched a newline but not a letter, so
+// `[\s\S]*` matched the EMPTY string and `[\s\S]+` matched nothing at all.
+// Found in the wild — express apps rewrite HTML with /<title>[\s\S]*?<\/title>/.
+//
+// A ReClass holds ranges rather than a predicate, so the negation goes in as the
+// complement ranges over the byte domain — the same domain `[^]` already matches
+// over in this engine.
+fn reAddShorthandNeg(cls: &mut ReClass, kind: u8) {
+    if kind == 'd' {
+        cls.lo.push(0 as i32)
+        cls.hi.push(47 as i32)
+        cls.lo.push(58 as i32)
+        cls.hi.push(0x10FFFF as i32)
+    } else if kind == 'w' {
+        cls.lo.push(0 as i32)
+        cls.hi.push(47 as i32)
+        cls.lo.push(58 as i32)
+        cls.hi.push(64 as i32)
+        cls.lo.push(91 as i32)
+        cls.hi.push(94 as i32)
+        cls.lo.push(96 as i32)
+        cls.hi.push(96 as i32)
+        cls.lo.push(123 as i32)
+        cls.hi.push(0x10FFFF as i32)
+    } else if kind == 's' {
+        cls.lo.push(0 as i32)
+        cls.hi.push(8 as i32)
+        cls.lo.push(14 as i32)
+        cls.hi.push(31 as i32)
+        cls.lo.push(33 as i32)
+        cls.hi.push(0x10FFFF as i32)
+    }
+}
+
+// `\p{Name}` / `\p{Name=Value}` and their negations. The name is resolved to real
+// code point ranges HERE, at compile time, so matching a property costs the same
+// as matching `[a-z]` — see src/engine/uniprops.milo. An unrecognised name sets badProp;
+// the spec makes it an early error rather than an empty class.
+//
+// Returns -1 when the escape is not a property escape after all, which lets the
+// caller fall back to treating `\p` as a literal (the non-unicode Annex B rule).
+// Resolve the `\p{...}` name at p.pos (which sits ON the backslash) and advance
+// past the closing brace. "" means "not usable": badProp is set when the name was
+// syntactically a property escape but not one the tables know, and left clear when
+// this was not a `\p{` at all, which is how the caller decides between an early
+// error and falling back to a literal.
+fn reReadPropName(p: &mut ReParse): string {
+    if p.pos + 2 >= p.pat.len() || p.pat[p.pos + 2] != '{' {
+        return ""
+    }
+    var name = ""
+    var k = p.pos + 3
+    while k < p.pat.len() && p.pat[k] != '}' {
+        name.push(p.pat[k])
+        k = k + 1
+    }
+    if k >= p.pat.len() {
+        // unterminated `\p{`
+        p.badProp = true
+        return ""
+    }
+    // A bare name is either a binary property or a General_Category value: the
+    // spec allows `\p{Lu}` as shorthand for `\p{General_Category=Lu}`, so try the
+    // qualified spelling before giving up.
+    var resolved = name.clone()
+    if !uniPropExists(resolved) {
+        resolved = "General_Category=" + name.clone()
+        if !uniPropExists(resolved) {
+            p.badProp = true
+            return ""
+        }
+    }
+    p.pos = k + 1
+    return resolved
+}
+
+// Append a property's code point ranges to a class. `negated` materialises the
+// COMPLEMENT rather than setting ReClass.negated, because inside `[...]` a `\P`
+// contributes members to a union — negating the whole class instead would make
+// `[\P{L}0-9]` mean "not (non-letter or digit)".
+fn reAddPropTo(cls: &mut ReClass, resolved: &string, negated: bool) {
+    let ranges = uniPropRanges(resolved)
+    if !negated {
+        var i: i64 = 0
+        while i + 1 < ranges.len() {
+            cls.lo.push(ranges[i])
+            cls.hi.push(ranges[i + 1])
+            i = i + 2
+        }
+        return
+    }
+    var prev: i64 = 0
+    var i: i64 = 0
+    while i + 1 < ranges.len() {
+        let lo = ranges[i] as i64
+        if lo > prev {
+            cls.lo.push(prev as i32)
+            cls.hi.push((lo - 1) as i32)
+        }
+        prev = (ranges[i + 1] as i64) + 1
+        i = i + 2
+    }
+    if prev <= 0x10FFFF {
+        cls.lo.push(prev as i32)
+        cls.hi.push(0x10FFFF as i32)
+    }
+}
+
+// `\p{Name}` / `\p{Name=Value}` and their negations, OUTSIDE a character class.
+// The name is resolved to real code point ranges HERE, at compile time, so
+// matching a property costs the same as matching `[a-z]` and nothing decodes per
+// character. Returns -1 when this is not a property escape after all, which lets
+// the caller treat `\p` as a literal (the non-unicode Annex B rule).
+fn reParsePropEscape(p: &mut ReParse, negated: bool): i64 {
+    let resolved = reReadPropName(p)
+    if resolved.len() == 0 {
+        return -1
+    }
+    var cls = ReClass {
+        negated: negated, lo: Vec.new(), hi: Vec.new()
+    }
+    reAddPropTo(cls, resolved, false)
+    p.classes.push(cls)
+    return reAddNode(p, ReNode.ClassRef(p.classes.len() - 1))
+}
+
+// Build a single-shorthand class node (\d \w \s and negations \D \W \S).
+fn reShorthandClass(p: &mut ReParse, kind: u8, negated: bool): i64 {
+    var cls = ReClass {
+        negated: negated, lo: Vec.new(), hi: Vec.new()
+    }
+    reAddShorthand(cls, kind)
+    p.classes.push(cls)
+    let ci = p.classes.len() - 1
+    return reAddNode(p, ReNode.ClassRef(ci))
+}
+
+fn reHexVal(c: u8): i64 {
+    if c >= '0' && c <= '9' {
+        return (c - '0') as i64
+    }
+    if c >= 'a' && c <= 'f' {
+        return 10 + (c - 'a') as i64
+    }
+    if c >= 'A' && c <= 'F' {
+        return 10 + (c - 'A') as i64
+    }
+    return -1
+}
+
+// `\xHH`, `\uHHHH`, `\u{H...}` and `\cX` — the escapes that name a code point by
+// NUMBER. None of them existed: `/\x41/` was the literal letter x followed by 41,
+// so it did not match "A", and anything that generates patterns mechanically
+// (RegExp.escape among them) produced patterns this engine could not read back.
+//
+// Returns a two-element vector [codePoint, bytesConsumedIncludingBackslash], or an
+// EMPTY vector when the escape at `at` is not one of these.
+fn reNumericEscape(p: &ReParse, at: i64): Vec<i64> {
+    var none: Vec<i64> = Vec.new()
+    if at + 1 >= p.pat.len() {
+        return none
+    }
+    let e = p.pat[at + 1]
+    if e == 'x' {
+        if at + 3 >= p.pat.len() {
+            return none
+        }
+        let h1 = reHexVal(p.pat[at + 2])
+        let h2 = reHexVal(p.pat[at + 3])
+        if h1 < 0 || h2 < 0 {
+            return none
+        }
+        var out: Vec<i64> = Vec.new()
+        out.push(h1 * 16 + h2)
+        out.push(4)
+        return out
+    }
+    if e == 'u' {
+        // `\u{...}` — any number of hex digits, up to the last code point
+        if at + 2 < p.pat.len() && p.pat[at + 2] == '{' {
+            var v: i64 = 0
+            var k = at + 3
+            var any = false
+            while k < p.pat.len() && p.pat[k] != '}' {
+                let h = reHexVal(p.pat[k])
+                if h < 0 {
+                    return none
+                }
+                v = v * 16 + h
+                any = true
+                k = k + 1
+            }
+            if !any || k >= p.pat.len() || v > 0x10FFFF {
+                return none
+            }
+            var out: Vec<i64> = Vec.new()
+            out.push(v)
+            out.push(k + 1 - at)
+            return out
+        }
+        if at + 5 >= p.pat.len() {
+            return none
+        }
+        var v: i64 = 0
+        var j = at + 2
+        while j <= at + 5 {
+            let h = reHexVal(p.pat[j])
+            if h < 0 {
+                return none
+            }
+            v = v * 16 + h
+            j = j + 1
+        }
+        var out: Vec<i64> = Vec.new()
+        out.push(v)
+        out.push(6)
+        return out
+    }
+    if e == 'c' {
+        // a control escape: the letter's low 5 bits
+        if at + 2 >= p.pat.len() {
+            return none
+        }
+        let l = p.pat[at + 2]
+        if (l >= 'a' && l <= 'z') || (l >= 'A' && l <= 'Z') {
+            var out: Vec<i64> = Vec.new()
+            out.push((l as i64) % 32)
+            out.push(3)
+            return out
+        }
+        return none
+    }
+    return none
+}
+
+// Append the UTF-8 encoding of a code point as one Char node per byte. RE_CHAR
+// compares a single byte, so a code point above ASCII is a byte SEQUENCE — the
+// same shape a literal multibyte character in the pattern already compiles to.
+fn reUtf8Bytes(cp: i64, out: &mut Vec<u8>) {
+    if cp < 0x80 {
+        out.push(cp as u8)
+        return
+    }
+    if cp < 0x800 {
+        out.push((0xC0 | (cp >> 6)) as u8)
+        out.push((0x80 | (cp & 0x3F)) as u8)
+        return
+    }
+    if cp < 0x10000 {
+        out.push((0xE0 | (cp >> 12)) as u8)
+        out.push((0x80 | ((cp >> 6) & 0x3F)) as u8)
+        out.push((0x80 | (cp & 0x3F)) as u8)
+        return
+    }
+    out.push((0xF0 | (cp >> 18)) as u8)
+    out.push((0x80 | ((cp >> 12) & 0x3F)) as u8)
+    out.push((0x80 | ((cp >> 6) & 0x3F)) as u8)
+    out.push((0x80 | (cp & 0x3F)) as u8)
+}
+
+// Inside a character class `\b` is BACKSPACE, U+0008, not the word-boundary
+// assertion it means everywhere else. That is the only difference, so this
+// delegates for the rest; sharing reEscapedChar meant `[\b]` matched the letter
+// 'b' and never a backspace.
+fn reEscapedCharInClass(e: u8): u8 {
+    if e == 'b' {
+        return 8 as u8
+    }
+    return reEscapedChar(e)
+}
+
+fn reEscapedChar(e: u8): u8 {
+    if e == 'n' {
+        return 10 as u8
+    }
+    if e == 't' {
+        return 9 as u8
+    }
+    if e == 'r' {
+        return 13 as u8
+    }
+    if e == 'f' {
+        return 12 as u8
+    }
+    if e == 'v' {
+        return 11 as u8
+    }
+    if e == '0' {
+        return 0 as u8
+    }
+    return e
+}
+
+// Parse a bracketed [ ... ] class starting just after '['.
+// Is there a CLASS ESCAPE at `at` — one of \d \D \w \W \s \S, or \p/\P under
+// the u flag? It matters for ranges: a class escape is a SET, not a single code
+// point, so it cannot be a range bound.
+fn reIsClassEscapeAt(p: &ReParse, at: i64): bool {
+    if at + 1 >= p.pat.len() {
+        return false
+    }
+    if p.pat[at] != 92 as u8 {
+        return false
+    }
+    let e = p.pat[at + 1]
+    if e == 'd' || e == 'D' || e == 'w' || e == 'W' || e == 's' || e == 'S' {
+        return true
+    }
+    if p.unicode && (e == 'p' || e == 'P') {
+        return true
+    }
+    return false
+}
+
+fn reParseClass(p: &mut ReParse): i64 {
+    var negated = false
+    if p.pos < p.pat.len() && p.pat[p.pos] == '^' {
+        negated = true
+        p.pos = p.pos + 1
+    }
+    var cls = ReClass {
+        negated: negated, lo: Vec.new(), hi: Vec.new()
+    }
+    var going = true
+    while going {
+        if p.pos >= p.pat.len() || p.pat[p.pos] == ']' {
+            going = false
+        } else {
+            var c = p.pat[p.pos]
+            if c == 92 as u8 && p.pos + 1 < p.pat.len() {
+                let e = p.pat[p.pos + 1]
+                if (e == 'p' || e == 'P') && p.unicode {
+                    let saved = p.pos
+                    let resolved = reReadPropName(p)
+                    if resolved.len() > 0 {
+                        reAddPropTo(cls, resolved, e == 'P')
+                    } else {
+                        // not a property escape: back up and take it literally
+                        p.pos = saved
+                        let ch = reEscapedCharInClass(e) as i32
+                        cls.lo.push(ch)
+                        cls.hi.push(ch)
+                        p.pos = p.pos + 2
+                    }
+                } else if e == 'd' || e == 'w' || e == 's' {
+                    reAddShorthand(cls, e)
+                    p.pos = p.pos + 2
+                } else if e == 'D' || e == 'W' || e == 'S' {
+                    reAddShorthandNeg(cls, e + 32 as u8)
+                    p.pos = p.pos + 2
+                } else {
+                    // A numeric escape is a MEMBER, and may be a range endpoint:
+                    // `[\x41-\x5A]` is A-Z, not {A, '-', Z}. The literal branch
+                    // below already handles ranges; this mirrors it for escapes.
+                    var ch: i32 = 0
+                    let num = reNumericEscape(p, p.pos)
+                    if num.len() == 2 {
+                        ch = num[0] as i32
+                        p.pos = p.pos + num[1]
+                    } else {
+                        ch = reEscapedCharInClass(e) as i32
+                        p.pos = p.pos + 2
+                    }
+                    var hiCp = ch
+                    if p.pos + 1 < p.pat.len() && p.pat[p.pos] == '-' && p.pat[p.pos + 1] != ']' {
+                        let after = p.pos + 1
+                        if p.pat[after] == 92 as u8 {
+                            let unum = reNumericEscape(p, after)
+                            if unum.len() == 2 {
+                                hiCp = unum[0] as i32
+                                p.pos = after + unum[1]
+                            } else if after + 1 < p.pat.len() {
+                                hiCp = reEscapedCharInClass(p.pat[after + 1]) as i32
+                                p.pos = after + 2
+                            }
+                        } else {
+                            let hiLen = reCharLenBytes(p.pat, after)
+                            hiCp = reCodePointAtBytes(p.pat, after)
+                            p.pos = after + hiLen
+                        }
+                    }
+                    cls.lo.push(ch)
+                    cls.hi.push(hiCp)
+                }
+            } else {
+                // Members are CODE POINTS: `[à-ÿ]` is one range, not four bytes
+                // of which two happen to look like a range.
+                let clen = reCharLenBytes(p.pat, p.pos)
+                let cp = reCodePointAtBytes(p.pat, p.pos)
+                let afterC = p.pos + clen
+                // possible range a-z (the '-' and the upper bound follow the
+                // whole first character, however wide it is)
+                if afterC + 1 < p.pat.len() && p.pat[afterC] == '-' && p.pat[afterC + 1] != ']'
+                    && reIsClassEscapeAt(p, afterC + 1) {
+                    // `[a-\d]`: the upper bound is a SET, so this is not a range.
+                    // Annex B makes the `-` literal here and keeps the class valid;
+                    // under the u flag the spec calls it an early error instead.
+                    // milojs was reading the backslash itself as the bound, which
+                    // is code point 92 and below most literals, so a perfectly
+                    // legal class was rejected as a reversed range.
+                    if p.unicode {
+                        p.badSyntax = true
+                    }
+                    cls.lo.push(cp)
+                    cls.hi.push(cp)
+                    cls.lo.push('-' as i32)
+                    cls.hi.push('-' as i32)
+                    p.pos = afterC + 1
+                } else if afterC + 1 < p.pat.len() && p.pat[afterC] == '-' && p.pat[afterC + 1] != ']' {
+                    let hiLen = reCharLenBytes(p.pat, afterC + 1)
+                    cls.lo.push(cp)
+                    cls.hi.push(reCodePointAtBytes(p.pat, afterC + 1))
+                    p.pos = afterC + 1 + hiLen
+                } else {
+                    cls.lo.push(cp)
+                    cls.hi.push(cp)
+                    p.pos = afterC
+                }
+            }
+        }
+    }
+    if p.pos < p.pat.len() && p.pat[p.pos] == ']' {
+        p.pos = p.pos + 1
+    } else {
+        // ran off the end without a ']'
+        p.badSyntax = true
+    }
+    // A reversed range is an early error: [b-a] is "range out of order in
+    // character class", not an empty class.
+    var ri: i64 = 0
+    while ri < cls.lo.len() {
+        if cls.lo[ri] > cls.hi[ri] {
+            p.badSyntax = true
+        }
+        ri = ri + 1
+    }
+    p.classes.push(cls)
+    let ci = p.classes.len() - 1
+    return reAddNode(p, ReNode.ClassRef(ci))
+}
+
+fn reParseAtom(p: &mut ReParse): i64 {
+    let c = p.pat[p.pos]
+    if c == '(' {
+        p.pos = p.pos + 1
+        var capIdx = p.ngroup + 1
+        var capturing = true
+        if p.pos + 1 < p.pat.len() && p.pat[p.pos] == '?' && p.pat[p.pos + 1] == ':' {
+            capturing = false
+            capIdx = -1
+            p.pos = p.pos + 2
+        } else if p.pos + 2 < p.pat.len() && p.pat[p.pos] == '?' && p.pat[p.pos + 1] == '<' && (p.pat[p.pos + 2] == '=' || p.pat[p.pos + 2] == '!') {
+            let negated = p.pat[p.pos + 2] == '!'
+            p.pos = p.pos + 3
+            let body = reParseAlt(p)
+            if p.pos < p.pat.len() && p.pat[p.pos] == ')' {
+                p.pos = p.pos + 1
+            } else {
+                p.badSyntax = true
+            }
+            return reAddNode(p, ReNode.LookBehind(body, negated))
+        } else if p.pos + 1 < p.pat.len() && p.pat[p.pos] == '?' && p.pat[p.pos + 1] == '<' {
+            // named capture (?<name>...) — a normal capturing group that also
+            // records its name for the result's `.groups` object. (Lookbehind
+            // (?<= / (?<! was handled above, so here the char after < is a name.)
+            p.pos = p.pos + 2
+            var nm = String.withCapacity(8)
+            while p.pos < p.pat.len() && p.pat[p.pos] != '>' {
+                nm.push(p.pat[p.pos])
+                p.pos = p.pos + 1
+            }
+            if p.pos < p.pat.len() && p.pat[p.pos] == '>' {
+                p.pos = p.pos + 1
+            } else {
+                p.badSyntax = true
+            }
+            p.ngroup = p.ngroup + 1
+            let gnum = p.ngroup
+            p.groupNames.push(nm)
+            p.groupNums.push(gnum)
+            let inner = reParseAlt(p)
+            if p.pos < p.pat.len() && p.pat[p.pos] == ')' {
+                p.pos = p.pos + 1
+            } else {
+                p.badSyntax = true
+            }
+            return reAddNode(p, ReNode.Group(inner, gnum))
+        } else if p.pos + 1 < p.pat.len() && p.pat[p.pos] == '?' && (p.pat[p.pos + 1] == '=' || p.pat[p.pos + 1] == '!') {
+            let negated = p.pat[p.pos + 1] == '!'
+            p.pos = p.pos + 2
+            let body = reParseAlt(p)
+            if p.pos < p.pat.len() && p.pat[p.pos] == ')' {
+                p.pos = p.pos + 1
+            } else {
+                p.badSyntax = true
+            }
+            return reAddNode(p, ReNode.Look(body, negated))
+        }
+        if capturing {
+            p.ngroup = p.ngroup + 1
+        }
+        let inner = reParseAlt(p)
+        if p.pos < p.pat.len() && p.pat[p.pos] == ')' {
+            p.pos = p.pos + 1
+        } else {
+            p.badSyntax = true
+        }
+        return reAddNode(p, ReNode.Group(inner, capIdx))
+    }
+    if c == '[' {
+        p.pos = p.pos + 1
+        return reParseClass(p)
+    }
+    if c == '.' {
+        p.pos = p.pos + 1
+        return reAddNode(p, ReNode.Any)
+    }
+    if c == '^' {
+        p.pos = p.pos + 1
+        return reAddNode(p, ReNode.Bol)
+    }
+    if c == '$' {
+        p.pos = p.pos + 1
+        return reAddNode(p, ReNode.Eol)
+    }
+    if c == 92 as u8 && p.pos + 1 < p.pat.len() {
+        let e = p.pat[p.pos + 1]
+        // \1 .. \9 — a backreference, not an escape. \0 stays the NUL escape.
+        if e >= '1' && e <= '9' {
+            p.pos = p.pos + 2
+            return reAddNode(p, ReNode.Backref((e - '0') as i64))
+        }
+        if (e == 'p' || e == 'P') && p.unicode {
+            let node = reParsePropEscape(p, e == 'P')
+            if node >= 0 {
+                return node
+            }
+        }
+        if e == 'd' {
+            p.pos = p.pos + 2
+            return reShorthandClass(p, 'd', false)
+        }
+        if e == 'D' {
+            p.pos = p.pos + 2
+            return reShorthandClass(p, 'd', true)
+        }
+        if e == 'w' {
+            p.pos = p.pos + 2
+            return reShorthandClass(p, 'w', false)
+        }
+        if e == 'W' {
+            p.pos = p.pos + 2
+            return reShorthandClass(p, 'w', true)
+        }
+        if e == 's' {
+            p.pos = p.pos + 2
+            return reShorthandClass(p, 's', false)
+        }
+        if e == 'S' {
+            p.pos = p.pos + 2
+            return reShorthandClass(p, 's', true)
+        }
+        if e == 'b' {
+            p.pos = p.pos + 2
+            return reAddNode(p, ReNode.WordB)
+        }
+        if e == 'B' {
+            p.pos = p.pos + 2
+            return reAddNode(p, ReNode.NWordB)
+        }
+        let num = reNumericEscape(p, p.pos)
+        if num.len() == 2 {
+            p.pos = p.pos + num[1]
+            var bytes: Vec<u8> = Vec.new()
+            reUtf8Bytes(num[0], bytes)
+            if bytes.len() == 1 {
+                return reAddNode(p, ReNode.Char(bytes[0]))
+            }
+            // grouped so a following quantifier binds to the whole character
+            var ids: Vec<i64> = Vec.new()
+            var nb: i64 = 0
+            while nb < bytes.len() {
+                ids.push(reAddNode(p, ReNode.Char(bytes[nb])))
+                nb = nb + 1
+            }
+            p.lists.push(ids)
+            let seq = reAddNode(p, ReNode.Concat(p.lists.len() - 1))
+            return reAddNode(p, ReNode.Group(seq, -1))
+        }
+        // Annex B: `\c` NOT followed by an ASCII letter is not a control escape
+        // at all — it is a literal backslash, and the `c` is an ordinary
+        // character after it. `/\c0/` matches the three characters `\c0`.
+        // Falling through to the line below dropped the backslash and matched
+        // "c0" instead.
+        if e == 'c' {
+            p.pos = p.pos + 1
+            return reAddNode(p, ReNode.Char('\\' as u8))
+        }
+        p.pos = p.pos + 2
+        return reAddNode(p, ReNode.Char(reEscapedChar(e)))
+    }
+    // A literal character is one CODE POINT, not one byte. Emitting a Char per
+    // byte let a following quantifier bind to the last byte only, so /^é+$/
+    // meant "0xC3 then one-or-more 0xA9" and failed on "ééé". A multibyte
+    // literal becomes a non-capturing group of its bytes, which is a single
+    // atom for reParseRepeat to attach to.
+    let clen = reCharLenBytes(p.pat, p.pos)
+    if clen > 1 {
+        var bytes: Vec<i64> = Vec.new()
+        var bi: i64 = 0
+        while bi < clen {
+            bytes.push(reAddNode(p, ReNode.Char(p.pat[p.pos + bi])))
+            bi = bi + 1
+        }
+        p.pos = p.pos + clen
+        p.lists.push(bytes)
+        let seq = reAddNode(p, ReNode.Concat(p.lists.len() - 1))
+        return reAddNode(p, ReNode.Group(seq, -1))
+    }
+    p.pos = p.pos + 1
+    return reAddNode(p, ReNode.Char(c))
+}
+
+// Parse a quantifier suffix on `atom`, if any.
+fn reParseRepeat(p: &mut ReParse, atom: i64): i64 {
+    if p.pos >= p.pat.len() {
+        return atom
+    }
+    let c = p.pat[p.pos]
+    if c == '*' || c == '+' || c == '?' {
+        p.pos = p.pos + 1
+        var greedy = true
+        if p.pos < p.pat.len() && p.pat[p.pos] == '?' {
+            greedy = false
+            p.pos = p.pos + 1
+        }
+        // A quantifier cannot itself be quantified: `a**` is "nothing to repeat".
+        // The lazy `?` was already consumed above, so anything quantifier-shaped
+        // still sitting here is a second one.
+        if p.pos < p.pat.len() && (p.pat[p.pos] == '*' || p.pat[p.pos] == '+' || p.pat[p.pos] == '?') {
+            p.badSyntax = true
+        }
+        if c == '*' {
+            return reAddNode(p, ReNode.Star(atom, greedy))
+        }
+        if c == '+' {
+            return reAddNode(p, ReNode.Plus(atom, greedy))
+        }
+        return reAddNode(p, ReNode.Quest(atom, greedy))
+    }
+    if c == '{' {
+        // {n} {n,} {n,m}
+        let save = p.pos
+        p.pos = p.pos + 1
+        var minV: i64 = 0
+        var haveMin = false
+        while p.pos < p.pat.len() && reIsDigit(p.pat[p.pos]) {
+            minV = minV * 10 + (p.pat[p.pos] as i64 - 48)
+            haveMin = true
+            p.pos = p.pos + 1
+        }
+        var maxV = minV
+        if p.pos < p.pat.len() && p.pat[p.pos] == ',' {
+            p.pos = p.pos + 1
+            if p.pos < p.pat.len() && p.pat[p.pos] == '}' {
+                maxV = -1
+            } else {
+                maxV = 0
+                while p.pos < p.pat.len() && reIsDigit(p.pat[p.pos]) {
+                    maxV = maxV * 10 + (p.pat[p.pos] as i64 - 48)
+                    p.pos = p.pos + 1
+                }
+            }
+        }
+        if p.pos < p.pat.len() && p.pat[p.pos] == '}' && haveMin {
+            // {3,1} is "numbers out of order in {} quantifier", an early error
+            // rather than a range that can never match. maxV -1 means {n,}.
+            if maxV >= 0 && maxV < minV {
+                p.badSyntax = true
+            }
+            p.pos = p.pos + 1
+            var greedy = true
+            if p.pos < p.pat.len() && p.pat[p.pos] == '?' {
+                greedy = false
+                p.pos = p.pos + 1
+            }
+            return reAddNode(p, ReNode.Repeat(atom, minV, maxV, greedy))
+        }
+        // not a valid quantifier — treat '{' literally
+        p.pos = save
+        return atom
+    }
+    return atom
+}
+
+fn reParseConcat(p: &mut ReParse): i64 {
+    var items: Vec<i64> = Vec.new()
+    var going = true
+    while going {
+        if p.pos >= p.pat.len() {
+            going = false
+        } else {
+            let c = p.pat[p.pos]
+            if c == '|' || c == ')' {
+                going = false
+            } else {
+                // A quantifier needs something to repeat. At the start of a term
+                // there is nothing, so `*`, `+` and `?` are early errors rather
+                // than literal characters.
+                if items.len() == 0 && (c == '*' || c == '+' || c == '?') {
+                    p.badSyntax = true
+                }
+                // a backslash at the very end escapes nothing
+                if c == 92 as u8 && p.pos + 1 >= p.pat.len() {
+                    p.badSyntax = true
+                }
+                let atom = reParseAtom(p)
+                let quant = reParseRepeat(p, atom)
+                items.push(quant)
+            }
+        }
+    }
+    if items.len() == 1 {
+        return items[0]
+    }
+    p.lists.push(items)
+    return reAddNode(p, ReNode.Concat(p.lists.len() - 1))
+}
+
+fn reParseAlt(p: &mut ReParse): i64 {
+    var branches: Vec<i64> = Vec.new()
+    branches.push(reParseConcat(p))
+    while p.pos < p.pat.len() && p.pat[p.pos] == '|' {
+        p.pos = p.pos + 1
+        branches.push(reParseConcat(p))
+    }
+    if branches.len() == 1 {
+        return branches[0]
+    }
+    p.lists.push(branches)
+    return reAddNode(p, ReNode.Alt(p.lists.len() - 1))
+}
+
+// ── compile node tree → instruction program ──
+
+// Patch the RE_RESET placeholder at `at` to cover every capture slot the body
+// compiled between `from` and the current end writes. A body with no captures
+// leaves an empty range, which the VM skips.
+fn rePatchReset(prog: &mut Vec<ReInst>, at: i64, from: i64) {
+    var lo: i64 = -1
+    var hi: i64 = -1
+    var i = from
+    while i < prog.len() {
+        if prog[i].op == RE_SAVE {
+            let k = prog[i].a
+            if lo < 0 || k < lo {
+                lo = k
+            }
+            if hi < 0 || k > hi {
+                hi = k
+            }
+        }
+        i = i + 1
+    }
+    if lo < 0 {
+        prog[at].a = 0
+        prog[at].b = -1
+    } else {
+        prog[at].a = lo
+        prog[at].b = hi
+    }
+}
+
+fn reEmit(prog: &mut Vec<ReInst>, op: i32, a: i64, b: i64): i64 {
+    prog.push(ReInst {
+        op: op, a: a, b: b
+    }
+    )
+    return prog.len() - 1
+}
+
+fn reCompileNode(p: &ReParse, idx: i64, prog: &mut Vec<ReInst>) {
+    let node = reCloneNode(p.nodes[idx])
+    match node {
+        ReNode.Char(c) => {
+            reEmit(prog, RE_CHAR, c as i64, 0)
+        }
+        ReNode.Any => {
+            reEmit(prog, RE_ANY, 0, 0)
+        }
+        ReNode.ClassRef(ci) => {
+            reEmit(prog, RE_CLASS, ci, 0)
+        }
+        ReNode.Bol => {
+            reEmit(prog, RE_BOL, 0, 0)
+        }
+        ReNode.Eol => {
+            reEmit(prog, RE_EOL, 0, 0)
+        }
+        ReNode.WordB => {
+            reEmit(prog, RE_WORDB, 0, 0)
+        }
+        ReNode.NWordB => {
+            reEmit(prog, RE_NWORDB, 0, 0)
+        }
+        ReNode.Empty => {
+        }
+        ReNode.Concat(listIdx) => {
+            var i: i64 = 0
+            let n = p.lists[listIdx].len()
+            while i < n {
+                reCompileNode(p, p.lists[listIdx][i], prog)
+                i = i + 1
+            }
+        }
+        ReNode.Alt(listIdx) => {
+            var jmpEnds: Vec<i64> = Vec.new()
+            var i: i64 = 0
+            let n = p.lists[listIdx].len()
+            while i < n {
+                if i < n - 1 {
+                    let sp = reEmit(prog, RE_SPLIT, 0, 0)
+                    reCompileNode(p, p.lists[listIdx][i], prog)
+                    let jp = reEmit(prog, RE_JMP, 0, 0)
+                    jmpEnds.push(jp)
+                    prog[sp].a = sp + 1
+                    prog[sp].b = prog.len()
+                } else {
+                    reCompileNode(p, p.lists[listIdx][i], prog)
+                }
+                i = i + 1
+            }
+            let end = prog.len()
+            var k: i64 = 0
+            while k < jmpEnds.len() {
+                prog[jmpEnds[k]].a = end
+                k = k + 1
+            }
+        }
+        ReNode.Star(child, greedy) => {
+            let sp = reEmit(prog, RE_SPLIT, 0, 0)
+            let rs = reEmit(prog, RE_RESET, 0, -1)
+            let bodyFrom = prog.len()
+            reCompileNode(p, child, prog)
+            rePatchReset(prog, rs, bodyFrom)
+            reEmit(prog, RE_JMP, sp, 0)
+            let after = prog.len()
+            if greedy {
+                prog[sp].a = sp + 1
+                prog[sp].b = after
+            } else {
+                prog[sp].a = after
+                prog[sp].b = sp + 1
+            }
+        }
+        ReNode.Plus(child, greedy) => {
+            let l1 = prog.len()
+            let rs = reEmit(prog, RE_RESET, 0, -1)
+            let bodyFrom = prog.len()
+            reCompileNode(p, child, prog)
+            rePatchReset(prog, rs, bodyFrom)
+            let sp = reEmit(prog, RE_SPLIT, 0, 0)
+            let after = prog.len()
+            if greedy {
+                prog[sp].a = l1
+                prog[sp].b = after
+            } else {
+                prog[sp].a = after
+                prog[sp].b = l1
+            }
+        }
+        ReNode.Quest(child, greedy) => {
+            let sp = reEmit(prog, RE_SPLIT, 0, 0)
+            reCompileNode(p, child, prog)
+            let after = prog.len()
+            if greedy {
+                prog[sp].a = sp + 1
+                prog[sp].b = after
+            } else {
+                prog[sp].a = after
+                prog[sp].b = sp + 1
+            }
+        }
+        ReNode.Repeat(child, minV, maxV, greedy) => {
+            var k: i64 = 0
+            while k < minV {
+                reCompileNode(p, child, prog)
+                k = k + 1
+            }
+            if maxV < 0 {
+                let sp = reEmit(prog, RE_SPLIT, 0, 0)
+                let rs = reEmit(prog, RE_RESET, 0, -1)
+                let bodyFrom = prog.len()
+                reCompileNode(p, child, prog)
+                rePatchReset(prog, rs, bodyFrom)
+                reEmit(prog, RE_JMP, sp, 0)
+                let after = prog.len()
+                if greedy {
+                    prog[sp].a = sp + 1
+                    prog[sp].b = after
+                } else {
+                    prog[sp].a = after
+                    prog[sp].b = sp + 1
+                }
+            } else {
+                var splits: Vec<i64> = Vec.new()
+                var j = minV
+                while j < maxV {
+                    let sp = reEmit(prog, RE_SPLIT, 0, 0)
+                    splits.push(sp)
+                    let rs = reEmit(prog, RE_RESET, 0, -1)
+                    let bodyFrom = prog.len()
+                    reCompileNode(p, child, prog)
+                    rePatchReset(prog, rs, bodyFrom)
+                    j = j + 1
+                }
+                let after = prog.len()
+                var m: i64 = 0
+                while m < splits.len() {
+                    let sp = splits[m]
+                    if greedy {
+                        prog[sp].a = sp + 1
+                        prog[sp].b = after
+                    } else {
+                        prog[sp].a = after
+                        prog[sp].b = sp + 1
+                    }
+                    m = m + 1
+                }
+            }
+        }
+        ReNode.Backref(g) => {
+            reEmit(prog, RE_BACKREF, g, 0)
+        }
+        ReNode.LookBehind(child, negated) => {
+            let jmp = reEmit(prog, RE_JMP, 0, 0)
+            let innerStart = prog.len()
+            reCompileNode(p, child, prog)
+            reEmit(prog, RE_LOOKBEND, 0, 0)
+            prog[jmp].a = prog.len()
+            var negFlag: i64 = 0
+            if negated {
+                negFlag = 1
+            }
+            reEmit(prog, RE_LOOKBEHIND, innerStart, negFlag)
+        }
+        ReNode.Look(child, negated) => {
+            // layout: JMP after / <inner> LOOKEND / LOOK(innerStart, neg)
+            // the jump keeps the inner program out of the normal instruction flow
+            let jmp = reEmit(prog, RE_JMP, 0, 0)
+            let innerStart = prog.len()
+            reCompileNode(p, child, prog)
+            reEmit(prog, RE_LOOKEND, 0, 0)
+            prog[jmp].a = prog.len()
+            var negFlag: i64 = 0
+            if negated {
+                negFlag = 1
+            }
+            reEmit(prog, RE_LOOK, innerStart, negFlag)
+        }
+        ReNode.Group(child, capIdx) => {
+            if capIdx >= 0 {
+                reEmit(prog, RE_SAVE, 2 * capIdx, 0)
+            }
+            reCompileNode(p, child, prog)
+            if capIdx >= 0 {
+                reEmit(prog, RE_SAVE, 2 * capIdx + 1, 0)
+            }
+        }
+    }
+}
+
+fn reCloneNode(n: &ReNode): ReNode {
+    match n {
+        ReNode.Char(c) => {
+            return ReNode.Char(c)
+        }
+        ReNode.Any => {
+            return ReNode.Any
+        }
+        ReNode.ClassRef(ci) => {
+            return ReNode.ClassRef(ci)
+        }
+        ReNode.Bol => {
+            return ReNode.Bol
+        }
+        ReNode.Eol => {
+            return ReNode.Eol
+        }
+        ReNode.WordB => {
+            return ReNode.WordB
+        }
+        ReNode.NWordB => {
+            return ReNode.NWordB
+        }
+        ReNode.Concat(l) => {
+            return ReNode.Concat(l)
+        }
+        ReNode.Alt(l) => {
+            return ReNode.Alt(l)
+        }
+        ReNode.Star(c, g) => {
+            return ReNode.Star(c, g)
+        }
+        ReNode.Plus(c, g) => {
+            return ReNode.Plus(c, g)
+        }
+        ReNode.Quest(c, g) => {
+            return ReNode.Quest(c, g)
+        }
+        ReNode.Repeat(c, mn, mx, g) => {
+            return ReNode.Repeat(c, mn, mx, g)
+        }
+        ReNode.Look(c, neg) => {
+            return ReNode.Look(c, neg)
+        }
+        ReNode.Backref(g) => {
+            return ReNode.Backref(g)
+        }
+        ReNode.LookBehind(c, neg) => {
+            return ReNode.LookBehind(c, neg)
+        }
+        ReNode.Group(c, ci) => {
+            return ReNode.Group(c, ci)
+        }
+        ReNode.Empty => {
+            return ReNode.Empty
+        }
+    }
+}
+
+pub fn regexCompile(source: string, flags: string): Regex {
+    var patBytes: Vec<u8> = Vec.new()
+    var i: i64 = 0
+    while i < source.len() {
+        patBytes.push(source[i])
+        i = i + 1
+    }
+    // Flags first: `\p{...}` means different things with and without u/v, so the
+    // parser needs to know before it reads the pattern.
+    var fi = false
+    var fg = false
+    var fm = false
+    var fs_ = false
+    var fu = false
+    var fy = false
+    var fj: i64 = 0
+    while fj < flags.len() {
+        let fc = flags[fj]
+        if fc == 'i' {
+            fi = true
+        } else if fc == 'g' {
+            fg = true
+        } else if fc == 'm' {
+            fm = true
+        } else if fc == 's' {
+            fs_ = true
+        } else if fc == 'u' || fc == 'v' {
+            fu = true
+        }
+        fj = fj + 1
+        if fc == 'y' {
+            fy = true
+        }
+    }
+    var p = ReParse {
+        pat: patBytes, pos: 0, nodes: Vec.new(), lists: Vec.new(), classes: Vec.new(), ngroup: 0, groupNames: Vec.new(), groupNums: Vec.new(), unicode: fu, badProp: false, badSyntax: false
+    }
+    let root = reParseAlt(p)
+    // Anything left over is unconsumed input, which at the top level can only be
+    // a stray ')': reParseConcat stops at one, so an unbalanced close never gets
+    // eaten and shows up here.
+    if p.pos < p.pat.len() {
+        p.badSyntax = true
+    }
+    var prog: Vec<ReInst> = Vec.new()
+    reEmit(prog, RE_SAVE, 0, 0)
+    reCompileNode(p, root, prog)
+    reEmit(prog, RE_SAVE, 1, 0)
+    reEmit(prog, RE_MATCH, 0, 0)
+    return Regex {
+        prog: prog, classes: p.classes, nGroups: p.ngroup, flagI: fi, flagG: fg, flagM: fm, flagS: fs_, flagY: fy, source: source, flags: flags, valid: !p.badProp && !p.badSyntax, badPropName: p.badProp, groupNames: p.groupNames, groupNums: p.groupNums
+    }
+}
+
+// ── backtracking VM ──
+
+fn reLowerByte(c: u8): u8 {
+    if c >= 'A' && c <= 'Z' {
+        return c + 32
+    }
+    return c
+}
+
+fn reCharEq(a: u8, b: u8, fold: bool): bool {
+    if a == b {
+        return true
+    }
+    if fold {
+        return reLowerByte(a) == reLowerByte(b)
+    }
+    return false
+}
+
+// Byte length of the UTF-8 sequence starting at `sp`. A continuation byte or an
+// invalid lead answers 1, so a malformed input still makes progress rather than
+// looping.
+fn reCharLen(s: &string, sp: i64): i64 {
+    if sp >= s.len() {
+        return 1
+    }
+    let b = s[sp] as i64
+    var n: i64 = 1
+    if b >= 240 {
+        n = 4
+    } else if b >= 224 {
+        n = 3
+    } else if b >= 192 {
+        n = 2
+    }
+    if sp + n > s.len() {
+        return 1
+    }
+    return n
+}
+
+// Decode the UTF-8 sequence at `sp` to a code point. A truncated or invalid
+// sequence answers the lead byte, so a malformed input still compares against
+// something rather than trapping.
+fn reCodePointAt(s: &string, sp: i64): i32 {
+    let n = reCharLen(s, sp)
+    let b0 = s[sp] as i32
+    if n == 1 {
+        return b0
+    }
+    if n == 2 {
+        return ((b0 & 31) << 6) | (s[sp + 1] as i32 & 63)
+    }
+    if n == 3 {
+        return ((b0 & 15) << 12) | ((s[sp + 1] as i32 & 63) << 6) | (s[sp + 2] as i32 & 63)
+    }
+    return ((b0 & 7) << 18) | ((s[sp + 1] as i32 & 63) << 12) | ((s[sp + 2] as i32 & 63) << 6) | (s[sp + 3] as i32 & 63)
+}
+
+fn reClassMatch(cls: &ReClass, c: i32, fold: bool): bool {
+    var matched = false
+    var i: i64 = 0
+    while i < cls.lo.len() {
+        let lo = cls.lo[i]
+        let hi = cls.hi[i]
+        if c >= lo && c <= hi {
+            matched = true
+        }
+        if fold {
+            // fold through the real Unicode mappings, not an ASCII byte shift,
+            // so /[à-þ]/i matches É as well as é
+            let cl = lowerCp1(c)
+            let cu = upperCp1(c)
+            if (cl >= lo && cl <= hi) || (cu >= lo && cu <= hi) {
+                matched = true
+            }
+        }
+        i = i + 1
+    }
+    if cls.negated {
+        return !matched
+    }
+    return matched
+}
+
+fn reIsWordAt(s: &string, i: i64): bool {
+    if i < 0 || i >= s.len() {
+        return false
+    }
+    return reIsWord(s[i])
+}
+
+// Recursive backtracking. SAVE restores its slot on failure, so SPLIT needs no
+// snapshot. Returns true if the program matches starting at instruction `pc`,
+// input position `sp`.
+// One pending alternative: where to resume, and how far to unwind the trail.
+struct ReFrame {
+    pc: i64,
+    sp: i64,
+    trailLen: i64,
+}
+
+// The matcher. ITERATIVE, with an explicit backtrack stack, because the recursive
+// version recursed once per VM step: `x+` over n characters recursed n deep, and
+// past roughly 100k characters the green task's 8MB stack was gone and the process
+// exited SILENTLY with status 0 — no error, no output, no result.
+//
+// Assertions (lookahead/lookbehind) still recurse. Their nesting is bounded by the
+// pattern, not by the subject, so it cannot run away.
+//
+// `trail` is the undo log. A SAVE records the slot's old value and a backtrack
+// unwinds to the frame's mark, which is what lets alternatives share one saves
+// vector instead of snapshotting it per branch.
+fn reRun(re: &Regex, pcStart: i64, s: &string, spStart: i64, saves: &mut Vec<i64>): bool {
+    var stack: Vec<ReFrame> = Vec.new()
+    // trailKind 0 = a saves slot, 1 = a loopSp entry
+    var trailKind: Vec<i64> = Vec.new()
+    var trailIdx: Vec<i64> = Vec.new()
+    var trailVal: Vec<i64> = Vec.new()
+    // Per-SPLIT record of the last position its loop body was entered at. A body
+    // that matches EMPTY brings us back to the same split at the same sp forever —
+    // `(a*)*`, `(a|)*` and `(?:)*` all hung the engine on a three-character input.
+    // Refusing a second entry at an unchanged position is the standard cure.
+    var loopSp: Vec<i64> = Vec.new()
+    var li: i64 = 0
+    while li < re.prog.len() {
+        loopSp.push(-1)
+        li = li + 1
+    }
+    var pc = pcStart
+    var sp = spStart
+    var running = true
+    while running {
+        var advanced = false
+        let inst = re.prog[pc]
+        let op = inst.op
+        if op == RE_MATCH {
+            return true
+        }
+        if op == RE_CHAR {
+            if sp < s.len() && reCharEq(s[sp], inst.a as u8, re.flagI) {
+                pc = pc + 1
+                sp = sp + 1
+                advanced = true
+            }
+        } else if op == RE_ANY {
+            if sp < s.len() && (re.flagS || s[sp] != 10 as u8) {
+                // `.` is one CHARACTER, not one byte
+                sp = sp + reCharLen(s, sp)
+                pc = pc + 1
+                advanced = true
+            }
+        } else if op == RE_CLASS {
+            if sp < s.len() && reClassMatch(re.classes[inst.a], reCodePointAt(s, sp), re.flagI) {
+                sp = sp + reCharLen(s, sp)
+                pc = pc + 1
+                advanced = true
+            }
+        } else if op == RE_JMP {
+            pc = inst.a
+            advanced = true
+        } else if op == RE_SPLIT {
+            // inst.a is the preferred branch; inst.b is tried on backtrack
+            if loopSp[pc] == sp {
+                // Back at this loop head having consumed nothing, so the body just
+                // matched EMPTY. Fail the path rather than jumping to the exit:
+                // backtracking unwinds the empty iteration's captures, which is what
+                // keeps `(a*)*` on "aaa" capturing "aaa" instead of "". Skipping
+                // forward would leave the empty capture committed.
+                advanced = false
+            } else {
+                trailKind.push(1)
+                trailIdx.push(pc)
+                trailVal.push(loopSp[pc])
+                loopSp[pc] = sp
+                stack.push(ReFrame { pc: inst.b, sp: sp, trailLen: trailKind.len() })
+                pc = inst.a
+                advanced = true
+            }
+        } else if op == RE_SAVE {
+            trailKind.push(0)
+            trailIdx.push(inst.a)
+            trailVal.push(saves[inst.a])
+            saves[inst.a] = sp
+            pc = pc + 1
+            advanced = true
+        } else if op == RE_RESET {
+            var rk = inst.a
+            while rk <= inst.b {
+                if rk < saves.len() && saves[rk] >= 0 {
+                    trailKind.push(0)
+                    trailIdx.push(rk)
+                    trailVal.push(saves[rk])
+                    saves[rk] = -1
+                }
+                rk = rk + 1
+            }
+            pc = pc + 1
+            advanced = true
+        } else if op == RE_BOL {
+            if sp == 0 || (re.flagM && sp > 0 && s[sp - 1] == 10 as u8) {
+                pc = pc + 1
+                advanced = true
+            }
+        } else if op == RE_EOL {
+            if sp == s.len() || (re.flagM && s[sp] == 10 as u8) {
+                pc = pc + 1
+                advanced = true
+            }
+        } else if op == RE_WORDB {
+            if reIsWordAt(s, sp - 1) != reIsWordAt(s, sp) {
+                pc = pc + 1
+                advanced = true
+            }
+        } else if op == RE_NWORDB {
+            if reIsWordAt(s, sp - 1) == reIsWordAt(s, sp) {
+                pc = pc + 1
+                advanced = true
+            }
+        } else if op == RE_BACKREF {
+            let g = inst.a
+            let a = saves[2 * g]
+            let b = saves[2 * g + 1]
+            if a < 0 || b < 0 {
+                // an unmatched group backreferences as the empty string
+                pc = pc + 1
+                advanced = true
+            } else {
+                let n = b - a
+                if sp + n <= s.len() {
+                    var k: i64 = 0
+                    var same = true
+                    while k < n && same {
+                        if !reCharEq(s[sp + k], s[a + k], re.flagI) {
+                            same = false
+                        }
+                        k = k + 1
+                    }
+                    if same {
+                        sp = sp + n
+                        pc = pc + 1
+                        advanced = true
+                    }
+                }
+            }
+        } else if op == RE_LOOKEND {
+            // the inner program matched; unwind without consuming
+            return true
+        } else if op == RE_LOOKBEND {
+            return sp == saves[saves.len() - 1]
+        } else if op == RE_LOOK {
+            if reAssertLook(re, inst.a, inst.b, s, sp, saves) {
+                pc = pc + 1
+                advanced = true
+            }
+        } else if op == RE_LOOKBEHIND {
+            if reAssertLookBehind(re, inst.a, inst.b, s, sp, saves) {
+                pc = pc + 1
+                advanced = true
+            }
+        }
+        if !advanced {
+            // backtrack to the newest pending alternative, undoing everything the
+            // failed path wrote
+            if stack.len() == 0 {
+                return false
+            }
+            let f = stack.pop()!
+            while trailKind.len() > f.trailLen {
+                let kind = trailKind.pop()!
+                let idx = trailIdx.pop()!
+                let val = trailVal.pop()!
+                if kind == 0 {
+                    saves[idx] = val
+                } else {
+                    loopSp[idx] = val
+                }
+            }
+            pc = f.pc
+            sp = f.sp
+        }
+    }
+    return false
+}
+
+// Lookahead: run the sub-program at `body` from here without consuming. Captures a
+// failed or negative assertion made must not leak, so they are snapshotted.
+fn reAssertLook(re: &Regex, body: i64, negated: i64, s: &string, sp: i64, saves: &mut Vec<i64>): bool {
+    var snapshot: Vec<i64> = Vec.new()
+    var si: i64 = 0
+    while si < saves.len() {
+        snapshot.push(saves[si])
+        si = si + 1
+    }
+    let hit = reRun(re, body, s, sp, saves)
+    let wantMiss = negated == 1
+    if hit == wantMiss {
+        var r: i64 = 0
+        while r < snapshot.len() {
+            saves[r] = snapshot[r]
+            r = r + 1
+        }
+        return false
+    }
+    if wantMiss {
+        var r2: i64 = 0
+        while r2 < snapshot.len() {
+            saves[r2] = snapshot[r2]
+            r2 = r2 + 1
+        }
+    }
+    return true
+}
+
+// Lookbehind: there is no way to know how wide the body is, so try every earlier
+// start and require the body to finish exactly here. The scratch slot past the
+// capture slots carries that target.
+fn reAssertLookBehind(re: &Regex, body: i64, negated: i64, s: &string, sp: i64, saves: &mut Vec<i64>): bool {
+    var snapshot: Vec<i64> = Vec.new()
+    var si: i64 = 0
+    while si < saves.len() {
+        snapshot.push(saves[si])
+        si = si + 1
+    }
+    let target = saves.len() - 1
+    saves[target] = sp
+    var j = sp
+    var hit = false
+    while j >= 0 && !hit {
+        if reRun(re, body, s, j, saves) {
+            hit = true
+        } else {
+            j = j - 1
+        }
+    }
+    let wantMiss = negated == 1
+    if hit == wantMiss {
+        var r: i64 = 0
+        while r < snapshot.len() {
+            saves[r] = snapshot[r]
+            r = r + 1
+        }
+        return false
+    }
+    if wantMiss {
+        var r2: i64 = 0
+        while r2 < snapshot.len() {
+            saves[r2] = snapshot[r2]
+            r2 = r2 + 1
+        }
+    }
+    saves[target] = snapshot[target]
+    return true
+}
+
+// Try to match anywhere at or after `startPos`. Returns a saves vector; saves[0] < 0
+// (and length 0) means no match. On success, saves has 2*(nGroups+1) entries.
+pub fn regexExec(re: &Regex, s: &string, startPos: i64): Vec<i64> {
+    var start = startPos
+    // one scratch slot past the captures, used by lookbehind to carry its target
+    let slots = 2 * (re.nGroups + 1) + 1
+    while start <= s.len() {
+        var saves: Vec<i64> = Vec.new()
+        var k: i64 = 0
+        while k < slots {
+            saves.push(-1)
+            k = k + 1
+        }
+        if reRun(re, 0, s, start, saves) {
+            return saves
+        }
+        // Advance to the next CHARACTER boundary. Stepping one byte restarted
+        // the match in the middle of a multibyte character, where a decode sees
+        // a continuation byte as its own code point: /[^é]/ then "matched" the
+        // second half of the é it was supposed to reject.
+        start = start + reCharLen(s, start)
+    }
+    var empty: Vec<i64> = Vec.new()
+    return empty
+}

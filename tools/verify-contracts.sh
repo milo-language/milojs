@@ -47,8 +47,8 @@ UPDATE=0
 # file:proven:unknown:errors — proven is a gating FLOOR, errors a gating CEILING, unknown
 # is recorded for drift reporting only.
 EXPECTED="
-src/builtins.milo:13:4:0
-src/eval.milo:1:58:0
+src/engine/builtins.milo:13:4:0
+src/engine/eval.milo:1:58:0
 "
 
 fail=0

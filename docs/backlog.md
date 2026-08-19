@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: backlog
 purpose: what to work on next, with measured conformance attribution per change
-key-files: src/eval.milo, src/builtins.milo, src/parser.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts
+key-files: src/engine/eval.milo, src/engine/builtins.milo, src/engine/parser.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts
 update-when: an item lands, a gap is discovered, or a sweep re-attributes a score
 last-verified: 2026-08-18 (re-read after the native id enum landed; the NATIVE_* names in the history below are the constants it replaced)
 -->
@@ -1244,7 +1244,7 @@ correct the descriptors were made.
 
 Alongside it, built-ins now carry own `name` AND `length` with the spec's
 `{writable: false, enumerable: false, configurable: true}`. The arity tables
-(`builtinArity`, `builtinStaticArity` in `src/eval.milo`) are **generated from
+(`builtinArity`, `builtinStaticArity` in `src/engine/eval.milo`) are **generated from
 node** — it is the oracle for this too. Two tables, because the same name can
 differ: `Object.keys` is 1 while `Array.prototype.keys` is 0. Across every
 prototype only three names disagree internally — `constructor` (excluded),
@@ -1639,7 +1639,7 @@ put it.
 Every import form now loads: default, named, namespace, side-effect, renamed,
 `export ... from`, `export *`, and dynamic `import()` of a literal specifier.
 Module discovery recognises the ESM syntax directly (`scanRequires` in
-`src/modules.milo`), because it runs on tokens before the parser has desugared
+`src/runtime/modules.milo`), because it runs on tokens before the parser has desugared
 anything to `require`. `tests/esmImports.js` and `tests/runtime/esmModules.js`
 lock the behavior against node.
 
@@ -1697,9 +1697,9 @@ Nine methods diverged: `Array.prototype.slice`/`fill`/`copyWithin`/`join`/
 `flat`, `String.prototype.substr`/`padStart`/`padEnd`, and
 `%TypedArray%.prototype.subarray`/`slice`/`fill`/`join`.
 
-Fixed centrally: `argPresent(args, i)` in `src/builtins.milo` is the presence
+Fixed centrally: `argPresent(args, i)` in `src/engine/builtins.milo` is the presence
 test, and `argNum` uses it — which covers every `String.prototype` site at once.
-The array and typed-array branches in `src/eval.milo` call it directly.
+The array and typed-array branches in `src/engine/eval.milo` call it directly.
 
 Two neighbouring bugs came out of the same probe:
 
@@ -1732,7 +1732,7 @@ was that **every non-Latin script passed through unchanged**:
 ```
 
 Now generated rather than hand-written: `tools/gen-unicase.mjs` asks node's own
-ICU for the mapping of all 0x110000 code points and emits `src/unicase.milo` —
+ICU for the mapping of all 0x110000 code points and emits `src/engine/unicase.milo` —
 199 uppercase and 186 lowercase ranges as a balanced if-tree (milo has no static
 array initialiser, and a comparison tree is O(log n) with nothing to allocate or
 lazily initialise), plus the 102 mappings that GROW the string (ß → SS, ﬁ → FI,
@@ -1966,7 +1966,7 @@ Two smaller things found by the same probe, not yet fixed:
 
 `eval` resolved a bare identifier and hard-errored on everything else, under a
 comment in `evalCall` saying milojs has no runtime compiler. That comment was
-wrong, and I wrote it. `src/repl.milo` has always called `lex()` and
+wrong, and I wrote it. `src/runtime/repl.milo` has always called `lex()` and
 `parseProgram()` on new source at runtime and executed the result: eval is that
 same operation with the CALLER's scope instead of the REPL's global one.
 
@@ -2193,7 +2193,7 @@ reached through, which `Array.from`'s single `NATIVE_ARRAY_FROM` does not model.
 
 `milo build src/milojs-engine.milo` on a clean HEAD failed in LLVM with
 `error: use of undefined value '@.str.5025'` on a `getenv` call, deterministically
-but layout-sensitively: adding unrelated code to `src/eval.milo` moved the index
+but layout-sensitively: adding unrelated code to `src/engine/eval.milo` moved the index
 and the build succeeded, which is why the suite was green mid-session and red an
 hour later against unchanged milojs source. Gone as of milo `b5a40d2b`. Recorded
 because the failure mode is worth recognising: `milo` is a symlink to
@@ -2303,9 +2303,9 @@ right and its arithmetic was wrong, in a way worth recording because the same
 mistake is easy to repeat.
 
 Right: *"if it is built, it should be compact DATA decoded once, not emitted
-code."* That is what shipped. `tools/gen-uniprops.mjs` writes `src/uniprops.txt`,
+code."* That is what shipped. `tools/gen-uniprops.mjs` writes `src/engine/uniprops.txt`,
 one line per property, ranges as gap+length varint pairs in a base-64 alphabet.
-`src/uniprops.milo` decodes a property at pattern-COMPILE time straight into the
+`src/engine/uniprops.milo` decodes a property at pattern-COMPILE time straight into the
 regex's `ReClass`, so matching `\p{L}` costs what matching `[a-z]` costs and
 nothing decodes per character.
 
@@ -2644,7 +2644,7 @@ patch.
 ### A JS argument could kill the process: unchecked f64→i64 casts — FIXED 2026-08-17
 
 `dv.getFloat64(1e308)` did not throw a RangeError. It **terminated the process**
-with `runtime error: integer overflow at src/eval.milo:13715`, and
+with `runtime error: integer overflow at src/engine/eval.milo:13715`, and
 `"a".repeat(1e308)` was worse: no output, exit status 0, after grinding through
 gigabytes. Either is reachable from ordinary untrusted JS.
 
@@ -2663,8 +2663,8 @@ Fixed as a class, not four instances:
 - `numToIndex(x: f64): i64` saturates at ±(2^53−1) and answers 0 for NaN
   (ToIntegerOrInfinity's rule), so a clamped value is still out of range for any
   real buffer or string and the arithmetic downstream cannot overflow.
-- 64 call sites in `src/eval.milo` converted mechanically.
-- `argNum` in `src/builtins.milo` — the single funnel most string and array methods
+- 64 call sites in `src/engine/eval.milo` converted mechanically.
+- `argNum` in `src/engine/builtins.milo` — the single funnel most string and array methods
   take their index argument through — converted, which covers far more than the 64.
 - `String.prototype.repeat` gained the product cap that `padStart` already had.
   `padStart`'s comment described exactly this failure mode; the guard had been
@@ -4299,7 +4299,7 @@ against node, which is precisely why that fixture exists.
 
 `lint-symbols.sh` now checks the three hand-numbered tag families (`RE_`, `T_`,
 `NATIVE_`) for two members sharing a value. Restricted to those three on
-purpose: other prefixes legitimately repeat a number — src/repl.milo has a
+purpose: other prefixes legitimately repeat a number — src/runtime/repl.milo has a
 sprite whose width and row count are both 18, which is the false positive the
 first version of the check produced. Verified by re-introducing the collision
 and watching the gate name both lines.

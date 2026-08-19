@@ -1,6 +1,6 @@
 // eval used to resolve a bare identifier and hard-error on anything else, under
 // a comment claiming there is no runtime compiler. That was never true:
-// src/repl.milo has always lexed and parsed new source into the shared Prog at
+// src/runtime/repl.milo has always lexed and parsed new source into the shared Prog at
 // runtime and executed it. eval is that same operation with the caller's scope.
 function p(n, f) {
   try {

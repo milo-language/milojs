@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: arena-safety
 purpose: migration from raw integer arena indices to typed, stale-safe handles and frozen program state
-key-files: src/ast.milo, src/runtime.milo, src/eval.milo, std/arena
+key-files: src/engine/ast.milo, src/engine/runtime.milo, src/engine/eval.milo, std/arena
 update-when: an arena representation, handle type, mutation phase, or GC safepoint rule changes
 last-verified: 2026-07-30
 -->

@@ -23,7 +23,7 @@ rules matter more than the rest:
   (see §Conformance sweeps). "Should improve things" is not a result.
 
 Parallel agents get their own git worktree — several will collide in
-`src/eval.milo` and `lib/engine-prelude.js` otherwise. Split work by feature
+`src/engine/eval.milo` and `lib/engine-prelude.js` otherwise. Split work by feature
 cluster, merge to `main` as each one goes green, and push. Small green commits.
 
 ## What this is
@@ -42,6 +42,22 @@ Two binaries, both written in [Milo](https://github.com/milo-language/milo):
 ~<!--fact:loc-milo-->45.5k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
 >>>>>>> 12e3558 (crash fuzzer: symbols no longer leak their internal tag, nullish tostring throws)
 own bigint. No V8, no JSC, no C engine underneath.
+
+`src/` is split along that same line, and `tools/check-layering.sh` keeps it split:
+
+```
+src/engine/    the ECMAScript language and nothing else
+src/runtime/   host bindings: module loader, Node-API, fetch/child_process/sqlite, REPL
+src/           milojs-engine.milo, milojs.milo, libmilojs.milo — the entry points
+```
+
+Nothing under `src/engine/` may import from `src/runtime/`. The crossings that
+already exist are registered in `src/.layering-exempt` with an argument each, and
+that list is a ratchet: an unregistered crossing fails, and so does a registered
+one that has been removed. Read that file before assuming the split is clean —
+the evaluator's builtin dispatch still reaches `host.milo`, `napi.milo` and
+`modules.milo` (<!--fact:layering-exempt-edges-->4<!--/fact--> registered edges), and `src/engine/bootstrap.milo` installs
+<!--fact:layering-host-globals-->71<!--/fact--> host natives into the engine binary's global scope.
 
 ## Before you write any Milo
 
@@ -62,9 +78,9 @@ has `utf16Slice`.
 definition of the same name is accepted silently — the LAST one wins, with no
 warning. This has bitten this repo three times:
 
-- `propertyBagOf` was defined twice in `src/eval.milo` with **different bodies**; the
+- `propertyBagOf` was defined twice in `src/engine/eval.milo` with **different bodies**; the
   dead one returned -1 for native receivers.
-- `hexDigitVal` was defined in both `src/lexer.milo` and `src/value.milo`.
+- `hexDigitVal` was defined in both `src/engine/lexer.milo` and `src/engine/value.milo`.
 - A milojs helper once shadowed `std/string`'s `strIndexOf` and broke std
   internally.
 
@@ -349,12 +365,13 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/guard.sh` | process-group watchdog. Wrap anything that spawns milojs: caps RLIMIT_NPROC, SIGKILLs the whole group on process-count / RSS / free-memory / wall-clock breach. Exit 99 = it fired. |
 | `tools/dev.sh` | one-command dev loop: build engine+runtime (cached in `.dev/`, skipped when up to date), then run the suites in "Tests". `tools/dev.sh <pattern>` filters `run.sh` to matching fixtures. |
 | `tools/lint-symbols.sh` | duplicate + std-shadowing definitions. Exit 1 on a finding. |
+| `tools/check-layering.sh` | keeps `src/engine/` the language: no import into `src/runtime/`, and no unclassified `__` global in the engine's bootstrap. Holes are argued in `src/.layering-exempt`; the list only shrinks. |
 | `tools/gen-docs.sh` | regenerates `docs/api/` from doc-comments |
 | `tools/verify-expected.sh` | proves every `.expected` is what node prints. `--update` captures a new one, `--structure` is the instant registry-only half the hook runs. |
 | `tools/verify-contracts.sh` | static contract gate: fails on a refuted contract, or one that quietly stopped being proven. `--update` re-baselines. |
-| `tools/gen-unicase.mjs` | regenerates `src/unicase.milo` (case-mapping tables) from node's ICU |
-| `tools/gen-uniprops.mjs` | regenerates `src/uniprops.txt` (RegExp `\p{...}` property tables) from node's ICU. Needs `TEST262` to harvest the property spellings. `--check` gates. |
-| `tools/check-arity.mjs` | verifies the 389 built-in `length` values in `src/eval.milo` against node; `-v` shows every name it resolved |
+| `tools/gen-unicase.mjs` | regenerates `src/engine/unicase.milo` (case-mapping tables) from node's ICU |
+| `tools/gen-uniprops.mjs` | regenerates `src/engine/uniprops.txt` (RegExp `\p{...}` property tables) from node's ICU. Needs `TEST262` to harvest the property spellings. `--check` gates. |
+| `tools/check-arity.mjs` | verifies the 389 built-in `length` values in `src/engine/eval.milo` against node; `-v` shows every name it resolved |
 | `tools/check-gaps.mjs` | re-probes every "known engine limit" in `docs/status.md`; fails when one has been fixed and the bullet is still there |
 | `tools/check-docs-exec.mjs` | runs the `<!-- exec -->`-tagged examples in the docs and diffs them against the output the docs claim. Needs built binaries; part of `dev.sh`. |
 | `tools/check-docs.mjs` | doc-meta present, key-files real, AGENTS tables complete, and a staleness ratchet against each doc's key-files |

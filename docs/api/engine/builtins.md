@@ -1,0 +1,328 @@
+## engine/builtins
+
+### `argPresent`
+
+```milo
+pub fn argPresent(args: &Vec<JSValue>, i: i64): bool
+```
+
+An argument passed explicitly as `undefined` is the same as an absent one to
+every built-in that has a default for it: `"abcd".slice(1, undefined)` is
+`"abcd".slice(1)`, not the empty string. Presence checks written as
+`args.len() > i` alone get the explicit-undefined form wrong, and it is the
+common shape in real code (a forwarded optional parameter).
+
+### `byteToUtf16`
+
+```milo
+pub fn byteToUtf16(s: &string, at: i64): i64
+```
+
+byte offset -> UTF-16 index (the inverse, for indexOf-style results).
+
+### `isHtmlMethodName`
+
+```milo
+pub fn isHtmlMethodName(n: &string): bool
+```
+
+The annexB String HTML methods, as (name -> tag, attribute) tables. Kept
+beside stringMethod because the by-name dispatch is what makes them reachable:
+assigning them onto String.prototype from JS would mark it touched and turn
+that dispatch off for every other method.
+
+### `isPrimitiveMethodName`
+
+```milo
+pub fn isPrimitiveMethodName(n: &string): bool
+```
+
+Builtin methods dispatch natively by name; they are not properties. Reading one
+as a VALUE therefore used to yield undefined even though calling it worked, which
+breaks two very common patterns: feature detection (`typeof x.test === "function"`)
+and method extraction (`Array.prototype.slice.call(args)`). These predicates say
+whether a receiver answers to a name, so the member paths can hand back a bound
+method instead of undefined.
+
+### `isRegexMethodName`
+
+```milo
+pub fn isRegexMethodName(n: &string): bool
+```
+
+_Undocumented._
+
+### `isStringMethodName`
+
+```milo
+pub fn isStringMethodName(n: &string): bool
+```
+
+_Undocumented._
+
+### `isStringRegexOp`
+
+```milo
+pub fn isStringRegexOp(st: &Interp, name: &string, args: &Vec<JSValue>): bool
+```
+
+RegExp.prototype. Like the buffer family and Date before it, this object did
+not exist: `RegExp.prototype` read as undefined, so every test262 case that
+starts from the prototype — and there are many, since the flag accessors and
+the @@match/@@replace/@@split family all live there — failed before testing
+anything. Instances now link it, which is also what makes
+`Object.getPrototypeOf(/x/) === RegExp.prototype` hold.
+
+The flag properties stay OWN properties of each instance (that is where this
+engine resolves them); the prototype carries the methods.
+The regex-taking String operations. These used to live only on evalExpr's
+method-call path, so `s.match(/re/)` worked while
+`String.prototype.match.call(s, /re/)` returned undefined and
+`String.prototype.split.call(s, /,/)` returned the string unsplit —
+callBuiltinByName goes straight to stringMethod, which knows nothing about
+regexes. Both paths call this now.
+
+### `jsIndexOf`
+
+```milo
+pub fn jsIndexOf(s: &string, sub: &string, start: i64): i64
+```
+
+First index of `sub` in `s` at or after `start`, or -1. (`from` is a reserved keyword.)
+
+### `jsStartsWith`
+
+```milo
+pub fn jsStartsWith(s: &string, sub: &string): bool
+```
+
+_Undocumented._
+
+### `jsTrim`
+
+```milo
+pub fn jsTrim(s: &string): string
+```
+
+_Undocumented._
+
+### `makeRegex`
+
+```milo
+pub fn makeRegex(st: &mut Interp, pattern: string, flags: string): JSValue
+```
+
+_Undocumented._
+
+### `mjAbs`
+
+```milo
+pub fn mjAbs(x: f64): f64
+```
+
+_Undocumented._
+
+### `mjCeil`
+
+```milo
+pub fn mjCeil(x: f64): f64
+```
+
+_Undocumented._
+
+### `mjFloor`
+
+```milo
+pub fn mjFloor(x: f64): f64
+```
+
+_Undocumented._
+
+### `mjJsonOmitted`
+
+```milo
+pub fn mjJsonOmitted(v: &JSValue): bool
+```
+
+_Undocumented._
+
+### `mjJsonParse`
+
+```milo
+pub fn mjJsonParse(s: &string, st: &mut Interp): JSValue
+```
+
+_Undocumented._
+
+### `mjNextRandom`
+
+```milo
+pub fn mjNextRandom(state: i64): i64
+```
+
+xorshift64 — a pure-Milo PRNG for Math.random(). Deterministic seed (a real
+runtime would seed from entropy); good enough for [0,1) values, not crypto.
+
+### `mjRound`
+
+```milo
+pub fn mjRound(x: f64): f64
+```
+
+_Undocumented._
+
+### `mjSign`
+
+```milo
+pub fn mjSign(x: f64): f64
+```
+
+_Undocumented._
+
+### `mjStringifyVal`
+
+```milo
+pub fn mjStringifyVal(v: &JSValue, st: &Interp): string
+```
+
+Compact JSON text for a value (no indentation). undefined/function become
+"null" in arrays; object props holding them are omitted. NaN/Infinity → null.
+
+### `mjTrunc`
+
+```milo
+pub fn mjTrunc(x: f64): f64
+```
+
+_Undocumented._
+
+### `numToIndex`
+
+```milo
+pub fn numToIndex(x: f64): i64
+```
+
+f64 -> i64 for an INDEX-like argument, saturating instead of trapping.
+
+`numToIndex(toNum(args[0]))` was used in 63 places. For an ordinary argument it is
+fine; for `Number.MAX_VALUE` the cast produces something near i64::MAX and the
+next arithmetic on it OVERFLOWS, which in Milo is a trap — so
+`dv.getFloat64(1e308)` killed the process with "integer overflow" instead of
+throwing a RangeError. Clamping to the safe-integer range keeps every existing
+bounds check meaningful (a clamped value is still out of range for any real
+buffer or string) and makes the arithmetic downstream unable to overflow.
+
+NaN answers 0, which is ToIntegerOrInfinity's rule.
+
+### `primitiveMethod`
+
+```milo
+pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>): JSValue
+```
+
+_Undocumented._
+
+### `regexArgFor`
+
+```milo
+pub fn regexArgFor(st: &mut Interp, name: &string, args: &Vec<JSValue>): Vec<JSValue>
+```
+
+The argument re-made as a RegExp, with matchAll keeping the /g the spec
+requires of it.
+
+### `regexMethod`
+
+```milo
+pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSValue
+```
+
+_Undocumented._
+
+### `strCodePoints`
+
+```milo
+pub fn strCodePoints(s: &string): Vec<string>
+```
+
+s.split(sep) → a new heap array. No arg → [s]; empty sep → one entry per char.
+A string's Unicode code points, one substring each. JS string iteration
+(for-of, spread, Array.from) yields code points — since milojs strings are
+UTF-8, that means walking by decoded codepoint width, NOT by byte, or a
+multibyte char (é = 2 bytes, 😀 = 4) is chopped into invalid pieces that
+render as U+FFFD. Shared so every iteration site behaves identically.
+
+### `stringFromUtf16Units`
+
+```milo
+pub fn stringFromUtf16Units(units: &Vec<i64>): string
+```
+
+Build a string from UTF-16 code units, combining surrogate pairs into one
+codepoint and UTF-8 encoding the result. String.fromCharCode used to push each
+unit as a raw BYTE, so fromCharCode(0x4E2D) truncated to '-' and anything above
+U+00FF was destroyed.
+
+### `stringMethod`
+
+```milo
+pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue
+```
+
+_Undocumented._
+
+### `stringOpNeedsRegexArg`
+
+```milo
+pub fn stringOpNeedsRegexArg(st: &Interp, name: &string, args: &Vec<JSValue>): bool
+```
+
+match/matchAll/search have NO non-regex form: the spec builds a RegExp from
+whatever it is handed. `"a1b".match("\\d")` is ["1"], not undefined, and
+passing a plain string is the common way to write it. replace/split do have
+literal-string forms, so they are deliberately absent here.
+
+### `stringRegexOp`
+
+```milo
+pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue
+```
+
+_Undocumented._
+
+### `strSlice`
+
+```milo
+pub fn strSlice(s: &string, start: i64, end: i64): string
+```
+
+_Undocumented._
+
+### `utf16Length`
+
+```milo
+pub fn utf16Length(s: &string): i64
+```
+
+`.length` is one of the hottest string reads, and the general path calls
+decodeCodepoint per character. For an all-ASCII string — overwhelmingly the
+common case — the UTF-16 length equals the byte length, and proving that is a
+tight byte scan instead of a decode per character. Falls back to the general
+path from the first non-ASCII byte, so no work is repeated.
+
+### `utf16Slice`
+
+```milo
+pub fn utf16Slice(s: &string, start: i64, end: i64): string
+```
+
+Slice by UTF-16 indices, JS-style (negative counts from the end, bounds clamp).
+
+### `utf16ToByte`
+
+```milo
+pub fn utf16ToByte(s: &string, idx: i64): i64
+```
+
+UTF-16 index -> byte offset. Past the end returns s.len(), so callers can use
+it directly as a slice bound.

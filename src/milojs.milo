@@ -32,40 +32,40 @@ from "std/env" import {
 from "std/args" import {
     args
 }
-from "./version" import {
+from "./engine/version" import {
     versionText
 }
-from "./ast" import {
+from "./engine/ast" import {
     Prog, gProg
 }
-from "./value" import {
+from "./engine/value" import {
     JSValue, Native, Builtin, objHandle
 }
-from "./runtime" import {
+from "./engine/runtime" import {
     Interp, newObject, newArray, objSet, arrPush, scopeDefine, scopeLookup, objGet
 }
-from "./driver" import {
+from "./engine/driver" import {
     makeInterp, bootInterp
 }
-from "./builtins" import {
+from "./engine/builtins" import {
     strSlice
 }
 from "std/process" import {
     exePath
 }
-from "./modules" import {
+from "./runtime/modules" import {
     preloadGraph, dirOf, fileExists
 }
-from "./eval" import {
+from "./engine/eval" import {
     runModule
 }
-from "./eval" import {
+from "./engine/eval" import {
     execBlock, hoistBlock, runEventLoop, anyGenParked
 }
-from "./value" import {
+from "./engine/value" import {
     toStr
 }
-from "./repl" import {
+from "./runtime/repl" import {
     repl
 }
 

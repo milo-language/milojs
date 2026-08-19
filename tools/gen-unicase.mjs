@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generates src/unicase.milo — the Unicode case-mapping tables for
+// Generates src/engine/unicase.milo — the Unicode case-mapping tables for
 // String.prototype.toUpperCase/toLowerCase.
 //
 // node is the oracle here as everywhere else in this repo: the tables are read
@@ -7,8 +7,8 @@
 // generated engine agrees with node by construction rather than by transcribing
 // UnicodeData.txt by hand. Re-run after a node upgrade if a case mapping changes.
 //
-//   node tools/gen-unicase.mjs > src/unicase.milo
-//   node tools/gen-unicase.mjs --check      # fail if src/unicase.milo has drifted
+//   node tools/gen-unicase.mjs > src/engine/unicase.milo
+//   node tools/gen-unicase.mjs --check      # fail if src/engine/unicase.milo has drifted
 //
 // The header says "do not edit by hand", which was a request until --check existed.
 // A generated file with no regeneration gate is a generated file that quietly
@@ -142,10 +142,10 @@ ${multiTree(lo.multi, 1)}}
 `;
 if (process.argv.includes("--check")) {
   const { readFileSync } = await import("node:fs");
-  const target = new URL("../src/unicase.milo", import.meta.url);
+  const target = new URL("../src/engine/unicase.milo", import.meta.url);
   const have = readFileSync(target, "utf8");
   if (have !== out) {
-    console.error("gen-unicase: src/unicase.milo does not match its generator.");
+    console.error("gen-unicase: src/engine/unicase.milo does not match its generator.");
     const wasStamped = have.match(/^\/\/ Generated from (.+)\.$/m);
     if (wasStamped && wasStamped[1] !== STAMP) {
       console.error(`  committed with: ${wasStamped[1]}`);
@@ -153,12 +153,12 @@ if (process.argv.includes("--check")) {
       console.error("  The oracle moved, not the code. Either run the pinned node");
       console.error("  (.github/workflows/ci.yml) or regenerate and bump that pin.");
     }
-    console.error("Regenerate with: node tools/gen-unicase.mjs > src/unicase.milo");
+    console.error("Regenerate with: node tools/gen-unicase.mjs > src/engine/unicase.milo");
     console.error("(If node's ICU changed under you, read the diff before committing it —");
     console.error(" it moves what the engine believes about Unicode case mapping.)");
     process.exit(1);
   }
-  console.log("gen-unicase: src/unicase.milo matches its generator");
+  console.log("gen-unicase: src/engine/unicase.milo matches its generator");
 } else {
   process.stdout.write(out);
 }

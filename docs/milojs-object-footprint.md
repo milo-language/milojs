@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: milojs-object-footprint
 purpose: measured per-object memory cost in milojs, and the JSObjExtra side table that shrank it
-key-files: src/runtime.milo
+key-files: src/engine/runtime.milo
 update-when: JSObj gains or loses fields, or the side-table split lands
 last-verified: 2026-08-18 (HashMap accessor claim re-checked against std/arena)
 -->
@@ -28,7 +28,7 @@ bytes, regex id, date, node-api wrapper. A plain `{}` paid for all of them, and
 an object with no properties at all cost a kilobyte.
 
 Those fields now live in `JSObjExtra`, a side table reached through a single
-`extra` index on `JSObj`. Current shape, counted from `src/runtime.milo`:
+`extra` index on `JSObj`. Current shape, counted from `src/engine/runtime.milo`:
 
 | | fields |
 |---|---:|
@@ -107,7 +107,7 @@ broke the real app, so the order that actually catches things is: change, then
 ## Execution design (added 2026-07-20, for the fresh session that lands this)
 
 Concrete finding: the Map/Set group alone is **73 accessor sites** (63 in
-src/eval.milo, 10 in src/runtime.milo). Every rare field is like this — moving one to a
+src/engine/eval.milo, 10 in src/engine/runtime.milo). Every rare field is like this — moving one to a
 side table is a mechanical but large rewrite of its access sites. Milo has no
 property getters, so `st.objects[o].mapKeys` cannot transparently redirect; each
 site must change. Budget for it; don't expect a small diff.

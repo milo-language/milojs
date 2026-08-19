@@ -29,7 +29,17 @@ status=0
 # separate programs, never compiled together.
 ALLOWED_DUPES="main"
 
-defs=$(grep -nHoE '^(pub )?fn [a-zA-Z0-9_]+' src/*.milo \
+# src/ has subdirectories (engine/, runtime/) since the layering split, so a flat
+# `src/*.milo` glob would silently drop all but the three entry points — the same
+# shape as a check reporting "0 checked" and exiting 0. Collect the list once and
+# fail loudly if it comes back short.
+SRCS=$(find src -name '*.milo' | sort)
+if [ "$(echo "$SRCS" | wc -l | tr -d ' ')" -lt 20 ]; then
+    echo "lint-symbols: found only $(echo "$SRCS" | wc -l | tr -d ' ') .milo files under src/ — the glob is broken" >&2
+    exit 1
+fi
+
+defs=$(echo "$SRCS" | xargs grep -nHoE '^(pub )?fn [a-zA-Z0-9_]+' \
        | sed -E 's/:(pub )?fn /:/' )
 
 dupes=$(echo "$defs" | awk -F: '{print $3}' | sort | uniq -d)
@@ -72,16 +82,16 @@ fi
 #
 # Restricted to RE_ (regex opcodes) and T_ (token kinds): these are enumerations
 # where two members sharing a value is always a bug. Other prefixes legitimately
-# repeat a number — src/repl.milo has a sprite whose width and row count are both
+# repeat a number — src/runtime/repl.milo has a sprite whose width and row count are both
 # 18. NATIVE_ was checked here too, until the builtin ids became the Builtin enum
-# in src/value.milo and the compiler took over assigning them.
+# in src/engine/value.milo and the compiler took over assigning them.
 for prefix in RE T; do
-    dupvals=$(grep -hoE "^let ${prefix}_[A-Z0-9_]*: i[0-9]+ = -?[0-9]+" src/*.milo \
+    dupvals=$(echo "$SRCS" | xargs grep -hoE "^let ${prefix}_[A-Z0-9_]*: i[0-9]+ = -?[0-9]+" \
         | sed -E 's/.*= (-?[0-9]+)$/\1/' | sort -n | uniq -d)
     for value in $dupvals; do
         status=1
         echo "duplicate ${prefix}_* constant value: $value"
-        grep -nE "^let ${prefix}_[A-Z0-9_]*: i[0-9]+ = ${value}\$" src/*.milo | sed 's/^/    /'
+        echo "$SRCS" | xargs grep -nE "^let ${prefix}_[A-Z0-9_]*: i[0-9]+ = ${value}\$" | sed 's/^/    /'
     done
 done
 

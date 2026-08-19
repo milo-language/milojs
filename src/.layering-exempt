@@ -1,0 +1,132 @@
+# Registered holes in the engine/runtime split, checked by tools/check-layering.sh.
+#
+# src/engine/ is meant to be the ECMAScript language and nothing else, and
+# src/runtime/ the host bindings layered on top. Where that is not yet true, the
+# exception is argued HERE rather than in a comment at the top of one source file
+# where nobody reads it — the same reason tests/.node-oracle-exempt exists.
+#
+# The gate is a ratchet in both directions: an unregistered violation fails, and
+# so does a registered exemption that no longer applies. The list only shrinks.
+#
+# Two record shapes:
+#
+#   <engine file> -> <runtime file>    an import edge from the engine side
+#   global: <name> <class> <reason>    a `__`-prefixed global src/engine/bootstrap.milo
+#                                      installs, so the milojs-engine binary exposes it.
+#                                      class is engine-intrinsic or host-native.
+
+
+# --- IMPORT EDGES ---
+#
+# All four are pre-existing and structural, not accidents of the file move. They
+# are the debt the split made visible.
+
+src/engine/eval.milo -> src/runtime/host.milo    eval.milo owns the single Builtin dispatch switch, and the host natives (sqlite, fetch, spawn) are arms of it. host.milo's own header states the intended relationship: "milojs-engine links this file and never calls into it; only the milojs runtime does." The link is real, the call never happens in the engine binary. Removing the edge means lifting ~60 arms out of a 16.6k-line switch behind an indirection, which is a refactor, not a move.
+src/engine/eval.milo -> src/runtime/napi.milo    same shape: the Node-API natives are dispatched from that same switch. Node-API is host by definition, so this edge is pure debt with no language argument behind it.
+src/engine/eval.milo -> src/runtime/modules.milo    the evaluator has to turn a specifier into a module record to execute `import`, `export` and dynamic `import()`, which ARE the language. But modules.milo is two things in one file: that graph loader, and node's resolution algorithm (node_modules walk, package.json main, ~50 embedded node builtin shims). Only the first half belongs to the engine. Splitting the file is the fix; the edge stands until it happens.
+src/milojs-engine.milo -> src/runtime/modules.milo    the engine entry point calls preloadGraph to load its OWN built-ins — lib/engine-prelude.js (spec built-ins written in JS) and lib/temporal.js — before any user code runs. So the engine genuinely needs a module loader; it does not need node's resolver, and today those are the same file. Not removable without the split above.
+
+
+# --- ENGINE GLOBAL SURFACE ---
+#
+# `milojs-engine` answers `function` for __sqliteOpen. It also does for
+# __httpFetch, __spawnSync, __tcpListen, __readFileSync and 66 others: the whole
+# host native surface is installed by src/engine/bootstrap.milo, which the engine
+# binary runs. `fetch` is undefined there only because `fetch` is the JS wrapper
+# in lib/node-fetch.js, which the engine never loads — the native underneath it
+# is present. sqlite is not the odd one out; it is one of 71.
+#
+# They are registered rather than removed because gating them out is the same
+# refactor as the eval->host edge above: the natives are arms of the evaluator's
+# dispatch switch, and bootstrap installs a name for every arm. A conditional
+# install would be a second, weaker place for the layering to be true, and would
+# not remove the code from the engine binary anyway.
+#
+# What this ledger buys: adding a new host native to the engine's bootstrap now
+# costs a line and an argument here instead of nothing.
+
+global: __byteLength                 engine-intrinsic ArrayBuffer/TypedArray byte length; the spec's [[ArrayBufferByteLength]] read, no host in it
+global: __callFrames                 engine-intrinsic the interpreter's own call stack, which is what Error.prototype.stack is built from
+global: __construct                  engine-intrinsic [[Construct]] on a callable; Reflect.construct and the prelude's class helpers call it
+global: __inspect                    engine-intrinsic the value formatter behind console.log, which is part of the engine's built-in global set
+global: __isConstructor              engine-intrinsic IsConstructor(); the prelude needs the spec predicate, not a heuristic
+global: __iteratorProto              engine-intrinsic %IteratorPrototype%, an intrinsic the prelude cannot reach any other way
+global: __markNotConstructor         engine-intrinsic marks a prelude-defined function non-constructable, as the spec requires of methods
+global: __promiseResolveValue        engine-intrinsic the Promise resolve/reject machinery the prelude's Promise combinators drive
+global: __reflectDefineProperty      engine-intrinsic Reflect.defineProperty; the prelude implements the Reflect namespace in JS over these
+global: __reflectGet                 engine-intrinsic Reflect.get, same reason
+global: __reflectOwnKeys             engine-intrinsic Reflect.ownKeys, same reason
+global: __reflectPreventExtensions   engine-intrinsic Reflect.preventExtensions, same reason
+global: __reflectSet                 engine-intrinsic Reflect.set, same reason
+global: __reflectSetPrototypeOf      engine-intrinsic Reflect.setPrototypeOf, same reason
+global: __chmodSync                  host-native      filesystem access, a host service with no ECMAScript surface
+global: __closeSync                  host-native      filesystem access, a host service with no ECMAScript surface
+global: __copyFileSync               host-native      filesystem access, a host service with no ECMAScript surface
+global: __deflateGzip                host-native      zlib compression, a host service with no ECMAScript surface
+global: __deflateRaw                 host-native      zlib compression, a host service with no ECMAScript surface
+global: __deflateZlib                host-native      zlib compression, a host service with no ECMAScript surface
+global: __exePath                    host-native      child processes; the natives live in src/runtime/host.milo
+global: __fchmodSync                 host-native      filesystem access, a host service with no ECMAScript surface
+global: __fileExists                 host-native      filesystem access, a host service with no ECMAScript surface
+global: __fileSize                   host-native      filesystem access, a host service with no ECMAScript surface
+global: __fsyncSync                  host-native      filesystem access, a host service with no ECMAScript surface
+global: __ftruncateSync              host-native      filesystem access, a host service with no ECMAScript surface
+global: __httpFetch                  host-native      HTTP client/server; the natives live in src/runtime/host.milo
+global: __httpFetchAsync             host-native      HTTP client/server; the natives live in src/runtime/host.milo
+global: __httpRegister               host-native      HTTP client/server; the natives live in src/runtime/host.milo
+global: __httpUnregister             host-native      HTTP client/server; the natives live in src/runtime/host.milo
+global: __inflateGzip                host-native      zlib compression, a host service with no ECMAScript surface
+global: __inflateRaw                 host-native      zlib compression, a host service with no ECMAScript surface
+global: __inflateZlib                host-native      zlib compression, a host service with no ECMAScript surface
+global: __isDir                      host-native      filesystem access, a host service with no ECMAScript surface
+global: __killPid                    host-native      child processes; the natives live in src/runtime/host.milo
+global: __linkSync                   host-native      filesystem access, a host service with no ECMAScript surface
+global: __mkdirSync                  host-native      filesystem access, a host service with no ECMAScript surface
+global: __mkdtempSync                host-native      filesystem access, a host service with no ECMAScript surface
+global: __napiLoad                   host-native      Node-API addon loading; the natives live in src/runtime/napi.milo
+global: __openFlags                  host-native      filesystem access, a host service with no ECMAScript surface
+global: __openSync                   host-native      filesystem access, a host service with no ECMAScript surface
+global: __readFdInto                 host-native      filesystem access, a host service with no ECMAScript surface
+global: __readFileSync               host-native      filesystem access, a host service with no ECMAScript surface
+global: __readdirSync                host-native      filesystem access, a host service with no ECMAScript surface
+global: __readlinkSync               host-native      filesystem access, a host service with no ECMAScript surface
+global: __realpathSync               host-native      filesystem access, a host service with no ECMAScript surface
+global: __renameSync                 host-native      filesystem access, a host service with no ECMAScript surface
+global: __rmdirSync                  host-native      filesystem access, a host service with no ECMAScript surface
+global: __spawnAsync                 host-native      child processes; the natives live in src/runtime/host.milo
+global: __spawnSync                  host-native      child processes; the natives live in src/runtime/host.milo
+global: __sqliteBind                 host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __sqliteBindIndex            host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __sqliteChanges              host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __sqliteClose                host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __sqliteColumnCount          host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __sqliteColumnName           host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __sqliteColumnValue          host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __sqliteErrmsg               host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __sqliteExec                 host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __sqliteFilename             host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __sqliteFinalize             host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __sqliteLastInsertId         host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __sqliteOpen                 host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __sqlitePrepare              host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __sqliteReset                host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __sqliteStep                 host-native      sqlite handle; the natives live in src/runtime/host.milo
+global: __statSync                   host-native      filesystem access, a host service with no ECMAScript surface
+global: __symlinkSync                host-native      filesystem access, a host service with no ECMAScript surface
+global: __tcpAccept                  host-native      raw TCP socket; the natives live in src/runtime/host.milo
+global: __tcpClose                   host-native      raw TCP socket; the natives live in src/runtime/host.milo
+global: __tcpConnect                 host-native      raw TCP socket; the natives live in src/runtime/host.milo
+global: __tcpListen                  host-native      raw TCP socket; the natives live in src/runtime/host.milo
+global: __tcpPort                    host-native      raw TCP socket; the natives live in src/runtime/host.milo
+global: __tcpRead                    host-native      raw TCP socket; the natives live in src/runtime/host.milo
+global: __tcpRecv                    host-native      raw TCP socket; the natives live in src/runtime/host.milo
+global: __tcpSend                    host-native      raw TCP socket; the natives live in src/runtime/host.milo
+global: __truncateSync               host-native      filesystem access, a host service with no ECMAScript surface
+global: __udpAddress                 host-native      UDP socket; the natives live in src/runtime/host.milo
+global: __udpBind                    host-native      UDP socket; the natives live in src/runtime/host.milo
+global: __udpClose                   host-native      UDP socket; the natives live in src/runtime/host.milo
+global: __udpRecv                    host-native      UDP socket; the natives live in src/runtime/host.milo
+global: __udpSend                    host-native      UDP socket; the natives live in src/runtime/host.milo
+global: __unlinkSync                 host-native      filesystem access, a host service with no ECMAScript surface
+global: __writeFdFrom                host-native      filesystem access, a host service with no ECMAScript surface
+global: __writeFileSync              host-native      filesystem access, a host service with no ECMAScript surface

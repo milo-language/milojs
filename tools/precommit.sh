@@ -12,6 +12,14 @@ if ! tools/lint-symbols.sh; then
     status=1
 fi
 
+# src/engine/ is the ECMAScript language, src/runtime/ is the host bindings. The
+# split is a directory layout until something enforces it; this is the something.
+# Holes are registered in src/.layering-exempt with an argument, and a registered
+# hole that closed also fails, so the list only shrinks.
+if ! tools/check-layering.sh; then
+    status=1
+fi
+
 # A fixture with no .expected is printed as SKIP by tests/run.sh and exits 0, so
 # it passes forever while testing nothing. --structure is the instant half of the
 # node-oracle gate; CI runs the half that actually executes node.
@@ -29,7 +37,7 @@ if [ "$before" != "$after" ]; then
     echo "precommit: docs/api was stale; regenerated and staged"
 fi
 
-# 389 built-in `length` values in src/eval.milo sit under a "GENERATED from node"
+# 389 built-in `length` values in src/engine/eval.milo sit under a "GENERATED from node"
 # comment with no generator behind it. test262 asserts every one.
 if command -v node >/dev/null 2>&1 && ! node tools/check-arity.mjs; then
     status=1
@@ -44,13 +52,13 @@ if command -v node >/dev/null 2>&1 && [ -x .dev/mj-engine ] && ! node tools/chec
     status=1
 fi
 
-# src/unicase.milo is generated from node's ICU and says "do not edit by hand",
+# src/engine/unicase.milo is generated from node's ICU and says "do not edit by hand",
 # which was a request until this ran. 0.1s.
 if command -v node >/dev/null 2>&1 && ! node tools/gen-unicase.mjs --check; then
     status=1
 fi
 
-# src/uniprops.txt is the Unicode property tables for RegExp \p{...}, generated
+# src/engine/uniprops.txt is the Unicode property tables for RegExp \p{...}, generated
 # from the same ICU. Needs TEST262 to harvest the property SPELLINGS, so it is
 # checked only where the corpus is present — CI does the same.
 if command -v node >/dev/null 2>&1 && [ -n "${TEST262:-}" ] && [ -d "${TEST262:-}/test" ] \

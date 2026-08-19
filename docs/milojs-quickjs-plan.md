@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: milojs
 purpose: active work plan for improving the QuickJS-suite score without confusing historical gaps with current code
-key-files: scripts/quickjs-sweep.ts, src/parser.milo, src/eval.milo, src/runtime.milo, lib/engine-prelude.js
+key-files: scripts/quickjs-sweep.ts, src/engine/parser.milo, src/engine/eval.milo, src/engine/runtime.milo, lib/engine-prelude.js
 update-when: the sweep is rerun, a failure bucket changes, or a lane lands
 last-verified: 2026-07-30
 -->

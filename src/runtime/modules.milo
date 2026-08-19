@@ -1,0 +1,833 @@
+// CommonJS module pre-loading. The whole require() graph is discovered and
+// parsed into ONE shared Prog before any code runs. That matters: during
+// execution the evaluator only holds an immutable view of the program, so a
+// require that had to parse-and-append mid-eval would fight the borrow rules.
+// Pre-loading moves all mutation into a phase where the driver owns the Prog.
+//
+// Edges are found by scanning the token stream for `require("literal")` and for
+// the ESM forms that desugar onto it, so computed specifiers (require(someVar),
+// import(someVar)) are not discovered — a known limit.
+
+from "std/fs" import {
+    readFile, currentDir
+}
+from "../engine/lexer" import {
+    lex, Token, T_IDENT, T_LPAREN, T_STR, T_IMPORT, T_EXPORT, T_STAR, T_LBRACE, T_RBRACE, T_COMMA, T_DOT
+}
+from "../engine/ast" import {
+    Prog, registerSource
+}
+from "../engine/parser" import {
+    PState, parseProgram
+}
+from "../engine/value" import {
+    JSValue
+}
+from "../engine/runtime" import {
+    Interp
+}
+
+// Directory portion of a path ("" when there is no separator).
+pub fn dirOf(path: &string): string {
+    var cut: i64 = -1
+    var i: i64 = 0
+    while i < path.len() {
+        if path[i] == '/' {
+            cut = i
+        }
+        i = i + 1
+    }
+    if cut < 0 {
+        return ""
+    }
+    var out = String.withCapacity(cut)
+    var j: i64 = 0
+    while j < cut {
+        out.push(path[j])
+        j = j + 1
+    }
+    return out
+}
+
+// Collapse a path containing "." and ".." segments.
+fn normalizePath(path: &string): string {
+    var parts: Vec<string> = Vec.new()
+    var cur = String.withCapacity(16)
+    var i: i64 = 0
+    let n = path.len()
+    var leadingSlash = false
+    if n > 0 && path[0] == '/' {
+        leadingSlash = true
+    }
+    while i <= n {
+        if i == n || path[i] == '/' {
+            if cur.len() > 0 {
+                if cur == ".." {
+                    // A `..` with nothing to pop was DROPPED, so a relative path
+                    // that climbs above its base lost the climb: from pkg/sub,
+                    // `../../lib.js` normalised to `lib.js` and resolved against
+                    // the wrong directory. Only an ABSOLUTE path may discard it
+                    // (there is nothing above the root); a relative one has to
+                    // keep it, and must not pop a `..` it just kept.
+                    if parts.len() > 0 && parts[parts.len() - 1] != ".." {
+                        let _ = parts.pop()
+                    } else if !leadingSlash {
+                        parts.push("..")
+                    }
+                } else if cur != "." {
+                    parts.push(cur.clone())
+                }
+            }
+            cur = String.withCapacity(16)
+        } else {
+            cur.push(path[i])
+        }
+        i = i + 1
+    }
+    var out = ""
+    if leadingSlash {
+        out = "/"
+    }
+    var k: i64 = 0
+    while k < parts.len() {
+        if k > 0 {
+            out = out + "/"
+        }
+        out = out + parts[k]
+        k = k + 1
+    }
+    if out.len() == 0 && !leadingSlash {
+        // "." and "./" normalise to nothing, and an empty base resolves against
+        // nothing: `require(".")` and `require("./")` are the directory itself,
+        // which node answers with its package.json main or index.js
+        return "."
+    }
+    return out
+}
+
+// A CommonJS source file: .js or .cjs. Packages that ship both ESM and CJS name
+// the CommonJS entry .cjs, and their package.json "main" points at it.
+fn endsWithJs(p: &string): bool {
+    let n = p.len()
+    if n >= 4 && p[n - 4] == '.' && p[n - 3] == 'c' && p[n - 2] == 'j' && p[n - 1] == 's' {
+        return true
+    }
+    if n < 3 {
+        return false
+    }
+    return p[n - 3] == '.' && p[n - 2] == 'j' && p[n - 1] == 's'
+}
+
+// Node builtin modules, written in JS and embedded at compile time so the
+// runtime is a single self-contained binary. Registered under "builtin:<name>".
+// Strip a "node:" prefix if present.
+fn stripNodePrefix(spec: &string): string {
+    if spec.len() > 5 && spec[0] == 'n' && spec[1] == 'o' && spec[2] == 'd' && spec[3] == 'e' && spec[4] == ':' {
+        var out = String.withCapacity(spec.len() - 5)
+        var i: i64 = 5
+        while i < spec.len() {
+            out.push(spec[i])
+            i = i + 1
+        }
+        return out
+    }
+    return spec.clone()
+}
+
+fn builtinSource(name: &string): string {
+    // ALIASES and SUBPATHS of modules that already exist. node exposes each of
+    // these as a separate specifier, and code probes for them by name — is-core-module
+    // requires every one. Mapping them to the module they are actually part of is
+    // honest; inventing a module we do not implement would turn a clean resolution
+    // failure into a confusing one at first use, so nothing here is fabricated.
+    if name == "path/posix" || name == "path/win32" {
+        return @embedFile("../../lib/path.js")
+    }
+    if name == "assert/strict" {
+        return @embedFile("../../lib/assert.js")
+    }
+    if name == "util/types" || name == "sys" {
+        return @embedFile("../../lib/util.js")
+    }
+    if name == "stream/promises" || name == "stream/consumers"
+        || name == "_stream_duplex" || name == "_stream_passthrough"
+        || name == "_stream_readable" || name == "_stream_transform"
+        || name == "_stream_writable" {
+        return @embedFile("../../lib/stream.js")
+    }
+    if name == "constants" {
+        return @embedFile("../../lib/os.js")
+    }
+    if name == "console" {
+        return @embedFile("../../lib/console.js")
+    }
+    if name == "process" {
+        return @embedFile("../../lib/process.js")
+    }
+    // milojs's own shared validators. Not a node module name, so it cannot
+    // shadow one; see the _http_* convention immediately below.
+    if name == "test" || name == "node:test" || name == "test/reporters" {
+        return @embedFile("../../lib/test.js")
+    }
+    if name == "domain" {
+        return @embedFile("../../lib/domain.js")
+    }
+    if name == "readline" || name == "readline/promises" {
+        return @embedFile("../../lib/readline.js")
+    }
+    if name == "dgram" {
+        return @embedFile("../../lib/dgram.js")
+    }
+    if name == "_errors" {
+        return @embedFile("../../lib/errors.js")
+    }
+    // node's legacy internal module names for the http and tls machinery. They are
+    // aliases of the public module in node too, so pointing them at it is accurate.
+    if name == "_http_agent" || name == "_http_client" || name == "_http_common"
+        || name == "_http_incoming" || name == "_http_outgoing" || name == "_http_server" {
+        return @embedFile("../../lib/http.js")
+    }
+    if name == "_tls_common" || name == "_tls_wrap" {
+        return @embedFile("../../lib/tls.js")
+    }
+    if name == "_stream_wrap" {
+        return @embedFile("../../lib/stream.js")
+    }
+    if name == "module" {
+        return @embedFile("../../lib/module.js")
+    }
+    if name == "repl" {
+        return @embedFile("../../lib/repl.js")
+    }
+    if name == "timers" || name == "timers/promises" {
+        return @embedFile("../../lib/timers.js")
+    }
+    if name == "punycode" {
+        return @embedFile("../../lib/punycode.js")
+    }
+    if name == "path" {
+        return @embedFile("../../lib/path.js")
+    }
+    if name == "events" {
+        return @embedFile("../../lib/events.js")
+    }
+    if name == "util" {
+        return @embedFile("../../lib/util.js")
+    }
+    if name == "fs" {
+        return @embedFile("../../lib/fs.js")
+    }
+    if name == "querystring" {
+        return @embedFile("../../lib/querystring.js")
+    }
+    if name == "url" {
+        return @embedFile("../../lib/url.js")
+    }
+    if name == "async_hooks" {
+        return @embedFile("../../lib/async_hooks.js")
+    }
+    if name == "worker_threads" {
+        return @embedFile("../../lib/worker_threads.js")
+    }
+    if name == "diagnostics_channel" {
+        return @embedFile("../../lib/diagnostics_channel.js")
+    }
+    if name == "vm" {
+        return @embedFile("../../lib/vm.js")
+    }
+    if name == "dns" {
+        return @embedFile("../../lib/dns.js")
+    }
+    if name == "v8" {
+        return @embedFile("../../lib/v8.js")
+    }
+    if name == "perf_hooks" {
+        return @embedFile("../../lib/perf_hooks.js")
+    }
+    if name == "cluster" {
+        return @embedFile("../../lib/cluster.js")
+    }
+    if name == "tty" {
+        return @embedFile("../../lib/tty.js")
+    }
+    if name == "http" {
+        return @embedFile("../../lib/http.js")
+    }
+    if name == "child_process" {
+        return @embedFile("../../lib/child_process.js")
+    }
+    if name == "os" {
+        return @embedFile("../../lib/os.js")
+    }
+    if name == "net" {
+        return @embedFile("../../lib/net.js")
+    }
+    // `ws` opens with `require('tls')` and fails the whole module without it,
+    // which is what kept a WebSocket server from loading at all
+    if name == "tls" {
+        return @embedFile("../../lib/tls.js")
+    }
+    if name == "https" {
+        return @embedFile("../../lib/https.js")
+    }
+    if name == "resend" {
+        return @embedFile("../../lib/resend.js")
+    }
+    if name == "node-fetch" {
+        return @embedFile("../../lib/node-fetch.js")
+    }
+    if name == "depd" {
+        return @embedFile("../../lib/depd.js")
+    }
+    // @prisma/client is NOT shimmed here anymore: the real package works now that
+    // the node-api surface can load its query engine. resolveNodeModule falls back
+    // to lib/prisma-client.js only when the package is absent, so a project without
+    // prisma installed still gets the explanatory stub rather than a resolve error.
+    if name == "fs/promises" {
+        return @embedFile("../../lib/fs-promises.js")
+    }
+    if name == "buffer" {
+        return @embedFile("../../lib/buffer.js")
+    }
+    if name == "stream" {
+        return @embedFile("../../lib/stream.js")
+    }
+    if name == "string_decoder" {
+        return @embedFile("../../lib/string_decoder.js")
+    }
+    if name == "zlib" {
+        return @embedFile("../../lib/zlib.js")
+    }
+    if name == "crypto" {
+        return @embedFile("../../lib/crypto.js")
+    }
+    if name == "assert" {
+        return @embedFile("../../lib/assert.js")
+    }
+    if name == "sqlite" {
+        return @embedFile("../../lib/sqlite.js")
+    }
+    if name == "prelude" {
+        return @embedFile("../../lib/prelude.js")
+    }
+    if name == "engine-prelude" {
+        return @embedFile("../../lib/engine-prelude.js")
+    }
+    if name == "temporal" {
+        return @embedFile("../../lib/temporal.js")
+    }
+    // QuickJS host modules, so its test suite can be run against this engine
+    if name == "qjs:std" {
+        return @embedFile("../../lib/qjs-std.js")
+    }
+    if name == "qjs:os" {
+        return @embedFile("../../lib/qjs-os.js")
+    }
+    return ""
+}
+
+fn hasJsonExt(path: &string): bool {
+    let n = path.len()
+    if n < 5 {
+        return false
+    }
+    return path[n - 5] == '.' && path[n - 4] == 'j' && path[n - 3] == 's' && path[n - 2] == 'o' && path[n - 1] == 'n'
+}
+
+// Each missing module is reported once; a package required from twenty places
+// otherwise produces twenty identical lines and buries the real failure.
+pub fn reportUnresolved(st: &mut Interp, spec: &string) {
+    var i: i64 = 0
+    while i < st.reportedMissing.len() {
+        if st.reportedMissing[i] == spec {
+            return
+        }
+        i = i + 1
+    }
+    st.reportedMissing.push(spec.clone())
+    // A path specifier is not a package lookup, so the "no such package, and
+    // node builtins are not implemented" note is wrong for it and misleading:
+    // the file simply is not there. The thrown MODULE_NOT_FOUND already says so,
+    // and node prints nothing extra, so neither does this.
+    if spec.len() > 0 && (spec[0] == '/' || spec[0] == '.') {
+        return
+    }
+    eprint("milojs: cannot resolve '" + spec + "' — no such package, and node builtin modules are not implemented yet")
+}
+
+// Builtins Node only exposes under the node: prefix, because a same-named npm
+// package predates them. Bare `require("sqlite")` must keep resolving through
+// node_modules or it silently hijacks the (unrelated) `sqlite` package.
+fn builtinRequiresPrefix(name: &string): bool {
+    return name == "sqlite"
+}
+
+fn isBuiltinPath(path: &string): bool {
+    return path.len() > 8 && path[0] == 'b' && path[1] == 'u' && path[2] == 'i' && path[3] == 'l' && path[4] == 't' && path[5] == 'i' && path[6] == 'n' && path[7] == ':'
+}
+
+fn builtinNameOf(path: &string): string {
+    var out = String.withCapacity(path.len())
+    var i: i64 = 8
+    while i < path.len() {
+        out.push(path[i])
+        i = i + 1
+    }
+    return out
+}
+
+pub fn fileExists(p: &string): bool {
+    match readFile(p.clone()) {
+        Result.Ok(_s) => {
+            return true
+        }
+        Result.Err(_e) => {
+            return false
+        }
+    }
+}
+
+// Pull the "main" field out of a package.json without a full JSON parse (this
+// runs during pre-load, before any interpreter state exists).
+fn scanPkgMain(txt: &string): string {
+    let key = "\"main\""
+    let at = jsIndexOf(txt, key, 0)
+    if at < 0 {
+        return ""
+    }
+    var i = at + key.len()
+    // skip whitespace and the colon
+    while i < txt.len() && (txt[i] == ' ' || txt[i] == ':' || txt[i] == 9 as u8 || txt[i] == 10 as u8 || txt[i] == 13 as u8) {
+        i = i + 1
+    }
+    if i >= txt.len() || txt[i] != 34 as u8 {
+        return ""
+    }
+    i = i + 1
+    var out = String.withCapacity(32)
+    while i < txt.len() && txt[i] != 34 as u8 {
+        out.push(txt[i])
+        i = i + 1
+    }
+    return out
+}
+
+// Node's file/directory resolution: exact file, then +.js, then the directory's
+// package.json "main", then index.js.
+fn resolveAsFileOrDir(base: &string): string {
+    if endsWithJs(base) && fileExists(base) {
+        return base.clone()
+    }
+    let asJs = base + ".js"
+    if fileExists(asJs) {
+        return asJs
+    }
+    let asCjs = base + ".cjs"
+    if fileExists(asCjs) {
+        return asCjs
+    }
+    let pkg = base + "/package.json"
+    if let Result.Ok(txt) = readFile(pkg.clone()) {
+        let mainRel = scanPkgMain(txt)
+        if mainRel.len() > 0 {
+            let mp = normalizePath(base + "/" + mainRel)
+            if fileExists(mp) && endsWithJs(mp) {
+                return mp
+            }
+            let mpJs = mp + ".js"
+            if fileExists(mpJs) {
+                return mpJs
+            }
+            let mpCjs = mp + ".cjs"
+            if fileExists(mpCjs) {
+                return mpCjs
+            }
+            let mpIdx = mp + "/index.js"
+            if fileExists(mpIdx) {
+                return mpIdx
+            }
+        }
+    }
+    let asIndex = base + "/index.js"
+    if fileExists(asIndex) {
+        return asIndex
+    }
+    let asIndexCjs = base + "/index.cjs"
+    if fileExists(asIndexCjs) {
+        return asIndexCjs
+    }
+    return ""
+}
+
+// A bare specifier (an npm package): walk up from `dir` looking in node_modules.
+fn resolveBare(dir: &string, spec: &string): string {
+    var cur = dir.clone()
+    var going = true
+    while going {
+        var candBase = "node_modules/" + spec
+        if cur.len() > 0 {
+            candBase = cur + "/node_modules/" + spec
+        }
+        let hit = resolveAsFileOrDir(candBase)
+        if hit.len() > 0 {
+            return hit
+        }
+        if cur.len() == 0 {
+            going = false
+        } else {
+            let up = dirOf(cur)
+            if up == cur {
+                going = false
+            } else {
+                cur = up
+            }
+        }
+    }
+    return ""
+}
+
+// Resolve a require specifier against the requiring module's directory.
+// Relative specifiers resolve as files/directories; bare names walk node_modules.
+pub fn resolveSpec(dir: &string, spec: &string): string {
+    if spec.len() == 0 {
+        return ""
+    }
+    // node builtins (with or without the node: prefix) come first
+    let bare = stripNodePrefix(spec)
+    if builtinSource(bare).len() > 0 {
+        // A shorter `bare` means the specifier carried the node: prefix.
+        if !builtinRequiresPrefix(bare) || bare.len() != spec.len() {
+            return "builtin:" + bare
+        }
+    }
+    // Only "./" and "../" are relative. A bare leading dot is part of a PACKAGE
+    // name — @prisma/client requires ".prisma/client", which node resolves through
+    // node_modules, not against the requiring file's directory.
+    // An ABSOLUTE specifier resolves directly, as a file or a directory. node
+    // accepts `require('/abs/path/mod.js')` and `require('/abs/path/pkg')`
+    // alike; both used to fall through to the node_modules walk and report "no
+    // such package", which is what any tool that requires by absolute path hits
+    // — generated code and test harnesses do it routinely.
+    if spec[0] == '/' {
+        let absHit = resolveAsFileOrDir(normalizePath(spec.clone()))
+        if absHit.len() > 0 {
+            // back into the registry's cwd-relative form, or the module graph
+            // records this file under a key its own relative requires can never
+            // match and every one of them reports "was not pre-loaded"
+            return relativizeToCwd(absHit)
+        }
+        return ""
+    }
+    var isRelative = false
+    if spec[0] == '.' {
+        if spec.len() == 1 {
+            isRelative = true
+        } else if spec[1] == '/' {
+            isRelative = true
+        } else if spec[1] == '.' {
+            isRelative = true
+        }
+    }
+    if isRelative {
+        var joined = spec.clone()
+        if dir.len() > 0 {
+            joined = dir + "/" + spec
+        }
+        let base = normalizePath(joined)
+        let hit = resolveAsFileOrDir(base)
+        if hit.len() > 0 {
+            return hit
+        }
+        // report the un-found path so the error message is useful
+        return base
+    }
+    return resolveBare(dir, spec)
+}
+
+// Skip a `{ ... }` clause starting at `i` (which must be the T_LBRACE), and
+// return the index just past its T_RBRACE.
+fn skipBraced(toks: &Vec<Token>, i: i64): i64 {
+    var j = i + 1
+    while j < toks.len() && toks[j].kind != T_RBRACE {
+        j = j + 1
+    }
+    if j < toks.len() {
+        return j + 1
+    }
+    return j
+}
+
+// The specifier of an ESM clause whose `from` should be at `i`, or "" when this
+// is not a `from "spec"` after all. Matching the grammar exactly rather than
+// scanning ahead for the next string matters: `export const url = "./x"` has a
+// string on the same line and must NOT be read as a module edge.
+fn specAfterFrom(toks: &Vec<Token>, i: i64): string {
+    if i + 1 < toks.len() && toks[i].kind == T_IDENT && toks[i].text == "from" && toks[i + 1].kind == T_STR {
+        return toks[i + 1].text.clone()
+    }
+    return ""
+}
+
+// Find every module this token stream loads: `require("literal")`, and the ESM
+// forms the parser desugars onto require — static `import`, dynamic `import()`,
+// and `export ... from`.
+//
+// Module discovery runs on tokens, BEFORE parsing, so it cannot see the
+// desugared require() calls the parser will emit and has to recognise the ESM
+// syntax itself.
+// Is this module's body strict code? An ESM module always is — the spec makes
+// module code strict with no directive needed — and any file may opt in with a
+// "use strict" prologue. A plain CommonJS file is sloppy.
+//
+// This decided four separate behaviours that were all wrong in modules:
+// assigning to a non-extensible or frozen object silently did nothing instead of
+// throwing, a bare function call saw the global object as `this` instead of
+// undefined, and an assignment to an undeclared name created a global instead of
+// raising a ReferenceError. Every QuickJS test file is a module, so the whole
+// suite ran sloppy.
+pub fn moduleIsStrict(toks: &Vec<Token>, path: &string): bool {
+    if toks.len() > 0 && toks[0].kind == T_STR && toks[0].text == "use strict" {
+        return true
+    }
+    let n = path.len()
+    if n >= 4 && path[n - 4] == '.' && path[n - 3] == 'm' && path[n - 2] == 'j' && path[n - 1] == 's' {
+        return true
+    }
+    // hasEsmSyntax already distinguishes an import DECLARATION from a dynamic
+    // `import(...)` and from a member named `import`; do not re-derive it.
+    return hasEsmSyntax(toks)
+}
+
+fn scanRequires(toks: &Vec<Token>): Vec<string> {
+    var out: Vec<string> = Vec.new()
+    var i: i64 = 0
+    while i < toks.len() {
+        if i + 2 < toks.len() && toks[i].kind == T_IDENT && toks[i].text == "require" && toks[i + 1].kind == T_LPAREN && toks[i + 2].kind == T_STR {
+            out.push(toks[i + 2].text.clone())
+        } else if toks[i].kind == T_IMPORT && !isMemberName(toks, i) {
+            var j = i + 1
+            if j < toks.len() && toks[j].kind == T_LPAREN {
+                // import("m") — a literal specifier is loadable, anything else
+                // is computed and left to fail at run time like require does
+                if j + 1 < toks.len() && toks[j + 1].kind == T_STR {
+                    out.push(toks[j + 1].text.clone())
+                }
+            } else if j < toks.len() && toks[j].kind == T_STR {
+                out.push(toks[j].text.clone())  // import "m"
+            } else {
+                // an import clause: [default] [, * as ns | { ... }] from "m"
+                if j < toks.len() && toks[j].kind == T_IDENT && toks[j].text != "from" {
+                    j = j + 1
+                    if j < toks.len() && toks[j].kind == T_COMMA {
+                        j = j + 1
+                    }
+                }
+                if j < toks.len() && toks[j].kind == T_STAR {
+                    j = j + 1
+                    if j < toks.len() && toks[j].kind == T_IDENT && toks[j].text == "as" {
+                        j = j + 2
+                    }
+                } else if j < toks.len() && toks[j].kind == T_LBRACE {
+                    j = skipBraced(toks, j)
+                }
+                let spec = specAfterFrom(toks, j)
+                if spec.len() > 0 {
+                    out.push(spec)
+                }
+            }
+        } else if toks[i].kind == T_EXPORT && i + 1 < toks.len() && !isMemberName(toks, i) {
+            // only the re-export forms load a module: `export * from "m"` and
+            // `export { a } from "m"`
+            var j = i + 1
+            if toks[j].kind == T_STAR {
+                j = j + 1
+            } else if toks[j].kind == T_LBRACE {
+                j = skipBraced(toks, j)
+            } else {
+                j = toks.len()
+            }
+            if j < toks.len() {
+                let spec = specAfterFrom(toks, j)
+                if spec.len() > 0 {
+                    out.push(spec)
+                }
+            }
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// `import`/`export` are lexed as keywords wherever they appear, so `o.export`
+// and `o.import(x)` would otherwise read as module syntax. A preceding dot means
+// this one is a property name.
+fn isMemberName(toks: &Vec<Token>, i: i64): bool {
+    return i > 0 && toks[i - 1].kind == T_DOT
+}
+
+// Does this token stream use ESM syntax? Only the `import`/`export` STATEMENT
+// forms make a file a module; dynamic `import()` is an ordinary expression and
+// is legal in a plain script.
+pub fn hasEsmSyntax(toks: &Vec<Token>): bool {
+    var i: i64 = 0
+    while i < toks.len() {
+        if !isMemberName(toks, i) {
+            if toks[i].kind == T_EXPORT {
+                return true
+            }
+            if toks[i].kind == T_IMPORT {
+                if i + 1 >= toks.len() || toks[i + 1].kind != T_LPAREN {
+                    return true
+                }
+            }
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// `require` carrying its own directory, which is node's model exactly.
+// The module registry keys on the paths the preloader produced, which are
+// relative to the working directory. `__dirname` is absolute (node guarantees
+// it), so a resolution starting from it has to come back to the registry's form
+// or every lookup misses.
+pub fn relativizeToCwd(p: string): string {
+    let base = match currentDir() {
+        Result.Ok(d) => d
+        Result.Err(_e) => {
+            return p
+        }
+    }
+    if p == base {
+        // the working directory itself is "" in the registry's form, not an
+        // absolute path, so a module at the top level resolves the same way the
+        // preloader recorded it
+        return ""
+    }
+    let prefix = base + "/"
+    if p.len() > prefix.len() && strSlice(p, 0, prefix.len()) == prefix {
+        return strSlice(p, prefix.len(), p.len())
+    }
+    return p
+}
+
+pub fn findModule(st: &Interp, path: &string): i64 {
+    var i: i64 = 0
+    while i < st.modPaths.len() {
+        if st.modPaths[i] == path {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// Parse `path` (and everything it requires, transitively) into `prog`, filling
+// the interpreter's module registry. Returns the entry module's registry index,
+// or -1 if the entry could not be read.
+fn hasAddonExt(p: &string): bool {
+    let n = p.len()
+    if n < 6 {
+        return false
+    }
+    return p[n - 5] == '.' && p[n - 4] == 'n' && p[n - 3] == 'o' && p[n - 2] == 'd' && p[n - 1] == 'e'
+}
+
+pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
+    var queue: Vec<string> = Vec.new()
+    // The registry keys on the paths the preloader produces, and require
+    // resolves through relativizeToCwd, so an ABSOLUTE entry under the working
+    // directory keyed the whole graph absolutely while every require looked it
+    // up relatively. `milojs /path/to/app/main.js` run from inside that app
+    // therefore failed on every node_modules require — the common invocation.
+    let entryKey = relativizeToCwd(entryPath.clone())
+    queue.push(entryKey.clone())
+    var head: i64 = 0
+    while head < queue.len() {
+        let path = queue[head].clone()
+        head = head + 1
+        if findModule(st, path) >= 0 {
+            // already registered
+        } else if isBuiltinPath(path) {
+            let src = builtinSource(builtinNameOf(path))
+            registerSource(prog, path.clone(), src.clone())
+            let toks = lex(src)
+            // computed before `toks` is moved into the PState below
+            let bStrict = moduleIsStrict(toks, path)
+            // a builtin can require another builtin (http needs events), so its
+            // own requires have to be queued like any other module's
+            let bspecs = scanRequires(toks)
+            var bp = PState { depth: 0, noIn: false,
+                toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: bStrict
+            }
+            let btop = parseProgram(bp, prog)
+            st.modPaths.push(path.clone())
+            st.modBlocks.push(btop)
+            st.modStrict.push(bStrict)
+            st.modExports.push(JSValue.Undefined)
+            st.modState.push(0)
+            var bs: i64 = 0
+            while bs < bspecs.len() {
+                let resolved = resolveSpec("", bspecs[bs])
+                if resolved.len() > 0 {
+                    queue.push(resolved)
+                }
+                bs = bs + 1
+            }
+        } else {
+            // A .node file is a shared library, not JavaScript. The preloader
+            // read one and handed the Mach-O bytes to the lexer, which reported
+            // `expected an expression, found '<'` against the load command
+            // table. dlopen handles these at require time; the graph walk must
+            // not follow them.
+            if hasAddonExt(path) {
+                st.modPaths.push(path.clone())
+                st.modBlocks.push(BlockId { index: 0 })
+                st.modStrict.push(false)
+                st.modExports.push(JSValue.Undefined)
+                st.modState.push(2)
+            } else {
+            match readFile(path.clone()) {
+                Result.Ok(src) => {
+                    // a .json module is its parsed contents — JSON is a subset of
+                    // JS literal syntax, so wrapping it as an assignment reuses
+                    // the object/array literal parser instead of a second reader
+                    var text = src
+                    if hasJsonExt(path) {
+                        text = "module.exports = " + text
+                    }
+                    // keep the text: Function.prototype.toString slices a
+                    // function's verbatim source back out of it
+                    registerSource(prog, path.clone(), text.clone())
+                    let toks = lex(text)
+                    // computed before `toks` is moved into the PState below
+                    let fStrict = moduleIsStrict(toks, path)
+                    let specs = scanRequires(toks)
+                    var p = PState { depth: 0, noIn: false,
+                        toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: fStrict
+                    }
+                    let top = parseProgram(p, prog)
+                    st.modPaths.push(path.clone())
+                    st.modBlocks.push(top)
+                    st.modStrict.push(fStrict)
+                    st.modExports.push(JSValue.Undefined)
+                    st.modState.push(0)
+                    let dir = dirOf(path)
+                    var s: i64 = 0
+                    while s < specs.len() {
+                        let resolved = resolveSpec(dir, specs[s])
+                        if resolved.len() > 0 {
+                            queue.push(resolved)
+                        }
+                        s = s + 1
+                    }
+                }
+                Result.Err(_e) => {
+                    eprint("milojs: cannot read module '" + path + "'")
+                }
+            }
+            }
+        }
+    }
+    return findModule(st, entryKey)
+}

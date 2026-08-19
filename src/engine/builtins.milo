@@ -1,0 +1,2540 @@
+// Built-in String and RegExp methods (and the string-building helpers they need).
+//
+// JS strings are UTF-16 code units; milo strings are UTF-8 bytes. Every method
+// taking or returning an INDEX converts between the two (utf16ToByte /
+// byteToUtf16 / utf16Slice) — they agree only for ASCII, and byte offsets used to
+// cut characters in half on anything else.
+//
+// One thing UTF-8 cannot represent: a LONE SURROGATE. So charAt/at on either half
+// of an astral pair return the whole character, and split("") splits per codepoint
+// rather than per UTF-16 unit. Both differ from JS only for astral input.
+//
+// Array methods live in src/engine/methods.milo. This file imports src/engine/eval.milo and
+// eval.milo imports it back: Milo permits circular imports, which is what lets a
+// leaf like this one call the evaluator services (callValue for a callback,
+// makeError to throw) instead of reimplementing them.
+
+from "./eval" import {
+    toStrProg, callBuiltinByName, makeError, currentModule, isCallable, isSymbolStr, symbolDisplay, isBigIntVal, bigStrOf, callValue, makeArrayIterator
+}
+from "./value" import {
+    JSValue, hexDigitVal
+}
+from "./runtime" import {
+    Interp, newObject, objSet
+}
+from "std/math" import {
+    Math
+}
+from "std/unicode" import {
+    decodeCodepoint, utf16UnitCount, highSurrogate, lowSurrogate, isSupplementary, encodeCodepoint
+}
+from "./unicase" import {
+    upperCp1, lowerCp1, upperSpecial, lowerSpecial
+}
+
+// Throw a built-in error of `kind`, the way a JS `throw` does. makeError in
+// eval.milo builds the object: the same prototype a constructed error of that
+// kind gets, a stack carrying real frames, and message/stack non-enumerable the
+// way node reports them. The two hand-rolled builders this replaces predated
+// makeError being reachable from here (an import cycle was assumed illegal and
+// is not) and were each less correct than it: an own `name` property that
+// Object.getOwnPropertyNames must not show, no prototype at all, and a stack
+// with no frames.
+fn throwErr(st: &mut Interp, kind: string, msg: string): JSValue {
+    st.throwing = true
+    st.thrownValue = makeError(st, kind, msg)
+    return JSValue.Undefined
+}
+
+fn isWs(c: u8): bool {
+    return c == ' ' || c == 9 as u8 || c == 10 as u8 || c == 13 as u8
+}
+
+// Normalize a possibly-negative slice index to [0, len], JS-style. The postcondition is the
+// safety contract every caller relies on: the returned index is always in bounds for a
+// buffer of `len`, so `s[clampIndex(..)]` up to (not including) `len` can never read OOB.
+fn clampIndex(idx: i64, len: i64): i64
+requires len >= 0
+ensures result >= 0 && result <= len
+{
+    var i = idx
+    if i < 0 {
+        i = len + i
+    }
+    if i < 0 {
+        i = 0
+    }
+    if i > len {
+        i = len
+    }
+    return i
+}
+
+pub fn strSlice(s: &string, start: i64, end: i64): string {
+    let len = s.len()
+    let a = clampIndex(start, len)
+    let b = clampIndex(end, len)
+    var out = String.withCapacity(0)
+    var i = a
+    while i < b
+    invariant
+    i >= 0 && i <= len
+    {
+        out.push(s[i])
+        i = i + 1
+    }
+    return out
+}
+
+// First index of `sub` in `s` at or after `start`, or -1. (`from` is a reserved keyword.)
+pub fn jsIndexOf(s: &string, sub: &string, start: i64): i64 {
+    let n = s.len()
+    let m = sub.len()
+    if m == 0 {
+        if start > n {
+            return n
+        }
+        if start < 0 {
+            return 0
+        }
+        return start
+    }
+    var i = start
+    if i < 0 {
+        i = 0
+    }
+    while i + m <= n
+    invariant
+    i >= 0
+    {
+        var j: i64 = 0
+        var matched = true
+        while j < m
+        invariant
+        j >= 0 && j <= m
+        {
+            // safe: i+j < i+m <= n = s.len(), and j < m = sub.len()
+            if s[i + j] != sub[j] {
+                matched = false
+                j = m
+            } else {
+                j = j + 1
+            }
+        }
+        if matched {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+fn jsContains(s: &string, sub: &string): bool {
+    return jsIndexOf(s, sub, 0) >= 0
+}
+
+pub fn jsStartsWith(s: &string, sub: &string): bool {
+    let m = sub.len()
+    if m > s.len() {
+        return false
+    }
+    var j: i64 = 0
+    while j < m
+    invariant
+    j >= 0 && j <= m
+    {
+        if s[j] != sub[j] {
+            return false
+        }
+        j = j + 1
+    }
+    return true
+}
+
+fn jsEndsWith(s: &string, sub: &string): bool {
+    let n = s.len()
+    let m = sub.len()
+    if m > n {
+        return false
+    }
+    var j: i64 = 0
+    while j < m
+    invariant
+    j >= 0 && j <= m
+    {
+        // safe: m <= n guarded above, so n-m >= 0 and n-m+j < n = s.len()
+        if s[n - m + j] != sub[j] {
+            return false
+        }
+        j = j + 1
+    }
+    return true
+}
+
+// Case mapping. The tables live in the generated src/engine/unicase.milo (see
+// tools/gen-unicase.mjs); everything above the code-point level is here.
+//
+// A case mapping can GROW the string — ß uppercases to SS, ﬁ to FI, and the
+// Greek iota-subscript family to two or three code points — so neither loop can
+// be a per-code-point transform. `upperSpecial`/`lowerSpecial` answer "" when
+// the character maps to a single code point, which is the common case.
+fn strUpper(s: &string): string {
+    var out = String.withCapacity(s.len())
+    var i: i64 = 0
+    while i < s.len() {
+        let cp = decodeCodepoint(s, i)
+        let sp = upperSpecial(cp.value)
+        if sp.len() > 0 {
+            out = out + sp
+        } else {
+            encodeCodepoint(out, upperCp1(cp.value))
+        }
+        i = i + cp.size
+    }
+    return out
+}
+
+fn strLower(s: &string): string {
+    var out = String.withCapacity(s.len())
+    var i: i64 = 0
+    while i < s.len() {
+        let cp = decodeCodepoint(s, i)
+        let sp = lowerSpecial(cp.value)
+        if sp.len() > 0 {
+            out = out + sp
+        } else {
+            encodeCodepoint(out, lowerCp1(cp.value))
+        }
+        i = i + cp.size
+    }
+    return out
+}
+
+pub fn jsTrim(s: &string): string {
+    let n = s.len()
+    var a: i64 = 0
+    while a < n && isWs(s[a]) {
+        a = a + 1
+    }
+    var b = n
+    while b > a && isWs(s[b - 1]) {
+        b = b - 1
+    }
+    return strSlice(s, a, b)
+}
+
+fn jsRepeat(s: &string, count: i64): string {
+    var out = String.withCapacity(0)
+    var k: i64 = 0
+    while k < count {
+        var i: i64 = 0
+        while i < s.len() {
+            out.push(s[i])
+            i = i + 1
+        }
+        k = k + 1
+    }
+    return out
+}
+
+fn jsCharAt(s: &string, idx: i64): string {
+    var out = String.withCapacity(1)
+    if idx >= 0 && idx < s.len() {
+        out.push(s[idx])
+    }
+    return out
+}
+
+// f64 -> i64 for an INDEX-like argument, saturating instead of trapping.
+//
+// `numToIndex(toNum(args[0]))` was used in 63 places. For an ordinary argument it is
+// fine; for `Number.MAX_VALUE` the cast produces something near i64::MAX and the
+// next arithmetic on it OVERFLOWS, which in Milo is a trap — so
+// `dv.getFloat64(1e308)` killed the process with "integer overflow" instead of
+// throwing a RangeError. Clamping to the safe-integer range keeps every existing
+// bounds check meaningful (a clamped value is still out of range for any real
+// buffer or string) and makes the arithmetic downstream unable to overflow.
+//
+// NaN answers 0, which is ToIntegerOrInfinity's rule.
+pub fn numToIndex(x: f64): i64 {
+    if x != x {
+        return 0
+    }
+    if x > 9007199254740991.0 {
+        return 9007199254740991
+    }
+    if x < -9007199254740991.0 {
+        return 0 - 9007199254740991
+    }
+    return x as i64
+}
+
+// The raw numeric value of an argument, without the integer coercion argNum
+// applies. Needed where a NON-finite argument is itself an error and must be
+// detected before it is folded into an i64.
+fn argNumF(args: &Vec<JSValue>, i: i64, dflt: f64): f64 {
+    if argPresent(args, i) {
+        return toNum(args[i])
+    }
+    return dflt
+}
+
+fn argNum(args: &Vec<JSValue>, i: i64, dflt: i64): i64 {
+    if argPresent(args, i) {
+        return numToIndex(toNum(args[i]))
+    }
+    return dflt
+}
+
+// An argument passed explicitly as `undefined` is the same as an absent one to
+// every built-in that has a default for it: `"abcd".slice(1, undefined)` is
+// `"abcd".slice(1)`, not the empty string. Presence checks written as
+// `args.len() > i` alone get the explicit-undefined form wrong, and it is the
+// common shape in real code (a forwarded optional parameter).
+pub fn argPresent(args: &Vec<JSValue>, i: i64): bool {
+    if i >= args.len() {
+        return false
+    }
+    match args[i] {
+        JSValue.Undefined => {
+            return false
+        }
+        _ => {
+            return true
+        }
+    }
+}
+
+fn argStr(args: &Vec<JSValue>, i: i64): string {
+    if i < args.len() {
+        return toStr(args[i])
+    }
+    return ""
+}
+
+// s.split(sep) → a new heap array. No arg → [s]; empty sep → one entry per char.
+// A string's Unicode code points, one substring each. JS string iteration
+// (for-of, spread, Array.from) yields code points — since milojs strings are
+// UTF-8, that means walking by decoded codepoint width, NOT by byte, or a
+// multibyte char (é = 2 bytes, 😀 = 4) is chopped into invalid pieces that
+// render as U+FFFD. Shared so every iteration site behaves identically.
+pub fn strCodePoints(s: &string): Vec<string> {
+    var out: Vec<string> = Vec.new()
+    var b: i64 = 0
+    while b < s.len() {
+        let cp = decodeCodepoint(s, b)
+        out.push(strSlice(s, b, b + cp.size))
+        b = b + cp.size
+    }
+    return out
+}
+
+fn jsSplit(s: &string, args: &Vec<JSValue>, st: &mut Interp): i64 {
+    let arr = newArray(st)
+    // second arg caps the result length; undefined means no limit
+    var limit: i64 = -1
+    if args.len() > 1 {
+        match args[1] {
+            JSValue.Undefined => {
+            }
+            _ => {
+                let ln = toNum(args[1])
+                if isFiniteF(ln) && ln >= 0.0 {
+                    limit = ln as i64
+                }
+            }
+        }
+    }
+    if limit == 0 {
+        return arr
+    }
+    if args.len() == 0 {
+        arrPush(st, arr, JSValue.Str(s.clone()))
+        return arr
+    }
+    let sep = toStr(args[0])
+    if sep.len() == 0 {
+        // one entry per CODEPOINT. JS splits per UTF-16 unit, which would put the
+        // two halves of an astral pair in separate entries — lone surrogates are
+        // unrepresentable in UTF-8, so the whole character stays together.
+        var b: i64 = 0
+        while b < s.len() {
+            if limit >= 0 && arrLen(st, arr) >= limit {
+                return arr
+            }
+            let cp = decodeCodepoint(s, b)
+            arrPush(st, arr, JSValue.Str(strSlice(s, b, b + cp.size)))
+            b = b + cp.size
+        }
+        return arr
+    }
+    var start: i64 = 0
+    var idx = jsIndexOf(s, sep, start)
+    while idx >= 0 {
+        if limit >= 0 && arrLen(st, arr) >= limit {
+            return arr
+        }
+        arrPush(st, arr, JSValue.Str(strSlice(s, start, idx)))
+        start = idx + sep.len()
+        idx = jsIndexOf(s, sep, start)
+    }
+    if limit < 0 || arrLen(st, arr) < limit {
+        arrPush(st, arr, JSValue.Str(strSlice(s, start, s.len())))
+    }
+    return arr
+}
+
+// Dispatch a String method by name. Callback-taking methods don't exist on
+// strings, so this needs nothing from eval — only heap access for split.
+fn isJsSpace(c: u8): bool {
+    return c == ' ' || c == 9 as u8 || c == 10 as u8 || c == 13 as u8 || c == 12 as u8 || c == 11 as u8
+}
+
+// Does `needle` occur in `s` starting exactly at `at`?
+fn jsSubstringAt(s: &string, needle: &string, at: i64): bool {
+    if at + needle.len() > s.len() {
+        return false
+    }
+    var k: i64 = 0
+    while k < needle.len() {
+        if s[at + k] != needle[k] {
+            return false
+        }
+        k = k + 1
+    }
+    return true
+}
+
+// Build a string from UTF-16 code units, combining surrogate pairs into one
+// codepoint and UTF-8 encoding the result. String.fromCharCode used to push each
+// unit as a raw BYTE, so fromCharCode(0x4E2D) truncated to '-' and anything above
+// U+00FF was destroyed.
+pub fn stringFromUtf16Units(units: &Vec<i64>): string {
+    var out = String.withCapacity(units.len())
+    var i: i64 = 0
+    while i < units.len() {
+        var cp = units[i]
+        if cp >= 55296 && cp <= 56319 && i + 1 < units.len() {
+            let lo = units[i + 1]
+            if lo >= 56320 && lo <= 57343 {
+                cp = 65536 + ((cp - 55296) * 1024) + (lo - 56320)
+                i = i + 1
+            }
+        }
+        encodeCodepoint(out, cp as i32)
+        i = i + 1
+    }
+    return out
+}
+
+// ── UTF-16 indexing ──────────────────────────────────────────────────────────
+// JS strings are sequences of UTF-16 code units, but milo strings are UTF-8
+// bytes. For ASCII the two indexings coincide, which is why byte offsets got
+// this far; for anything above U+007F they diverge, and a codepoint above
+// U+FFFF occupies TWO UTF-16 units (a surrogate pair). These walk the UTF-8
+// bytes while counting UTF-16 units, so charCodeAt/codePointAt agree with JS.
+//
+// They are O(n) per call. Fine at the sizes this engine sees; a UTF-16 index
+// cache would be the fix if it ever shows up in a profile.
+
+// Byte offset of the UTF-16 unit at `idx`, plus whether it is the LOW half of a
+// surrogate pair. Returns -1 when idx is past the end.
+struct Utf16Pos {
+    byteAt: i64,
+    isLowHalf: bool,
+}
+
+// Byte offset of the first non-ASCII byte, or s.len() when there is none.
+//
+// Every UTF-16 index conversion below used to walk from byte 0 calling
+// decodeCodepoint per CHARACTER, which makes `charCodeAt(i)` cost O(i) and any
+// loop over a string quadratic: scanning a 100k-character ASCII string cost 14
+// SECONDS against node's 4ms. Below the first non-ASCII byte, byte offset and
+// UTF-16 index are the same number, so a tight byte scan answers the whole
+// question and the decode loop only has to start where multibyte data does.
+fn firstNonAscii(s: &string): i64 {
+    return firstNonAsciiUpTo(s, s.len())
+}
+
+// The same, but it may stop early: a caller that only needs to know whether the
+// first `upTo` bytes are ASCII should not pay for the rest of the string. That is
+// what keeps `charCodeAt(i)` proportional to i instead of to the whole length,
+// which for the short strings that dominate real code is the difference between
+// a few compares and a full scan per access.
+fn firstNonAsciiUpTo(s: &string, upTo: i64): i64 {
+    var lim = upTo
+    if lim > s.len() {
+        lim = s.len()
+    }
+    var b: i64 = 0
+    while b < lim {
+        if s[b] >= 128 as u8 {
+            return b
+        }
+        b = b + 1
+    }
+    return lim
+}
+
+fn utf16Locate(s: &string, idx: i64): Utf16Pos {
+    if idx < 0 {
+        return Utf16Pos {
+            byteAt: -1, isLowHalf: false
+        }
+    }
+    if idx >= s.len() {
+        // one byte per unit is the floor, so an index past the byte length is
+        // past the end whatever the encoding — checked before any scan
+        return Utf16Pos {
+            byteAt: -1, isLowHalf: false
+        }
+    }
+    let ascii = firstNonAsciiUpTo(s, idx + 1)
+    if idx < ascii {
+        // wholly inside the ASCII prefix: the index IS the byte offset
+        return Utf16Pos {
+            byteAt: idx, isLowHalf: false
+        }
+    }
+    var unit: i64 = ascii
+    var b: i64 = ascii
+    while b < s.len() {
+        let cp = decodeCodepoint(s, b)
+        let w = utf16UnitCount(cp.value)
+        if idx < unit + w {
+            return Utf16Pos {
+                byteAt: b, isLowHalf: idx > unit
+            }
+        }
+        unit = unit + w
+        b = b + cp.size
+    }
+    return Utf16Pos {
+        byteAt: -1, isLowHalf: false
+    }
+}
+
+// Total length in UTF-16 code units — what JS reports as .length.
+// Counts from `from`, whose prefix is known to be `from` ASCII units.
+fn utf16LengthFrom(s: &string, from: i64): i64 {
+    var unit: i64 = from
+    var b: i64 = from
+    while b < s.len() {
+        let cp = decodeCodepoint(s, b)
+        unit = unit + utf16UnitCount(cp.value)
+        b = b + cp.size
+    }
+    return unit
+}
+
+// `.length` is one of the hottest string reads, and the general path calls
+// decodeCodepoint per character. For an all-ASCII string — overwhelmingly the
+// common case — the UTF-16 length equals the byte length, and proving that is a
+// tight byte scan instead of a decode per character. Falls back to the general
+// path from the first non-ASCII byte, so no work is repeated.
+pub fn utf16Length(s: &string): i64 {
+    var b: i64 = 0
+    while b < s.len() {
+        if s[b] >= 128 as u8 {
+            return utf16LengthFrom(s, b)
+        }
+        b = b + 1
+    }
+    return s.len()
+}
+
+// The UTF-16 code unit at `idx`, or -1 when out of range. A supplementary
+// codepoint yields its high surrogate at the first index and its low at the next.
+fn utf16UnitAt(s: &string, idx: i64): i64 {
+    let pos = utf16Locate(s, idx)
+    if pos.byteAt < 0 {
+        return -1
+    }
+    let cp = decodeCodepoint(s, pos.byteAt)
+    if isSupplementary(cp.value) {
+        if pos.isLowHalf {
+            return lowSurrogate(cp.value) as i64
+        }
+        return highSurrogate(cp.value) as i64
+    }
+    return cp.value as i64
+}
+
+// The full codepoint at `idx` — like utf16UnitAt, except that landing on a high
+// surrogate returns the whole codepoint rather than the half.
+fn utf16CodePointAt(s: &string, idx: i64): i64 {
+    let pos = utf16Locate(s, idx)
+    if pos.byteAt < 0 {
+        return -1
+    }
+    let cp = decodeCodepoint(s, pos.byteAt)
+    if isSupplementary(cp.value) && pos.isLowHalf {
+        return lowSurrogate(cp.value) as i64
+    }
+    return cp.value as i64
+}
+
+// UTF-16 index -> byte offset. Past the end returns s.len(), so callers can use
+// it directly as a slice bound.
+pub fn utf16ToByte(s: &string, idx: i64): i64 {
+    if idx <= 0 {
+        return 0
+    }
+    let ascii = firstNonAsciiUpTo(s, idx)
+    if idx <= ascii {
+        return idx
+    }
+    var unit: i64 = ascii
+    var b: i64 = ascii
+    while b < s.len() {
+        if unit >= idx {
+            return b
+        }
+        let cp = decodeCodepoint(s, b)
+        unit = unit + utf16UnitCount(cp.value)
+        b = b + cp.size
+    }
+    return s.len()
+}
+
+// byte offset -> UTF-16 index (the inverse, for indexOf-style results).
+pub fn byteToUtf16(s: &string, at: i64): i64 {
+    if at <= 0 {
+        return 0
+    }
+    let ascii = firstNonAsciiUpTo(s, at)
+    if at <= ascii {
+        return at
+    }
+    var unit: i64 = ascii
+    var b: i64 = ascii
+    while b < s.len() && b < at {
+        let cp = decodeCodepoint(s, b)
+        unit = unit + utf16UnitCount(cp.value)
+        b = b + cp.size
+    }
+    return unit
+}
+
+// Slice by UTF-16 indices, JS-style (negative counts from the end, bounds clamp).
+pub fn utf16Slice(s: &string, start: i64, end: i64): string {
+    let n = utf16Length(s)
+    var a = start
+    var b = end
+    if a < 0 {
+        a = n + a
+    }
+    if b < 0 {
+        b = n + b
+    }
+    if a < 0 {
+        a = 0
+    }
+    if b > n {
+        b = n
+    }
+    if b < a {
+        b = a
+    }
+    return strSlice(s, utf16ToByte(s, a), utf16ToByte(s, b))
+}
+
+// The annexB String HTML methods, as (name -> tag, attribute) tables. Kept
+// beside stringMethod because the by-name dispatch is what makes them reachable:
+// assigning them onto String.prototype from JS would mark it touched and turn
+// that dispatch off for every other method.
+pub fn isHtmlMethodName(n: &string): bool {
+    return n == "anchor" || n == "big" || n == "blink" || n == "bold" || n == "fixed" || n == "fontcolor" || n == "fontsize" || n == "italics" || n == "link" || n == "small" || n == "strike" || n == "sub" || n == "sup"
+}
+
+fn htmlTagFor(n: &string): string {
+    if n == "anchor" || n == "link" {
+        return "a"
+    }
+    if n == "bold" {
+        return "b"
+    }
+    if n == "fixed" {
+        return "tt"
+    }
+    if n == "fontcolor" || n == "fontsize" {
+        return "font"
+    }
+    if n == "italics" {
+        return "i"
+    }
+    return n.clone()
+}
+
+fn htmlAttrFor(n: &string): string {
+    if n == "anchor" {
+        return "name"
+    }
+    if n == "link" {
+        return "href"
+    }
+    if n == "fontcolor" {
+        return "color"
+    }
+    if n == "fontsize" {
+        return "size"
+    }
+    return ""
+}
+
+pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    if name == "toUpperCase" || name == "toLocaleUpperCase" {
+        // the locale forms are the locale-independent ones here: this engine has
+        // no locale data (see the Intl stub in lib/prelude.js), and node only
+        // diverges for tr/az/lt
+        return JSValue.Str(strUpper(s))
+    }
+    // ES2024. These MEASURE the string rather than asserting an invariant about
+    // it. The first version returned true unconditionally, arguing that milojs
+    // strings are UTF-8 and so well-formed by construction. That argument is
+    // currently true — `String.fromCharCode(0xD800)` substitutes U+FFFD and
+    // `"\u{1F600}".slice(0,1)` answers the WHOLE character rather than half of
+    // one, so no operation here yields a lone surrogate — but it is an argument
+    // about the rest of the engine, made at a site that cannot enforce it. If
+    // the string representation ever grows a way to hold one (WTF-8, a rope of
+    // UTF-16 units), a scan keeps working where a `return true` becomes a lie
+    // nobody edits.
+    //
+    // The answers are identical today for every string milojs can build. Where
+    // milojs and node differ is UPSTREAM and recorded in the backlog: node keeps
+    // a lone surrogate that this engine cannot represent.
+    if name == "isWellFormed" || name == "toWellFormed" {
+        let n = utf16Length(s)
+        var out = String.withCapacity(s.len())
+        var wellFormed = true
+        var i: i64 = 0
+        while i < n {
+            let u = utf16UnitAt(s, i)
+            if u >= 55296 && u <= 56319 {
+                // a high surrogate is well-formed only when a low one follows
+                var paired = false
+                if i + 1 < n {
+                    let lo = utf16UnitAt(s, i + 1)
+                    if lo >= 56320 && lo <= 57343 {
+                        paired = true
+                    }
+                }
+                if paired {
+                    out = out + utf16Slice(s, i, i + 2)
+                    i = i + 2
+                } else {
+                    wellFormed = false
+                    encodeCodepoint(out, 65533 as i32)
+                    i = i + 1
+                }
+            } else if u >= 56320 && u <= 57343 {
+                // a low surrogate with no high one before it
+                wellFormed = false
+                encodeCodepoint(out, 65533 as i32)
+                i = i + 1
+            } else {
+                out = out + utf16Slice(s, i, i + 1)
+                i = i + 1
+            }
+        }
+        if name == "isWellFormed" {
+            return JSValue.Bool(wellFormed)
+        }
+        return JSValue.Str(out)
+    }
+    if name == "toLowerCase" || name == "toLocaleLowerCase" {
+        return JSValue.Str(strLower(s))
+    }
+    if name == "trim" {
+        return JSValue.Str(jsTrim(s))
+    }
+    if name == "toString" || name == "valueOf" {
+        // String.prototype.valueOf.call("abc") is "abc". It reached here and
+        // fell through to undefined, which made every is-string style detector
+        // that calls it on a PRIMITIVE answer wrongly in the other direction.
+        return JSValue.Str(s.clone())
+    }
+    if name == "charAt" {
+        // a lone surrogate is unrepresentable in UTF-8, so an index landing on
+        // either half of a pair yields the whole character
+        return JSValue.Str(utf16Slice(s, argNum(args, 0, 0), argNum(args, 0, 0) + 1))
+    }
+    if name == "charCodeAt" {
+        let u = utf16UnitAt(s, argNum(args, 0, 0))
+        if u < 0 {
+            return JSValue.Number(jsNan())
+        }
+        return JSValue.Number(u as f64)
+    }
+    if name == "indexOf" {
+        // optional fromIndex (UTF-16 units): start the search there
+        var from = argNum(args, 1, 0)
+        if from < 0 {
+            from = 0
+        }
+        let byteStart = utf16Slice(s, 0, from).len()
+        let at = jsIndexOf(s, argStr(args, 0), byteStart)
+        if at < 0 {
+            return JSValue.Number(0.0 - 1.0)
+        }
+        return JSValue.Number(byteToUtf16(s, at) as f64)
+    }
+    if name == "includes" {
+        return JSValue.Bool(jsContains(s, argStr(args, 0)))
+    }
+    if name == "startsWith" {
+        // optional start position (UTF-16 units): match from there
+        let pos = argNum(args, 1, 0)
+        if pos <= 0 {
+            return JSValue.Bool(jsStartsWith(s, argStr(args, 0)))
+        }
+        let sub = utf16Slice(s, pos, utf16Length(s))
+        return JSValue.Bool(jsStartsWith(sub, argStr(args, 0)))
+    }
+    if name == "endsWith" {
+        // optional end position: treat the string as if it ended there
+        let n = utf16Length(s)
+        let ep = argNum(args, 1, n)
+        if ep >= n {
+            return JSValue.Bool(jsEndsWith(s, argStr(args, 0)))
+        }
+        if ep <= 0 {
+            return JSValue.Bool(argStr(args, 0).len() == 0)
+        }
+        let sub = utf16Slice(s, 0, ep)
+        return JSValue.Bool(jsEndsWith(sub, argStr(args, 0)))
+    }
+    if name == "slice" {
+        let n = utf16Length(s)
+        let a = argNum(args, 0, 0)
+        let b = argNum(args, 1, n)
+        return JSValue.Str(utf16Slice(s, a, b))
+    }
+    if name == "substring" {
+        // NOT slice: a negative index clamps to 0 rather than counting from the
+        // end, and the two ends are swapped when they arrive out of order, so
+        // "abcdef".substring(2, 1) is "b" where .slice(2, 1) is ""
+        let n = utf16Length(s)
+        var a = argNum(args, 0, 0)
+        var b = argNum(args, 1, n)
+        if a < 0 {
+            a = 0
+        }
+        if b < 0 {
+            b = 0
+        }
+        if a > n {
+            a = n
+        }
+        if b > n {
+            b = n
+        }
+        if a > b {
+            let t = a
+            a = b
+            b = t
+        }
+        return JSValue.Str(utf16Slice(s, a, b))
+    }
+    if name == "substr" {
+        // substr(start, length) — a count, not an end index (unlike slice)
+        let n = utf16Length(s)
+        var start = argNum(args, 0, 0)
+        if start < 0 {
+            start = n + start
+            if start < 0 {
+                start = 0
+            }
+        }
+        var count = n - start
+        if argPresent(args, 1) {
+            count = argNum(args, 1, count)
+        }
+        if count < 0 {
+            count = 0
+        }
+        return JSValue.Str(utf16Slice(s, start, start + count))
+    }
+    if name == "lastIndexOf" {
+        let needle = argStr(args, 0)
+        if needle.len() == 0 {
+            return JSValue.Number(s.len() as f64)
+        }
+        if needle.len() > s.len() {
+            return JSValue.Number(0.0 - 1.0)
+        }
+        var i = s.len() - needle.len()
+        while i >= 0 {
+            if jsSubstringAt(s, needle, i) {
+                return JSValue.Number(byteToUtf16(s, i) as f64)
+            }
+            i = i - 1
+        }
+        return JSValue.Number(0.0 - 1.0)
+    }
+    if name == "padStart" || name == "padEnd" {
+        let target = argNum(args, 0, 0)
+        // V8's string cap is 2^29; a huge pad request (str-pad-leak.js asks for
+        // 2^31) must throw, not grind through gigabytes of concatenation
+        if target > 536870888 {
+            return throwErr(st, "RangeError", "Invalid string length")
+        }
+        var pad = " "
+        if argPresent(args, 1) {
+            pad = toStr(args[1])
+        }
+        let curLen = utf16Length(s)
+        if pad.len() == 0 || curLen >= target {
+            return JSValue.Str(s.clone())
+        }
+        var fill = ""
+        while utf16Length(fill) < target - curLen {
+            fill = fill + pad
+        }
+        // the pad is truncated to exactly the missing width
+        let cut = utf16Slice(fill, 0, target - curLen)
+        if name == "padStart" {
+            return JSValue.Str(cut + s.clone())
+        }
+        return JSValue.Str(s.clone() + cut)
+    }
+    // annexB's String HTML methods. CreateHTML: one `"` in an attribute value is
+    // escaped as &quot; and nothing else is, which is exactly what the spec says
+    // (these predate any real escaping and stay literal on purpose).
+    if isHtmlMethodName(name) {
+        let tag = htmlTagFor(name)
+        let attr = htmlAttrFor(name)
+        var open = "<" + tag.clone()
+        if attr.len() > 0 {
+            let raw = argStr(args, 0)
+            var esc = ""
+            var ci: i64 = 0
+            while ci < raw.len() {
+                if raw[ci] == '"' {
+                    esc = esc + "&quot;"
+                } else {
+                    esc = esc + strSlice(raw.clone(), ci, ci + 1)
+                }
+                ci = ci + 1
+            }
+            open = open + " " + attr.clone() + "=\"" + esc + "\""
+        }
+        return JSValue.Str(open + ">" + s.clone() + "</" + tag.clone() + ">")
+    }
+    if name == "trimStart" || name == "trimLeft" {
+        var i: i64 = 0
+        while i < s.len() && isJsSpace(s[i]) {
+            i = i + 1
+        }
+        return JSValue.Str(strSlice(s, i, s.len()))
+    }
+    if name == "trimEnd" || name == "trimRight" {
+        var e = s.len()
+        while e > 0 && isJsSpace(s[e - 1]) {
+            e = e - 1
+        }
+        return JSValue.Str(strSlice(s, 0, e))
+    }
+    if name == "repeat" {
+        // The COUNT is checked before anything else, and independently of the
+        // string: the spec makes a negative or INFINITE count a RangeError on its
+        // own. Only the product was bounded, and the product guard is skipped for
+        // an empty string, so `"".repeat(Infinity)` fell through to a loop that
+        // appended nothing several quintillion times and hung the engine.
+        // An INFINITE count is a RangeError on its own, independent of the string.
+        // NaN is not: ToIntegerOrInfinity turns it into 0, so `"".repeat(NaN)` is
+        // "". A large FINITE count is fine here and is caught by the length check
+        // below, if it is caught at all.
+        let rawCnt = argNumF(args, 0, 0.0)
+        if rawCnt == rawCnt && (rawCnt > 1.7e308 || rawCnt < -1.7e308) {
+            return throwErr(st, "RangeError", "Invalid count value")
+        }
+        let cnt = argNum(args, 0, 0)
+        if cnt < 0 {
+            st.throwing = true
+            st.thrownValue = makeError(st, "RangeError", "Invalid count value: " + i64ToStr(cnt))
+            return JSValue.Undefined
+        }
+        // Repeating an EMPTY string is empty however many times it is asked for,
+        // and answering directly is what stops a huge count from spinning through
+        // a loop that appends nothing. This is the case that hung on Infinity.
+        if s.len() == 0 {
+            return JSValue.Str("")
+        }
+        // Same cap padStart carries, and for the same reason: `"a".repeat(1e308)`
+        // ground through gigabytes and died with no output and exit 0, where node
+        // throws. The product is what has to be bounded, not just the count.
+        if cnt != 0 && s.len() != 0 && cnt > 536870888 / s.len() {
+            return throwErr(st, "RangeError", "Invalid string length")
+        }
+        return JSValue.Str(jsRepeat(s, cnt))
+    }
+    if name == "concat" {
+        var out = s.clone()
+        var i: i64 = 0
+        while i < args.len() {
+            out = out + toStr(args[i])
+            i = i + 1
+        }
+        return JSValue.Str(out)
+    }
+    if name == "at" {
+        var idx = argNum(args, 0, 0)
+        let n = utf16Length(s)
+        if idx < 0 {
+            idx = n + idx
+        }
+        if idx < 0 || idx >= n {
+            return JSValue.Undefined
+        }
+        return JSValue.Str(utf16Slice(s, idx, idx + 1))
+    }
+    if name == "codePointAt" {
+        let cp = utf16CodePointAt(s, argNum(args, 0, 0))
+        if cp < 0 {
+            return JSValue.Undefined
+        }
+        return JSValue.Number(cp as f64)
+    }
+    if name == "replaceAll" {
+        let pat = argStr(args, 0)
+        let rep = argStr(args, 1)
+        if pat.len() == 0 {
+            return JSValue.Str(s.clone())
+        }
+        var out = String.withCapacity(s.len())
+        var at: i64 = 0
+        var hit = jsIndexOf(s, pat, at)
+        while hit >= 0 {
+            var k = at
+            while k < hit {
+                out.push(s[k])
+                k = k + 1
+            }
+            var r: i64 = 0
+            while r < rep.len() {
+                out.push(rep[r])
+                r = r + 1
+            }
+            at = hit + pat.len()
+            hit = jsIndexOf(s, pat, at)
+        }
+        var t = at
+        while t < s.len() {
+            out.push(s[t])
+            t = t + 1
+        }
+        return JSValue.Str(out)
+    }
+    if name == "localeCompare" {
+        // No ICU, so this is codepoint order rather than locale collation. The
+        // byte loop is sufficient for that: UTF-8 byte order and codepoint order
+        // agree by construction.
+        let other = argStr(args, 0)
+        var i: i64 = 0
+        while i < s.len() && i < other.len() {
+            if s[i] < other[i] {
+                return JSValue.Number(0.0 - 1.0)
+            }
+            if s[i] > other[i] {
+                return JSValue.Number(1.0)
+            }
+            i = i + 1
+        }
+        if s.len() < other.len() {
+            return JSValue.Number(0.0 - 1.0)
+        }
+        if s.len() > other.len() {
+            return JSValue.Number(1.0)
+        }
+        return JSValue.Number(0.0)
+    }
+    if name == "normalize" {
+        // NOT normalization. The old comment here read "strings are byte
+        // buffers, so every form is already normalized", which is false
+        // reasoning: UTF-8 says nothing about canonical composition. This
+        // returns its input, so "e\u0301".normalize("NFC") stays two code
+        // points where node gives one, and a caller normalizing before an
+        // equality check gets `false` for strings that ARE equal. That is a
+        // silent wrong answer and it is tracked in the backlog; the tables are
+        // generatable from node the way tools/gen-unicase.mjs does.
+        //
+        // The form ARGUMENT is validated, because that part costs nothing and
+        // an invalid form is a RangeError in the spec. Rejecting a typo'd form
+        // loudly is worth more than pretending to normalize for it.
+        if args.len() > 0 {
+            match cloneValue(args[0]) {
+                JSValue.Undefined => {
+                }
+                _ => {
+                    let form = toStr(args[0])
+                    if form != "NFC" && form != "NFD" && form != "NFKC" && form != "NFKD" {
+                        return throwErr(st, "RangeError", "The normalization form should be one of NFC, NFD, NFKC, NFKD.")
+                    }
+                }
+            }
+        }
+        return JSValue.Str(s.clone())
+    }
+    if name == "split" {
+        return JSValue.Obj(jsSplit(s, args, st))
+    }
+    if name == "replace" {
+        let pat = argStr(args, 0)
+        let rep = argStr(args, 1)
+        let idx = jsIndexOf(s, pat, 0)
+        if idx < 0 || pat.len() == 0 {
+            return JSValue.Str(s.clone())
+        }
+        return JSValue.Str(strSlice(s, 0, idx) + rep + strSlice(s, idx + pat.len(), s.len()))
+    }
+    return JSValue.Undefined
+}
+
+// ── Math ── pure Milo for the arithmetic ops; only sqrt/pow reach for the
+// hardware/libc version (sqrt must be IEEE correctly-rounded, which is a CPU
+// instruction, and pow is hard to get last-bit-accurate by hand).
+
+let TWO53: f64 = 9007199254740992.0
+
+fn mjIsNan(x: f64): bool {
+    return !(x == x)
+}
+
+pub fn mjFloor(x: f64): f64 {
+    if mjIsNan(x) || !isFiniteF(x) {
+        return x
+    }
+    // |x| >= 2^53 is already integral; also keeps the i64 cast in range
+    if x >= TWO53 || x <= 0.0 - TWO53 {
+        return x
+    }
+    let t = (x as i64) as f64
+    if t > x {
+        return t - 1.0
+    }
+    return t
+}
+
+pub fn mjCeil(x: f64): f64 {
+    return 0.0 - mjFloor(0.0 - x)
+}
+
+pub fn mjTrunc(x: f64): f64 {
+    if mjIsNan(x) || !isFiniteF(x) {
+        return x
+    }
+    if x >= TWO53 || x <= 0.0 - TWO53 {
+        return x
+    }
+    return (x as i64) as f64
+}
+
+pub fn mjRound(x: f64): f64 {
+    if mjIsNan(x) || !isFiniteF(x) {
+        return x
+    }
+    // JS rounds halves toward +Infinity: round(2.5)=3, round(-2.5)=-2
+    return mjFloor(x + 0.5)
+}
+
+pub fn mjAbs(x: f64): f64 {
+    if x < 0.0 {
+        return 0.0 - x
+    }
+    return x
+}
+
+pub fn mjSign(x: f64): f64 {
+    if mjIsNan(x) {
+        return x
+    }
+    if x > 0.0 {
+        return 1.0
+    }
+    if x < 0.0 {
+        return 0.0 - 1.0
+    }
+    return x
+}
+
+// xorshift64 — a pure-Milo PRNG for Math.random(). Deterministic seed (a real
+// runtime would seed from entropy); good enough for [0,1) values, not crypto.
+pub fn mjNextRandom(state: i64): i64 {
+    var x = state
+    x = x ^ (x << 13)
+    x = x ^ (x >> 7)
+    x = x ^ (x << 17)
+    return x
+}
+
+// ── JSON ── (mj-prefixed to avoid colliding with std/json in the flat namespace)
+
+// mj-prefixed like the JSON helpers above: std/http defines its own hexNibble
+// going the OTHER direction (hex char -> int), and Milo's flat namespace has no
+// way to keep both.
+fn mjHexNibble(v: i64): u8 {
+    if v < 10 {
+        return ('0' as i64 + v) as u8
+    }
+    return ('a' as i64 + (v - 10)) as u8
+}
+
+fn mjJsonEscape(s: &string): string {
+    var out = String.withCapacity(s.len() + 2)
+    mjPushJsonEscaped(out, s)
+    return out
+}
+
+fn mjPushJsonEscaped(out: &mut string, s: &string) {
+    out.push(34 as u8)
+    var i: i64 = 0
+    while i < s.len() {
+        let c = s[i]
+        if c == 34 as u8 {
+            out.push(92 as u8)
+            out.push(34 as u8)
+        } else if c == 92 as u8 {
+            out.push(92 as u8)
+            out.push(92 as u8)
+        } else if c == 10 as u8 {
+            out.push(92 as u8)
+            out.push('n')
+        } else if c == 9 as u8 {
+            out.push(92 as u8)
+            out.push('t')
+        } else if c == 13 as u8 {
+            out.push(92 as u8)
+            out.push('r')
+        } else if c == 8 as u8 {
+            out.push(92 as u8)
+            out.push('b')
+        } else if c == 12 as u8 {
+            out.push(92 as u8)
+            out.push('f')
+        } else if c < 32 as u8 {
+            // any other control character MUST be \uXXXX-escaped; emitting it raw
+            // produces output no JSON parser will accept
+            out.push(92 as u8)
+            out.push('u')
+            out.push('0')
+            out.push('0')
+            out.push(mjHexNibble(((c as i64) >> 4) & 15))
+            out.push(mjHexNibble((c as i64) & 15))
+        } else {
+            out.push(c)
+        }
+        i = i + 1
+    }
+    out.push(34 as u8)
+}
+
+pub fn mjJsonOmitted(v: &JSValue): bool {
+    match v {
+        JSValue.Undefined => {
+            return true
+        }
+        JSValue.Func(_f, _e) => {
+            return true
+        }
+        JSValue.Native(_id) => {
+            return true
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+// Compact JSON text for a value (no indentation). undefined/function become
+// "null" in arrays; object props holding them are omitted. NaN/Infinity → null.
+pub fn mjStringifyVal(v: &JSValue, st: &Interp): string {
+    var out = String.withCapacity(64)
+    mjPushStringified(out, v, st)
+    return out
+}
+
+// Appends into a single growing buffer rather than returning a string per node.
+// Returning strings made the top-level accumulator `out = out + piece` copy the
+// whole prefix once per element — quadratic, and it allocated ~35x the output
+// size in short-lived intermediates that the allocator never returned to the OS.
+fn mjPushStringified(out: &mut string, v: &JSValue, st: &Interp) {
+    match v {
+        JSValue.Null => {
+            out.pushStr("null")
+        }
+        JSValue.Undefined => {
+            out.pushStr("null")
+        }
+        JSValue.Func(_f, _e) => {
+            out.pushStr("null")
+        }
+        JSValue.Native(_id) => {
+            out.pushStr("null")
+        }
+        JSValue.BigInt(s) => {
+            // node's JSON.stringify THROWS on a BigInt; this shim can't throw
+            // (no &mut Interp here), so emit the digits — lenient, non-crashing
+            out.pushStr(s)
+        }
+        JSValue.Bool(b) => {
+            if b {
+                out.pushStr("true")
+            } else {
+                out.pushStr("false")
+            }
+        }
+        JSValue.Number(n) => {
+            if !(n == n) || !isFiniteF(n) {
+                out.pushStr("null")
+            } else {
+                out.pushStr(numToStr(n))
+            }
+        }
+        JSValue.Str(s) => {
+            mjPushJsonEscaped(out, s)
+        }
+        JSValue.Obj(o) => {
+            if st.objects[o].isArray {
+                out.push('[')
+                var i: i64 = 0
+                let n = st.objects[o].elems.len()
+                while i < n {
+                    if i > 0 {
+                        out.push(',')
+                    }
+                    let e = cloneValue(st.objects[o].elems[i])
+                    mjPushStringified(out, e, st)
+                    i = i + 1
+                }
+                out.push(']')
+            } else {
+                out.push('{')
+                var first = true
+                var i: i64 = 0
+                let n = st.objects[o].props.len()
+                while i < n {
+                    let key = st.objects[o].props[i].key.clone()
+                    let val = cloneValue(st.objects[o].props[i].value)
+                    if !mjJsonOmitted(val) {
+                        if !first {
+                            out.push(',')
+                        }
+                        first = false
+                        mjPushJsonEscaped(out, key)
+                        out.push(':')
+                        mjPushStringified(out, val, st)
+                    }
+                    i = i + 1
+                }
+                out.push('}')
+            }
+        }
+    }
+}
+
+// ── JSON parser (recursive descent over a byte cursor) ──
+
+struct JCur {
+    pos: i64,
+    // first malformed construct seen, "" while the text is still valid JSON.
+    // The reader keeps going after setting it — unwinding mid-parse would mean
+    // threading a Result through every recursive step — and mjJsonParse turns a
+    // non-empty message into the thrown SyntaxError.
+    err: string,
+}
+
+fn mjSkipWs(s: &string, c: &mut JCur) {
+    while c.pos < s.len() && isWs(s[c.pos]) {
+        c.pos = c.pos + 1
+    }
+}
+
+// Four hex digits at `at`, or -1 if they are not all hex.
+fn jsonHex4(s: &string, at: i64): i64 {
+    var v: i64 = 0
+    var k: i64 = 0
+    while k < 4 {
+        if at + k >= s.len() {
+            return -1
+        }
+        let d = hexDigitVal(s[at + k])
+        if d < 0 {
+            return -1
+        }
+        v = v * 16 + d
+        k = k + 1
+    }
+    return v
+}
+
+fn mjParseString(s: &string, c: &mut JCur): string {
+    c.pos = c.pos + 1
+    var out = String.withCapacity(16)
+    while c.pos < s.len() && s[c.pos] != 34 as u8 {
+        let ch = s[c.pos]
+        if ch == 92 as u8 && c.pos + 1 < s.len() {
+            let e = s[c.pos + 1]
+            if e == 'n' {
+                out.push(10 as u8)
+            } else if e == 't' {
+                out.push(9 as u8)
+            } else if e == 'r' {
+                out.push(13 as u8)
+            } else if e == 34 as u8 {
+                out.push(34 as u8)
+            } else if e == 92 as u8 {
+                out.push(92 as u8)
+            } else if e == '/' {
+                out.push('/')
+            } else if e == 'b' {
+                out.push(8 as u8)
+            } else if e == 'f' {
+                out.push(12 as u8)
+            } else if e == 'u' && c.pos + 5 < s.len() {
+                // \uXXXX — decode to a codepoint and UTF-8 encode it. This used
+                // to fall through to the default branch, which emitted a literal
+                // 'u' and left the four hex digits in the string.
+                var cp = jsonHex4(s, c.pos + 2)
+                var consumed: i64 = 6
+                // a surrogate PAIR is two escapes back to back; combine them
+                if cp >= 55296 && cp <= 56319 && c.pos + 11 < s.len() && s[c.pos + 6] == 92 as u8 && s[c.pos + 7] == 'u' {
+                    let lo = jsonHex4(s, c.pos + 8)
+                    if lo >= 56320 && lo <= 57343 {
+                        cp = 65536 + ((cp - 55296) * 1024) + (lo - 56320)
+                        consumed = 12
+                    }
+                }
+                if cp < 0 {
+                    out.push('u')
+                    c.pos = c.pos + 2
+                } else {
+                    encodeCodepoint(out, cp as i32)
+                    c.pos = c.pos + consumed
+                }
+                continue
+            } else {
+                out.push(e)
+            }
+            c.pos = c.pos + 2
+        } else {
+            out.push(ch)
+            c.pos = c.pos + 1
+        }
+    }
+    if c.pos >= s.len() {
+        if c.err.len() == 0 {
+            c.err = "Unterminated string in JSON"
+        }
+        return out
+    }
+    c.pos = c.pos + 1
+    return out
+}
+
+fn mjParseNumber(s: &string, c: &mut JCur): JSValue {
+    let start = c.pos
+    var going = true
+    while going {
+        if c.pos >= s.len() {
+            going = false
+        } else {
+            let ch = s[c.pos]
+            if (ch >= '0' && ch <= '9') || ch == '-' || ch == '+' || ch == '.' || ch == 'e' || ch == 'E' {
+                c.pos = c.pos + 1
+            } else {
+                going = false
+            }
+        }
+    }
+    let numStr = strSlice(s, start, c.pos)
+    let numLen = numStr.len()
+    match parseFloat(numStr) {
+        Option.Some(n) => {
+            return JSValue.Number(n)
+        }
+        Option.None => {
+            // `{bad` gets here with nothing number-shaped consumed at all, which
+            // is what used to produce a NaN-valued property instead of a throw
+            if c.err.len() == 0 {
+                if numLen == 0 {
+                    c.err = "Unexpected token in JSON at position " + i64ToStr(start)
+                } else {
+                    c.err = "Unexpected number in JSON at position " + i64ToStr(start)
+                }
+            }
+            return JSValue.Number(jsNan())
+        }
+    }
+}
+
+fn mjParseArray(s: &string, c: &mut JCur, st: &mut Interp): JSValue {
+    c.pos = c.pos + 1
+    let arr = newArray(st)
+    pushTemp(st, JSValue.Obj(arr))
+    mjSkipWs(s, c)
+    if c.pos < s.len() && s[c.pos] == ']' {
+        c.pos = c.pos + 1
+        popTemp(st)
+        return JSValue.Obj(arr)
+    }
+    var going = true
+    while going {
+        let v = mjParseVal(s, c, st)
+        arrPush(st, arr, v)
+        mjSkipWs(s, c)
+        if c.pos < s.len() && s[c.pos] == ',' {
+            c.pos = c.pos + 1
+        } else {
+            going = false
+        }
+    }
+    if c.pos < s.len() && s[c.pos] == ']' {
+        c.pos = c.pos + 1
+    } else if c.err.len() == 0 {
+        c.err = "Expected ',' or ']' after array element in JSON at position " + i64ToStr(c.pos)
+    }
+    popTemp(st)
+    return JSValue.Obj(arr)
+}
+
+fn mjParseObject(s: &string, c: &mut JCur, st: &mut Interp): JSValue {
+    c.pos = c.pos + 1
+    let obj = newObject(st)
+    pushTemp(st, JSValue.Obj(obj))
+    mjSkipWs(s, c)
+    if c.pos < s.len() && s[c.pos] == '}' {
+        c.pos = c.pos + 1
+        popTemp(st)
+        return JSValue.Obj(obj)
+    }
+    var going = true
+    while going {
+        mjSkipWs(s, c)
+        var key = ""
+        if c.pos < s.len() && s[c.pos] == 34 as u8 {
+            key = mjParseString(s, c)
+        } else if c.err.len() == 0 {
+            c.err = "Expected property name or '}' in JSON at position " + i64ToStr(c.pos)
+        }
+        mjSkipWs(s, c)
+        if c.pos < s.len() && s[c.pos] == ':' {
+            c.pos = c.pos + 1
+        } else if c.err.len() == 0 {
+            c.err = "Expected ':' after property name in JSON at position " + i64ToStr(c.pos)
+        }
+        let v = mjParseVal(s, c, st)
+        objSet(st, obj, key, v)
+        mjSkipWs(s, c)
+        if c.pos < s.len() && s[c.pos] == ',' {
+            c.pos = c.pos + 1
+        } else {
+            going = false
+        }
+    }
+    if c.pos < s.len() && s[c.pos] == '}' {
+        c.pos = c.pos + 1
+    } else if c.err.len() == 0 {
+        c.err = "Expected ',' or '}' after property value in JSON at position " + i64ToStr(c.pos)
+    }
+    popTemp(st)
+    return JSValue.Obj(obj)
+}
+
+// `s` continues with `word` at `at`.
+fn jsonWordAt(s: &string, at: i64, word: &string): bool {
+    if at + word.len() > s.len() {
+        return false
+    }
+    var i: i64 = 0
+    while i < word.len() {
+        if s[at + i] != word[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+fn mjParseVal(s: &string, c: &mut JCur, st: &mut Interp): JSValue {
+    mjSkipWs(s, c)
+    if c.pos >= s.len() {
+        if c.err.len() == 0 {
+            c.err = "Unexpected end of JSON input"
+        }
+        return JSValue.Undefined
+    }
+    let ch = s[c.pos]
+    if ch == '{' {
+        return mjParseObject(s, c, st)
+    }
+    if ch == '[' {
+        return mjParseArray(s, c, st)
+    }
+    if ch == 34 as u8 {
+        return JSValue.Str(mjParseString(s, c))
+    }
+    // the keywords are matched in full: bare `t` used to be accepted as true and
+    // skip four characters, so `JSON.parse("nope")` answered null
+    if ch == 't' || ch == 'f' || ch == 'n' {
+        if jsonWordAt(s, c.pos, "true") {
+            c.pos = c.pos + 4
+            return JSValue.Bool(true)
+        }
+        if jsonWordAt(s, c.pos, "false") {
+            c.pos = c.pos + 5
+            return JSValue.Bool(false)
+        }
+        if jsonWordAt(s, c.pos, "null") {
+            c.pos = c.pos + 4
+            return JSValue.Null
+        }
+        if c.err.len() == 0 {
+            c.err = "Unexpected token in JSON at position " + i64ToStr(c.pos)
+        }
+        return JSValue.Undefined
+    }
+    return mjParseNumber(s, c)
+}
+
+pub fn mjJsonParse(s: &string, st: &mut Interp): JSValue {
+    var c = JCur {
+        pos: 0, err: ""
+    }
+    let v = mjParseVal(s, c, st)
+    if c.err.len() == 0 {
+        // anything but whitespace left over is garbage after a complete value,
+        // e.g. `{"a":1} extra`
+        mjSkipWs(s, c)
+        if c.pos < s.len() {
+            c.err = "Unexpected non-whitespace character after JSON at position " + i64ToStr(c.pos)
+        }
+    }
+    if c.err.len() > 0 {
+        return throwErr(st, "SyntaxError", c.err)
+    }
+    return v
+}
+
+// x instanceof C: for a user constructor, the object must have been made by it
+// (its `ctor` slot matches); for a native Error constructor, the object must be
+// an error whose kind matches (Error itself matches any error).
+// Compile a pattern and wrap it as a RegExp object (regexId links to the
+// compiled program; source/flags/lastIndex are ordinary properties).
+// A single-character search over a flags string. Named mj* per the house rule:
+// std/string owns strIndexOf.
+fn strIndexOfMj(hay: &string, needle: &string): i64 {
+    if needle.len() == 0 {
+        return 0
+    }
+    var i: i64 = 0
+    while i < hay.len() {
+        if hay[i] == needle[0] {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// Which half of the validity flag failed, for the message. A pattern can be
+// rejected for a bad property name or for malformed syntax, and the two read
+// very differently to whoever hits one.
+fn regexInvalidReason(re: &Regex): string {
+    if re.badPropName {
+        return "Invalid property name"
+    }
+    return "Invalid regular expression"
+}
+
+pub fn makeRegex(st: &mut Interp, pattern: string, flags: string): JSValue {
+    let re = regexCompile(pattern.clone(), flags.clone())
+    // An unknown `\p{...}` property, an unclosed group, an unterminated class or
+    // a reversed {n,m} are all EARLY errors: the spec rejects the pattern at
+    // compile time rather than letting it match nothing or match something else.
+    if !re.valid {
+        st.throwing = true
+        st.thrownValue = makeError(st, "SyntaxError", "Invalid regular expression: /" + pattern.clone() + "/: " + regexInvalidReason(re) + currentModule(st))
+        return JSValue.Undefined
+    }
+    let isGlobal = re.flagG
+    st.regexes.push(re)
+    let id = st.regexes.len() - 1
+    let o = newObject(st)
+    let _er = ensureExtra(st, o)
+    st.objExtras[st.objects[o].extra].regexId = id
+    objSet(st, o, "source", JSValue.Str(pattern))
+    objSetNonEnumerable(st, o, "source")
+    objSet(st, o, "flags", JSValue.Str(flags.clone()))
+    objSetNonEnumerable(st, o, "flags")
+    // the whole flag family, not just `global` — a test that reads .multiline or
+    // .sticky got undefined, and `undefined` is not `false`
+    objSet(st, o, "global", JSValue.Bool(isGlobal))
+    objSetNonEnumerable(st, o, "global")
+    objSet(st, o, "ignoreCase", JSValue.Bool(strIndexOfMj(flags.clone(), "i") >= 0))
+    objSetNonEnumerable(st, o, "ignoreCase")
+    objSet(st, o, "multiline", JSValue.Bool(strIndexOfMj(flags.clone(), "m") >= 0))
+    objSetNonEnumerable(st, o, "multiline")
+    objSet(st, o, "sticky", JSValue.Bool(strIndexOfMj(flags.clone(), "y") >= 0))
+    objSetNonEnumerable(st, o, "sticky")
+    objSet(st, o, "unicode", JSValue.Bool(strIndexOfMj(flags.clone(), "u") >= 0))
+    objSetNonEnumerable(st, o, "unicode")
+    objSet(st, o, "unicodeSets", JSValue.Bool(strIndexOfMj(flags.clone(), "v") >= 0))
+    objSetNonEnumerable(st, o, "unicodeSets")
+    objSet(st, o, "dotAll", JSValue.Bool(strIndexOfMj(flags.clone(), "s") >= 0))
+    objSetNonEnumerable(st, o, "dotAll")
+    objSet(st, o, "hasIndices", JSValue.Bool(strIndexOfMj(flags.clone(), "d") >= 0))
+    objSetNonEnumerable(st, o, "hasIndices")
+    objSet(st, o, "lastIndex", JSValue.Number(0.0))
+    objSetNonEnumerable(st, o, "lastIndex")
+    objSetNonConfigurable(st, o, "lastIndex")
+    if st.regexProtoObj >= 0 {
+        st.objects[o].proto = st.regexProtoObj
+    }
+    return JSValue.Obj(o)
+}
+
+fn regexIdOf(st: &Interp, v: &JSValue): i64 {
+    match v {
+        JSValue.Obj(o) => {
+            return st.objExtras[st.objects[o].extra].regexId
+        }
+        _ => {
+            return -1
+        }
+    }
+}
+
+// [wholeMatch, group1, group2, ...]; a non-participating group is undefined.
+// `rid` is the regex handle (-1 when none), used to attach `.groups` for named
+// captures (?<name>...).
+fn buildMatchArray(st: &mut Interp, s: &string, saves: &Vec<i64>, rid: i64): JSValue {
+    let arr = newArray(st)
+    pushTemp(st, JSValue.Obj(arr))
+    var g: i64 = 0
+    let ng = saves.len() / 2
+    while g < ng {
+        let a = saves[2 * g]
+        let b = saves[2 * g + 1]
+        if a < 0 || b < 0 {
+            arrPush(st, arr, JSValue.Undefined)
+        } else {
+            arrPush(st, arr, JSValue.Str(strSlice(s, a, b)))
+        }
+        g = g + 1
+    }
+    // .index (match start) and .input, which callers like content-type read.
+    // The index is in UTF-16 code units, as every JS string index is: it was the
+    // BYTE offset, so any match after a non-ASCII character reported a position
+    // the caller could not use to slice the same string.
+    objSet(st, arr, "index", JSValue.Number(byteToUtf16(s, saves[0]) as f64))
+    objSet(st, arr, "input", JSValue.Str(s.clone()))
+    // .groups: an object of named-capture substrings, or undefined when the
+    // pattern has no (?<name>...) groups (matching JS, where .groups is
+    // undefined not {} for an un-named pattern)
+    if rid >= 0 && st.regexes[rid].groupNames.len() > 0 {
+        let groups = newObject(st)
+        var gi: i64 = 0
+        while gi < st.regexes[rid].groupNames.len() {
+            let nm = st.regexes[rid].groupNames[gi].clone()
+            let gnum = st.regexes[rid].groupNums[gi]
+            var gv = JSValue.Undefined
+            if 2 * gnum + 1 < saves.len() {
+                let a = saves[2 * gnum]
+                let b = saves[2 * gnum + 1]
+                if a >= 0 && b >= 0 {
+                    gv = JSValue.Str(strSlice(s, a, b))
+                }
+            }
+            objSet(st, groups, nm, gv)
+            gi = gi + 1
+        }
+        objSet(st, arr, "groups", JSValue.Obj(groups))
+    } else {
+        objSet(st, arr, "groups", JSValue.Undefined)
+    }
+    popTemp(st)
+    return JSValue.Obj(arr)
+}
+
+pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSValue {
+    // the prototype's flag accessors, dispatched under an internal name so they
+    // cannot shadow an instance's own data property of the same name
+    if name.len() > 8 && strSlice(name.clone(), 0, 8) == "__reGet_" {
+        return objGet(st, o, strSlice(name.clone(), 8, name.len()))
+    }
+    // RegExp.prototype[@@match](str) and friends: delegate to the String method
+    // that actually implements the operation in this engine
+    var strOp = ""
+    if name == "@@sym:Symbol.match:0" {
+        strOp = "match"
+    } else if name == "@@sym:Symbol.matchAll:0" {
+        strOp = "matchAll"
+    } else if name == "@@sym:Symbol.replace:0" {
+        strOp = "replace"
+    } else if name == "@@sym:Symbol.search:0" {
+        strOp = "search"
+    } else if name == "@@sym:Symbol.split:0" {
+        strOp = "split"
+    }
+    if strOp.len() > 0 {
+        var sArgs: Vec<JSValue> = Vec.new()
+        sArgs.push(JSValue.Obj(o))
+        var ai: i64 = 1
+        while ai < args.len() {
+            sArgs.push(cloneValue(args[ai]))
+            ai = ai + 1
+        }
+        var recvStr = JSValue.Str("")
+        if args.len() > 0 {
+            recvStr = JSValue.Str(toStrProg(gProg, args[0], st))
+            if st.throwing {
+                return JSValue.Undefined
+            }
+        }
+        return callBuiltinByName(gProg, recvStr, strOp, sArgs, st)
+    }
+    let rid = st.objExtras[st.objects[o].extra].regexId
+    // exec/test ToString their argument, and that conversion can run user code
+    // and throw. is-regex is built entirely on that: it passes exec an object
+    // whose toString throws a private marker and catches it. An engine that
+    // stringifies without asking returns null here and is-regex answers
+    // undefined, which is neither true nor false and breaks every caller.
+    var subject = ""
+    if args.len() > 0 {
+        subject = toStrProg(gProg, args[0], st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+    }
+    if name == "toString" {
+        // listed as a regex method but never implemented — /ab/gi.toString()
+        // returned undefined
+        return JSValue.Str("/" + toStr(objGet(st, o, "source")) + "/" + toStr(objGet(st, o, "flags")))
+    }
+    if name == "compile" {
+        // node's legacy in-place recompile: replaces the pattern and flags on
+        // THIS object rather than returning a new one
+        var np = toStr(objGet(st, o, "source"))
+        var nf = ""
+        if args.len() > 0 {
+            np = toStr(args[0])
+        }
+        if args.len() > 1 {
+            nf = toStr(args[1])
+        }
+        let fresh = makeRegex(st, np, nf)
+        let fh = objHandle(fresh)
+        if fh >= 0 {
+            st.objExtras[st.objects[o].extra].regexId = st.objExtras[st.objects[fh].extra].regexId
+            objSet(st, o, "source", objGet(st, fh, "source"))
+            objSet(st, o, "flags", objGet(st, fh, "flags"))
+            objSet(st, o, "global", objGet(st, fh, "global"))
+            objSet(st, o, "ignoreCase", objGet(st, fh, "ignoreCase"))
+            objSet(st, o, "multiline", objGet(st, fh, "multiline"))
+            objSet(st, o, "sticky", objGet(st, fh, "sticky"))
+            objSet(st, o, "unicode", objGet(st, fh, "unicode"))
+            objSet(st, o, "unicodeSets", objGet(st, fh, "unicodeSets"))
+            objSet(st, o, "dotAll", objGet(st, fh, "dotAll"))
+            objSet(st, o, "hasIndices", objGet(st, fh, "hasIndices"))
+            objSet(st, o, "lastIndex", JSValue.Number(0.0))
+        }
+        return JSValue.Obj(o)
+    }
+    // `test` IS `exec(s) !== null` per spec, so it must share the lastIndex
+    // handling below. It used to run its own bare search from 0, which meant a
+    // global or sticky regex never advanced lastIndex through test() and a sticky
+    // one was not anchored.
+    if name == "test" || name == "exec" {
+        // a global (or sticky) regex resumes from lastIndex and advances it, so
+        // `while ((m = re.exec(s)))` terminates instead of re-matching forever
+        let isG = st.regexes[rid].flagG
+        let isY = st.regexes[rid].flagY
+        // A sticky regex uses lastIndex the same way a global one does, and adds
+        // the constraint that the match must START there. It was never wired up:
+        // `flagY` did not exist, so /a/y behaved as a plain search and lastIndex
+        // never moved.
+        let usesLastIndex = isG || isY
+        var start: i64 = 0
+        if usesLastIndex {
+            // lastIndex is a STRING index the caller can read and write, so it
+            // is in UTF-16 units; internally the matcher works in bytes. It was
+            // stored raw, so after a non-ASCII match the value handed back was a
+            // byte offset the caller could not use, and feeding it back in
+            // resumed mid-character.
+            let lastU16 = toNum(objGet(st, o, "lastIndex")) as i64
+            if lastU16 < 0 || lastU16 > utf16Length(subject) {
+                objSet(st, o, "lastIndex", JSValue.Number(0.0))
+                if name == "test" {
+                    return JSValue.Bool(false)
+                }
+                return JSValue.Null
+            }
+            start = utf16ToByte(subject, lastU16)
+        }
+        var saves = regexExec(st.regexes[rid], subject, start)
+        // Sticky ANCHORS: regexExec searches forward from `start`, so a match
+        // found anywhere later is not a sticky match.
+        if isY && saves.len() > 0 && saves[0] != start {
+            saves = Vec.new()
+        }
+        if saves.len() == 0 {
+            if usesLastIndex {
+                objSet(st, o, "lastIndex", JSValue.Number(0.0))
+            }
+            if name == "test" {
+                return JSValue.Bool(false)
+            }
+            return JSValue.Null
+        }
+        if usesLastIndex {
+            var next = saves[1]
+            // a zero-width match must still advance, or the loop stalls; by a
+            // whole character, or it resumes inside one
+            if next <= start {
+                next = start + utf8LenAt(subject, start)
+            }
+            objSet(st, o, "lastIndex", JSValue.Number(byteToUtf16(subject, next) as f64))
+        }
+        if name == "test" {
+            return JSValue.Bool(true)
+        }
+        return buildMatchArray(st, subject, saves, rid)
+    }
+    return JSValue.Undefined
+}
+
+// Expand $1..$9, $&, $`, $', $$, and $<name> in a replacement string against a
+// saves. `re` supplies the named-capture map for $<name> (pass a regex with no
+// named groups to disable it).
+fn expandRepl(repl: &string, s: &string, saves: &Vec<i64>, re: &Regex): string {
+    var out = String.withCapacity(repl.len())
+    var i: i64 = 0
+    while i < repl.len() {
+        let c = repl[i]
+        if c == '$' && i + 1 < repl.len() {
+            let n = repl[i + 1]
+            if n == '$' {
+                out.push('$')
+                i = i + 2
+            } else if n == '&' {
+                out = out + strSlice(s, saves[0], saves[1])
+                i = i + 2
+            } else if n == 96 as u8 {
+                // $` is everything BEFORE the match, $' everything after. Both
+                // were passed through literally, so a replacement using them
+                // emitted the dollar sequence itself.
+                out = out + strSlice(s, 0, saves[0])
+                i = i + 2
+            } else if n == 39 as u8 {
+                out = out + strSlice(s, saves[1], s.len())
+                i = i + 2
+            } else if n == '<' {
+                // $<name>: substitute the named capture, empty when absent
+                var j = i + 2
+                var nm = String.withCapacity(8)
+                while j < repl.len() && repl[j] != '>' {
+                    nm.push(repl[j])
+                    j = j + 1
+                }
+                var gnum: i64 = -1
+                var k: i64 = 0
+                while k < re.groupNames.len() {
+                    if re.groupNames[k] == nm {
+                        gnum = re.groupNums[k]
+                    }
+                    k = k + 1
+                }
+                if gnum >= 0 && 2 * gnum + 1 < saves.len() {
+                    let a = saves[2 * gnum]
+                    let b = saves[2 * gnum + 1]
+                    if a >= 0 && b >= 0 {
+                        out = out + strSlice(s, a, b)
+                    }
+                }
+                if j < repl.len() {
+                    j = j + 1
+                }
+                i = j
+            } else if n >= '1' && n <= '9' {
+                let g = n as i64 - 48
+                if 2 * g + 1 < saves.len() {
+                    let a = saves[2 * g]
+                    let b = saves[2 * g + 1]
+                    if a >= 0 && b >= 0 {
+                        out = out + strSlice(s, a, b)
+                    }
+                }
+                i = i + 2
+            } else {
+                out.push(c)
+                i = i + 1
+            }
+        } else {
+            out.push(c)
+            i = i + 1
+        }
+    }
+    return out
+}
+
+fn regexReplace(st: &mut Interp, s: &string, rid: i64, repl: &string): JSValue {
+    let global = st.regexes[rid].flagG
+    var out = String.withCapacity(s.len())
+    var last: i64 = 0
+    var searchPos: i64 = 0
+    var going = true
+    while going {
+        let saves = regexExec(st.regexes[rid], s, searchPos)
+        if saves.len() == 0 {
+            going = false
+        } else {
+            let mstart = saves[0]
+            let mend = saves[1]
+            out = out + strSlice(s, last, mstart)
+            out = out + expandRepl(repl, s, saves, st.regexes[rid])
+            last = mend
+            // advance a whole CHARACTER past a zero-width match: stepping one
+            // byte lands inside a multibyte character, which both invents extra
+            // matches and (for replace) splices output around half of one,
+            // producing invalid UTF-8
+            if mend == mstart {
+                searchPos = mend + utf8LenAt(s, mend)
+            } else {
+                searchPos = mend
+            }
+            if !global || searchPos > s.len() {
+                going = false
+            }
+        }
+    }
+    out = out + strSlice(s, last, s.len())
+    return JSValue.Str(out)
+}
+
+// s.replace(re, fn): the callback receives (match, ...groups, offset, string) and
+// its return value is substituted. Without this the function was coerced with
+// toStr and the literal text "function" ended up in the output.
+fn regexReplaceFn(prog: &Prog, st: &mut Interp, s: &string, rid: i64, fn_: &JSValue): JSValue {
+    let global = st.regexes[rid].flagG
+    var out = String.withCapacity(s.len())
+    var last: i64 = 0
+    var searchPos: i64 = 0
+    var going = true
+    while going && !st.throwing {
+        let saves = regexExec(st.regexes[rid], s, searchPos)
+        if saves.len() == 0 {
+            going = false
+        } else {
+            let mstart = saves[0]
+            let mend = saves[1]
+            out = out + strSlice(s, last, mstart)
+            var args: Vec<JSValue> = Vec.new()
+            args.push(JSValue.Str(strSlice(s, mstart, mend)))
+            var g: i64 = 1
+            let ng = saves.len() / 2
+            while g < ng {
+                let a = saves[2 * g]
+                let b = saves[2 * g + 1]
+                if a < 0 || b < 0 {
+                    args.push(JSValue.Undefined)
+                } else {
+                    args.push(JSValue.Str(strSlice(s, a, b)))
+                }
+                g = g + 1
+            }
+            // the offset a replace callback receives is a string index, so
+            // UTF-16 units rather than bytes
+            args.push(JSValue.Number(byteToUtf16(s, mstart) as f64))
+            args.push(JSValue.Str(s.clone()))
+            let r = callValue(prog, fn_, args, JSValue.Undefined, st)
+            out = out + toStr(r)
+            last = mend
+            // advance a whole CHARACTER past a zero-width match: stepping one
+            // byte lands inside a multibyte character, which both invents extra
+            // matches and (for replace) splices output around half of one,
+            // producing invalid UTF-8
+            if mend == mstart {
+                searchPos = mend + utf8LenAt(s, mend)
+            } else {
+                searchPos = mend
+            }
+            if !global || searchPos > s.len() {
+                going = false
+            }
+        }
+    }
+    out = out + strSlice(s, last, s.len())
+    return JSValue.Str(out)
+}
+
+// s.split(re) — the separator is whatever the pattern matches. A zero-width
+// match advances by one so the split cannot loop forever.
+// s.split(re). Two things were missing, both common idioms:
+//
+//   "fooBarBaz".split(/(?=[A-Z])/)  ->  ["fooBarBaz"], node gives ["foo","Bar","Baz"]
+//   "a1b".split(/(\d)/)             ->  ["a","b"],     node gives ["a","1","b"]
+//
+// A ZERO-WIDTH match never split at all (the old loop just advanced past it),
+// and capture groups in the separator were dropped instead of becoming elements.
+// This follows the spec's shape: `p` is the start of the pending piece and `q`
+// the search cursor, and an empty match only advances `q` when it lands exactly
+// at `p`.
+// `limit` bounds the result; -1 means unbounded. It was dropped entirely, so
+// `"a,b,c".split(/,/, 2)` returned three pieces where the string separator form
+// already returned two.
+fn regexSplit(st: &mut Interp, s: &string, rid: i64, limit: i64): JSValue {
+    let arr = newArray(st)
+    pushTemp(st, JSValue.Obj(arr))
+    let size = s.len()
+    if size == 0 {
+        // "".split(re) is [""] unless the separator matches the empty string
+        let saves0 = regexExec(st.regexes[rid], s, 0)
+        if saves0.len() == 0 {
+            arrPush(st, arr, JSValue.Str(""))
+        }
+        popTemp(st)
+        return JSValue.Obj(arr)
+    }
+    if limit == 0 {
+        popTemp(st)
+        return JSValue.Obj(arr)
+    }
+    var p: i64 = 0
+    var q: i64 = 0
+    while q < size {
+        if limit >= 0 && arrLen(st, arr) >= limit {
+            q = size
+            popTemp(st)
+            return JSValue.Obj(arr)
+        }
+        let saves = regexExec(st.regexes[rid], s, q)
+        // The spec matches AT q; regexExec SEARCHES from q, so it can report a
+        // match starting at the end of the string, which the `q < size` loop is
+        // supposed to exclude. Without this, a trailing zero-width match adds a
+        // spurious "" element: "a1b2".split(/(?<=\d)/) came out with three.
+        if saves.len() == 0 || saves[0] >= size {
+            q = size
+        } else {
+            let mstart = saves[0]
+            let mend = saves[1]
+            if mend == p {
+                // an empty match sitting at the piece start would split forever;
+                // step one CHARACTER, not one byte, or the next attempt starts on
+                // a UTF-8 continuation byte
+                q = mstart + utf8LenAt(s, mstart)
+            } else {
+                arrPush(st, arr, JSValue.Str(strSlice(s, p, mstart)))
+                if limit >= 0 && arrLen(st, arr) >= limit {
+                    popTemp(st)
+                    return JSValue.Obj(arr)
+                }
+                // every capture in the separator becomes an element, undefined
+                // for one that did not participate. The limit is checked after
+                // EACH of them, not once per iteration: a capture can be the
+                // element that reaches it, which is why `"a1b2c".split(/(\d)/, 3)`
+                // has to stop at ["a","1","b"].
+                var gi: i64 = 2
+                while gi + 1 < saves.len() {
+                    if saves[gi] >= 0 && saves[gi + 1] >= 0 {
+                        arrPush(st, arr, JSValue.Str(strSlice(s, saves[gi], saves[gi + 1])))
+                    } else {
+                        arrPush(st, arr, JSValue.Undefined)
+                    }
+                    if limit >= 0 && arrLen(st, arr) >= limit {
+                        popTemp(st)
+                        return JSValue.Obj(arr)
+                    }
+                    gi = gi + 2
+                }
+                p = mend
+                if mend == mstart {
+                    q = mend + utf8LenAt(s, mend)
+                } else {
+                    q = mend
+                }
+            }
+        }
+    }
+    arrPush(st, arr, JSValue.Str(strSlice(s, p, size)))
+    popTemp(st)
+    return JSValue.Obj(arr)
+}
+
+// Byte length of the UTF-8 sequence at `at`; 1 for ASCII, a continuation byte or
+// a truncated tail, so a caller stepping through always makes progress.
+fn utf8LenAt(s: &string, at: i64): i64 {
+    if at >= s.len() {
+        return 1
+    }
+    let b = s[at] as i64
+    var n: i64 = 1
+    if b >= 240 {
+        n = 4
+    } else if b >= 224 {
+        n = 3
+    } else if b >= 192 {
+        n = 2
+    }
+    if at + n > s.len() {
+        return 1
+    }
+    return n
+}
+
+fn regexStrMatch(st: &mut Interp, s: &string, rid: i64): JSValue {
+    let global = st.regexes[rid].flagG
+    if !global {
+        let saves = regexExec(st.regexes[rid], s, 0)
+        if saves.len() == 0 {
+            return JSValue.Null
+        }
+        return buildMatchArray(st, s, saves, rid)
+    }
+    let arr = newArray(st)
+    pushTemp(st, JSValue.Obj(arr))
+    var pos: i64 = 0
+    var any = false
+    var going = true
+    while going {
+        // NOT named `saves`: a second local of that name already exists in this
+        // function (the non-global path above), and milo's bounds checks used to
+        // cache the hoisted length per source NAME, so the checks here compared
+        // against the other, empty `saves` and trapped 0/0 on every match. Fixed
+        // in milo 45c7b0a1; the distinct name stays so an older compiler still
+        // builds this correctly.
+        let gsaves = regexExec(st.regexes[rid], s, pos)
+        if gsaves.len() == 0 {
+            going = false
+        } else {
+            any = true
+            arrPush(st, arr, JSValue.Str(strSlice(s, gsaves[0], gsaves[1])))
+            if gsaves[1] == gsaves[0] {
+                // same character-advance rule as replace, split and matchAll
+                pos = gsaves[1] + utf8LenAt(s, gsaves[1])
+            } else {
+                pos = gsaves[1]
+            }
+            if pos > s.len() {
+                going = false
+            }
+        }
+    }
+    popTemp(st)
+    if !any {
+        return JSValue.Null
+    }
+    return JSValue.Obj(arr)
+}
+
+// str.matchAll(re): every match as a full exec-style array (match text, capture
+// groups, .index, .input) — unlike match/g which yields only the match strings.
+// Returned as an array, which is iterable for the usual `[...]` / for-of
+// consumption. Iterates regardless of the /g flag (lenient vs the spec's throw).
+fn regexStrMatchAll(st: &mut Interp, s: &string, rid: i64): JSValue {
+    let arr = newArray(st)
+    pushTemp(st, JSValue.Obj(arr))
+    var pos: i64 = 0
+    var going = true
+    while going {
+        let saves = regexExec(st.regexes[rid], s, pos)
+        if saves.len() == 0 {
+            going = false
+        } else {
+            let m = buildMatchArray(st, s, saves, rid)
+            arrPush(st, arr, m)
+            if saves[1] == saves[0] {
+                // same character-advance rule as replace and split
+                pos = saves[1] + utf8LenAt(s, saves[1])
+            } else {
+                pos = saves[1]
+            }
+            if pos > s.len() {
+                going = false
+            }
+        }
+    }
+    popTemp(st)
+    // matchAll answers an ITERATOR, not an array. Returning the array made the
+    // common `[...s.matchAll(re)]` work and everything else fail: `.next` did
+    // not exist, and spreading the same value twice yielded the matches twice
+    // where an iterator is exhausted after one pass. Reusing the array iterator
+    // gives the protocol (next, @@iterator, one-shot) for free.
+    return makeArrayIterator(st, arr, 0)
+}
+
+// RegExp.prototype. Like the buffer family and Date before it, this object did
+// not exist: `RegExp.prototype` read as undefined, so every test262 case that
+// starts from the prototype — and there are many, since the flag accessors and
+// the @@match/@@replace/@@split family all live there — failed before testing
+// anything. Instances now link it, which is also what makes
+// `Object.getPrototypeOf(/x/) === RegExp.prototype` hold.
+//
+// The flag properties stay OWN properties of each instance (that is where this
+// engine resolves them); the prototype carries the methods.
+// The regex-taking String operations. These used to live only on evalExpr's
+// method-call path, so `s.match(/re/)` worked while
+// `String.prototype.match.call(s, /re/)` returned undefined and
+// `String.prototype.split.call(s, /,/)` returned the string unsplit —
+// callBuiltinByName goes straight to stringMethod, which knows nothing about
+// regexes. Both paths call this now.
+pub fn isStringRegexOp(st: &Interp, name: &string, args: &Vec<JSValue>): bool {
+    if args.len() == 0 {
+        return false
+    }
+    if regexIdOf(st, args[0]) < 0 {
+        return false
+    }
+    return name == "replace" || name == "replaceAll" || name == "match" || name == "matchAll" || name == "split" || name == "search"
+}
+
+// match/matchAll/search have NO non-regex form: the spec builds a RegExp from
+// whatever it is handed. `"a1b".match("\\d")` is ["1"], not undefined, and
+// passing a plain string is the common way to write it. replace/split do have
+// literal-string forms, so they are deliberately absent here.
+pub fn stringOpNeedsRegexArg(st: &Interp, name: &string, args: &Vec<JSValue>): bool {
+    if !(name == "match" || name == "matchAll" || name == "search") {
+        return false
+    }
+    if args.len() == 0 {
+        return true
+    }
+    return regexIdOf(st, args[0]) < 0
+}
+
+// The argument re-made as a RegExp, with matchAll keeping the /g the spec
+// requires of it.
+pub fn regexArgFor(st: &mut Interp, name: &string, args: &Vec<JSValue>): Vec<JSValue> {
+    var pat = ""
+    if args.len() > 0 {
+        match args[0] {
+            JSValue.Undefined => {
+            }
+            _ => {
+                pat = toStr(args[0])
+            }
+        }
+    }
+    var flags = ""
+    if name == "matchAll" {
+        flags = "g"
+    }
+    var out: Vec<JSValue> = Vec.new()
+    out.push(makeRegex(st, pat, flags))
+    var i: i64 = 1
+    while i < args.len() {
+        out.push(cloneValue(args[i]))
+        i = i + 1
+    }
+    return out
+}
+
+pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    let rid = regexIdOf(st, args[0])
+    if name == "replace" || name == "replaceAll" {
+        if args.len() > 1 && isCallable(args[1]) {
+            return regexReplaceFn(prog, st, s, rid, cloneValue(args[1]))
+        }
+        var repl = ""
+        if args.len() > 1 {
+            // toStrProg, not toStr: the replacement is ToString'd, which runs a
+            // user toString and can throw. toStr answered "[object Object]"
+            // without consulting one, so a poisoned replacement substituted that
+            // text instead of propagating. The non-regex spelling of replace
+            // already coerced through coercedStringArgs; this branch is the one
+            // that runs when the pattern is a regex.
+            repl = toStrProg(prog, cloneValue(args[1]), st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+        }
+        return regexReplace(st, s, rid, repl)
+    }
+    if name == "match" {
+        return regexStrMatch(st, s, rid)
+    }
+    if name == "matchAll" {
+        // the spec rejects a non-global regex here, because the result would be
+        // an infinite sequence of the same match
+        if !st.regexes[rid].flagG {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "String.prototype.matchAll called with a non-global RegExp argument")
+            return JSValue.Undefined
+        }
+        return regexStrMatchAll(st, s, rid)
+    }
+    if name == "split" {
+        // limit is the SECOND argument here; args[0] is the separator
+        var splitLimit: i64 = -1
+        if args.len() > 1 {
+            match cloneValue(args[1]) {
+                JSValue.Undefined => {
+                }
+                _ => {
+                    let lv = toNum(args[1])
+                    if lv != lv {
+                        splitLimit = 0
+                    } else {
+                        splitLimit = lv as i64
+                        if splitLimit < 0 {
+                            splitLimit = 0
+                        }
+                    }
+                }
+            }
+        }
+        return regexSplit(st, s, rid, splitLimit)
+    }
+    // search: index of the first match, or -1 (UTF-16 units)
+    let saves = regexExec(st.regexes[rid], s, 0)
+    if saves.len() == 0 {
+        return JSValue.Number(0.0 - 1.0)
+    }
+    return JSValue.Number(byteToUtf16(s, saves[0]) as f64)
+}
+
+// Builtin methods dispatch natively by name; they are not properties. Reading one
+// as a VALUE therefore used to yield undefined even though calling it worked, which
+// breaks two very common patterns: feature detection (`typeof x.test === "function"`)
+// and method extraction (`Array.prototype.slice.call(args)`). These predicates say
+// whether a receiver answers to a name, so the member paths can hand back a bound
+// method instead of undefined.
+pub fn isPrimitiveMethodName(n: &string): bool {
+    return n == "toString" || n == "valueOf" || n == "toFixed" || n == "toPrecision" || n == "toExponential" || n == "toLocaleString"
+}
+
+pub fn isStringMethodName(n: &string): bool {
+    return n == "charAt" || n == "charCodeAt" || n == "codePointAt" || n == "at" || n == "indexOf" || n == "lastIndexOf" || n == "includes" || n == "startsWith" || n == "endsWith" || n == "slice" || n == "substring" || n == "substr" || n == "split" || n == "replace" || n == "replaceAll" || n == "toUpperCase" || n == "toLowerCase" || n == "toLocaleUpperCase" || n == "toLocaleLowerCase" || n == "isWellFormed" || n == "toWellFormed" || n == "trim" || n == "trimStart" || n == "trimEnd" || n == "trimLeft" || n == "trimRight" || n == "padStart" || n == "padEnd" || n == "repeat" || n == "concat" || n == "localeCompare" || n == "normalize" || n == "match" || n == "matchAll" || n == "search" || n == "toString" || n == "valueOf" || isHtmlMethodName(n)
+}
+
+pub fn isRegexMethodName(n: &string): bool {
+    if n.len() > 8 && strSlice(n.clone(), 0, 8) == "__reGet_" {
+        return true
+    }
+    if n == "@@sym:Symbol.match:0" || n == "@@sym:Symbol.matchAll:0" || n == "@@sym:Symbol.replace:0" || n == "@@sym:Symbol.search:0" || n == "@@sym:Symbol.split:0" {
+        return true
+    }
+    return n == "test" || n == "exec" || n == "toString" || n == "compile"
+}
+
+// Call a member as a method: `this` binds to the receiver. String and array
+// receivers dispatch to built-in methods; object receivers use function-valued
+// properties. The receiver is temp-rooted across argument evaluation (an argument
+// may be a call that triggers GC).
+// toString/valueOf and friends on a number, boolean, string, null or undefined.
+// Number.toLocaleString default (en-US): thousands-grouped integer part, up to 3
+// fraction digits with trailing zeros stripped — (1000000).toLocaleString() is
+// "1,000,000" and (1234.5678) is "1,234.568". Only the default locale; no
+// currency/percent options.
+fn numToLocale(n: f64): string {
+    if !(n == n) {
+        return "NaN"
+    }
+    if !isFiniteF(n) {
+        if n < 0.0 {
+            return "-∞"
+        }
+        return "∞"
+    }
+    let neg = n < 0.0
+    var abs = n
+    if neg {
+        abs = -n
+    }
+    // round to 3 fraction digits, then split on the '.'
+    let fixed = numToFixed(abs, 3)
+    var intPart = fixed.clone()
+    var fracPart = ""
+    var dot: i64 = 0
+    while dot < fixed.len() {
+        if fixed[dot] == '.' {
+            intPart = strSlice(fixed, 0, dot)
+            fracPart = strSlice(fixed, dot + 1, fixed.len())
+            dot = fixed.len()
+        } else {
+            dot = dot + 1
+        }
+    }
+    // strip trailing zeros from the fraction
+    var fe = fracPart.len()
+    while fe > 0 && fracPart[fe - 1] == '0' {
+        fe = fe - 1
+    }
+    fracPart = strSlice(fracPart, 0, fe)
+    // group the integer part with commas every three digits from the right
+    var grouped = ""
+    let ilen = intPart.len()
+    var k: i64 = 0
+    while k < ilen {
+        if k > 0 && (ilen - k) % 3 == 0 {
+            grouped = grouped + ","
+        }
+        grouped = grouped + strSlice(intPart, k, k + 1)
+        k = k + 1
+    }
+    var out = grouped
+    if fracPart.len() > 0 {
+        out = out + "." + fracPart
+    }
+    if neg {
+        out = "-" + out
+    }
+    return out
+}
+
+pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>): JSValue {
+    if name == "valueOf" {
+        return cloneValue(recv)
+    }
+    // symbols are interned strings, so a direct sym.toString() lands here before
+    // the builtin-method path and would otherwise leak the internal form
+    if let JSValue.Str(sv) = recv {
+        if isSymbolStr(sv) && name == "toString" {
+            return JSValue.Str(symbolDisplay(sv))
+        }
+    }
+    if name == "toExponential" {
+        if args.len() == 0 {
+            return JSValue.Str(numToExponential(toNum(recv), 0, false))
+        }
+        return JSValue.Str(numToExponential(toNum(recv), numToIndex(toNum(args[0])), true))
+    }
+    if name == "toFixed" || name == "toPrecision" {
+        var digits: i64 = 0
+        if args.len() > 0 {
+            digits = numToIndex(toNum(args[0]))
+        }
+        if name == "toPrecision" {
+            if args.len() == 0 {
+                return JSValue.Str(toStr(recv))
+            }
+            return JSValue.Str(numToPrecision(toNum(recv), digits))
+        }
+        return JSValue.Str(numToFixed(toNum(recv), digits))
+    }
+    // toString(radix). BigInt uses arbitrary-precision conversion (bnToRadix);
+    // numbers go through the f64-backed numToRadix. A BigInt is exact at any size.
+    if isBigIntVal(recv) {
+        var radix: i64 = 10
+        if args.len() > 0 {
+            radix = numToIndex(toNum(args[0]))
+        }
+        if radix >= 2 && radix <= 36 {
+            return JSValue.Str(bnToRadix(bigStrOf(recv), radix))
+        }
+    }
+    if args.len() > 0 {
+        let radix = numToIndex(toNum(args[0]))
+        if radix >= 2 && radix <= 36 && radix != 10 {
+            return JSValue.Str(numToRadix(toNum(recv), radix))
+        }
+    }
+    // number.toLocaleString() → thousands-grouped default-locale form
+    if name == "toLocaleString" {
+        if let JSValue.Number(n) = recv {
+            return JSValue.Str(numToLocale(n))
+        }
+    }
+    return JSValue.Str(toStr(recv))
+}

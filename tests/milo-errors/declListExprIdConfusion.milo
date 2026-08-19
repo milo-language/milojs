@@ -1,6 +1,6 @@
 // @error: expected ExprId, got DeclListId
 
-from "../../src/ast" import {
+from "../../src/engine/ast" import {
     DeclItem, addDeclList, getExpr, newProg
 }
 

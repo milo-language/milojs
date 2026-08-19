@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: milojs-generators
 purpose: design of record for generator functions in milojs, reusing the async-activation green-task machinery
-key-files: src/eval.milo, src/parser.milo, src/ast.milo
+key-files: src/engine/eval.milo, src/engine/parser.milo, src/engine/ast.milo
 update-when: generators are implemented or the design changes
 last-verified: 2026-08-18 (re-read after the native id enum landed: generators are unaffected, their natives are Builtin variants now rather than NATIVE_* constants)
 -->
@@ -73,7 +73,7 @@ the design to make them actually run. It reuses the async-activation machinery
 suspension — `yield` is structurally the same suspension as `await`, so this is
 cheaper than a from-scratch coroutine.
 
-## The reused machinery (src/eval.milo)
+## The reused machinery (src/engine/eval.milo)
 
 `spawnActivation` (5073) is the template: it spawns the body on an 8 MB green
 task, the body runs and unparks its caller at the first suspension point, and the

@@ -4,22 +4,22 @@
 // this preview exposes one live context at a time. Handles are generation tokens,
 // not pointers to Milo-managed data. See docs/milojs-embedding.md.
 
-from "./bytecode" import {
+from "./engine/bytecode" import {
     resetLoopCache
 }
-from "./runtime" import {
+from "./engine/runtime" import {
     gInterp
 }
-from "./driver" import {
+from "./engine/driver" import {
     makeInterp, bootInterp, describeThrown, evalSourceValue
 }
-from "./ast" import {
+from "./engine/ast" import {
     gProg, newProg
 }
-from "./value" import {
+from "./engine/value" import {
     JSValue, objHandle
 }
-from "./eval" import {
+from "./engine/eval" import {
     getMemberDyn
 }
 

@@ -1,6 +1,6 @@
 // @error: expected ExprId, got SwitchId
 
-from "../../src/ast" import {
+from "../../src/engine/ast" import {
     SwitchCase, addSwitch, getExpr, newProg
 }
 

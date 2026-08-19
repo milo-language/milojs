@@ -1,0 +1,3195 @@
+// Method families that hang off one built-in receiver type and nothing else:
+// Array, TypedArray, DataView, Date and Map/Set. They were part of
+// src/engine/eval.milo, which is the evaluator; these are leaves of it. Each is reached
+// from one dispatch site in eval.milo and calls back into it for the evaluator
+// services it needs (callValue for a callback, makeError to throw).
+//
+// Milo permits circular imports, so a leaf can import the evaluator that
+// imports it back. That is what makes the seam cuttable at all.
+
+from "./value" import {
+    JSValue, Builtin, Native
+}
+from "./runtime" import {
+    Interp
+}
+from "./eval" import {
+    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, toNumArg, makeError, taIsDetached, currentModule, taOutOfBounds, dataViewByteLen, getMemberDyn, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, isSymbolStr, ARRAY_LIKE_MAX
+}
+
+pub fn dataViewProto(st: &mut Interp): i64 {
+    return objHandle(objGet(st, getNativeProps(st, Native.Fn(Builtin.DataView)), "prototype"))
+}
+
+pub fn isDataViewMethodName(n: &string): bool {
+    return n == "getInt8" || n == "getUint8" || n == "getInt16" || n == "getUint16" || n == "getInt32" || n == "getUint32" || n == "getFloat32" || n == "getFloat64" || n == "setInt8" || n == "setUint8" || n == "setInt16" || n == "setUint16" || n == "setInt32" || n == "setUint32" || n == "setFloat32" || n == "setFloat64"
+}
+
+// DataView get/set. Default endianness is BIG-endian (the littleEndian arg
+// defaults false), unlike typed arrays which store host/little-endian. taLen is
+// the view's byte length here; taBuf/taOffset locate it in the backing buffer.
+pub fn dataViewMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    var width: i64 = 1
+    var isFloat = false
+    var signed = false
+    if name == "getInt16" || name == "setInt16" || name == "getUint16" || name == "setUint16" {
+        width = 2
+    } else if name == "getInt32" || name == "setInt32" || name == "getUint32" || name == "setUint32" {
+        width = 4
+    } else if name == "getFloat32" || name == "setFloat32" {
+        width = 4
+        isFloat = true
+    } else if name == "getFloat64" || name == "setFloat64" {
+        width = 8
+        isFloat = true
+    }
+    if name == "getInt8" || name == "setInt8" || name == "getInt16" || name == "setInt16" || name == "getInt32" || name == "setInt32" {
+        signed = true
+    }
+    // "set..." starts with 's' (115), "get..." with 'g'
+    let isSet = name.len() > 0 && name[0] == 115
+    var byteOffset: i64 = 0
+    if args.len() > 0 {
+        // toNumArg, not toNum: the offset is ToIndex'd, which runs a user
+        // valueOf and rejects a symbol. toNum consulted neither, so an object
+        // argument silently read as NaN (offset 0) and a symbol as NaN too.
+        let rawOffset = toNumArg(prog, args[0], st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        // ToIndex, and the range check has to happen on the FLOAT. Casting first
+        // overflowed i64 for an argument like Number.MAX_VALUE, and the addition
+        // below then TRAPPED — `dv.getFloat64(1e308)` killed the process with
+        // "integer overflow" instead of throwing a RangeError.
+        //
+        // NaN is not an error here: ToIntegerOrInfinity(NaN) is 0.
+        if rawOffset != rawOffset {
+            byteOffset = 0
+        } else if rawOffset < 0.0 || rawOffset > 9007199254740991.0 {
+            st.throwing = true
+            st.thrownValue = makeError(st, "RangeError", "Offset is outside the bounds of the DataView")
+            return JSValue.Undefined
+        } else {
+            byteOffset = rawOffset as i64
+        }
+    }
+    // The stored value is coerced BEFORE the buffer is inspected, so a valueOf
+    // that detaches the buffer is observed by the detach check below rather than
+    // running after it. Reading the argument only at the store site put the two
+    // in the wrong order.
+    var value: f64 = 0.0
+    if isSet && args.len() > 1 {
+        value = toNumArg(prog, args[1], st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+    }
+    // Detached and out-of-bounds are TypeErrors and they come BEFORE the range
+    // check. Without them a shrunk buffer either produced a RangeError (the
+    // wrong error) or indexed past the byte vector and took the engine out.
+    if taIsDetached(st, o) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a detached ArrayBuffer" + currentModule(st))
+        return JSValue.Undefined
+    }
+    if taOutOfBounds(st, o) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a DataView whose buffer has shrunk out of bounds" + currentModule(st))
+        return JSValue.Undefined
+    }
+    if byteOffset < 0 || byteOffset + width > dataViewByteLen(st, o) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "RangeError", "Offset is outside the bounds of the DataView")
+        return JSValue.Undefined
+    }
+    let buf = st.objExtras[st.objects[o].extra].taBuf
+    let absPos = st.objExtras[st.objects[o].extra].taOffset + byteOffset
+    if isSet {
+        var littleEndian = false
+        if args.len() > 2 {
+            littleEndian = truthy(args[2])
+        }
+        var bits: i64 = 0
+        if isFloat {
+            if width == 8 {
+                bits = f64ToBits(value)
+            } else {
+                bits = f32ToBits(value)
+            }
+        } else {
+            bits = value as i64
+        }
+        var i: i64 = 0
+        while i < width {
+            var shift = 8 * i
+            if !littleEndian {
+                shift = 8 * (width - 1 - i)
+            }
+            st.objExtras[st.objects[buf].extra].bytes[absPos + i] = ((bits >> shift) & 255) as u8
+            i = i + 1
+        }
+        return JSValue.Undefined
+    }
+    var littleEndian = false
+    if args.len() > 1 {
+        littleEndian = truthy(args[1])
+    }
+    var bits: i64 = 0
+    var i: i64 = 0
+    while i < width {
+        var shift = 8 * i
+        if !littleEndian {
+            shift = 8 * (width - 1 - i)
+        }
+        bits = bits | ((st.objExtras[st.objects[buf].extra].bytes[absPos + i] as i64) << shift)
+        i = i + 1
+    }
+    if isFloat {
+        if width == 8 {
+            return JSValue.Number(bitsToF64(bits))
+        }
+        return JSValue.Number(bitsToF32(bits))
+    }
+    if signed {
+        let signbit = (1 as i64) << (8 * width - 1)
+        if (bits & signbit) != 0 {
+            bits = bits - ((1 as i64) << (8 * width))
+        }
+    }
+    return JSValue.Number(bits as f64)
+}
+
+// Map and Set share one entry list; a Set just stores true as every value.
+// Call a method by name on a user object (set-like argument plumbing).
+fn callObjMethod(prog: &Prog, st: &mut Interp, recv: &JSValue, name: &string, args: Vec<JSValue>): JSValue {
+    let h = objHandle(recv)
+    if h < 0 {
+        return JSValue.Undefined
+    }
+    let f = getMember(st, h, name)
+    if !isCallableIn(st, f) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", name.clone() + " is not a function")
+        return JSValue.Undefined
+    }
+    return callValue(prog, f, args, cloneValue(recv), st)
+}
+
+// The set-methods proposal takes "set-like" objects: {size, has, keys}. `size` is
+// validated first and its diagnostics must name `.size`, which the suite checks.
+// Returns the size, or -1.0 after throwing.
+// Drop one entry from a Map/Set's parallel key/value vectors. Only
+// symmetricDifference needs it: everything else builds its result by adding.
+fn setRemoveValue(st: &mut Interp, o: i64, v: &JSValue) {
+    let at = mapFind(st, o, cloneValue(v))
+    if at < 0 {
+        return
+    }
+    var nk: Vec<JSValue> = Vec.new()
+    var nv: Vec<JSValue> = Vec.new()
+    var i: i64 = 0
+    while i < st.objExtras[st.objects[o].extra].mapKeys.len() {
+        if i != at {
+            nk.push(cloneValue(st.objExtras[st.objects[o].extra].mapKeys[i]))
+            nv.push(cloneValue(st.objExtras[st.objects[o].extra].mapVals[i]))
+        }
+        i = i + 1
+    }
+    st.objExtras[st.objects[o].extra].mapKeys = nk
+    st.objExtras[st.objects[o].extra].mapVals = nv
+}
+
+fn setLikeSize(prog: &Prog, st: &mut Interp, other: &JSValue): f64 {
+    let h = objHandle(other)
+    if h < 0 {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "set-like argument has no .size")
+        return 0.0 - 1.0
+    }
+    // a real Set answers .size itself
+    if st.objects[h].isSet || st.objects[h].isMap {
+        return st.objExtras[st.objects[h].extra].mapKeys.len() as f64
+    }
+    // getMemberDyn + toNumProg: GetSetRecord reads `size` as an ordinary Get and
+    // ToNumbers it, both observable. getMember skips accessors entirely, so a
+    // set-like exposing `get size()` read as undefined and every operation
+    // against it failed with "NaN .size".
+    let sv = getMemberDyn(prog, h, "size", st)
+    if st.throwing {
+        return 0.0 - 1.0
+    }
+    let n = toNumProg(prog, sv, st)
+    if st.throwing {
+        return 0.0 - 1.0
+    }
+    if n != n {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "set-like argument has a NaN .size")
+        return 0.0 - 1.0
+    }
+    if n < 0.0 {
+        st.throwing = true
+        st.thrownValue = makeError(st, "RangeError", "set-like argument has a negative .size")
+        return 0.0 - 1.0
+    }
+    return n
+}
+
+// other.keys() — the iterator a set-like exposes.
+fn setLikeKeys(prog: &Prog, st: &mut Interp, other: &JSValue): JSValue {
+    let h = objHandle(other)
+    if h >= 0 && (st.objects[h].isSet || st.objects[h].isMap) {
+        var noArgs: Vec<JSValue> = Vec.new()
+        return mapMethod(prog, h, "keys", noArgs, st)
+    }
+    var noArgs: Vec<JSValue> = Vec.new()
+    return callObjMethod(prog, st, other, "keys", noArgs)
+}
+
+// One step of an iterator: returns done via the out-param slot.
+fn iterStep(prog: &Prog, st: &mut Interp, iter: &JSValue, done: &mut bool): JSValue {
+    var noArgs: Vec<JSValue> = Vec.new()
+    let step = callObjMethod(prog, st, iter, "next", noArgs)
+    let sh = objHandle(step)
+    if sh < 0 || st.throwing {
+        done = true
+        return JSValue.Undefined
+    }
+    // getMemberDyn: `done`/`value` may be accessors, and a plain read never
+    // invokes them — a throwing `value` getter then looked like an endless
+    // stream of undefined values
+    done = truthy(getMemberDyn(prog, sh, "done", st))
+    if done || st.throwing {
+        done = true
+        return JSValue.Undefined
+    }
+    let dv = getMemberDyn(prog, sh, "value", st)
+    if st.throwing {
+        done = true
+        return JSValue.Undefined
+    }
+    return dv
+}
+
+// Closing an iterator early is observable (the suite counts return() calls), so
+// every early exit from a set method has to do it.
+fn iterClose(prog: &Prog, st: &mut Interp, iter: &JSValue) {
+    let h = objHandle(iter)
+    if h < 0 {
+        return
+    }
+    let f = getMember(st, h, "return")
+    if isCallableIn(st, f) {
+        var noArgs: Vec<JSValue> = Vec.new()
+        let _ = callValue(prog, f, noArgs, cloneValue(iter), st)
+    }
+}
+
+fn setHasValue(st: &Interp, o: i64, v: &JSValue): bool {
+    return mapFind(st, o, v) >= 0
+}
+
+// `other.has(v)` where other may be a real Set (whose `has` is native dispatch,
+// not a property) or a user set-like (where it is a property).
+fn setLikeHas(prog: &Prog, st: &mut Interp, other: &JSValue, v: &JSValue): bool {
+    let h = objHandle(other)
+    if h >= 0 && (st.objects[h].isSet || st.objects[h].isMap) {
+        return mapFind(st, h, v) >= 0
+    }
+    var hargs: Vec<JSValue> = Vec.new()
+    hargs.push(cloneValue(v))
+    return truthy(callObjMethod(prog, st, other, "has", hargs))
+}
+
+pub fn mapMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    // `m[Symbol.iterator]()` written as one expression dispatches by the symbol
+    // KEY rather than through the member read, so the key has to resolve here
+    // too. Extracting the method first and calling it took the other path and
+    // worked, which is why this only showed up on the direct form.
+    if name == symIteratorKey() {
+        if st.objects[o].isSet {
+            return mapMethod(prog, o, "values", args, st)
+        }
+        return mapMethod(prog, o, "entries", args, st)
+    }
+    let isSet = st.objects[o].isSet
+    if name == "get" {
+        var key = JSValue.Undefined
+        if args.len() > 0 {
+            key = cloneValue(args[0])
+        }
+        let at = mapFind(st, o, key)
+        if at < 0 {
+            return JSValue.Undefined
+        }
+        return cloneValue(st.objExtras[st.objects[o].extra].mapVals[at])
+    }
+    if name == "set" || name == "add" {
+        var key = JSValue.Undefined
+        if args.len() > 0 {
+            key = cloneValue(args[0])
+        }
+        var val = JSValue.Bool(true)
+        if !isSet && args.len() > 1 {
+            val = cloneValue(args[1])
+        }
+        mapPut(st, o, key, val)
+        return JSValue.Obj(o)
+    }
+    if name == "has" {
+        var key = JSValue.Undefined
+        if args.len() > 0 {
+            key = cloneValue(args[0])
+        }
+        return JSValue.Bool(mapFind(st, o, key) >= 0)
+    }
+    if name == "delete" {
+        var key = JSValue.Undefined
+        if args.len() > 0 {
+            key = cloneValue(args[0])
+        }
+        let at = mapFind(st, o, key)
+        if at < 0 {
+            return JSValue.Bool(false)
+        }
+        var nk: Vec<JSValue> = Vec.new()
+        var nv: Vec<JSValue> = Vec.new()
+        var i: i64 = 0
+        while i < st.objExtras[st.objects[o].extra].mapKeys.len() {
+            if i != at {
+                nk.push(cloneValue(st.objExtras[st.objects[o].extra].mapKeys[i]))
+                nv.push(cloneValue(st.objExtras[st.objects[o].extra].mapVals[i]))
+            }
+            i = i + 1
+        }
+        st.objExtras[st.objects[o].extra].mapKeys = nk
+        st.objExtras[st.objects[o].extra].mapVals = nv
+        return JSValue.Bool(true)
+    }
+    if name == "clear" {
+        st.objExtras[st.objects[o].extra].mapKeys = Vec.new()
+        st.objExtras[st.objects[o].extra].mapVals = Vec.new()
+        return JSValue.Undefined
+    }
+    if name == "isSupersetOf" || name == "isSubsetOf" || name == "isDisjointFrom" || name == "union" || name == "intersection" || name == "difference" || name == "symmetricDifference" {
+        var other = JSValue.Undefined
+        if args.len() > 0 {
+            other = cloneValue(args[0])
+        }
+        let osize = setLikeSize(prog, st, other)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let mine = st.objExtras[st.objects[o].extra].mapKeys.len() as f64
+
+        if name == "isSupersetOf" {
+            if mine < osize {
+                return JSValue.Bool(false)
+            }
+            let iter = setLikeKeys(prog, st, other)
+            pushTemp(st, cloneValue(iter))
+            var done = false
+            var ok = true
+            while !done && !st.throwing {
+                let v = iterStep(prog, st, iter, done)
+                if !done && !setHasValue(st, o, v) {
+                    iterClose(prog, st, iter)
+                    ok = false
+                    done = true
+                }
+            }
+            popTemp(st)
+            return JSValue.Bool(ok)
+        }
+        if name == "isSubsetOf" {
+            if mine > osize {
+                return JSValue.Bool(false)
+            }
+            var i: i64 = 0
+            while i < st.objExtras[st.objects[o].extra].mapKeys.len() && !st.throwing {
+                let mk = cloneValue(st.objExtras[st.objects[o].extra].mapKeys[i])
+                if !setLikeHas(prog, st, other, mk) {
+                    return JSValue.Bool(false)
+                }
+                i = i + 1
+            }
+            return JSValue.Bool(true)
+        }
+        if name == "isDisjointFrom" {
+            // walk whichever side is smaller; only the other-side walk uses an
+            // iterator, which is what makes the suite's call counts meaningful
+            if mine <= osize {
+                var i: i64 = 0
+                while i < st.objExtras[st.objects[o].extra].mapKeys.len() && !st.throwing {
+                    let mk = cloneValue(st.objExtras[st.objects[o].extra].mapKeys[i])
+                    if setLikeHas(prog, st, other, mk) {
+                        return JSValue.Bool(false)
+                    }
+                    i = i + 1
+                }
+                return JSValue.Bool(true)
+            }
+            let iter = setLikeKeys(prog, st, other)
+            pushTemp(st, cloneValue(iter))
+            var done = false
+            var disjoint = true
+            while !done && !st.throwing {
+                let v = iterStep(prog, st, iter, done)
+                if !done && setHasValue(st, o, v) {
+                    iterClose(prog, st, iter)
+                    disjoint = false
+                    done = true
+                }
+            }
+            popTemp(st)
+            return JSValue.Bool(disjoint)
+        }
+        // union / intersection / difference all build a fresh Set
+        let res = newObject(st)
+        st.objects[res].isSet = true
+        if st.setProtoObj >= 0 {
+            st.objects[res].proto = st.setProtoObj
+        }
+        let _re = ensureExtra(st, res)
+        pushTemp(st, JSValue.Obj(res))
+        if name == "symmetricDifference" {
+            // Everything in exactly one of the two. The other side is walked by
+            // ITERATOR rather than by has(), because the spec fixes the call
+            // counts and the suite checks them.
+            var i: i64 = 0
+            while i < st.objExtras[st.objects[o].extra].mapKeys.len() {
+                mapPut(st, res, cloneValue(st.objExtras[st.objects[o].extra].mapKeys[i]), JSValue.Bool(true))
+                i = i + 1
+            }
+            let sdIter = setLikeKeys(prog, st, other)
+            pushTemp(st, cloneValue(sdIter))
+            var sdDone = false
+            while !sdDone && !st.throwing {
+                let v = iterStep(prog, st, sdIter, sdDone)
+                if !sdDone {
+                    if setHasValue(st, o, v) {
+                        setRemoveValue(st, res, v)
+                    } else {
+                        mapPut(st, res, v, JSValue.Bool(true))
+                    }
+                }
+            }
+            popTemp(st)
+            popTemp(st)
+            return JSValue.Obj(res)
+        }
+        if name == "union" {
+            var i: i64 = 0
+            while i < st.objExtras[st.objects[o].extra].mapKeys.len() {
+                mapPut(st, res, cloneValue(st.objExtras[st.objects[o].extra].mapKeys[i]), JSValue.Bool(true))
+                i = i + 1
+            }
+            let iter = setLikeKeys(prog, st, other)
+            pushTemp(st, cloneValue(iter))
+            var done = false
+            while !done && !st.throwing {
+                let v = iterStep(prog, st, iter, done)
+                if !done {
+                    mapPut(st, res, v, JSValue.Bool(true))
+                }
+            }
+            popTemp(st)
+        } else {
+            let wantIn = name == "intersection"
+            var i: i64 = 0
+            while i < st.objExtras[st.objects[o].extra].mapKeys.len() && !st.throwing {
+                let k = cloneValue(st.objExtras[st.objects[o].extra].mapKeys[i])
+                let inOther = setLikeHas(prog, st, other, k)
+                if inOther == wantIn {
+                    mapPut(st, res, k, JSValue.Bool(true))
+                }
+                i = i + 1
+            }
+        }
+        popTemp(st)
+        return JSValue.Obj(res)
+    }
+    if name == "keys" || name == "values" || name == "entries" {
+        // Snapshot into an array, then hand back a real iterator over it — so
+        // .next(), the Iterator.prototype helpers, for-of and Array.from all
+        // work. (A snapshot, not a live view: mutating the map mid-iteration
+        // will not be observed, which JS would show.)
+        let arr = newArray(st)
+        pushTemp(st, JSValue.Obj(arr))
+        var i: i64 = 0
+        while i < st.objExtras[st.objects[o].extra].mapKeys.len() {
+            let k = cloneValue(st.objExtras[st.objects[o].extra].mapKeys[i])
+            let v = cloneValue(st.objExtras[st.objects[o].extra].mapVals[i])
+            if name == "keys" {
+                arrPush(st, arr, k)
+            } else if name == "values" {
+                if isSet {
+                    arrPush(st, arr, k)
+                } else {
+                    arrPush(st, arr, v)
+                }
+            } else {
+                let pair = newArray(st)
+                pushTemp(st, JSValue.Obj(pair))
+                arrPush(st, pair, k)
+                if isSet {
+                    arrPush(st, pair, cloneValue(st.objExtras[st.objects[o].extra].mapKeys[i]))
+                } else {
+                    arrPush(st, pair, v)
+                }
+                popTemp(st)
+                arrPush(st, arr, JSValue.Obj(pair))
+            }
+            i = i + 1
+        }
+        let it = makeArrayIterator(st, arr, 0)
+        popTemp(st)
+        return it
+    }
+    if name == "forEach" {
+        if args.len() == 0 {
+            return JSValue.Undefined
+        }
+        let cb = cloneValue(args[0])
+        pushTemp(st, cloneValue(cb))
+        // The callback may delete entries (including the current one) or add
+        // new ones; the backing vecs compact on delete, so a plain i++ would
+        // skip the entry that shifted into slot i. Re-sync the cursor against
+        // the just-visited key after every call; if that key is gone, resume at
+        // the first entry not yet visited (keys are unique, so this is sound).
+        var visited: Vec<JSValue> = Vec.new()
+        var i: i64 = 0
+        while i < st.objExtras[st.objects[o].extra].mapKeys.len() && !st.throwing {
+            let k = cloneValue(st.objExtras[st.objects[o].extra].mapKeys[i])
+            var v = cloneValue(st.objExtras[st.objects[o].extra].mapVals[i])
+            if isSet {
+                v = cloneValue(st.objExtras[st.objects[o].extra].mapKeys[i])
+            }
+            visited.push(cloneValue(k))
+            var cbArgs: Vec<JSValue> = Vec.new()
+            cbArgs.push(v)
+            cbArgs.push(cloneValue(k))
+            cbArgs.push(JSValue.Obj(o))
+            let _ = callValue(prog, cb, cbArgs, JSValue.Undefined, st)
+            if st.throwing {
+                break
+            }
+            if i < st.objExtras[st.objects[o].extra].mapKeys.len() && sameValue(st.objExtras[st.objects[o].extra].mapKeys[i], k) {
+                i = i + 1
+            } else {
+                let j = mapFind(st, o, k)
+                if j >= 0 {
+                    i = j + 1
+                } else {
+                    var p: i64 = 0
+                    var next = st.objExtras[st.objects[o].extra].mapKeys.len()
+                    while p < st.objExtras[st.objects[o].extra].mapKeys.len() {
+                        var seen = false
+                        var q: i64 = 0
+                        while q < visited.len() {
+                            if sameValue(st.objExtras[st.objects[o].extra].mapKeys[p], visited[q]) {
+                                seen = true
+                                q = visited.len()
+                            }
+                            q = q + 1
+                        }
+                        if !seen {
+                            next = p
+                            p = st.objExtras[st.objects[o].extra].mapKeys.len()
+                        }
+                        p = p + 1
+                    }
+                    i = next
+                }
+            }
+        }
+        popTemp(st)
+        return JSValue.Undefined
+    }
+    return JSValue.Undefined
+}
+
+// Date instance methods. Everything derives from the stored epoch milliseconds.
+// ISO-8601 in UTC, the format Date.prototype.toISOString produces.
+// Date's own three-letter abbreviations. std/datetime's weekdayName/monthName
+// spell the names out in full ("Friday", "January"); Date.prototype.toString and
+// toUTCString want "Fri" and "Jan".
+fn dateAbbrevDay(wd: i32): string {
+    let d = wd as i64
+    if d == 0 {
+        return "Sun"
+    }
+    if d == 1 {
+        return "Mon"
+    }
+    if d == 2 {
+        return "Tue"
+    }
+    if d == 3 {
+        return "Wed"
+    }
+    if d == 4 {
+        return "Thu"
+    }
+    if d == 5 {
+        return "Fri"
+    }
+    return "Sat"
+}
+
+fn dateAbbrevMonth(m: i32): string {
+    let i = m as i64
+    if i == 1 {
+        return "Jan"
+    }
+    if i == 2 {
+        return "Feb"
+    }
+    if i == 3 {
+        return "Mar"
+    }
+    if i == 4 {
+        return "Apr"
+    }
+    if i == 5 {
+        return "May"
+    }
+    if i == 6 {
+        return "Jun"
+    }
+    if i == 7 {
+        return "Jul"
+    }
+    if i == 8 {
+        return "Aug"
+    }
+    if i == 9 {
+        return "Sep"
+    }
+    if i == 10 {
+        return "Oct"
+    }
+    if i == 11 {
+        return "Nov"
+    }
+    return "Dec"
+}
+
+pub fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSValue {
+    let ms = st.objExtras[st.objects[o].extra].dateMs
+    if name == "getTime" || name == "valueOf" {
+        return JSValue.Number(ms)
+    }
+    if name == "setTime" {
+        var v = 0.0
+        if args.len() > 0 {
+            v = timeClip(toNum(args[0]))
+        }
+        st.objExtras[st.objects[o].extra].dateMs = v
+        return JSValue.Number(v)
+    }
+    if name == "toISOString" || name == "toJSON" {
+        return JSValue.Str(isoFromMillis(ms))
+    }
+    // the set*/setUTC* family. milojs keeps dates in UTC with a 0 offset, so the
+    // local and UTC setters are equivalent — normalise setUTCFoo -> setFoo. The
+    // date is decomposed to civil parts, the requested field(s) replaced, and
+    // recomposed to epoch ms.
+    var sname = name.clone()
+    var wantUtcSet = false
+    if sname.len() >= 6 && strSlice(sname, 0, 6) == "setUTC" {
+        sname = "set" + strSlice(sname, 6, sname.len())
+        wantUtcSet = true
+    }
+    if sname == "setFullYear" || sname == "setMonth" || sname == "setDate" || sname == "setHours" || sname == "setMinutes" || sname == "setSeconds" || sname == "setMilliseconds" {
+        let secs = msFloorSec(ms)
+        // The local setters read AND write local wall-clock fields; the UTC family
+        // does neither. Both halves have to move together, or `d.setHours(d.getHours())`
+        // shifts the date by the host offset.
+        var dt = DateTime.fromEpoch(secs)
+        if !wantUtcSet {
+            dt = DateTime.fromEpochLocal(secs)
+        }
+        var frac = Math.mod(ms, 1000.0) as i64
+        if frac < 0 {
+            frac = frac + 1000
+        }
+        var year = dt.year as i64
+        var month = dt.month as i64
+        var day = dt.day as i64
+        var hour = dt.hour as i64
+        var minute = dt.minute as i64
+        var second = dt.second as i64
+        var millis = frac
+        if sname == "setFullYear" {
+            if args.len() > 0 {
+                year = numToIndex(toNum(args[0]))
+            }
+            if args.len() > 1 {
+                month = (numToIndex(toNum(args[1]))) + 1
+            }
+            if args.len() > 2 {
+                day = numToIndex(toNum(args[2]))
+            }
+        } else if sname == "setMonth" {
+            if args.len() > 0 {
+                month = (numToIndex(toNum(args[0]))) + 1
+            }
+            if args.len() > 1 {
+                day = numToIndex(toNum(args[1]))
+            }
+        } else if sname == "setDate" {
+            if args.len() > 0 {
+                day = numToIndex(toNum(args[0]))
+            }
+        } else if sname == "setHours" {
+            if args.len() > 0 {
+                hour = numToIndex(toNum(args[0]))
+            }
+            if args.len() > 1 {
+                minute = numToIndex(toNum(args[1]))
+            }
+            if args.len() > 2 {
+                second = numToIndex(toNum(args[2]))
+            }
+            if args.len() > 3 {
+                millis = numToIndex(toNum(args[3]))
+            }
+        } else if sname == "setMinutes" {
+            if args.len() > 0 {
+                minute = numToIndex(toNum(args[0]))
+            }
+            if args.len() > 1 {
+                second = numToIndex(toNum(args[1]))
+            }
+            if args.len() > 2 {
+                millis = numToIndex(toNum(args[2]))
+            }
+        } else if sname == "setSeconds" {
+            if args.len() > 0 {
+                second = numToIndex(toNum(args[0]))
+            }
+            if args.len() > 1 {
+                millis = numToIndex(toNum(args[1]))
+            }
+        } else if sname == "setMilliseconds" {
+            if args.len() > 0 {
+                millis = numToIndex(toNum(args[0]))
+            }
+        }
+        let days = daysFromCivil(year, month, day)
+        var composed = days * 86400 + hour * 3600 + minute * 60 + second
+        if !wantUtcSet {
+            composed = utcFromLocalSec(composed)
+        }
+        let newMs = timeClip((composed * 1000 + millis) as f64)
+        st.objExtras[st.objects[o].extra].dateMs = newMs
+        return JSValue.Number(newMs)
+    }
+    // getUTC* mirrors the local accessors but decomposes in UTC; normalise
+    // getUTCFoo -> getFoo for the branch match and pick the decomposition by
+    // whether the caller asked for UTC.
+    // The RFC 7231 form used by toUTCString/toGMTString, e.g.
+    // "Fri, 15 May 2020 10:30:45 GMT" — timezone-independent by definition.
+    if name == "toUTCString" || name == "toGMTString" {
+        if ms != ms {
+            return JSValue.Str("Invalid Date")
+        }
+        let u = DateTime.fromEpoch((ms / 1000.0) as i64)
+        return JSValue.Str(dateAbbrevDay(u.weekday) + ", " + pad2(u.day as i64) + " " + dateAbbrevMonth(u.month) + " " + i64ToStr(u.year as i64) + " " + pad2(u.hour as i64) + ":" + pad2(u.minute as i64) + ":" + pad2(u.second as i64) + " GMT")
+    }
+    // toString / toDateString / toTimeString. node renders these in the host
+    // timezone; with no timezone database these are the UTC rendering, which is
+    // what node prints under TZ=UTC.
+    if name == "toString" || name == "toDateString" || name == "toTimeString" {
+        if ms != ms {
+            return JSValue.Str("Invalid Date")
+        }
+        let u = DateTime.fromEpochLocal(msFloorSec(ms))
+        let datePart = dateAbbrevDay(u.weekday) + " " + dateAbbrevMonth(u.month) + " " + pad2(u.day as i64) + " " + i64ToStr(u.year as i64)
+        let timePart = pad2(u.hour as i64) + ":" + pad2(u.minute as i64) + ":" + pad2(u.second as i64) + " " + gmtOffsetLabel(msFloorSec(ms))
+        if name == "toDateString" {
+            return JSValue.Str(datePart)
+        }
+        if name == "toTimeString" {
+            return JSValue.Str(timePart)
+        }
+        return JSValue.Str(datePart + " " + timePart)
+    }
+    // node's default locale output (en-US), rendered in UTC like everything else
+    if name == "toLocaleString" || name == "toLocaleDateString" || name == "toLocaleTimeString" {
+        if ms != ms {
+            return JSValue.Str("Invalid Date")
+        }
+        let u = DateTime.fromEpoch((ms / 1000.0) as i64)
+        let dpart = i64ToStr(u.month as i64) + "/" + i64ToStr(u.day as i64) + "/" + i64ToStr(u.year as i64)
+        var h12 = (u.hour as i64) % 12
+        if h12 == 0 {
+            h12 = 12
+        }
+        var ampm = "AM"
+        if (u.hour as i64) >= 12 {
+            ampm = "PM"
+        }
+        let tpart = i64ToStr(h12) + ":" + pad2(u.minute as i64) + ":" + pad2(u.second as i64) + " " + ampm
+        if name == "toLocaleDateString" {
+            return JSValue.Str(dpart)
+        }
+        if name == "toLocaleTimeString" {
+            return JSValue.Str(tpart)
+        }
+        return JSValue.Str(dpart + ", " + tpart)
+    }
+    // the legacy annex-B pair: getYear is the year minus 1900
+    if name == "getYear" {
+        if ms != ms {
+            return JSValue.Number(ms)
+        }
+        let u = DateTime.fromEpoch((ms / 1000.0) as i64)
+        return JSValue.Number((u.year as f64) - 1900.0)
+    }
+    if name == "setYear" {
+        var yv = 0.0
+        if args.len() > 0 {
+            yv = toNum(args[0])
+        }
+        // 0..99 mean 1900..1999; anything else is a full year
+        if yv >= 0.0 && yv <= 99.0 {
+            yv = yv + 1900.0
+        }
+        var yArgs: Vec<JSValue> = Vec.new()
+        yArgs.push(JSValue.Number(yv))
+        return dateMethod(st, o, "setFullYear", yArgs)
+    }
+    // getUTCFoo and getFoo are the same here — see the UTC note below
+    var gname = name.clone()
+    var wantUtc = false
+    if gname.len() >= 6 && strSlice(gname, 0, 6) == "getUTC" {
+        gname = "get" + strSlice(gname, 6, gname.len())
+        wantUtc = true
+    }
+    if gname == "getFullYear" || gname == "getMonth" || gname == "getDate" || gname == "getHours" || gname == "getMinutes" || gname == "getSeconds" || gname == "getMilliseconds" || gname == "getDay" {
+        // The local family decomposes in the HOST timezone and the UTC family does
+        // not. These used to be the same function because the engine had no
+        // timezone at all; std's fromEpochLocal is the real localtime, DST
+        // included, so they can differ correctly now. The set* family and the
+        // constructor were converted in the same change: splitting only the
+        // getters is what would make `d.setHours(d.getHours())` shift the date.
+        var dt = DateTime.fromEpoch(msFloorSec(ms))
+        if !wantUtc {
+            dt = DateTime.fromEpochLocal(msFloorSec(ms))
+        }
+        if gname == "getFullYear" {
+            return JSValue.Number(dt.year as f64)
+        }
+        if gname == "getMonth" {
+            // JS months are zero-based
+            return JSValue.Number((dt.month - 1) as f64)
+        }
+        if gname == "getDate" {
+            return JSValue.Number(dt.day as f64)
+        }
+        if gname == "getHours" {
+            return JSValue.Number(dt.hour as f64)
+        }
+        if gname == "getMinutes" {
+            return JSValue.Number(dt.minute as f64)
+        }
+        if gname == "getSeconds" {
+            return JSValue.Number(dt.second as f64)
+        }
+        if gname == "getDay" {
+            return JSValue.Number(dt.weekday as f64)
+        }
+        return JSValue.Number(Math.mod(ms, 1000.0))
+    }
+    if name == "toString" || name == "toUTCString" || name == "toLocaleString" || name == "toLocaleDateString" || name == "toLocaleTimeString" || name == "toDateString" {
+        return JSValue.Str(isoFromMillis(ms))
+    }
+    if name == "getTimezoneOffset" {
+        if ms != ms {
+            return JSValue.Number(jsNan())
+        }
+        // JS reports the minutes to ADD to local to reach UTC, so a zone west of
+        // Greenwich is POSITIVE: UTC-8 answers 480.
+        return JSValue.Number((-localOffsetSecAt(msFloorSec(ms)) / 60) as f64)
+    }
+    return JSValue.Undefined
+}
+
+// Seconds to ADD to a UTC instant to get local wall-clock time at that instant.
+// Computed by decomposing with the host's localtime and recomposing the fields as
+// if they were UTC, so it follows the real timezone database including DST: this
+// machine answers -28800 in winter and -25200 in summer.
+// Whole seconds of an epoch-millisecond value, rounding toward NEGATIVE infinity
+// so a pre-epoch fractional value lands in the right second. `(ms / 1000.0) as i64`
+// truncates toward zero, which is off by one for negative times.
+pub fn msFloorSec(ms: f64): i64 {
+    return Math.floor(ms / 1000.0) as i64
+}
+
+// The "GMT-0700 (…)" tail of Date.prototype.toString. node names the zone from the
+// tz database; without that name available here the numeric offset is repeated in
+// the parenthesised part, which keeps the string self-describing and, crucially,
+// machine-independent in shape.
+fn gmtOffsetLabel(epochSec: i64): string {
+    let off = localOffsetSecAt(epochSec)
+    var mag = off
+    var sign = "+"
+    if off < 0 {
+        mag = -off
+        sign = "-"
+    }
+    let hh = pad2(mag / 3600)
+    let mm2 = pad2((mag % 3600) / 60)
+    return "GMT" + sign + hh + mm2 + " (UTC" + sign + hh + ":" + mm2 + ")"
+}
+
+pub fn arrayIterNext(st: &mut Interp, it: i64): JSValue {
+    let arrV = getMember(st, it, "__ai_arr")
+    let arr = objHandle(arrV)
+    let i = toNum(getMember(st, it, "__ai_i")) as i64
+    let kind = toNum(getMember(st, it, "__ai_kind")) as i64
+    let res = newObject(st)
+    pushTemp(st, JSValue.Obj(res))
+    if arr < 0 || i >= arrLen(st, arr) {
+        objSet(st, res, "done", JSValue.Bool(true))
+        objSet(st, res, "value", JSValue.Undefined)
+    } else {
+        objSet(st, it, "__ai_i", JSValue.Number((i + 1) as f64))
+        var v = arrGet(st, arr, i)
+        if kind == 1 {
+            v = JSValue.Number(i as f64)
+        } else if kind == 2 {
+            let pair = newArray(st)
+            pushTemp(st, JSValue.Obj(pair))
+            arrPush(st, pair, JSValue.Number(i as f64))
+            arrPush(st, pair, arrGet(st, arr, i))
+            popTemp(st)
+            v = JSValue.Obj(pair)
+        }
+        objSet(st, res, "value", v)
+        objSet(st, res, "done", JSValue.Bool(false))
+    }
+    popTemp(st)
+    return JSValue.Obj(res)
+}
+
+// A relative index argument (negative counts from the end), clamped to [0, n].
+fn relIndex(raw: f64, n: i64): i64 {
+    var i = raw as i64
+    if raw < 0.0 {
+        i = n + i
+    }
+    if i < 0 {
+        i = 0
+    }
+    if i > n {
+        i = n
+    }
+    return i
+}
+
+// Compression moves BYTES, and a JavaScript string cannot carry them: milojs
+// strings are UTF-8, so any byte sequence that is not valid UTF-8 decodes to
+// U+FFFD and the data is destroyed. gzipSync(x) then gunzipSync() failed with
+// "incorrect header check" for exactly that reason. Both directions therefore
+// use Uint8Array, whose storage is raw bytes.
+pub fn bytesFromTypedArray(st: &Interp, v: &JSValue): string {
+    var out: string = ""
+    if let JSValue.Obj(o) = v {
+        let ex = st.objects[o].extra
+        if ex < 0 {
+            return out
+        }
+        if st.objExtras[ex].taBuf < 0 || st.objects[o].isDataView {
+            return out
+        }
+        let n = st.objExtras[ex].taLen
+        var i: i64 = 0
+        while i < n {
+            out.push(taElem(st, o, i) as u8)
+            i = i + 1
+        }
+    }
+    return out
+}
+
+// Built by hand rather than through makeTypedArray, which needs a &Prog that
+// callBuiltin does not have.
+pub fn typedArrayFromBytes(st: &mut Interp, src: &string): JSValue {
+    let nb = newObject(st)
+    st.objects[nb].isArrayBuffer = true
+    st.objects[nb].proto = arrayBufferProto(st)
+    let _e = ensureExtra(st, nb)
+    var b: Vec<u8> = Vec.new()
+    var i: i64 = 0
+    while i < src.len() {
+        b.push(src[i])
+        i = i + 1
+    }
+    st.objExtras[st.objects[nb].extra].bytes = b
+    let view = newObject(st)
+    let _ev = ensureExtra(st, view)
+    st.objExtras[st.objects[view].extra].taBuf = nb
+    st.objExtras[st.objects[view].extra].taKind = 0
+    st.objects[view].proto = typedArrayProtoFor(st, 0)
+    st.objExtras[st.objects[view].extra].taOffset = 0
+    st.objExtras[st.objects[view].extra].taLen = src.len()
+    st.objExtras[st.objects[view].extra].taTracking = false
+    return JSValue.Obj(view)
+}
+
+// The prototype a freshly created view of this kind links to, or -1 before
+// setupTypedArrayProtos has run.
+// True when the prototype chain BELOW the built-in %TypedArray% prototype
+// supplies `key` itself. A subclass that overrides a typed-array method (node's
+// Buffer overrides toString, slice, fill, indexOf, …) installs it on its own
+// prototype, which sits under Uint8Array.prototype in the chain — so the
+// built-in must only win when nothing down there claims the name. Dispatching
+// to the built-in unconditionally made every override unreachable through
+// `buf.toString()` while `Buffer.prototype.toString.call(buf)` still worked.
+//
+// Deliberately &Interp, not &mut: typedArrayProtoFor needs a mutable lookup, and
+// threading one into these two dispatch sites made the prover havoc interpreter
+// state and drop six neighbouring contracts. nativePropsOf answers the same
+// question without creating anything — by the time an instance exists its
+// constructor's props bag does too, so the -1 arm is unreachable in practice and
+// falls back to the built-in, which is the pre-existing behaviour.
+// Address of a typed array's first byte, or 0 when the value is not one. The
+// read/write natives fill the CALLER's Buffer in place, which is the whole
+// contract of fs.read(fd, buffer, ...) — copying would silently drop the data.
+pub fn typedArrayDataPtr(st: &Interp, v: JSValue): i64 {
+    match v {
+        JSValue.Obj(o) => {
+            let ex = st.objects[o].extra
+            if ex < 0 {
+                return 0
+            }
+            let buf = st.objExtras[ex].taBuf
+            if buf < 0 || st.objects[o].isDataView {
+                return 0
+            }
+            let base = st.objExtras[st.objects[buf].extra].bytes.ptr() as i64
+            return base + st.objExtras[ex].taOffset
+        }
+        _ => {
+            return 0
+        }
+    }
+}
+
+fn typedArrayBuiltinProto(st: &Interp, kind: i64): i64 {
+    let bag = nativePropsOf(st, Native.TypedArrayCtor(kind))
+    if bag < 0 {
+        return -1
+    }
+    return objHandle(objGet(st, bag, "prototype"))
+}
+
+pub fn typedArrayOverride(st: &Interp, o: i64, key: &string): bool {
+    let builtin = typedArrayBuiltinProto(st, st.objExtras[st.objects[o].extra].taKind)
+    if builtin < 0 {
+        return false
+    }
+    var cur = st.objects[o].proto
+    while cur >= 0 && cur != builtin {
+        if objHas(st, cur, key) {
+            return true
+        }
+        cur = st.objects[cur].proto
+    }
+    return false
+}
+
+// [[Construct]] over any value. `new proxy(...)` with no construct trap has to
+// reach the TARGET's [[Construct]], which may be another proxy's trap, and
+// Reflect.construct has to be able to pass a newTarget that is not the callee —
+// neither is expressible as "call the target with a fresh `this`".
+// Move a freshly built builtin's internal slots onto the instance a subclass
+// constructor is initialising. `super()` cannot hand the built object back (the
+// subclass's `this` already exists and carries its own prototype), so the slots
+// move instead. Only the discriminators and their payloads: ordinary properties
+// stay where the subclass put them.
+// True for a typed array that still has elements. Freezing or sealing one is a
+// TypeError: its integer-indexed properties are non-configurable already and
+// cannot be made non-writable, so SetIntegrityLevel cannot complete.
+pub fn taIntegrityBlocked(st: &Interp, v: &JSValue): bool {
+    let h = objHandle(v)
+    if h < 0 {
+        return false
+    }
+    if st.objExtras[st.objects[h].extra].taBuf < 0 || st.objects[h].isDataView {
+        return false
+    }
+    return taCurrentLen(st, h) > 0
+}
+
+pub fn isTypedArrayMethodName(n: &string): bool {
+    return n == "fill" || n == "set" || n == "subarray" || n == "slice" || n == "at" || n == "indexOf" || n == "includes" || n == "join" || n == "toString" || n == "forEach" || n == "map" || n == "filter" || n == "reduce" || n == "reduceRight" || n == "find" || n == "findIndex" || n == "findLast" || n == "findLastIndex" || n == "some" || n == "every" || n == "reverse" || n == "sort" || n == "with" || n == "copyWithin" || n == "lastIndexOf" || n == "keys" || n == "values" || n == "entries" || n == "toReversed" || n == "toSorted" || n == "toLocaleString" || n == symIteratorKey()
+}
+
+// The methods that take a callback first. Used to validate that argument before
+// any element is read, and to decide whether a second argument is a receiver.
+fn isTypedArrayCallbackMethod(n: &string): bool {
+    return n == "forEach" || n == "map" || n == "filter" || n == "find" || n == "findIndex" || n == "findLast" || n == "findLastIndex" || n == "some" || n == "every" || n == "reduce" || n == "reduceRight"
+}
+
+// reduce/reduceRight read their second argument as the initial accumulator, not
+// as a receiver, so they are excluded from the thisArg rule the others share.
+fn isTypedArrayReduceMethod(n: &string): bool {
+    return n == "reduce" || n == "reduceRight"
+}
+
+// The callback argument as given, for the "x is not a function" message. Missing
+// entirely reads as undefined, which is what the message should say.
+fn taCallbackArg(args: &Vec<JSValue>): JSValue {
+    if args.len() == 0 {
+        return JSValue.Undefined
+    }
+    return cloneValue(args[0])
+}
+
+// Typed-array methods. Views share their buffer, so subarray returns a new view
+// over the SAME bytes while slice copies — getting that backwards is the classic
+// typed-array bug.
+pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    if taIsDetached(st, o) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a detached ArrayBuffer" + currentModule(st))
+        return JSValue.Undefined
+    }
+    // ValidateTypedArray also rejects a view left OUT OF BOUNDS by a resizable
+    // buffer that shrank. Without it the method walked the stale extent and read
+    // zeroes off the end of the buffer, which reads as a successful call.
+    if taOutOfBounds(st, o) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Cannot perform " + name.clone() + " on a typed array whose buffer has shrunk out of bounds" + currentModule(st))
+        return JSValue.Undefined
+    }
+    // taCurrentLen, not the stored taLen: a tracking view over a resizable
+    // buffer has a different element count after every resize.
+    let n = taCurrentLen(st, o)
+    let kind = st.objExtras[st.objects[o].extra].taKind
+    let w = taWidth(kind)
+
+    if name == "at" {
+        var idx: i64 = 0
+        if args.len() > 0 {
+            idx = numToIndex(toNumProg(prog, args[0], st))
+        }
+        if idx < 0 {
+            idx = n + idx
+        }
+        if idx < 0 || idx >= n {
+            return JSValue.Undefined
+        }
+        return taElemValue(st, o, idx)
+    }
+    if name == "fill" {
+        var v: f64 = 0.0
+        if args.len() > 0 {
+            v = toNumProg(prog, args[0], st)
+        }
+        var start: i64 = 0
+        if argPresent(args, 1) {
+            start = numToIndex(toNumProg(prog, args[1], st))
+            if start < 0 {
+                start = n + start
+            }
+        }
+        var end = n
+        if argPresent(args, 2) {
+            end = numToIndex(toNumProg(prog, args[2], st))
+            if end < 0 {
+                end = n + end
+            }
+        }
+        if start < 0 {
+            start = 0
+        }
+        if end > n {
+            end = n
+        }
+        var i = start
+        while i < end {
+            taSetElem(st, o, i, v)
+            i = i + 1
+        }
+        return JSValue.Obj(o)
+    }
+    if name == "indexOf" || name == "includes" {
+        var target: f64 = 0.0
+        if args.len() > 0 {
+            target = toNumProg(prog, args[0], st)
+        }
+        var i: i64 = 0
+        while i < n {
+            if taElem(st, o, i) == target {
+                if name == "includes" {
+                    return JSValue.Bool(true)
+                }
+                return JSValue.Number(i as f64)
+            }
+            i = i + 1
+        }
+        if name == "includes" {
+            return JSValue.Bool(false)
+        }
+        return JSValue.Number(0.0 - 1.0)
+    }
+    if name == "join" || name == "toString" {
+        var sep = ","
+        if name == "join" && argPresent(args, 0) {
+            // toStrProg, not toStr: the separator is coerced with ToString, which
+            // runs a user toString/valueOf and may throw. toStr answers
+            // "[object Object]" without consulting either, so a poisoned
+            // separator produced a string instead of propagating its error.
+            sep = toStrProg(prog, cloneValue(args[0]), st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+        }
+        var out = ""
+        var i: i64 = 0
+        while i < n {
+            if i > 0 {
+                out = out + sep
+            }
+            out = out + numToStr(taElem(st, o, i))
+            i = i + 1
+        }
+        return JSValue.Str(out)
+    }
+    if name == "set" {
+        // set(source, offset) — copies element values in
+        if args.len() == 0 {
+            return JSValue.Undefined
+        }
+        var off: i64 = 0
+        if args.len() > 1 {
+            off = numToIndex(toNumProg(prog, args[1], st))
+        }
+        let sh = objHandle(args[0])
+        if sh < 0 {
+            return JSValue.Undefined
+        }
+        if st.objects[sh].isArray {
+            var i: i64 = 0
+            while i < arrLen(st, sh) {
+                taSetElem(st, o, off + i, toNum(arrGet(st, sh, i)))
+                i = i + 1
+            }
+        } else if st.objExtras[st.objects[sh].extra].taBuf >= 0 {
+            var i: i64 = 0
+            while i < st.objExtras[st.objects[sh].extra].taLen {
+                taSetElem(st, o, off + i, taElem(st, sh, i))
+                i = i + 1
+            }
+        }
+        return JSValue.Undefined
+    }
+    if name == "subarray" || name == "slice" {
+        var start: i64 = 0
+        if argPresent(args, 0) {
+            start = numToIndex(toNumProg(prog, args[0], st))
+            if start < 0 {
+                start = n + start
+            }
+        }
+        var end = n
+        if argPresent(args, 1) {
+            end = numToIndex(toNumProg(prog, args[1], st))
+            if end < 0 {
+                end = n + end
+            }
+        }
+        if start < 0 {
+            start = 0
+        }
+        if end > n {
+            end = n
+        }
+        if end < start {
+            end = start
+        }
+        let count = end - start
+        if name == "subarray" {
+            // a VIEW over the same buffer: writes through it are visible in the
+            // original, which is the whole point of subarray
+            let view = newObject(st)
+            let _ev = ensureExtra(st, view)
+            st.objExtras[st.objects[view].extra].taBuf = st.objExtras[st.objects[o].extra].taBuf
+            st.objExtras[st.objects[view].extra].taKind = kind
+    st.objects[view].proto = typedArrayProtoFor(st, kind)
+            st.objExtras[st.objects[view].extra].taOffset = st.objExtras[st.objects[o].extra].taOffset + start * w
+            st.objExtras[st.objects[view].extra].taLen = count
+            return JSValue.Obj(view)
+        }
+        // slice COPIES into a fresh buffer
+        let nb = newObject(st)
+        st.objects[nb].isArrayBuffer = true
+        st.objects[nb].proto = arrayBufferProto(st)
+        let _eb = ensureExtra(st, nb)
+        pushTemp(st, JSValue.Obj(nb))
+        var bytes: Vec<u8> = Vec.new()
+        var bi: i64 = 0
+        while bi < count * w {
+            bytes.push(0 as u8)
+            bi = bi + 1
+        }
+        st.objExtras[st.objects[nb].extra].bytes = bytes
+        let view = newObject(st)
+        let _ev = ensureExtra(st, view)
+        st.objExtras[st.objects[view].extra].taBuf = nb
+        st.objExtras[st.objects[view].extra].taKind = kind
+    st.objects[view].proto = typedArrayProtoFor(st, kind)
+        st.objExtras[st.objects[view].extra].taOffset = 0
+        st.objExtras[st.objects[view].extra].taLen = count
+        var i: i64 = 0
+        while i < count {
+            taSetElem(st, view, i, taElem(st, o, start + i))
+            i = i + 1
+        }
+        popTemp(st)
+        return JSValue.Obj(view)
+    }
+    // Every callback method validates its argument before it reads an element.
+    // args[0] was indexed unguarded, so calling one with NO arguments took the
+    // engine out with an index-out-of-bounds instead of raising a TypeError, and
+    // a non-callable argument quietly iterated nothing.
+    if isTypedArrayCallbackMethod(name) {
+        if args.len() == 0 || !isCallableIn(st, args[0]) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", toStr(taCallbackArg(args)) + " is not a function" + currentModule(st))
+            return JSValue.Undefined
+        }
+    }
+    // The callback's third argument is the typed array itself and its `this` is
+    // the optional second argument to the method. Both were omitted, so a
+    // callback could neither see the array it was walking nor keep a receiver.
+    let cbThis = if args.len() > 1 && !isTypedArrayReduceMethod(name) {
+        cloneValue(args[1])
+    } else {
+        JSValue.Undefined
+    }
+    // callback-based iteration methods. The element and index are passed to the
+    // callback; map/filter build a new typed array (map keeps the kind).
+    if name == "forEach" {
+        var i: i64 = 0
+        while i < n && !st.throwing {
+            var cbArgs: Vec<JSValue> = Vec.new()
+            cbArgs.push(JSValue.Number(taElem(st, o, i)))
+            cbArgs.push(JSValue.Number(i as f64))
+            cbArgs.push(JSValue.Obj(o))
+            let _r = callValue(prog, args[0], cbArgs, cloneValue(cbThis), st)
+            i = i + 1
+        }
+        return JSValue.Undefined
+    }
+    if name == "map" {
+        var lenArgs: Vec<JSValue> = Vec.new()
+        lenArgs.push(JSValue.Number(n as f64))
+        let out = makeTypedArray(prog, st, kind, lenArgs)
+        let oh = objHandle(out)
+        pushTemp(st, cloneValue(out))
+        var i: i64 = 0
+        while i < n && !st.throwing {
+            var cbArgs: Vec<JSValue> = Vec.new()
+            cbArgs.push(JSValue.Number(taElem(st, o, i)))
+            cbArgs.push(JSValue.Number(i as f64))
+            cbArgs.push(JSValue.Obj(o))
+            let r = callValue(prog, args[0], cbArgs, cloneValue(cbThis), st)
+            taSetElem(st, oh, i, toNum(r))
+            i = i + 1
+        }
+        popTemp(st)
+        return out
+    }
+    if name == "filter" {
+        var kept: Vec<f64> = Vec.new()
+        var i: i64 = 0
+        while i < n && !st.throwing {
+            let e = taElem(st, o, i)
+            var cbArgs: Vec<JSValue> = Vec.new()
+            cbArgs.push(JSValue.Number(e))
+            cbArgs.push(JSValue.Number(i as f64))
+            cbArgs.push(JSValue.Obj(o))
+            if truthy(callValue(prog, args[0], cbArgs, cloneValue(cbThis), st)) {
+                kept.push(e)
+            }
+            i = i + 1
+        }
+        var lenArgs: Vec<JSValue> = Vec.new()
+        lenArgs.push(JSValue.Number(kept.len() as f64))
+        let out = makeTypedArray(prog, st, kind, lenArgs)
+        let oh = objHandle(out)
+        var k: i64 = 0
+        while k < kept.len() {
+            taSetElem(st, oh, k, kept[k])
+            k = k + 1
+        }
+        return out
+    }
+    if name == "reduce" || name == "reduceRight" {
+        let rev = name == "reduceRight"
+        var acc = JSValue.Undefined
+        var started = false
+        if args.len() > 1 {
+            acc = cloneValue(args[1])
+            started = true
+        }
+        var c: i64 = 0
+        while c < n && !st.throwing {
+            let i = if rev {
+                n - 1 - c
+            } else {
+                c
+            }
+            let e = JSValue.Number(taElem(st, o, i))
+            if !started {
+                acc = e
+                started = true
+            } else {
+                var cbArgs: Vec<JSValue> = Vec.new()
+                cbArgs.push(cloneValue(acc))
+                cbArgs.push(e)
+                cbArgs.push(JSValue.Number(i as f64))
+                cbArgs.push(JSValue.Obj(o))
+                acc = callValue(prog, args[0], cbArgs, JSValue.Undefined, st)
+            }
+            c = c + 1
+        }
+        return acc
+    }
+    if name == "find" || name == "findIndex" || name == "some" || name == "every" || name == "findLast" || name == "findLastIndex" {
+        let rev = name == "findLast" || name == "findLastIndex"
+        var c: i64 = 0
+        while c < n && !st.throwing {
+            let i = if rev {
+                n - 1 - c
+            } else {
+                c
+            }
+            let e = taElem(st, o, i)
+            var cbArgs: Vec<JSValue> = Vec.new()
+            cbArgs.push(JSValue.Number(e))
+            cbArgs.push(JSValue.Number(i as f64))
+            cbArgs.push(JSValue.Obj(o))
+            let hit = truthy(callValue(prog, args[0], cbArgs, cloneValue(cbThis), st))
+            if name == "some" && hit {
+                return JSValue.Bool(true)
+            }
+            if name == "every" && !hit {
+                return JSValue.Bool(false)
+            }
+            if (name == "find" || name == "findLast") && hit {
+                return JSValue.Number(e)
+            }
+            if (name == "findIndex" || name == "findLastIndex") && hit {
+                return JSValue.Number(i as f64)
+            }
+            c = c + 1
+        }
+        if name == "some" {
+            return JSValue.Bool(false)
+        }
+        if name == "every" {
+            return JSValue.Bool(true)
+        }
+        if name == "find" || name == "findLast" {
+            return JSValue.Undefined
+        }
+        return JSValue.Number(0.0 - 1.0)
+    }
+    if name == "with" {
+        // A copy with one element replaced (negative index from the end).
+        //
+        // Both arguments are converted with toNumProg, NOT toNum: toNum cannot
+        // re-enter the interpreter, so an object argument coerced to 0 (or NaN for
+        // a float array) and the replacement value was silently dropped. Converting
+        // also runs USER code, which can detach or resize the buffer underneath
+        // this call, so the length is snapshotted first and revalidated after, and
+        // reads past the shrunk source yield zero rather than stale bytes.
+        let snapLen = n
+        var idx: i64 = 0
+        if args.len() > 0 {
+            idx = numToIndex(toNumProg(prog, args[0], st))
+            if st.throwing {
+                return JSValue.Undefined
+            }
+        }
+        if idx < 0 {
+            idx = snapLen + idx
+        }
+        var repl: f64 = 0.0
+        if args.len() > 1 {
+            repl = toNumProg(prog, args[1], st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+        }
+        if idx < 0 || idx >= snapLen {
+            st.throwing = true
+            st.thrownValue = makeError(st, "RangeError", "invalid index in TypedArray.prototype.with")
+            return JSValue.Undefined
+        }
+        if taIsDetached(st, o) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "RangeError", "TypedArray buffer was detached during conversion")
+            return JSValue.Undefined
+        }
+        // ...and against the length as it stands NOW. A resizable buffer shrunk to
+        // zero leaves a tracking view with no elements, so an index that was valid
+        // against the snapshot is not valid any more. A partial shrink is NOT an
+        // error: the surviving prefix is copied and the rest reads zero.
+        if idx >= taCurrentLen(st, o) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "RangeError", "index is out of bounds after conversion resized the buffer")
+            return JSValue.Undefined
+        }
+        var lenArgs: Vec<JSValue> = Vec.new()
+        lenArgs.push(JSValue.Number(snapLen as f64))
+        let out = makeTypedArray(prog, st, kind, lenArgs)
+        let oh = objHandle(out)
+        pushTemp(st, cloneValue(out))
+        // The source may have SHRUNK while user code ran; the result keeps the
+        // snapshotted length and the elements that no longer exist read as zero.
+        let liveLen = taCurrentLen(st, o)
+        var i: i64 = 0
+        while i < snapLen {
+            if i == idx && args.len() > 1 {
+                taSetElem(st, oh, i, repl)
+            } else if i < liveLen {
+                taSetElem(st, oh, i, taElem(st, o, i))
+            } else {
+                taSetElem(st, oh, i, 0.0)
+            }
+            i = i + 1
+        }
+        popTemp(st)
+        return out
+    }
+    if name == "reverse" {
+        var i: i64 = 0
+        while i < n / 2 {
+            let tmp = taElem(st, o, i)
+            taSetElem(st, o, i, taElem(st, o, n - 1 - i))
+            taSetElem(st, o, n - 1 - i, tmp)
+            i = i + 1
+        }
+        return JSValue.Obj(o)
+    }
+    if name == "copyWithin" {
+        // copies WITHIN the same buffer, so the ranges may overlap — snapshot
+        // the source before writing, exactly as memmove would
+        var tgt = relIndex(toNumProg(prog, args[0], st), n)
+        var cs: i64 = 0
+        if args.len() > 1 {
+            cs = relIndex(toNumProg(prog, args[1], st), n)
+        }
+        var ce = n
+        if args.len() > 2 && !(args[2] is JSValue.Undefined) {
+            ce = relIndex(toNumProg(prog, args[2], st), n)
+        }
+        var snap: Vec<f64> = Vec.new()
+        var si = cs
+        while si < ce {
+            snap.push(taElem(st, o, si))
+            si = si + 1
+        }
+        var k: i64 = 0
+        while k < snap.len() && tgt + k < n {
+            taSetElem(st, o, tgt + k, snap[k])
+            k = k + 1
+        }
+        return JSValue.Obj(o)
+    }
+    if name == "lastIndexOf" {
+        if args.len() == 0 || n == 0 {
+            return JSValue.Number(-1.0)
+        }
+        let needle = toNumProg(prog, args[0], st)
+        var from = n - 1
+        if args.len() > 1 {
+            let raw = toNumProg(prog, args[1], st)
+            if raw < 0.0 {
+                from = n + (raw as i64)
+            } else {
+                from = raw as i64
+            }
+            if from >= n {
+                from = n - 1
+            }
+        }
+        var i = from
+        while i >= 0 {
+            if taElem(st, o, i) == needle {
+                return JSValue.Number(i as f64)
+            }
+            i = i - 1
+        }
+        return JSValue.Number(-1.0)
+    }
+    if name == "keys" || name == "values" || name == "entries" || name == symIteratorKey() {
+        // snapshot into a plain array and hand back the shared array iterator,
+        // so for-of / spread / Array.from / .next() all work the same way
+        let snapArr = newArray(st)
+        pushTemp(st, JSValue.Obj(snapArr))
+        var i: i64 = 0
+        while i < n {
+            arrPush(st, snapArr, JSValue.Number(taElem(st, o, i)))
+            i = i + 1
+        }
+        var iterKind: i64 = 0
+        if name == "keys" {
+            iterKind = 1
+        } else if name == "entries" {
+            iterKind = 2
+        }
+        let it = makeArrayIterator(st, snapArr, iterKind)
+        popTemp(st)
+        return it
+    }
+    if name == "toReversed" {
+        var lenArgs: Vec<JSValue> = Vec.new()
+        lenArgs.push(JSValue.Number(n as f64))
+        let out = makeTypedArray(prog, st, kind, lenArgs)
+        let oh = objHandle(out)
+        pushTemp(st, cloneValue(out))
+        var i: i64 = 0
+        while i < n {
+            taSetElem(st, oh, i, taElem(st, o, n - 1 - i))
+            i = i + 1
+        }
+        popTemp(st)
+        return out
+    }
+    if name == "toSorted" {
+        var lenArgs: Vec<JSValue> = Vec.new()
+        lenArgs.push(JSValue.Number(n as f64))
+        let out = makeTypedArray(prog, st, kind, lenArgs)
+        let oh = objHandle(out)
+        pushTemp(st, cloneValue(out))
+        var c: i64 = 0
+        while c < n {
+            taSetElem(st, oh, c, taElem(st, o, c))
+            c = c + 1
+        }
+        var srtArgs: Vec<JSValue> = Vec.new()
+        if args.len() > 0 {
+            srtArgs.push(cloneValue(args[0]))
+        }
+        let _srt = typedArrayMethod(prog, oh, "sort", srtArgs, st)
+        popTemp(st)
+        return out
+    }
+    if name == "toLocaleString" {
+        // no locale support here: the spec calls each element's toLocaleString,
+        // which for a plain number is its ordinary string form
+        var out = ""
+        var i: i64 = 0
+        while i < n {
+            if i > 0 {
+                out = out + ","
+            }
+            out = out + toStr(JSValue.Number(taElem(st, o, i)))
+            i = i + 1
+        }
+        return JSValue.Str(out)
+    }
+    if name == "sort" {
+        // numeric ascending by default; a comparator (args[0]) overrides. Simple
+        // insertion sort over the element values (typed arrays are usually small).
+        var i: i64 = 1
+        while i < n && !st.throwing {
+            let cur = taElem(st, o, i)
+            var j = i - 1
+            var cont = true
+            while j >= 0 && cont {
+                let ej = taElem(st, o, j)
+                var swap = ej > cur
+                if args.len() > 0 && isCallableIn(st, args[0]) {
+                    var cbArgs: Vec<JSValue> = Vec.new()
+                    cbArgs.push(JSValue.Number(ej))
+                    cbArgs.push(JSValue.Number(cur))
+                    swap = toNum(callValue(prog, args[0], cbArgs, JSValue.Undefined, st)) > 0.0
+                }
+                if swap {
+                    taSetElem(st, o, j + 1, ej)
+                    j = j - 1
+                } else {
+                    cont = false
+                }
+            }
+            taSetElem(st, o, j + 1, cur)
+            i = i + 1
+        }
+        return JSValue.Obj(o)
+    }
+    return JSValue.Undefined
+}
+
+// The (element, index, array) triple JS array-iteration callbacks receive.
+// The optional `thisArg` that map/filter/forEach/some/every/find/flatMap take
+// after their callback, and which the callback then runs with as `this`.
+// reduce/reduceRight are deliberately NOT in that group: their second argument
+// is the initial accumulator, so they always call with `this === undefined`.
+fn cbThisArg(args: &Vec<JSValue>): JSValue {
+    if args.len() > 1 {
+        return cloneValue(args[1])
+    }
+    return JSValue.Undefined
+}
+
+// The callback's (value, index, array) triple. Takes a Prog because the value read
+// is a real [[Get]]: at a hole the element may come from the prototype chain, and
+// there it may be an ACCESSOR whose getter has to run. `Array.prototype[3]` defined
+// as a getter is visible to filter/map/forEach in node and was invisible here.
+fn makeCbArgsDyn(prog: &Prog, o: i64, i: i64, st: &mut Interp): Vec<JSValue> {
+    var v: Vec<JSValue> = Vec.new()
+    v.push(arrGetDyn(prog, o, i, st))
+    v.push(JSValue.Number(i as f64))
+    let orig = st.objExtras[st.objects[o].extra].arrayLikeOrig
+    if orig >= 0 {
+        v.push(JSValue.Obj(orig))
+    } else {
+        v.push(JSValue.Obj(o))
+    }
+    return v
+}
+
+// isArrayMethod's set as data, used to populate Array.prototype. Kept separate
+// because isArrayMethod is on the property-access hot path and a Vec scan there
+// would cost an allocation per lookup. Every name here MUST also be in
+// isArrayMethod, or it resolves to a method that then refuses to run.
+//
+// `toString` IS included: Array.prototype.toString is join(","), and it is a
+// distinct function from Object.prototype.toString in the spec. It does not
+// shadow the type-tag path, which travels under the private @@objProtoToString
+// name precisely so the two cannot collide.
+// How many indices actually hold a value — holes do not count, and reduce's
+// empty-array check is about present elements rather than length.
+fn arrCountPresent(st: &Interp, o: i64): i64 {
+    var c: i64 = 0
+    var i: i64 = 0
+    let n = arrLen(st, o)
+    while i < n {
+        if !arrIsHole(st, o, i) {
+            c = c + 1
+        }
+        i = i + 1
+    }
+    return c
+}
+
+pub fn isArrayMethod(name: &string): bool {
+    return name == "map" || name == "filter" || name == "forEach" || name == "reduce" || name == "join" || name == "toString" || name == "indexOf" || name == "includes" || name == "slice" || name == "reverse" || name == "concat" || name == "push" || name == "pop" || name == "find" || name == "findIndex" || name == "some" || name == "every" || name == "shift" || name == "unshift" || name == "splice" || name == "sort" || name == "lastIndexOf" || name == "flat" || name == "fill" || name == "at" || name == "findLast" || name == "findLastIndex" || name == "copyWithin" || name == "reduceRight" || name == "flatMap" || name == "values" || name == "keys" || name == "entries" || name == "with" || name == "toReversed" || name == "toSorted" || name == "toSpliced"
+}
+
+// ToLength: NaN/negative clamp to 0, fractions truncate. The postcondition is the
+// safety contract arrayLikeToArray relies on — it loops to this value and pushes
+// an element each time, so an unbounded or negative result is either a runaway
+// allocation or a malformed array.
+//
+// NOT currently provable: `milo prove --solver=z3` reports unknown because the
+// SMT translator has no rule for float literals and `toNum` declares no `ensures`
+// to model its result. Contracts are static-only — nothing checks this at run
+// time — so treat it as documentation until the translator learns f64.
+fn arrayLikeLength(prog: &Prog, o: i64, st: &mut Interp): i64
+ensures result >= -1 && result <= ARRAY_LIKE_MAX
+{
+    let lenVal = getMemberDyn(prog, o, "length", st)
+    if st.throwing {
+        return -1
+    }
+    // ToLength on a Symbol is a TypeError, not NaN: the tests read `length` from a
+    // poisoned object precisely to check the abrupt completion propagates.
+    if let JSValue.Str(ls) = cloneValue(lenVal) {
+        if isSymbolStr(ls) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a number" + currentModule(st))
+            return -1
+        }
+    }
+    let raw = toNumProg(prog, lenVal, st)
+    if st.throwing {
+        return -1
+    }
+    if !(raw == raw) || raw <= 0.0 {
+        return 0
+    }
+    if raw > (ARRAY_LIKE_MAX as f64) {
+        return -1
+    }
+    return raw as i64
+}
+
+// Copy an array-like receiver into a scratch array. Returns -1 if the receiver
+// is not adaptable or its length is out of range (with the error already
+// thrown). The result is NOT temp-rooted — the caller owns that.
+fn arrayLikeToArray(prog: &Prog, recv: &JSValue, st: &mut Interp): i64 {
+    let tmp = newArray(st)
+    pushTemp(st, JSValue.Obj(tmp))
+    match recv {
+        // a string receiver indexes as its UTF-16 units and has no own props
+        JSValue.Str(sv) => {
+            let slen = utf16Length(sv)
+            var ci: i64 = 0
+            while ci < slen {
+                arrPush(st, tmp, JSValue.Str(utf16Slice(sv, ci, ci + 1)))
+                ci = ci + 1
+            }
+            popTemp(st)
+            return tmp
+        }
+        JSValue.Obj(o) => {
+            let n = arrayLikeLength(prog, o, st)
+            if n < 0 {
+                popTemp(st)
+                // -1 also means "already threw" — reading `length` can run a getter
+                // that throws, and ToLength on a Symbol is a TypeError. Overwriting
+                // st.thrownValue here reported those as this engine's own limit.
+                if st.throwing {
+                    return -1
+                }
+                st.throwing = true
+                st.thrownValue = makeError(st, "RangeError", "array-like length exceeds this engine's limit")
+                return -1
+            }
+            var i: i64 = 0
+            while i < n {
+                let key = numToStr(i as f64)
+                // absent index → a hole, so forEach/map/filter skip it the way
+                // they skip a hole in a sparse array
+                if objOwnIndex(st, o, key) >= 0 || st.objects[o].isArray || st.objects[o].proto >= 0 {
+                    let v = getMemberDyn(prog, o, key, st)
+                    arrPush(st, tmp, v)
+                    if st.throwing {
+                        popTemp(st)
+                        return -1
+                    }
+                } else {
+                    arrMarkHole(st, tmp, arrLen(st, tmp))
+                    arrPush(st, tmp, JSValue.Undefined)
+                }
+                i = i + 1
+            }
+            let ex = ensureExtra(st, tmp)
+            st.objExtras[ex].arrayLikeOrig = o
+            popTemp(st)
+            return tmp
+        }
+        _ => {
+            // undefined/null/number/bool: the spec's ToObject throws on the
+            // first two and yields a lengthless wrapper for the rest, which
+            // every method then treats as empty
+            popTemp(st)
+            match recv {
+                JSValue.Undefined => {
+                    st.throwing = true
+                    st.thrownValue = makeError(st, "TypeError", "Array.prototype method called on null or undefined")
+                    return -1
+                }
+                JSValue.Null => {
+                    st.throwing = true
+                    st.thrownValue = makeError(st, "TypeError", "Array.prototype method called on null or undefined")
+                    return -1
+                }
+                _ => {
+                    return tmp
+                }
+            }
+        }
+    }
+}
+
+// The methods that mutate their receiver in place: after running on the scratch
+// array their result has to be copied back, or the call looks like a no-op.
+fn arrayMethodMutates(name: &string): bool {
+    return name == "push" || name == "pop" || name == "shift" || name == "unshift" || name == "splice" || name == "sort" || name == "reverse" || name == "fill" || name == "copyWithin"
+}
+
+fn writeBackArrayLike(st: &mut Interp, tmp: i64, o: i64) {
+    let before = arrayLikeOwnLength(st, o)
+    let n = arrLen(st, tmp)
+    var i: i64 = 0
+    while i < n {
+        objSet(st, o, numToStr(i as f64), arrGet(st, tmp, i))
+        i = i + 1
+    }
+    // shrinking methods (pop/shift/splice) must DELETE the trailing indices,
+    // not leave the old values visible past the new length
+    var d = n
+    while d < before {
+        let _ = objDeleteKey(st, o, numToStr(d as f64))
+        d = d + 1
+    }
+    objSet(st, o, "length", JSValue.Number(n as f64))
+}
+
+// The receiver's length BEFORE a mutating method ran, so write-back knows how far
+// to delete. Bounded for the same reason as arrayLikeLength: it drives a loop.
+fn arrayLikeOwnLength(st: &Interp, o: i64): i64
+ensures result >= 0 && result <= ARRAY_LIKE_MAX
+{
+    let raw = toNum(objGet(st, o, "length"))
+    if !(raw == raw) || raw <= 0.0 || raw > (ARRAY_LIKE_MAX as f64) {
+        return 0
+    }
+    return raw as i64
+}
+
+// Run an Array.prototype method against a receiver that is not a real array.
+pub fn arrayMethodGeneric(prog: &Prog, recv: &JSValue, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    let tmp = arrayLikeToArray(prog, recv, st)
+    // adapting the receiver READS its length, and that read can run a getter
+    // that throws. The spec performs it before validating the callback, so a
+    // pending throw here must win rather than be replaced by the callback
+    // TypeError raised further down.
+    if st.throwing {
+        return JSValue.Undefined
+    }
+    if tmp < 0 {
+        return JSValue.Undefined
+    }
+    pushTemp(st, JSValue.Obj(tmp))
+    let r = arrayMethod(prog, tmp, name, args, st)
+    if !st.throwing && arrayMethodMutates(name) {
+        let o = objHandle(recv)
+        if o >= 0 && !st.objects[o].frozen {
+            writeBackArrayLike(st, tmp, o)
+        }
+    }
+    popTemp(st)
+    return r
+}
+
+// The Array.prototype methods that REQUIRE a callable first argument. Every one
+// of them accepted a non-callable — or no argument at all — and quietly returned
+// a default: `[1].map()` gave [], `[1].reduce(null)` gave 1. A caller that
+// passed the wrong thing got a plausible-looking answer instead of an error.
+//
+// The check runs AFTER the receiver's length has been read: the spec orders
+// LengthOfArrayLike first, so a length getter that throws wins over the callback
+// TypeError. Two test262 cases assert exactly that ordering.
+fn arrayNeedsCallback(name: &string): bool {
+    return name == "map" || name == "filter" || name == "forEach" || name == "some" || name == "every"
+        || name == "find" || name == "findIndex" || name == "findLast" || name == "findLastIndex"
+        || name == "flatMap" || name == "reduce" || name == "reduceRight"
+}
+
+// Element read that honours the prototype chain including ACCESSORS. arrGet
+// has no Prog and so cannot call a getter: with a getter installed at
+// `Array.prototype[1]`, a hole at index 1 read as undefined and indexOf could
+// never find its value.
+fn arrGetDyn(prog: &Prog, o: i64, idx: i64, st: &mut Interp): JSValue {
+    // A scratch array adapting an array-like receiver reads THROUGH to the
+    // original. The adapter copies once up front, and the spec's methods do a real
+    // [[Get]] per index — so a callback that mutates the receiver mid-loop
+    // (`Array.prototype.forEach.call(o, function(){ o[1] = 99 })`) must be
+    // observed, and reading the copy could never see it.
+    let orig = st.objExtras[st.objects[o].extra].arrayLikeOrig
+    if orig >= 0 {
+        return getMemberDyn(prog, orig, i64ToStr(idx), st)
+    }
+    // An own ACCESSOR on an index shadows the dense slot: after
+    // `Object.defineProperty(a, 0, {get(){...}})` the element is still present in
+    // `elems`, so the fast path below returned the stale value it had before the
+    // getter was installed and every callback method saw the wrong element.
+    // Guarded on props being non-empty, so an ordinary array pays one length check.
+    if st.objects[o].props.len() > 0 {
+        let ai = objOwnIndex(st, o, i64ToStr(idx))
+        if ai >= 0 && propIsAccessor(st, o, ai) {
+            return getMemberDyn(prog, o, i64ToStr(idx), st)
+        }
+    }
+    if !arrIsHole(st, o, idx) {
+        return arrGet(st, o, idx)
+    }
+    return getMemberDyn(prog, o, i64ToStr(idx), st)
+}
+
+// HasProperty for the index a callback method is about to visit. Same
+// read-through as arrGetDyn: presence on the ORIGINAL is what decides whether the
+// callback runs, and the callback may have deleted the property.
+fn arrHasIndexDyn(prog: &Prog, o: i64, idx: i64, st: &mut Interp): bool {
+    let orig = st.objExtras[st.objects[o].extra].arrayLikeOrig
+    if orig >= 0 {
+        return truthy(evalInOperator(prog, i64ToStr(idx), JSValue.Obj(orig), st))
+    }
+    return arrHasIndex(st, o, idx)
+}
+
+// `new C(len)` for a species constructor. Mirrors the JSValue.Func arm of the
+// `new` evaluation: a fresh object linked to C.prototype, C run against it as
+// `this`, and an object C returns replacing the instance.
+fn constructWithLength(prog: &Prog, ctor: &JSValue, len: i64, st: &mut Interp): JSValue {
+    var cargs: Vec<JSValue> = Vec.new()
+    cargs.push(JSValue.Number(len as f64))
+    let f = funcHandle(ctor)
+    if f < 0 {
+        // a native constructor (Array among them) already builds its own result
+        let savedTarget = cloneValue(st.newTarget)
+        st.newTarget = cloneValue(ctor)
+        let r = callValue(prog, ctor, cargs, JSValue.Undefined, st)
+        st.newTarget = savedTarget
+        return r
+    }
+    let inst = newObject(st)
+    st.objects[inst].ctor = f
+    let proto = getFuncProto(st, f)
+    linkProtoConstructor(st, proto, f, funcEnv(ctor))
+    st.objects[inst].proto = proto
+    pushTemp(st, JSValue.Obj(inst))
+    let savedTarget = cloneValue(st.newTarget)
+    st.newTarget = cloneValue(ctor)
+    let result = callFunction(prog, f, funcEnv(ctor), cargs, JSValue.Obj(inst), st)
+    st.newTarget = savedTarget
+    popTemp(st)
+    match result {
+        JSValue.Obj(r) => {
+            return JSValue.Obj(r)
+        }
+        _ => {
+            return JSValue.Obj(inst)
+        }
+    }
+}
+
+// ArraySpeciesCreate: the result of map/filter/slice/splice/concat is built through
+// the receiver's `constructor[Symbol.species]`, not always as a plain Array. None
+// of this existed — every method built a plain array — so a subclass's methods
+// returned Array, a custom species was ignored, and the two error cases the spec
+// requires (a species that is not a constructor, a `constructor` getter that
+// throws) could not happen.
+//
+// Returns -1 when the caller should build a plain array, or when it has already
+// thrown (check st.throwing).
+fn arraySpeciesCreate(prog: &Prog, o: i64, len: i64, st: &mut Interp): i64 {
+    if !st.objects[o].isArray {
+        return -1
+    }
+    // reading `constructor` can run a getter, and that getter may throw
+    let ctor = getMemberDyn(prog, o, "constructor", st)
+    if st.throwing {
+        return -1
+    }
+    if isUndefinedValue(ctor) {
+        return -1
+    }
+    var species = cloneValue(ctor)
+    let ch = objHandle(ctor)
+    if ch >= 0 {
+        species = getMemberDyn(prog, ch, symSpeciesKey(), st)
+        if st.throwing {
+            return -1
+        }
+        // the spec maps null to undefined here, which means "plain Array"
+        if let JSValue.Null = species {
+            return -1
+        }
+        if isUndefinedValue(species) {
+            return -1
+        }
+    }
+    // The default Array constructor: build a plain array rather than routing
+    // through a native call that would answer the same thing more slowly.
+    let sh = objHandle(species)
+    if sh >= 0 && sh == st.arrayCtorObj {
+        return -1
+    }
+    if !valueIsConstructor(prog, st, species) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "object.constructor[Symbol.species] is not a constructor" + currentModule(st))
+        return -1
+    }
+    let made = constructWithLength(prog, species, len, st)
+    if st.throwing {
+        return -1
+    }
+    let mh = objHandle(made)
+    return mh
+}
+
+// Move a plain result array into a species-created object. The species object is
+// not necessarily an Array — `Symbol.species` may name any constructor — so index
+// writes go through setMemberDyn rather than arrPush, and a non-array target gets
+// an explicit `length`.
+fn transferToSpecies(prog: &Prog, from: i64, to: i64, st: &mut Interp): JSValue {
+    let n = arrLen(st, from)
+    var i: i64 = 0
+    while i < n {
+        if !arrIsHole(st, from, i) {
+            let v = arrGet(st, from, i)
+            setMemberDyn(prog, to, i64ToStr(i), v, st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+        }
+        i = i + 1
+    }
+    if !st.objects[to].isArray {
+        setMemberDyn(prog, to, "length", JSValue.Number(n as f64), st)
+    }
+    return JSValue.Obj(to)
+}
+
+// The methods that CHANGE an array's length, as opposed to only its elements. A
+// non-writable `length` blocks these and permits the others.
+fn arrayMethodResizes(name: &string): bool {
+    return name == "push" || name == "pop" || name == "shift" || name == "unshift" || name == "splice"
+}
+
+pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    // A mutating method on a FROZEN array, or one that resizes an array whose
+    // `length` is non-writable, is a TypeError. Both used to succeed silently:
+    // `Object.freeze([1,2]).push(3)` grew the array.
+    if arrayMethodMutates(name) && st.objects[o].isArray {
+        if st.objects[o].frozen {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot modify a frozen array" + currentModule(st))
+            return JSValue.Undefined
+        }
+        if st.objects[o].lengthNonWritable && arrayMethodResizes(name) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot assign to read only property 'length' of object" + currentModule(st))
+            return JSValue.Undefined
+        }
+        if st.objects[o].sealed && arrayMethodResizes(name) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot add property, object is not extensible" + currentModule(st))
+            return JSValue.Undefined
+        }
+    }
+    let n = arrLen(st, o)
+    if arrayNeedsCallback(name) {
+        var cb = JSValue.Undefined
+        if args.len() > 0 {
+            cb = cloneValue(args[0])
+        }
+        if !isCallableIn(st, cb) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", toStr(cb) + " is not a function" + currentModule(st))
+            return JSValue.Undefined
+        }
+        // reduce over an empty array with no seed has nothing to return
+        if (name == "reduce" || name == "reduceRight") && args.len() < 2 && arrCountPresent(st, o) == 0 {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Reduce of empty array with no initial value" + currentModule(st))
+            return JSValue.Undefined
+        }
+    }
+    // a comparator, when given, must be callable too
+    if name == "sort" && args.len() > 0 && !isUndefinedValue(args[0]) && !isCallableIn(st, args[0]) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "The comparison function must be either a function or undefined" + currentModule(st))
+        return JSValue.Undefined
+    }
+    // the mutating methods write through arrPush/elems directly, bypassing
+    // setMember's frozen check, so a frozen array has to be caught here too
+    if st.objects[o].frozen {
+        if name == "push" || name == "pop" || name == "shift" || name == "unshift" || name == "splice" || name == "sort" || name == "reverse" || name == "fill" || name == "copyWithin" {
+            return JSValue.Number(n as f64)
+        }
+    }
+    if name == "push" {
+        if n > 4294967295 - args.len() {
+            st.throwing = true
+            st.thrownValue = makeError(st, "RangeError", "Invalid array length")
+            return JSValue.Undefined
+        }
+        var j: i64 = 0
+        while j < args.len() {
+            arrPush(st, o, cloneValue(args[j]))
+            j = j + 1
+        }
+        return JSValue.Number(arrLen(st, o) as f64)
+    }
+    if name == "pop" {
+        if n == 0 {
+            return JSValue.Undefined
+        }
+        let result = arrGet(st, o, n - 1)
+        setArrayLength(st, o, n - 1)
+        return result
+    }
+    if name == "shift" {
+        if n == 0 {
+            return JSValue.Undefined
+        }
+        let head = arrGet(st, o, 0)
+        var rest: Vec<JSValue> = Vec.new()
+        var i: i64 = 1
+        while i < n {
+            rest.push(arrGet(st, o, i))
+            i = i + 1
+        }
+        st.objects[o].elems = rest
+        return head
+    }
+    if name == "unshift" {
+        var merged: Vec<JSValue> = Vec.new()
+        var a: i64 = 0
+        while a < args.len() {
+            merged.push(cloneValue(args[a]))
+            a = a + 1
+        }
+        var i: i64 = 0
+        while i < n {
+            merged.push(arrGet(st, o, i))
+            i = i + 1
+        }
+        st.objects[o].elems = merged
+        return JSValue.Number((n + args.len()) as f64)
+    }
+    if name == "find" || name == "findIndex" || name == "some" || name == "every" {
+        if args.len() == 0 {
+            if name == "every" {
+                return JSValue.Bool(true)
+            }
+            if name == "some" {
+                return JSValue.Bool(false)
+            }
+            if name == "findIndex" {
+                return JSValue.Number(0.0 - 1.0)
+            }
+            return JSValue.Undefined
+        }
+        let cb = cloneValue(args[0])
+        pushTemp(st, cloneValue(cb))
+        let thisArg = cbThisArg(args)
+        pushTemp(st, cloneValue(thisArg))
+        var i: i64 = 0
+        var found = -1
+        var allTrue = true
+        var anyTrue = false
+        // `n` was read before the loop and the spec keeps it: an index the
+        // callback APPENDS is not visited. Re-reading arrLen here visited it.
+        while i < n && found < 0 {
+            // some/every are specified over PRESENT indices; find/findIndex are
+            // not, and visit a hole as undefined
+            if (name == "some" || name == "every") && !arrHasIndex(st, o, i) {
+                i = i + 1
+                continue
+            }
+            let cbArgs = makeCbArgsDyn(prog, o, i, st)
+            let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
+            let t = truthy(r)
+            if t {
+                anyTrue = true
+                if name == "find" || name == "findIndex" || name == "some" {
+                    found = i
+                }
+            } else {
+                allTrue = false
+                if name == "every" {
+                    found = i
+                }
+            }
+            if st.throwing {
+                found = i
+            }
+            i = i + 1
+        }
+        popTemp(st)
+        popTemp(st)
+        if name == "every" {
+            return JSValue.Bool(allTrue)
+        }
+        if name == "some" {
+            return JSValue.Bool(anyTrue)
+        }
+        if name == "findIndex" {
+            return JSValue.Number(found as f64)
+        }
+        if found >= 0 {
+            return arrGet(st, o, found)
+        }
+        return JSValue.Undefined
+    }
+    if name == "lastIndexOf" {
+        var target = JSValue.Undefined
+        if args.len() > 0 {
+            target = cloneValue(args[0])
+        }
+        // fromIndex is the LAST index searched, and it was being ignored
+        // entirely: `[1,2,3,2].lastIndexOf(2, 0)` must be -1, not 3. An absent
+        // one (or an explicit undefined, which ToIntegerOrInfinity turns into
+        // 0) is not the same as no second argument at all.
+        var i = n - 1
+        if args.len() > 1 {
+            // toNumProg, not toNum: fromIndex may be an object whose valueOf
+            // runs user code — and that code can add the very element being
+            // searched for, which the spec orders BEFORE the scan
+            var from = toNumProg(prog, args[1], st) as i64
+            if from < 0 {
+                from = n + from
+            }
+            if from < i {
+                i = from
+            }
+        }
+        while i >= 0 {
+            // specified over PRESENT indices, like indexOf: a hole never
+            // matches, not even a search for undefined
+            if arrHasIndex(st, o, i) && jsStrictEquals(arrGetDyn(prog, o, i, st), target) {
+                return JSValue.Number(i as f64)
+            }
+            i = i - 1
+        }
+        return JSValue.Number(0.0 - 1.0)
+    }
+    if name == "values" || name == "keys" || name == "entries" {
+        var kind: i64 = 0
+        if name == "keys" {
+            kind = 1
+        } else if name == "entries" {
+            kind = 2
+        }
+        return makeArrayIterator(st, o, kind)
+    }
+    if name == "at" {
+        var idx: i64 = 0
+        if args.len() > 0 {
+            idx = numToIndex(toNumProg(prog, args[0], st))
+        }
+        if idx < 0 {
+            idx = n + idx
+        }
+        if idx < 0 || idx >= n {
+            return JSValue.Undefined
+        }
+        return arrGet(st, o, idx)
+    }
+    // ES2023 change-by-copy: build a new array, never touch the receiver. These
+    // live here rather than in the prelude because array member lookup never
+    // falls back to Array.prototype — a method has to be on the whitelist above
+    // and implemented here to be reachable at all.
+    if name == "with" {
+        var wi: i64 = 0
+        if args.len() > 0 {
+            wi = numToIndex(toNumProg(prog, args[0], st))
+        }
+        if wi < 0 {
+            wi = wi + n
+        }
+        // spec: out of range throws rather than clamping, so a bad index is a
+        // loud error instead of a silently misplaced element
+        if wi < 0 || wi >= n {
+            st.throwing = true
+            st.thrownValue = makeError(st, "RangeError", "Invalid index")
+            return JSValue.Undefined
+        }
+        var wv = JSValue.Undefined
+        if args.len() > 1 {
+            wv = cloneValue(args[1])
+        }
+        let wout = newArray(st)
+        pushTemp(st, JSValue.Obj(wout))
+        var wk: i64 = 0
+        while wk < n {
+            if wk == wi {
+                arrPush(st, wout, cloneValue(wv))
+            } else {
+                arrPush(st, wout, arrGet(st, o, wk))
+            }
+            wk = wk + 1
+        }
+        popTemp(st)
+        return JSValue.Obj(wout)
+    }
+    if name == "toReversed" {
+        let rout = newArray(st)
+        pushTemp(st, JSValue.Obj(rout))
+        var rk = n - 1
+        while rk >= 0 {
+            arrPush(st, rout, arrGet(st, o, rk))
+            rk = rk - 1
+        }
+        popTemp(st)
+        return JSValue.Obj(rout)
+    }
+    if name == "toSorted" {
+        let sout = newArray(st)
+        pushTemp(st, JSValue.Obj(sout))
+        var sk: i64 = 0
+        while sk < n {
+            arrPush(st, sout, arrGet(st, o, sk))
+            sk = sk + 1
+        }
+        // sort the copy in place with the existing implementation, so the two
+        // orderings cannot drift apart
+        let sorted = arrayMethod(prog, sout, "sort", args, st)
+        popTemp(st)
+        return sorted
+    }
+    if name == "toSpliced" {
+        var ss: i64 = 0
+        if args.len() > 0 {
+            ss = numToIndex(toNumProg(prog, args[0], st))
+        }
+        if ss < 0 {
+            ss = n + ss
+            if ss < 0 {
+                ss = 0
+            }
+        } else if ss > n {
+            ss = n
+        }
+        // no args deletes nothing; a lone start deletes the whole tail
+        var sd: i64 = 0
+        if args.len() == 1 {
+            sd = n - ss
+        } else if args.len() > 1 {
+            sd = numToIndex(toNumProg(prog, args[1], st))
+            if sd < 0 {
+                sd = 0
+            }
+            if sd > n - ss {
+                sd = n - ss
+            }
+        }
+        let tout = newArray(st)
+        pushTemp(st, JSValue.Obj(tout))
+        var tk: i64 = 0
+        while tk < ss {
+            arrPush(st, tout, arrGet(st, o, tk))
+            tk = tk + 1
+        }
+        var ta: i64 = 2
+        while ta < args.len() {
+            arrPush(st, tout, cloneValue(args[ta]))
+            ta = ta + 1
+        }
+        var tb = ss + sd
+        while tb < n {
+            arrPush(st, tout, arrGet(st, o, tb))
+            tb = tb + 1
+        }
+        popTemp(st)
+        return JSValue.Obj(tout)
+    }
+    if name == "findLast" || name == "findLastIndex" {
+        if args.len() == 0 {
+            if name == "findLastIndex" {
+                return JSValue.Number(0.0 - 1.0)
+            }
+            return JSValue.Undefined
+        }
+        let cb = cloneValue(args[0])
+        pushTemp(st, cloneValue(cb))
+        let thisArg = cbThisArg(args)
+        pushTemp(st, cloneValue(thisArg))
+        var i = n - 1
+        var found: i64 = -1
+        while i >= 0 && found < 0 {
+            let cbArgs = makeCbArgsDyn(prog, o, i, st)
+            let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
+            if truthy(r) || st.throwing {
+                found = i
+            }
+            i = i - 1
+        }
+        popTemp(st)
+        popTemp(st)
+        if name == "findLastIndex" {
+            return JSValue.Number(found as f64)
+        }
+        if found >= 0 {
+            return arrGet(st, o, found)
+        }
+        return JSValue.Undefined
+    }
+    if name == "copyWithin" {
+        // copyWithin(target, start, end) — an in-place memmove within the array
+        var target: i64 = 0
+        if argPresent(args, 0) {
+            target = numToIndex(toNumProg(prog, args[0], st))
+        }
+        if target < 0 {
+            target = n + target
+        }
+        var start: i64 = 0
+        if argPresent(args, 1) {
+            start = numToIndex(toNumProg(prog, args[1], st))
+        }
+        if start < 0 {
+            start = n + start
+        }
+        var end = n
+        if argPresent(args, 2) {
+            end = numToIndex(toNumProg(prog, args[2], st))
+            if end < 0 {
+                end = n + end
+            }
+        }
+        if target < 0 {
+            target = 0
+        }
+        if start < 0 {
+            start = 0
+        }
+        if end > n {
+            end = n
+        }
+        // snapshot first: source and destination ranges may overlap
+        var snap: Vec<JSValue> = Vec.new()
+        var s = start
+        while s < end {
+            snap.push(arrGet(st, o, s))
+            s = s + 1
+        }
+        var k: i64 = 0
+        while k < snap.len() && target + k < n {
+            st.objects[o].elems[target + k] = cloneValue(snap[k])
+            k = k + 1
+        }
+        return JSValue.Obj(o)
+    }
+    if name == "fill" {
+        var v = JSValue.Undefined
+        if args.len() > 0 {
+            v = cloneValue(args[0])
+        }
+        // fill(value, start, end) — the range args are optional but not ignorable
+        var start: i64 = 0
+        if argPresent(args, 1) {
+            start = numToIndex(toNumProg(prog, args[1], st))
+            if start < 0 {
+                start = n + start
+            }
+        }
+        var end = n
+        if argPresent(args, 2) {
+            end = numToIndex(toNumProg(prog, args[2], st))
+            if end < 0 {
+                end = n + end
+            }
+        }
+        if start < 0 {
+            start = 0
+        }
+        if end > n {
+            end = n
+        }
+        var i = start
+        while i < end {
+            st.objects[o].elems[i] = cloneValue(v)
+            i = i + 1
+        }
+        return JSValue.Obj(o)
+    }
+    if name == "splice" {
+        // splice(start, deleteCount, ...items) — mutates and returns the removed
+        var start: i64 = 0
+        if args.len() > 0 {
+            start = numToIndex(toNumProg(prog, args[0], st))
+        }
+        if start < 0 {
+            start = n + start
+        }
+        if start < 0 {
+            start = 0
+        }
+        if start > n {
+            start = n
+        }
+        var delCount = n - start
+        if args.len() > 1 {
+            delCount = numToIndex(toNumProg(prog, args[1], st))
+        }
+        if delCount < 0 {
+            delCount = 0
+        }
+        if start + delCount > n {
+            delCount = n - start
+        }
+        let spliceSpecies = arraySpeciesCreate(prog, o, 0, st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let removed = newArray(st)
+        pushTemp(st, JSValue.Obj(removed))
+        var kept: Vec<JSValue> = Vec.new()
+        var i: i64 = 0
+        while i < n {
+            if i == start {
+                var a: i64 = 2
+                while a < args.len() {
+                    kept.push(cloneValue(args[a]))
+                    a = a + 1
+                }
+            }
+            if i >= start && i < start + delCount {
+                arrPush(st, removed, arrGet(st, o, i))
+            } else {
+                kept.push(arrGet(st, o, i))
+            }
+            i = i + 1
+        }
+        if start >= n {
+            var a: i64 = 2
+            while a < args.len() {
+                kept.push(cloneValue(args[a]))
+                a = a + 1
+            }
+        }
+        st.objects[o].elems = kept
+        popTemp(st)
+        if spliceSpecies >= 0 {
+            return transferToSpecies(prog, removed, spliceSpecies, st)
+        }
+        return JSValue.Obj(removed)
+    }
+    if name == "sort" {
+        // insertion sort; default order is by string value, as in JS
+        var hasCmp = false
+        var cmp = JSValue.Undefined
+        if args.len() > 0 && isCallable(args[0]) {
+            hasCmp = true
+            cmp = cloneValue(args[0])
+        }
+        pushTemp(st, cloneValue(cmp))
+        // Sorting in place over the raw elements got holes wrong twice: the
+        // holes list names INDICES, so moving elements under it leaves it
+        // pointing at the wrong slots, and the spec sinks undefined below every
+        // defined value and a hole below that — neither of which falls out of
+        // comparing "undefined" as a string. So: lift the present, defined
+        // values out, sort those, and lay the tail back down afterwards.
+        var vals: Vec<JSValue> = Vec.new()
+        var undefs: i64 = 0
+        let vn = arrLen(st, o)
+        var vi: i64 = 0
+        while vi < vn {
+            if !arrIsHole(st, o, vi) {
+                let e = arrGet(st, o, vi)
+                if isUndefinedValue(e) {
+                    undefs = undefs + 1
+                } else {
+                    vals.push(e)
+                }
+            }
+            vi = vi + 1
+        }
+        var i: i64 = 1
+        while i < vals.len() {
+            let key = cloneValue(vals[i])
+            var j = i - 1
+            var placed = false
+            while j >= 0 && !placed {
+                let cur = cloneValue(vals[j])
+                var greater = false
+                if hasCmp {
+                    var cargs: Vec<JSValue> = Vec.new()
+                    cargs.push(cloneValue(cur))
+                    cargs.push(cloneValue(key))
+                    let r = callValue(prog, cmp, cargs, JSValue.Undefined, st)
+                    greater = toNum(r) > 0.0
+                } else {
+                    greater = strLess(toStr(key), toStr(cur))
+                }
+                if greater {
+                    vals[j + 1] = cur
+                    j = j - 1
+                } else {
+                    placed = true
+                }
+            }
+            vals[j + 1] = key
+            i = i + 1
+        }
+        var newHoles: Vec<i64> = Vec.new()
+        let defined = vals.len()
+        var w: i64 = 0
+        while w < vn && w < st.objects[o].elems.len() {
+            if w < defined {
+                st.objects[o].elems[w] = cloneValue(vals[w])
+            } else {
+                st.objects[o].elems[w] = JSValue.Undefined
+                if w >= defined + undefs {
+                    newHoles.push(w)
+                }
+            }
+            w = w + 1
+        }
+        st.objects[o].holes = newHoles
+        popTemp(st)
+        return JSValue.Obj(o)
+    }
+    if name == "join" || name == "toString" {
+        // Array.prototype.toString is join(",") — NOT the [object Array] type tag
+        // (that is Object.prototype.toString.call(arr), a separate dispatch)
+        var sep = ","
+        if name == "join" && argPresent(args, 0) {
+            // see the typed-array join: ToString on the separator is observable
+            // and can throw, which toStr never does.
+            sep = toStrProg(prog, cloneValue(args[0]), st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+        }
+        return JSValue.Str(joinArrayProg(prog, st, o, sep))
+    }
+    if name == "indexOf" {
+        // optional fromIndex (negative counts from the end)
+        var i: i64 = 0
+        if args.len() > 1 {
+            // see lastIndexOf: a valueOf on fromIndex runs before the scan and
+            // may mutate the array
+            var fi = toNumProg(prog, args[1], st) as i64
+            if fi < 0 {
+                fi = n + fi
+                if fi < 0 {
+                    fi = 0
+                }
+            }
+            i = fi
+        }
+        while i < n {
+            if !arrHasIndexDyn(prog, o, i, st) {
+                // indexOf is specified over PRESENT indices, so a hole never
+                // matches — not even a search for undefined. includes() does
+                // look at holes, and stays as it is.
+                i = i + 1
+                continue
+            }
+            let e = arrGetDyn(prog, o, i, st)
+            if args.len() > 0 && jsEquals(e, args[0]) {
+                return JSValue.Number(i as f64)
+            }
+            i = i + 1
+        }
+        return JSValue.Number(0.0 - 1.0)
+    }
+    if name == "includes" {
+        var i: i64 = 0
+        while i < n {
+            let e = arrGet(st, o, i)
+            // includes uses SameValueZero, so it finds NaN (unlike indexOf's ===)
+            if args.len() > 0 && sameValueZero(e, args[0]) {
+                return JSValue.Bool(true)
+            }
+            i = i + 1
+        }
+        return JSValue.Bool(false)
+    }
+    if name == "slice" {
+        var a: i64 = 0
+        var b = n
+        if argPresent(args, 0) {
+            a = numToIndex(toNumProg(prog, args[0], st))
+        }
+        if argPresent(args, 1) {
+            b = numToIndex(toNumProg(prog, args[1], st))
+        }
+        if a < 0 {
+            a = n + a
+            if a < 0 {
+                a = 0
+            }
+        }
+        if b < 0 {
+            b = n + b
+        }
+        if b > n {
+            b = n
+        }
+        var count = b - a
+        if count < 0 {
+            count = 0
+        }
+        let sliceSpecies = arraySpeciesCreate(prog, o, count, st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let sliced = newArray(st)
+        var i = a
+        while i < b {
+            arrPushMaybeHole(st, sliced, o, i)
+            i = i + 1
+        }
+        if sliceSpecies >= 0 {
+            return transferToSpecies(prog, sliced, sliceSpecies, st)
+        }
+        return JSValue.Obj(sliced)
+    }
+    if name == "reverse" {
+        var i: i64 = 0
+        var j = n - 1
+        while i < j {
+            let lo = arrGet(st, o, i)
+            let hi = arrGet(st, o, j)
+            arrSet(st, o, i, hi)
+            arrSet(st, o, j, lo)
+            i = i + 1
+            j = j - 1
+        }
+        return JSValue.Obj(o)
+    }
+    if name == "concat" {
+        let concatSpecies = arraySpeciesCreate(prog, o, 0, st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let joined = newArray(st)
+        pushTemp(st, JSValue.Obj(joined))
+        var i: i64 = 0
+        while i < n {
+            arrPushMaybeHole(st, joined, o, i)
+            i = i + 1
+        }
+        var a: i64 = 0
+        while a < args.len() {
+            let av = cloneValue(args[a])
+            match av {
+                JSValue.Obj(other) => {
+                    // IsConcatSpreadable: `Symbol.isConcatSpreadable` decides when
+                    // present, and IsArray otherwise. The arguments object is
+                    // array-shaped here but is not an Array, so it must be appended
+                    // whole — `[].concat(arguments)` is one element, not three.
+                    var spread = st.objects[other].isArray && !st.objects[other].isArguments
+                    let flag = getMemberDyn(prog, other, symConcatSpreadableKey(), st)
+                    if st.throwing {
+                        popTemp(st)
+                        return JSValue.Undefined
+                    }
+                    if !isUndefinedValue(flag) {
+                        spread = truthy(flag)
+                    }
+                    if spread {
+                        var k: i64 = 0
+                        // an array-like that is not an Array is spread by its own
+                        // `length`, which arrLen does not answer
+                        var m = arrLen(st, other)
+                        if !st.objects[other].isArray {
+                            m = toNum(getMemberDyn(prog, other, "length", st)) as i64
+                        }
+                        while k < m {
+                            if st.objects[other].isArray {
+                                arrPushMaybeHole(st, joined, other, k)
+                            } else {
+                                arrPush(st, joined, getMemberDyn(prog, other, i64ToStr(k), st))
+                            }
+                            k = k + 1
+                        }
+                    } else {
+                        arrPush(st, joined, JSValue.Obj(other))
+                    }
+                }
+                _ => {
+                    arrPush(st, joined, cloneValue(args[a]))
+                }
+            }
+            a = a + 1
+        }
+        popTemp(st)
+        if concatSpecies >= 0 {
+            return transferToSpecies(prog, joined, concatSpecies, st)
+        }
+        return JSValue.Obj(joined)
+    }
+    // callback methods: root the callback across the loop
+    var cb = JSValue.Undefined
+    if args.len() > 0 {
+        cb = cloneValue(args[0])
+    }
+    pushTemp(st, cloneValue(cb))
+    if name == "map" {
+        // ArraySpeciesCreate runs BEFORE the callback loop: the spec orders the
+        // `constructor` read first, so a getter that throws wins over any element
+        // work — and a species that is not a constructor is a TypeError here.
+        let mapSpecies = arraySpeciesCreate(prog, o, n, st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let mapped = newArray(st)
+        pushTemp(st, JSValue.Obj(mapped))
+        let thisArg = cbThisArg(args)
+        pushTemp(st, cloneValue(thisArg))
+        var i: i64 = 0
+        while i < n {
+            if !arrHasIndexDyn(prog, o, i, st) {
+                // the callback is not called for an ABSENT index, and the result
+                // stays sparse there. Absent is not the same as a hole: a hole
+                // over an inherited index (or an inherited getter) IS present.
+                arrPushMaybeHole(st, mapped, o, i)
+                i = i + 1
+                continue
+            }
+            let cbArgs = makeCbArgsDyn(prog, o, i, st)
+            let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
+            arrPush(st, mapped, r)
+            i = i + 1
+        }
+        popTemp(st)
+        popTemp(st)
+        popTemp(st)
+        if mapSpecies >= 0 {
+            return transferToSpecies(prog, mapped, mapSpecies, st)
+        }
+        return JSValue.Obj(mapped)
+    }
+    if name == "filter" {
+        let filterSpecies = arraySpeciesCreate(prog, o, 0, st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let kept = newArray(st)
+        pushTemp(st, JSValue.Obj(kept))
+        let thisArg = cbThisArg(args)
+        pushTemp(st, cloneValue(thisArg))
+        var i: i64 = 0
+        while i < n {
+            if !arrHasIndexDyn(prog, o, i, st) {
+                i = i + 1
+                continue
+            }
+            let elem = arrGetDyn(prog, o, i, st)
+            let cbArgs = makeCbArgsDyn(prog, o, i, st)
+            let keep = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
+            if truthy(keep) {
+                arrPush(st, kept, elem)
+            }
+            i = i + 1
+        }
+        popTemp(st)
+        popTemp(st)
+        popTemp(st)
+        if filterSpecies >= 0 {
+            return transferToSpecies(prog, kept, filterSpecies, st)
+        }
+        return JSValue.Obj(kept)
+    }
+    if name == "forEach" {
+        let thisArg = cbThisArg(args)
+        pushTemp(st, cloneValue(thisArg))
+        var i: i64 = 0
+        while i < n {
+            if !arrHasIndexDyn(prog, o, i, st) {
+                i = i + 1
+                continue
+            }
+            let cbArgs = makeCbArgsDyn(prog, o, i, st)
+            let _ = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
+            i = i + 1
+        }
+        popTemp(st)
+        popTemp(st)
+        return JSValue.Undefined
+    }
+    if name == "reduce" {
+        var acc = JSValue.Undefined
+        var start: i64 = 0
+        if args.len() > 1 {
+            acc = cloneValue(args[1])
+        } else {
+            // no seed: the accumulator is the first PRESENT element, not
+            // element 0 — a leading hole must not become the seed
+            var f: i64 = 0
+            while f < n && !arrHasIndexDyn(prog, o, f, st) {
+                f = f + 1
+            }
+            if f < n {
+                acc = arrGetDyn(prog, o, f, st)
+                start = f + 1
+            } else {
+                start = n
+            }
+        }
+        pushTemp(st, cloneValue(acc))
+        var i = start
+        while i < n {
+            // presence and the element are read live, per index, on the ORIGINAL
+            // receiver — a callback may add or delete one mid-reduce
+            if !arrHasIndexDyn(prog, o, i, st) {
+                i = i + 1
+                continue
+            }
+            var cbArgs: Vec<JSValue> = Vec.new()
+            cbArgs.push(cloneValue(acc))
+            cbArgs.push(arrGetDyn(prog, o, i, st))
+            cbArgs.push(JSValue.Number(i as f64))
+            // the FOURTH argument is the object being reduced, and it was never
+            // pushed — a callback reading `obj.length` got it from undefined. On a
+            // scratch array adapting an array-like, the spec hands over the
+            // ORIGINAL receiver, which is what arrayLikeOrig records.
+            let reduceOrig = st.objExtras[st.objects[o].extra].arrayLikeOrig
+            if reduceOrig >= 0 {
+                cbArgs.push(JSValue.Obj(reduceOrig))
+            } else {
+                cbArgs.push(JSValue.Obj(o))
+            }
+            acc = callValue(prog, cb, cbArgs, JSValue.Undefined, st)
+            i = i + 1
+        }
+        popTemp(st)
+        popTemp(st)
+        return acc
+    }
+    if name == "reduceRight" {
+        var acc = JSValue.Undefined
+        var start = n - 1
+        if args.len() > 1 {
+            acc = cloneValue(args[1])
+        } else {
+            var f = n - 1
+            while f >= 0 && !arrHasIndexDyn(prog, o, f, st) {
+                f = f - 1
+            }
+            if f >= 0 {
+                acc = arrGetDyn(prog, o, f, st)
+                start = f - 1
+            } else {
+                start = 0 - 1
+            }
+        }
+        pushTemp(st, cloneValue(acc))
+        var i = start
+        while i >= 0 {
+            // live per-index reads, as in reduce
+            if !arrHasIndexDyn(prog, o, i, st) {
+                i = i - 1
+                continue
+            }
+            var cbArgs: Vec<JSValue> = Vec.new()
+            cbArgs.push(cloneValue(acc))
+            cbArgs.push(arrGetDyn(prog, o, i, st))
+            cbArgs.push(JSValue.Number(i as f64))
+            // the FOURTH argument is the object being reduced, and it was never
+            // pushed — a callback reading `obj.length` got it from undefined. On a
+            // scratch array adapting an array-like, the spec hands over the
+            // ORIGINAL receiver, which is what arrayLikeOrig records.
+            let reduceOrig = st.objExtras[st.objects[o].extra].arrayLikeOrig
+            if reduceOrig >= 0 {
+                cbArgs.push(JSValue.Obj(reduceOrig))
+            } else {
+                cbArgs.push(JSValue.Obj(o))
+            }
+            acc = callValue(prog, cb, cbArgs, JSValue.Undefined, st)
+            i = i - 1
+        }
+        popTemp(st)
+        popTemp(st)
+        return acc
+    }
+    if name == "flatMap" {
+        let flatMapSpecies = arraySpeciesCreate(prog, o, 0, st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let out = newArray(st)
+        pushTemp(st, JSValue.Obj(out))
+        let thisArg = cbThisArg(args)
+        pushTemp(st, cloneValue(thisArg))
+        var i: i64 = 0
+        // cached length, as the spec has it: see the some/every loop
+        while i < n && !st.throwing {
+            if arrIsHole(st, o, i) {
+                i = i + 1
+                continue
+            }
+            let cbArgs = makeCbArgsDyn(prog, o, i, st)
+            let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), st)
+            // one level of flattening, and only for array results
+            let rh = objHandle(r)
+            if rh >= 0 && st.objects[rh].isArray {
+                var j: i64 = 0
+                while j < arrLen(st, rh) {
+                    arrPush(st, out, arrGet(st, rh, j))
+                    j = j + 1
+                }
+            } else {
+                arrPush(st, out, r)
+            }
+            i = i + 1
+        }
+        popTemp(st)
+        popTemp(st)
+        popTemp(st)
+        if flatMapSpecies >= 0 {
+            return transferToSpecies(prog, out, flatMapSpecies, st)
+        }
+        return JSValue.Obj(out)
+    }
+    if name == "flat" {
+        var depth: i64 = 1
+        if argPresent(args, 0) {
+            let dn = toNumProg(prog, args[0], st)
+            if dn > 1000000.0 {
+                // Infinity / very deep → cap (real arrays never nest this far)
+                depth = 1000000
+            } else if dn < 0.0 || dn != dn {
+                depth = 0
+            } else {
+                depth = dn as i64
+            }
+        }
+        let flatSpecies = arraySpeciesCreate(prog, o, 0, st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        let out = newArray(st)
+        pushTemp(st, JSValue.Obj(out))
+        flattenInto(st, out, o, depth)
+        popTemp(st)
+        popTemp(st)
+        if flatSpecies >= 0 {
+            return transferToSpecies(prog, out, flatSpecies, st)
+        }
+        return JSValue.Obj(out)
+    }
+    popTemp(st)
+    return JSValue.Undefined
+}
+
+// Copy element `i` of `src` onto the end of `dst`, keeping a HOLE a hole.
+// slice/concat/map all preserve sparseness in their result; pushing arrGet's
+// undefined would silently fill the gap in.
+fn arrPushMaybeHole(st: &mut Interp, dst: i64, src: i64, i: i64) {
+    let at = arrLen(st, dst)
+    arrPush(st, dst, arrGet(st, src, i))
+    if arrIsHole(st, src, i) {
+        arrMarkHole(st, dst, at)
+    }
+}
+
+// Deepest ACTUAL nesting flattenInto will follow. The requested depth is capped
+// separately at a million, which is fine as a number but not as native recursion:
+// a cyclic array reached that cap and blew the stack, and the process exited 0
+// having printed nothing. node has no cycle check either; it hits its own stack
+// limit and raises a catchable RangeError, which is what this reproduces. Real
+// arrays never nest past a handful of levels.
+let FLATTEN_DEPTH_LIMIT: i64 = 4000
+
+// Flatten `arr` into `out` up to `depth` levels of nested arrays.
+fn flattenInto(st: &mut Interp, out: i64, arr: i64, depth: i64) {
+    flattenIntoAt(st, out, arr, depth, 0)
+}
+
+fn flattenIntoAt(st: &mut Interp, out: i64, arr: i64, depth: i64, level: i64) {
+    if level > FLATTEN_DEPTH_LIMIT {
+        st.throwing = true
+        st.thrownValue = makeError(st, "RangeError", "Maximum call stack size exceeded")
+        return
+    }
+    var i: i64 = 0
+    while i < arrLen(st, arr) {
+        if st.throwing {
+            return
+        }
+        if arrIsHole(st, arr, i) {
+            // flat/flatMap DROP holes rather than flattening them to undefined
+            i = i + 1
+            continue
+        }
+        let v = arrGet(st, arr, i)
+        let vh = objHandle(v)
+        if depth > 0 && vh >= 0 && st.objects[vh].isArray {
+            flattenIntoAt(st, out, vh, depth - 1, level + 1)
+        } else {
+            arrPush(st, out, v)
+        }
+        i = i + 1
+    }
+}

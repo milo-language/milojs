@@ -33,8 +33,19 @@ const p = (...xs) => join(ROOT, ...xs);
 const lines = (f) => readFileSync(f, "utf8").split("\n").length - 1;
 const listing = (dir, ext) =>
   existsSync(p(dir)) ? readdirSync(p(dir)).filter((f) => f.endsWith(ext)) : [];
+// Recursive: src/ gained engine/ and runtime/ subdirectories in the layering
+// split, and a flat readdir would have silently reported the three entry points
+// as the whole engine.
+const listingDeep = (dir, ext) =>
+  existsSync(p(dir))
+    ? readdirSync(p(dir), { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory()
+          ? listingDeep(join(dir, e.name), ext).map((f) => join(e.name, f))
+          : e.name.endsWith(ext) ? [e.name] : []
+      )
+    : [];
 const totalLines = (dir, ext) =>
-  listing(dir, ext).reduce((n, f) => n + lines(p(dir, f)), 0);
+  listingDeep(dir, ext).reduce((n, f) => n + lines(p(dir, f)), 0);
 
 // Rounded to one decimal in thousands, which is how the prose says it. Anything
 // finer would churn the docs on every commit and train everyone to ignore it.
@@ -63,9 +74,27 @@ const FACTS = {
     );
   },
 
+  // --- layering ---
+  // AGENTS.md says how many host natives the ENGINE binary installs. That number
+  // is the size of the hole in "the engine is the language and nothing else", so
+  // it is worth stating, and it moves whenever bootstrap.milo does. Derived from
+  // the same ledger tools/check-layering.sh gates against.
+  "layering-host-globals": () =>
+    String(
+      readFileSync(p("src/.layering-exempt"), "utf8")
+        .split("\n")
+        .filter((l) => /^global:.*\shost-native\s/.test(l)).length
+    ),
+  "layering-exempt-edges": () =>
+    String(
+      readFileSync(p("src/.layering-exempt"), "utf8")
+        .split("\n")
+        .filter((l) => !l.trim().startsWith("#") && / -> /.test(l)).length
+    ),
+
   // --- host surface ---
   // status.md hand-counts "Ten of 64 Node-API entry points are honest stubs".
-  // The 64 is derivable and agrees. The 10 is NOT: nothing in src/napi.milo marks
+  // The 64 is derivable and agrees. The 10 is NOT: nothing in src/runtime/napi.milo marks
   // a stub, so the split is a human judgement with no machine-readable basis.
   // Mechanizing it needs a marker convention first (a `// STUB:` line on each
   // shimmed entry point, then count those) — that is domain work, not tooling
@@ -115,7 +144,7 @@ const FACTS = {
   "node-modules-shimmed": () =>
     String(
       new Set(
-        (readFileSync(p("src/modules.milo"), "utf8").match(/@embedFile\("\.\.\/lib\/([a-z_-]+)\.js"\)/g) || [])
+        (readFileSync(p("src/runtime/modules.milo"), "utf8").match(/@embedFile\("(?:\.\.\/)+lib\/([a-z_-]+)\.js"\)/g) || [])
       ).size
     ),
 };
@@ -159,7 +188,7 @@ function reportAge(suite) {
 }
 
 function napiEntryPoints() {
-  const src = readFileSync(p("src/napi.milo"), "utf8");
+  const src = readFileSync(p("src/runtime/napi.milo"), "utf8");
   const defs = new Set();
   for (const m of src.matchAll(/^\s*(?:pub\s+)?fn\s+(napi_[A-Za-z0-9_]+)/gm)) defs.add(m[1]);
   return defs.size;

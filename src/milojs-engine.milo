@@ -42,25 +42,25 @@ from "std/argparse" import {
 from "std/args" import {
     args
 }
-from "./version" import {
+from "./engine/version" import {
     versionText
 }
-from "./driver" import {
+from "./engine/driver" import {
     makeInterp, bootInterp, describeThrown
 }
-from "./parser" import {
+from "./engine/parser" import {
     PState, parseProgram
 }
-from "./lexer" import {
+from "./engine/lexer" import {
     lex
 }
-from "./ast" import {
+from "./engine/ast" import {
     Prog, gProg, BlockId
 }
-from "./modules" import {
+from "./runtime/modules" import {
     preloadGraph, dirOf, hasEsmSyntax, moduleIsStrict
 }
-from "./eval" import {
+from "./engine/eval" import {
     runModule, runEventLoop, hoistBlock, execBlock, anyGenParked
 }
 

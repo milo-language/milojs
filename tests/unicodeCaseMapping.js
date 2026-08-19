@@ -1,6 +1,6 @@
 // toUpperCase/toLowerCase were ASCII + Latin-1 only, so every non-Latin script
 // passed through unchanged ("привет".toUpperCase() answered itself). The tables
-// in src/unicase.milo are generated from node's own ICU by tools/gen-unicase.mjs,
+// in src/engine/unicase.milo are generated from node's own ICU by tools/gen-unicase.mjs,
 // so this walks every code point and reports what maps where, per 0x1000 block —
 // a summary rather than 2981 raw lines, but derived from all of them.
 var blocks = [];

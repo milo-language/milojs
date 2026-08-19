@@ -174,7 +174,7 @@ before the AST phase is complete.
   and inside a character class, including `Script`/`Script_Extensions`, every
   `General_Category` value, the binary properties, and all 1,682 spellings the
   corpus uses. Resolved to code point ranges at pattern-COMPILE time from
-  `src/uniprops.txt` (generated, 103KB), so matching costs what `[a-z]` costs. An
+  `src/engine/uniprops.txt` (generated, 103KB), so matching costs what `[a-z]` costs. An
   unrecognised name is the early SyntaxError the spec requires.
 - **Numeric regex escapes**: `\xHH`, `\uHHHH`, `\u{H...}` and `\cX`, as atoms and
   as character-class range endpoints. None of these existed — `/\x41/` was the

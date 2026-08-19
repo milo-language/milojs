@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Checks the built-in `length` tables in src/eval.milo against node.
+// Checks the built-in `length` tables in src/engine/eval.milo against node.
 //
 //   node tools/check-arity.mjs          # report disagreements, exit 1 on any
 //   node tools/check-arity.mjs -v       # also print every name node has no answer for
 //
-// Three tables in src/eval.milo carry 402 hand-transcribed integers under a
+// Three tables in src/engine/eval.milo carry 402 hand-transcribed integers under a
 // comment saying "GENERATED from node", but no generator was ever committed, so
 // nothing could tell whether they still matched, or ever did. test262 asserts
 // every one of them (there is a length.js per method), which makes each wrong
@@ -24,7 +24,7 @@
 import { readFileSync } from "node:fs";
 
 const verbose = process.argv.includes("-v");
-const src = readFileSync(new URL("../src/eval.milo", import.meta.url), "utf8");
+const src = readFileSync(new URL("../src/engine/eval.milo", import.meta.url), "utf8");
 
 // The three tables are `fn <name>ArityData(): string` returning one
 // "name:arity,name:arity,..." literal. They used to be if-chains of
@@ -34,7 +34,7 @@ const src = readFileSync(new URL("../src/eval.milo", import.meta.url), "utf8");
 // verifier stopped verifying once before.
 function table(fn) {
   const m = src.match(new RegExp(`fn ${fn}\\(\\): string \\{\\n\\s*return "([^"]*)"`));
-  if (!m) throw new Error(`${fn} not found in src/eval.milo`);
+  if (!m) throw new Error(`${fn} not found in src/engine/eval.milo`);
   const out = new Map(
     m[1].split(",").filter(Boolean).map(e => {
       const i = e.indexOf(":");

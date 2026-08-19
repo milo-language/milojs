@@ -1,6 +1,6 @@
 // @error: expected ExprId, got ArrLitId
 
-from "../../src/ast" import {
+from "../../src/engine/ast" import {
     ExprId, addArrLit, getExpr, newProg
 }
 

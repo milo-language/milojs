@@ -1,0 +1,2869 @@
+// The interpreter's memory: a scope arena and an object heap, both index-
+// addressed and reclaimed by one mark-sweep collector (see collect). Slots are
+// stable and reused via free-lists, never moved, because closures and object
+// handles refer to them by index. GC is safe to run only at execBlock statement
+// boundaries — the single point where every live value sits in a scope binding
+// and no closure is in-flight mid-expression.
+
+from "std/arena" import {
+    Arena, Handle, arenaNew, arenaAlloc, arenaFree, arenaGet
+}
+from "std/net" import {
+    TcpListener, TcpStream
+}
+from "std/sqlite" import {
+    Database, Statement
+}
+from "std/sync" import {
+    Channel
+}
+from "./value" import {
+    JSValue, Native, Builtin, i64ToStr, roundHalfAwayFromZero, cloneNative, nativeEq
+}
+from "./bigint" import {
+    bnMod, bnAdd, bnToRadix
+}
+from "./regex" import {
+    Regex
+}
+from "./ast" import {
+    BlockId
+}
+from "std/math" import {
+    Math
+}
+from "std/os" import {
+    free
+}
+
+struct Binding {
+    name: string,
+    value: JSValue,
+}
+
+// Typed-array element kinds. The order is arbitrary but fixed: taKind is stored
+// on the view object.
+let TA_U8: i64 = 0
+let TA_I8: i64 = 1
+let TA_U16: i64 = 2
+let TA_I16: i64 = 3
+let TA_U32: i64 = 4
+let TA_I32: i64 = 5
+let TA_F32: i64 = 6
+let TA_F64: i64 = 7
+pub let TA_U8C: i64 = 8
+// The BigInt-element kinds. Their elements are BigInt VALUES, not numbers, so
+// they cannot travel through the f64 element path the other nine share — the
+// range runs to 2^64 and f64 loses integers past 2^53. taLoadBig/taStoreBig
+// carry them as decimal strings, which is how JSValue.BigInt represents them.
+pub let TA_I64: i64 = 9
+pub let TA_U64: i64 = 10
+// highest kind, for the loops that build one constructor per kind
+pub let TA_MAX: i64 = 10
+
+pub fn taIsBigKind(kind: i64): bool {
+    return kind == TA_I64 || kind == TA_U64
+}
+
+pub fn taWidth(kind: i64): i64 {
+    if kind == TA_U8 || kind == TA_I8 || kind == TA_U8C {
+        return 1
+    }
+    if taIsBigKind(kind) {
+        return 8
+    }
+    if kind == TA_U16 || kind == TA_I16 {
+        return 2
+    }
+    if kind == TA_F64 {
+        return 8
+    }
+    return 4
+}
+
+pub fn taName(kind: i64): string {
+    if kind == TA_U8 {
+        return "Uint8Array"
+    }
+    if kind == TA_I8 {
+        return "Int8Array"
+    }
+    if kind == TA_U8C {
+        return "Uint8ClampedArray"
+    }
+    if kind == TA_U16 {
+        return "Uint16Array"
+    }
+    if kind == TA_I16 {
+        return "Int16Array"
+    }
+    if kind == TA_U32 {
+        return "Uint32Array"
+    }
+    if kind == TA_I32 {
+        return "Int32Array"
+    }
+    if kind == TA_F32 {
+        return "Float32Array"
+    }
+    if kind == TA_I64 {
+        return "BigInt64Array"
+    }
+    if kind == TA_U64 {
+        return "BigUint64Array"
+    }
+    return "Float64Array"
+}
+
+// a fn, not a global: a module-level string initializer is not a compile-time
+// constant, and the embedding target has no main() to run one before use
+fn twoPow64(): string {
+    return "18446744073709551616"
+}
+
+// A BigInt decimal string reduced into the kind's range and returned as the raw
+// 64-bit pattern. i64 arithmetic wraps, so accumulating digits of a value below
+// 2^64 produces exactly the bit pattern wanted for both signed and unsigned.
+pub fn bigToRawBits(s: &string): i64 {
+    var m = bnMod(s, twoPow64())
+    if m.len() > 0 && m[0] == '-' {
+        m = bnAdd(m, twoPow64())
+    }
+    // via HEX, not decimal digits: a decimal accumulator does `acc * 10 + d`,
+    // and for a value near 2^64 that multiply overflows i64 and traps. Placing
+    // hex nibbles with shifts writes the bits directly and cannot overflow.
+    let hex = bnToRadix(m, 16)
+    var acc: i64 = 0
+    var i: i64 = 0
+    while i < hex.len() {
+        let c = hex[i]
+        var d: i64 = -1
+        if c >= '0' && c <= '9' {
+            d = (c - '0') as i64
+        } else if c >= 'a' && c <= 'f' {
+            d = ((c - 'a') as i64) + 10
+        } else if c >= 'A' && c <= 'F' {
+            d = ((c - 'A') as i64) + 10
+        }
+        if d >= 0 {
+            acc = (acc << 4) | d
+        }
+        i = i + 1
+    }
+    return acc
+}
+
+// The inverse: a raw 64-bit pattern as a decimal string, read signed or not.
+pub fn rawBitsToBig(bits: i64, signed: bool): string {
+    if signed {
+        return i64ToStr(bits)
+    }
+    if bits >= 0 {
+        return i64ToStr(bits)
+    }
+    // a negative i64 IS the unsigned value minus 2^64
+    return bnAdd(i64ToStr(bits), twoPow64())
+}
+
+pub fn taLoadBig(bytes: &Vec<u8>, kind: i64, at: i64): string {
+    var bits: i64 = 0
+    var k: i64 = 0
+    while k < 8 {
+        bits = bits | ((bytes[at + k] as i64) << (8 * k))
+        k = k + 1
+    }
+    return rawBitsToBig(bits, kind == TA_I64)
+}
+
+pub fn taStoreBig(bytes: &mut Vec<u8>, at: i64, s: &string) {
+    let bits = bigToRawBits(s)
+    var k: i64 = 0
+    while k < 8 {
+        bytes[at + k] = ((bits >> (8 * k)) & 255) as u8
+        k = k + 1
+    }
+}
+
+// f64 <-> raw IEEE-754 bits, via a byte view of the value's own storage. The
+// language has no bitcast, so this reads/writes the stack slot through a raw
+// pointer (unsafe, like std's other pointer work). Little-endian host assumed —
+// the same assumption the integer paths below already make.
+pub fn f64ToBits(x: f64): i64 {
+    var xv = x
+    var bits: i64 = 0
+    var i: i64 = 0
+    while i < 8 {
+        var byte: u8 = 0
+        unsafe {
+            byte = *(((xv.addrOf() as i64) + i) as *u8)
+        }
+        bits = bits | ((byte as i64) << (8 * i))
+        i = i + 1
+    }
+    return bits
+}
+
+pub fn bitsToF64(bits: i64): f64 {
+    var y: f64 = 0.0
+    var i: i64 = 0
+    while i < 8 {
+        let byte = ((bits >> (8 * i)) & 255) as u8
+        unsafe {
+            *(((y.addrOf() as i64) + i) as *u8) = byte
+        }
+        i = i + 1
+    }
+    return y
+}
+
+// f64 -> 32-bit float, then its 4 IEEE-754 bits. `as f32` does the rounding.
+pub fn f32ToBits(x: f64): i64 {
+    var f = x as f32
+    var bits: i64 = 0
+    var i: i64 = 0
+    while i < 4 {
+        var byte: u8 = 0
+        unsafe {
+            byte = *(((f.addrOf() as i64) + i) as *u8)
+        }
+        bits = bits | ((byte as i64) << (8 * i))
+        i = i + 1
+    }
+    return bits
+}
+
+pub fn bitsToF32(bits: i64): f64 {
+    var f: f32 = 0.0
+    var i: i64 = 0
+    while i < 4 {
+        let byte = ((bits >> (8 * i)) & 255) as u8
+        unsafe {
+            *(((f.addrOf() as i64) + i) as *u8) = byte
+        }
+        i = i + 1
+    }
+    return f as f64
+}
+
+// Read one element out of a buffer's bytes, little-endian.
+pub fn taLoad(bytes: &Vec<u8>, kind: i64, at: i64): f64 {
+    if kind == TA_U8 || kind == TA_U8C {
+        return bytes[at] as f64
+    }
+    if kind == TA_F64 {
+        var bits: i64 = 0
+        var k: i64 = 0
+        while k < 8 {
+            bits = bits | ((bytes[at + k] as i64) << (8 * k))
+            k = k + 1
+        }
+        return bitsToF64(bits)
+    }
+    if kind == TA_F32 {
+        var bits: i64 = 0
+        var k: i64 = 0
+        while k < 4 {
+            bits = bits | ((bytes[at + k] as i64) << (8 * k))
+            k = k + 1
+        }
+        return bitsToF32(bits)
+    }
+    if kind == TA_I8 {
+        let b = bytes[at] as i64
+        if b >= 128 {
+            return (b - 256) as f64
+        }
+        return b as f64
+    }
+    if kind == TA_U16 || kind == TA_I16 {
+        let v = (bytes[at] as i64) | ((bytes[at + 1] as i64) << 8)
+        if kind == TA_I16 && v >= 32768 {
+            return (v - 65536) as f64
+        }
+        return v as f64
+    }
+    let v = (bytes[at] as i64) | ((bytes[at + 1] as i64) << 8) | ((bytes[at + 2] as i64) << 16) | ((bytes[at + 3] as i64) << 24)
+    if kind == TA_I32 && v >= 2147483648 {
+        return (v - 4294967296) as f64
+    }
+    return v as f64
+}
+
+// Store one element, applying the kind's wrapping (or clamping) rules.
+pub fn taStore(bytes: &mut Vec<u8>, kind: i64, at: i64, v: f64) {
+    var n: i64 = 0
+    // Float kinds store the raw IEEE-754 bits (via f32/f64 rounding), including
+    // NaN/Inf — so they bypass the integer coercion below entirely.
+    if kind == TA_F64 || kind == TA_F32 {
+        if kind == TA_F64 {
+            n = f64ToBits(v)
+        } else {
+            n = f32ToBits(v)
+        }
+        let fw = taWidth(kind)
+        var fi: i64 = 0
+        while fi < fw {
+            bytes[at + fi] = ((n >> (8 * fi)) & 255) as u8
+            fi = fi + 1
+        }
+        return
+    }
+    if v == v {
+        if kind == TA_U8C {
+            // Uint8ClampedArray saturates instead of wrapping, and ToUint8Clamp
+            // rounds half to EVEN (0.5→0, 1.5→2, 2.5→2) — not half-away-from-zero
+            var c = v
+            if c < 0.0 {
+                c = 0.0
+            }
+            if c > 255.0 {
+                c = 255.0
+            }
+            let lo = Math.floor(c)
+            let frac = c - lo
+            var r = lo as i64
+            if frac > 0.5 {
+                r = r + 1
+            } else if frac == 0.5 {
+                // tie: pick the even neighbour
+                if (r % 2) != 0 {
+                    r = r + 1
+                }
+            }
+            n = r
+        } else {
+            n = v as i64
+        }
+    }
+    let w = taWidth(kind)
+    var i: i64 = 0
+    while i < w {
+        bytes[at + i] = ((n >> (8 * i)) & 255) as u8
+        i = i + 1
+    }
+}
+
+// A freed scope slot is marked by parent == GC_FREE so the sweep skips it and
+// newScope can reuse it. Real parents are >= 0 (global) or -1 (global's parent).
+let GC_FREE: i64 = -2
+
+struct Scope {
+    parent: i64,
+    vars: Vec<Binding>,
+    mark: bool,
+    // per-activation function-object statics: for each function whose closure env
+    // IS this scope, fnStatKeys[k] is its fnIdx and fnStatVals[k] its static-
+    // property object. Keyed here (not globally by fnIdx) so two closures of the
+    // same literal from different calls have separate properties and identity.
+    // Lifetime is the scope's: reusing a freed scope slot resets both, so a
+    // recycled env index can never surface a dead closure's statics.
+    fnStatKeys: Vec<i64>,
+    fnStatVals: Vec<i64>,
+    // Annex B B.3.3: names for which the hoist created a var-scoped placeholder on
+    // behalf of a function declared inside a nested BLOCK. When that declaration is
+    // evaluated, the value is written back here as well as into the block scope, so
+    // the function stays visible after the block. Recorded rather than inferred: a
+    // Binding does not say whether it is var or lexical, and the spec assigns
+    // through a `var` while leaving a `let` alone.
+    annexBFns: Vec<string>,
+    // `with (obj)` — the object whose properties shadow this scope's bindings, or
+    // -1 for an ordinary scope. Identifier lookup, existence and assignment all
+    // consult it before the scope's own vars.
+    withObj: i64,
+    // `using x = expr` resources declared in this scope, oldest first. The dispose
+    // METHOD is snapshotted at declaration (the spec reads it exactly once, so a
+    // later delete or reassignment cannot change what runs) and kept beside its
+    // receiver. Disposed in reverse order when the scope exits by any route.
+    // Empty for every scope that declares no resource, so the common path costs
+    // one length check.
+    dispRecv: Vec<JSValue>,
+    dispFn: Vec<JSValue>,
+}
+
+// A heap object: an ordered list of string-keyed properties. `free` marks a
+// reclaimed slot the sweep skips and newObject can reuse. When `isArray`, `elems`
+// holds the integer-indexed elements (JS arrays are objects, so a JSObj can carry
+// both — string props and dense elements).
+// Getter/setter pair for an accessor property. Kept in a side table
+// (Interp.accessors) rather than inline in Prop: two JSValues are 64 bytes that
+// every ordinary data property would otherwise pay for, and most properties are
+// data properties.
+struct Accessor {
+    getter: JSValue,
+    setter: JSValue,
+}
+
+struct Prop {
+    key: string,
+    value: JSValue,
+    // accessor property (Object.defineProperty with get/set): a generational
+    // handle into Interp.accessors, or None for a data property. `value` is
+    // unused when it is set and the getter is invoked on read instead. Express
+    // builds req/res almost entirely out of these. The handle is generational,
+    // so a property that outlives its accessor slot reads as absent instead of
+    // silently picking up whichever getter later reused that slot.
+    acc: Option<Handle<Accessor>>,
+    // property attributes. Default true everywhere (a plain assignment creates a
+    // writable/enumerable/configurable property); Object.defineProperty is what
+    // turns them off.
+    writable: bool,
+    enumerable: bool,
+    configurable: bool,
+}
+
+// A pending timer. intervalMs > 0 reschedules after firing (setInterval).
+// An outbound HTTP request running on a worker OS thread. The worker does the
+// blocking connect/TLS/read and hands the raw response back over the channel;
+// the event loop settles `promise` with it. This is what keeps one slow upstream
+// from stalling every other request.
+pub struct PendingFetch {
+    promise: i64,
+    chan: Channel<string>,
+}
+
+// The interpreter state that describes ONE execution in progress. Global today
+// because only one execution exists at a time; an async activation that suspends
+// has to take its own copy with it, or the activation that resumes next would
+// inherit a half-finished throw, the wrong call depth, or another activation's
+// GC roots.
+//
+// Switches happen only at park points, so saving on park and restoring on resume
+// is enough — nothing observes these fields mid-statement from another
+// activation.
+struct ExecCtx {
+    throwing: bool,
+    // A `gen.return(v)` unwind rides on `throwing` so it uses the same unwinding
+    // machinery, but it must be invisible to `catch` while still running every
+    // `finally`. This flag is what tells the two apart. Per-task like `throwing`.
+    genReturning: bool,
+    thrownValue: JSValue,
+    callDepth: i64,
+    // set before a constructor call and cleared only after it returns, so it is
+    // live for the whole body — a park inside one would otherwise leak the
+    // constructor to every other activation
+    newTarget: JSValue,
+    // the `?.` short-circuit flag, saved and restored around an optional chain
+    optShort: bool,
+    // GC roots: a suspended activation keeps these alive (see collect)
+    tempRoots: Vec<JSValue>,
+    active: Vec<i64>,
+    modDirStack: Vec<string>,
+    modPathStack: Vec<string>,
+}
+
+// Lift the running execution out of the Interp, leaving it clean for whoever
+// runs next. The caller owns the returned context until it restores it.
+pub fn saveExecCtx(st: &mut Interp): ExecCtx {
+    // Copied element by element rather than moved out of the borrow: taking the
+    // Vec fields directly leaves the context pointing at buffers that the reset
+    // below then frees.
+    var temps: Vec<JSValue> = Vec.new()
+    var ti: i64 = 0
+    while ti < st.tempRoots.len() {
+        temps.push(cloneValue(st.tempRoots[ti]))
+        ti = ti + 1
+    }
+    var actives: Vec<i64> = Vec.new()
+    var ai: i64 = 0
+    while ai < st.active.len() {
+        actives.push(st.active[ai])
+        ai = ai + 1
+    }
+    var dirs: Vec<string> = Vec.new()
+    var di: i64 = 0
+    while di < st.modDirStack.len() {
+        dirs.push(st.modDirStack[di].clone())
+        di = di + 1
+    }
+    var paths: Vec<string> = Vec.new()
+    var pi: i64 = 0
+    while pi < st.modPathStack.len() {
+        paths.push(st.modPathStack[pi].clone())
+        pi = pi + 1
+    }
+    let ctx = ExecCtx {
+        throwing: st.throwing,
+        genReturning: st.genReturning,
+        thrownValue: cloneValue(st.thrownValue),
+        callDepth: st.callDepth,
+        newTarget: cloneValue(st.newTarget),
+        optShort: st.optShort,
+        tempRoots: temps,
+        active: actives,
+        modDirStack: dirs,
+        modPathStack: paths,
+    }
+    st.throwing = false
+    st.genReturning = false
+    st.thrownValue = JSValue.Undefined
+    st.callDepth = 0
+    st.newTarget = JSValue.Undefined
+    st.optShort = false
+    st.tempRoots = Vec.new()
+    st.active = Vec.new()
+    st.modDirStack = Vec.new()
+    st.modPathStack = Vec.new()
+    return ctx
+}
+
+// Put a saved execution back. Whatever was running is discarded, so the caller
+// must have saved it first.
+pub fn restoreExecCtx(st: &mut Interp, ctx: ExecCtx) {
+    st.throwing = ctx.throwing
+    st.genReturning = ctx.genReturning
+    st.thrownValue = ctx.thrownValue
+    st.callDepth = ctx.callDepth
+    st.newTarget = ctx.newTarget
+    st.optShort = ctx.optShort
+    st.tempRoots = ctx.tempRoots
+    st.active = ctx.active
+    st.modDirStack = ctx.modDirStack
+    st.modPathStack = ctx.modPathStack
+}
+
+pub struct Timer {
+    id: i64,
+    dueMs: f64,
+    intervalMs: f64,
+    cb: JSValue,
+    args: Vec<JSValue>,
+    active: bool,
+}
+
+// A queued microtask: call cb with one argument. Promise reactions and
+// process.nextTick both land here.
+pub struct Microtask {
+    cb: JSValue,
+    arg: JSValue,
+    // promise to settle with cb's result, or -1 for a plain call
+    // (queueMicrotask / process.nextTick)
+    derived: i64,
+    // when cb is not callable the value passes through to `derived` unchanged;
+    // this says whether it passes through as a rejection
+    passthroughReject: bool,
+    // .finally: discard the handler's result and keep the original settlement
+    isFinally: bool,
+    // queueMicrotask(cb, ...extra) must call cb() with NO arguments (extra args
+    // are ignored per spec); a promise reaction and process.nextTick pass their
+    // one settlement/undefined value. Set only by queueMicrotask.
+    noArgs: bool,
+}
+
+// A .then registration on a not-yet-settled promise: which handlers to run and
+// which promise to settle with their result.
+pub struct Reaction {
+    onFulfilled: JSValue,
+    onRejected: JSValue,
+    derived: i64,
+    // .finally: run the handler for effect, then pass the original settlement on
+    isFinally: bool,
+}
+
+// Rare per-object capability payload, held OUT of JSObj in a side table keyed by
+// JSObj.extra. Every JS object carried these fields inline (a bound function's
+// target/args, a promise's value, a proxy's handler, …) even though almost all
+// objects are plain — ~968 bytes for an empty {}. The discriminator BOOLS stay
+// in JSObj (hot: property access checks isProxy/isBound), only the heavy payload
+// moves here, allocated lazily on first write. Index 0 is a shared read-only
+// default so reads never need an -1 guard; ensureExtra() hands out a private
+// slot on first write and the sweep returns it to objExtraFree.
+struct JSObjExtra {
+    // Function.prototype.bind payload (isBound stays inline in JSObj)
+    boundTarget: JSValue,
+    boundThis: JSValue,
+    boundArgs: Vec<JSValue>,
+    boundMethod: string,
+    // Which built-in the bound method came off, for the receiver brand check:
+    // 0 none (generic, e.g. Array.prototype.slice), 1 %TypedArray%,
+    // 2 ArrayBuffer, 3 DataView. Buffer-family methods are NOT generic — node
+    // throws TypeError when `this` is the wrong kind — but they are dispatched
+    // by name here, so without a brand they silently did something reasonable.
+    boundBrand: i64,
+    // Proxy target/handler (isProxy stays inline — every property path checks it)
+    proxyTarget: JSValue,
+    proxyHandler: JSValue,
+    // Map/Set insertion-ordered entries (isMap/isSet stay inline)
+    mapKeys: Vec<JSValue>,
+    mapVals: Vec<JSValue>,
+    // Promise settled value + pending reactions (promiseState stays inline: the
+    // -1/0/1/2 discriminator is read on every await/then without needing payload)
+    promiseValue: JSValue,
+    reactions: Vec<Reaction>,
+    // The spec's alreadyResolved flag, shared by a promise's resolve/reject pair.
+    // promiseState cannot stand in for it: resolving with a thenable leaves the
+    // promise PENDING while the adoption job is queued, and a second
+    // resolve/reject in that window must be ignored rather than win the race.
+    promiseResolved: bool,
+    // ArrayBuffer bytes + resizable cap; typed-array/DataView view geometry.
+    // isArrayBuffer/abDetached/isDataView stay inline as discriminators; taBuf is
+    // -1 when not a view (its own discriminator, so it lives here too).
+    bytes: Vec<u8>,
+    abMaxLen: i64,
+    // A view constructed over a buffer with NO explicit length tracks that
+    // buffer's size; one given a length is fixed and goes OUT OF BOUNDS when a
+    // resizable buffer shrinks under it. The two cases behave oppositely on
+    // resize, so the flag has to be recorded at construction.
+    taTracking: bool,
+    taBuf: i64,
+    taKind: i64,
+    taOffset: i64,
+    taLen: i64,
+    // Date epoch ms (isDate stays inline); compiled-regex handle; node-api fn
+    // index + napi_wrap native pointer. All cold — touched only by Date/RegExp/
+    // napi ops, never on the property-access path. regexId/napiFn are their own
+    // -1 discriminators, so they live here rather than needing a bool in JSObj.
+    dateMs: f64,
+    regexId: i64,
+    napiFn: i64,
+    napiWrap: i64,
+    // set when napiWrap holds an opaque C pointer handed over by
+    // napi_create_external, so napi_typeof can report napi_external (8) rather
+    // than object and the addon recognises its own value coming back
+    napiIsExternal: bool,
+    // Stable native storage for Node-API Buffer byte views. A negative length
+    // means this is not a native view; the view owns the allocation when flagged.
+    nativeBufPtr: i64,
+    nativeBufLen: i64,
+    nativeBufOwned: bool,
+    // The primitive a wrapper object wraps: `new String("a")`, `Object(1)`,
+    // `new Boolean(false)`. Undefined means this is not a wrapper, which is its
+    // own discriminator since no wrapper ever holds undefined or null.
+    boxed: JSValue,
+    // Set only on the scratch array that adapts an array-like receiver for a
+    // generic Array.prototype method (see arrayLikeToArray): the handle of the
+    // ORIGINAL receiver, which the spec says callbacks get as their 3rd
+    // argument. Its own -1 discriminator, so no bool in JSObj.
+    arrayLikeOrig: i64,
+}
+
+pub fn defaultExtra(): JSObjExtra {
+    return JSObjExtra {
+        boundTarget: JSValue.Undefined,
+        boundThis: JSValue.Undefined,
+        boundArgs: Vec.new(),
+        boundMethod: "", boundBrand: 0,
+        proxyTarget: JSValue.Undefined,
+        proxyHandler: JSValue.Undefined,
+        mapKeys: Vec.new(),
+        mapVals: Vec.new(),
+        promiseValue: JSValue.Undefined,
+        reactions: Vec.new(),
+        promiseResolved: false,
+        bytes: Vec.new(),
+        abMaxLen: -1,
+        taTracking: false,
+        taBuf: -1,
+        taKind: 0,
+        taOffset: 0,
+        taLen: 0,
+        dateMs: 0.0,
+        regexId: -1,
+        napiFn: -1,
+        napiWrap: 0,
+        napiIsExternal: false,
+        nativeBufPtr: 0,
+        nativeBufLen: -1,
+        nativeBufOwned: false,
+        arrayLikeOrig: -1,
+        boxed: JSValue.Undefined,
+    }
+}
+
+struct JSObj {
+    props: Vec<Prop>,
+    elems: Vec<JSValue>,
+    // indices in elems that are HOLES (delete arr[i], length-grow padding,
+    // sparse writes): `i in arr` / hasOwnProperty are false there even though
+    // the dense elems slot reads as undefined. Empty for normal arrays, so the
+    // fast paths never scan it.
+    holes: Vec<i64>,
+    // -1 means the logical length is elems.len(). A larger value represents an
+    // implicit sparse tail without allocating one JSValue and hole entry per
+    // absent index; far-out elements live as numeric keys in props.
+    logicalLen: i64,
+    isArray: bool,
+    // the user-function index that `new`'d this object (for instanceof), or -1
+    ctor: i64,
+    // the object's prototype (index into objects), or -1 — the fallback for
+    // property lookup; set by `new F()` to F's prototype object
+    proto: i64,
+    // -1 in `proto` means "no explicit link", and an object with no explicit
+    // link still inherits Object.prototype. A NULL prototype is a different
+    // thing and needs its own bit: Object.create(null) and `__proto__ = null`
+    // produce an object that inherits nothing, and without this flag both
+    // answered Object.prototype and carried toString/hasOwnProperty.
+    protoNull: bool,
+    // The `arguments` object. It is built as a real array here so indexing,
+    // `length` and `Array.prototype.<m>.call(arguments, …)` all work for free, but
+    // the spec says it is NOT an Array: `Array.isArray(arguments)` is false, its
+    // tag is "[object Arguments]", and `[].concat(arguments)` appends it as ONE
+    // element instead of spreading. This flag is what those three ask.
+    isArguments: bool,
+    // Arrays only: `length` is a real property with a `writable` attribute, and
+    // `Object.defineProperty(a, "length", {writable: false})` has to make adding an
+    // index a TypeError. There is no Prop entry for `length` (the value is derived
+    // from the element storage), so the one attribute that can vary lives here.
+    lengthNonWritable: bool,
+    // objects produced by the Error-family native constructors; the specific
+    // kind lives in the `name` property
+    isError: bool,
+    // Object.freeze'd: writes to existing and new properties are dropped. Sloppy
+    // mode silently ignores them, which is what this models.
+    frozen: bool,
+    // set once name/length have been materialised on a function's property
+    // bag, so a deleted name is not silently recreated by the next lookup
+    fnStatInit: bool,
+    // Object.preventExtensions'd: NEW properties are refused, existing ones stay
+    // writable. Object.seal additionally refuses deletes.
+    noExtend: bool,
+    sealed: bool,
+    // the globalThis object: property reads and writes are routed to the global
+    // scope's bindings, so globalThis.x and bare x are the same variable
+    isGlobal: bool,
+    // ArrayBuffer: the raw bytes. Typed arrays are views onto one of these.
+    isArrayBuffer: bool,
+    // detached by transfer(): every view over it reads as zero-length
+    abDetached: bool,
+    // a DataView also uses taBuf/taOffset/taLen (taLen is BYTES here, not
+    // elements, and taKind is unused); this flag distinguishes it from a typed
+    // array, which shares those fields. A DataView is not index-accessible and
+    // its methods pick the element type per call.
+    isDataView: bool,
+    // promise settlement discriminator (-1 not a promise, 0 pending, 1/2
+    // settled); the value + pending reactions live in the side table. The
+    // compiled-regex handle (regexId) now lives in the side table too.
+    promiseState: i64,
+    // Function.prototype.bind result: calling this object calls boundTarget with
+    // boundThis and boundArgs prepended. The isBound discriminator stays inline
+    // (call dispatch checks it); the target/receiver/args payload lives in the
+    // side table (JSObjExtra) reached through `extra`.
+    isBound: bool,
+    // Map/Set: insertion-ordered parallel key/value lists. Keys are compared by
+    // strict equality (SameValueZero), so object keys work by identity.
+    // process.env: unknown keys are resolved from the real environment on read,
+    // because there is no portable way to enumerate it from Milo yet
+    isEnv: bool,
+    // Date instance: milliseconds since the epoch (JS's whole time model)
+    // reports as "function" to typeof even though it is an object internally
+    // (Function and Function.prototype, which JS specifies as callable)
+    isFunctionLike: bool,
+    // Date instance discriminator; the epoch-ms value lives in the side table
+    isDate: bool,
+    isMap: bool,
+    isSet: bool,
+    // Proxy: `target` and `handler` from `new Proxy(target, handler)`. Every
+    // property path checks isProxy first and consults the handler's trap, falling
+    // through to the target when the trap is absent. napiFn (addon fn index) and
+    // napiWrap (napi_wrap native pointer, e.g. Prisma's QueryEngine) live in the
+    // side table.
+    isProxy: bool,
+    // a generator object produced by calling a `function*`. Its body runs on a
+    // dedicated green task; the per-generator state (task, sent/yielded values,
+    // done flag) lives in the Interp gen* vectors, keyed by this object's index.
+    isGenerator: bool,
+    // `async function*`: next/throw/return hand back promises, and the object
+    // answers Symbol.asyncIterator rather than Symbol.iterator
+    isAsyncGenerator: bool,
+    // index into Interp.objExtras for this object's rare-capability payload, or 0
+    // for the shared read-only default (no rare fields set). See JSObjExtra.
+    extra: i64,
+    mark: bool,
+    free: bool,
+}
+
+pub struct Interp {
+    // FuncDef indices of JS-defined built-in METHODS, which are callable but not
+    // constructable. Every built-in written in lib/*.js is an ordinary function
+    // as far as the evaluator is concerned, so the prelude marks them through
+    // __markNotConstructor rather than the engine guessing.
+    nonCtorFns: Vec<i64>,
+    // Strictness of the code currently executing. Strict code must throw a
+    // TypeError where sloppy code silently drops a failed property write, so the
+    // write path needs the mode; callFunction saves/sets/restores it around each
+    // activation from FuncDef.isStrict.
+    strict: bool,
+    scopes: Vec<Scope>,
+    // reusable dead-scope slots (indices stay stable — closures hold them by index)
+    freeList: Vec<i64>,
+    // the dynamic call/block stack: scopes live on the native eval stack but not
+    // reachable via lexical parent links (a fib frame's parent is global, not its
+    // caller). This is the extra GC root set the parent chain can't provide.
+    active: Vec<i64>,
+    // heap-object arena + its own free-list, GC'd by the same collector as scopes
+    objects: Vec<JSObj>,
+    objFreeList: Vec<i64>,
+    // side table of rare-capability payloads (JSObjExtra), keyed by JSObj.extra.
+    // Slot 0 is the shared read-only default; freed slots return to objExtraFree
+    // when their object is swept. Not a GC root set of its own — the collector
+    // reaches an extra only through its live owning object (see markObject).
+    objExtras: Vec<JSObjExtra>,
+    objExtraFree: Vec<i64>,
+    // side table of accessor (getter/setter) pairs, keyed by Prop.acc. Freed
+    // when the owning property is deleted/overwritten or its object is swept;
+    // like objExtras it is not a root set of its own, the collector reaches an
+    // entry only through the live property that names it. A generational arena
+    // rather than a Vec + free-list: stale reuse is the failure this table is
+    // most exposed to, and the arena turns it into a checked None.
+    accessors: Arena<Accessor>,
+    // fnIdx → its `.prototype` object (index), created lazily; a GC root
+    funcProtos: Vec<i64>,
+    // fnIdx → its static-property object, created lazily; also a GC root
+    funcStatics: Vec<i64>,
+    // compiled regexes, indexed by JSObj.regexId (never freed — interp-lifetime)
+    regexes: Vec<Regex>,
+    // CommonJS module registry. The whole graph is parsed into one shared Prog
+    // before execution (so require never has to mutate the program mid-eval);
+    // these parallel arrays map a resolved path to its top-level block and, once
+    // run, its cached module.exports. modState: 0 unloaded, 1 loading, 2 loaded.
+    modPaths: Vec<string>,
+    modBlocks: Vec<BlockId>,
+    // per-module: is this body strict code? ESM always is, CommonJS is not.
+    modStrict: Vec<bool>,
+    modExports: Vec<JSValue>,
+    modState: Vec<i64>,
+    // directory of the module currently executing, for relative resolution
+    modDirStack: Vec<string>,
+    // module paths currently executing, so a runtime error can name its file
+    modPathStack: Vec<string>,
+    // the source file of each function currently on the call stack, innermost
+    // last. Distinct from modPathStack, which only names module BODIES: a
+    // constructor defined in one module and called from another belongs to the
+    // module it was defined in, which is what a V8 CallSite reports and what
+    // `bindings` uses to locate a native addon relative to its caller.
+    fnFileStack: Vec<string>,
+    // values held on the native stack across an operation that may collect (e.g. a
+    // method receiver while its arguments — which can themselves be calls — are
+    // evaluated). Rooted by collect so an in-flight object/closure isn't swept.
+    tempRoots: Vec<JSValue>,
+    // The bytecode VM's frame stack (src/engine/bytecode.milo): locals first, then the
+    // operand stack, one contiguous run per active chunk. It lives here rather
+    // than in a local so collect can root it by construction — the point of
+    // moving to a VM is that "what is live" becomes one array instead of
+    // whatever the evaluator happened to be holding. vmSp is the live extent;
+    // everything at or above it is dead and must not be marked.
+    vmStack: Vec<JSValue>,
+    vmSp: i64,
+    // Values retained by the public embedding ABI. A live slot is an explicit
+    // root until the C host releases its handle or destroys the context.
+    hostRoots: Vec<JSValue>,
+    hostRootLive: Vec<bool>,
+    // exception state: `throwing` is set while an exception unwinds toward the
+    // nearest try/catch; evalExpr/execStmt/execBlock/loops bail while it is set.
+    // (A flag, not a Flow variant, because exceptions cross function-call
+    // boundaries where the call returns a JSValue, not a Flow.)
+    throwing: bool,
+    // set alongside `throwing` while a `gen.return(v)` unwinds the generator
+    // body: `finally` still runs, but `catch` must not see it (see execTryBody)
+    genReturning: bool,
+    thrownValue: JSValue,
+    // set when a `?.` link short-circuits on a nullish base; propagates up through
+    // the enclosing chain's Member/Index/Call nodes so the whole chain yields
+    // undefined, and is scoped/consumed by the OptChainRoot wrapping the chain.
+    optShort: bool,
+    // label of the enclosing `label:` statement, handed to the loop it wraps so
+    // the loop can consume a break/continue naming it. Set by Stmt.Labeled just
+    // before executing its body and read once at the top of execStmt, so it
+    // never leaks past the labeled statement — and is therefore never live
+    // across a suspension point, which is why it is not part of ExecCtx.
+    pendingLabel: string,
+    // JS recursion limit, set per binary to match the stack the interpreter runs
+    // on (main thread on the engine, an 8 MB green task on the runtime). See the
+    // guard in callFunction.
+    callDepthLimit: i64,
+    // Math.random() PRNG state (xorshift64)
+    rngState: i64,
+    allocSinceGc: i64,
+    // the global Promise object, so `new Promise(...)` can be recognised
+    promiseCtorObj: i64,
+    // property bag for statics on the String constructor (fromCharCode)
+    stringCtorProps: i64,
+    stringProtoObj: i64,
+    functionProtoObj: i64,
+    // native -> property object, so `Error.captureStackTrace = fn` sticks;
+    // natives otherwise have nowhere to hold assigned properties. Parallel
+    // vectors: nativeKeys[i] owns nativeProps[i] (see getNativeProps).
+    nativeKeys: Vec<Native>,
+    nativeProps: Vec<i64>,
+    // the same, for a promise's resolve/reject pair, keyed by resolverPropsSlot
+    // rather than scanned
+    resolverProps: Vec<i64>,
+    // property bag for statics on the Date constructor (Date.now)
+    dateCtorProps: i64,
+    // Date.prototype, so instances can link it (identity tests, and inherited
+    // lookups through the real chain rather than name dispatch alone)
+    dateProtoObj: i64,
+    // RegExp.prototype, linked from every compiled regex object
+    regexProtoObj: i64,
+    // Map.prototype / Set.prototype / Promise.prototype, linked from instances
+    mapProtoObj: i64,
+    setProtoObj: i64,
+    promiseProtoObj: i64,
+    // shared prototype for all iterator objects, so the helper methods installed
+    // by the prelude are reachable from array iterators too (a real proto chain
+    // rather than copying methods onto every instance)
+    iterProtoObj: i64,
+    // %GeneratorPrototype%: sits between a generator function's `.prototype` and
+    // %IteratorPrototype%, and exists to carry @@toStringTag = "Generator".
+    // Without it a generator object inherits the "Iterator" tag one level up and
+    // `util.types.isGeneratorObject` stops recognising it.
+    genProtoObj: i64,
+    // the Array constructor object, so `new Array(n)` is recognised
+    arrayCtorObj: i64,
+    // Object.prototype and Array.prototype singletons, so getPrototypeOf / the
+    // `constructor` property resolve builtin instances to the right prototype
+    // even though milojs fakes the prototype chain rather than linking it.
+    objectProtoObj: i64,
+    arrayProtoObj: i64,
+    // Cleared the moment anything writes to or deletes from Array.prototype.
+    // While false, arr.method() can dispatch straight to the native instead of
+    // walking the chain and building a bound method - the common case by far.
+    // Any user touch flips it and every later call takes the real chain, so the
+    // fast path can never serve a stale override.
+    arrayProtoPristine: bool,
+    stringProtoPristine: bool,
+    // monotonic counter behind Symbol(); symbols are unique strings here
+    symbolCounter: i64,
+    // set the first time a Proxy is constructed. The member paths have to look
+    // for a proxy in the prototype chain, which is a walk per read/write miss;
+    // this keeps that walk out of every program that never uses Proxy at all.
+    anyProxy: bool,
+    // the event loop: microtasks drain to empty before any timer fires
+    timers: Vec<Timer>,
+    microtasks: Vec<Microtask>,
+    nextTimerId: i64,
+    // native recursion depth, so runaway recursion throws instead of crashing
+    callDepth: i64,
+    // loaded .node addons, cached by absolute path
+    napiAddonPaths: Vec<string>,
+    napiAddonExports: Vec<JSValue>,
+    // The task running the event loop. It must not park on an await: nothing
+    // would service the timers and off-thread results that settle promises.
+    mainTask: *u8,
+    // Activations parked on a pending promise: which promise, and the green task
+    // to unpark when it settles. A side table rather than a field on JSObj —
+    // every object would pay for it, and the object header is already too fat.
+    awaitPromise: Vec<i64>,
+    awaitTask: Vec<*u8>,
+    // One entry per running async activation: the task it runs on, the task that
+    // called it, and whether that caller has been released. The caller parks
+    // after spawning and is released at the activation's first suspension point
+    // — or at completion if it never suspends — which is what makes an async
+    // call return at its first await (R1).
+    actTask: Vec<*u8>,
+    actCreator: Vec<*u8>,
+    actNotified: Vec<bool>,
+    // GC roots for an activation whose body has not yet bound its arguments into
+    // a scope: until then the closure env and argument values are reachable only
+    // from the spawned task's closure, which the collector cannot see.
+    actEnv: Vec<i64>,
+    actArgs: Vec<Vec<JSValue>>,
+    actThis: Vec<JSValue>,
+    // The promise each live activation will settle. Until the body ends, that
+    // settle is the promise's reason to exist, but nothing the marker can see
+    // necessarily references it: the caller may hold only the far end of a
+    // .then chain (marking runs source→derived, never backwards), and the body
+    // task's closure is native memory. An entry here keeps it — and via its
+    // reactions the whole derived chain — alive for the activation's lifetime.
+    actPromise: Vec<i64>,
+    // Set for one callFunction entry so a body already running on an activation
+    // does not spawn another. Cleared on entry, so nested async calls spawn.
+    suppressAsyncSpawn: bool,
+    // Set by a generator body task just before it invokes callFunction, so that
+    // call runs the function* body instead of re-dispatching to makeGenerator.
+    // Cleared on entry, exactly like suppressAsyncSpawn.
+    suppressGenSpawn: bool,
+    // Task each suspended context belongs to, parallel to `suspended`. Without
+    // it a resuming activation takes whichever entry happens to be last, which
+    // hands it another activation's execution: its pops then unroot the other
+    // activation's scopes and the collector sweeps frames that are still live.
+    suspendedTask: Vec<*u8>,
+    // execution contexts of activations that are parked. Their roots are marked
+    // by collect: they are live even though nothing is running them.
+    suspended: Vec<ExecCtx>,
+    // ── generators ── parallel vectors, one entry per live generator object,
+    // keyed by genObj (the JS gen object's index). A generator body runs on its
+    // own green task; `yield` finds its generator by schedulerCurrent()==genTask,
+    // and next() drives it via the same park/unpark + ExecCtx save/restore the
+    // suspended set uses. Body task is spawned LAZILY on the first next(), which
+    // is what keeps a freshly-created generator paused (JS: calling a gen* runs
+    // no body code). genYielded/genSent/genErr and the gen's env/args/this are GC
+    // roots while it is parked — collect marks them.
+    genObj: Vec<i64>,
+    genFn: Vec<i64>,
+    genTask: Vec<*u8>,
+    genEnv: Vec<i64>,
+    // The activation scope built when the generator was CALLED, with parameters
+    // already bound and the parameter prelude already run — the spec performs that
+    // at the call, not at the first next(). The body task runs in this scope
+    // instead of building its own, and collect() roots it: it outlives the call.
+    genScope: Vec<i64>,
+    genArgs: Vec<Vec<JSValue>>,
+    genThis: Vec<JSValue>,
+    // value the current yield/return handed out (→ the next() caller)
+    genYielded: Vec<JSValue>,
+    // value passed into next(v) (→ the yield expression's result)
+    genSent: Vec<JSValue>,
+    // how the body resumes from its parked `yield`: 0 = next(v), 1 = throw(e),
+    // 2 = return(v). Parallel to genSent.
+    genResumeMode: Vec<i64>,
+    // parallel: whether this record belongs to an `async function*`
+    genAsync: Vec<bool>,
+    genDone: Vec<bool>,
+    // body ended by throwing: rethrow genErr at the next() site
+    genThrew: Vec<bool>,
+    genErr: Vec<JSValue>,
+    // the task that called next(), to hand control back to at the next yield/end
+    genCaller: Vec<*u8>,
+    // false until the body task is spawned (on the first next())
+    genStarted: Vec<bool>,
+    // outbound fetches still in flight
+    fetches: Vec<PendingFetch>,
+    // the constructor of the call currently being set up, for new.target
+    newTarget: JSValue,
+    // module specifiers already reported as unresolvable, to avoid repeats
+    reportedMissing: Vec<string>,
+    // listening TCP sockets and accepted connections, addressed by index from JS
+    // http.Server objects that are listening; the event loop services these
+    httpServers: Vec<i64>,
+    // rejected promises nobody has handled yet — reported once the loop is idle
+    unhandledRejects: Vec<i64>,
+    // nested-drain await budget in ms (MILOJS_AWAIT_BUDGET_MS overrides)
+    awaitBudgetMs: f64,
+    listeners: Vec<TcpListener>,
+    conns: Vec<TcpStream>,
+    connOpen: Vec<bool>,
+    // Open sqlite databases and prepared statements, addressed by index from JS
+    // (node:sqlite hands those indices back as opaque handles). Slots are never
+    // reused: a closed handle must stay closed rather than silently aliasing a
+    // later database, so the `Live` flags tombstone instead of freeing.
+    sqliteDbs: Vec<Database>,
+    sqliteDbLive: Vec<bool>,
+    sqliteStmts: Vec<Statement>,
+    sqliteStmtLive: Vec<bool>,
+    // Owning database index per statement, so closing a database finalizes the
+    // statements still open against it (sqlite3_close fails while any survive).
+    sqliteStmtDb: Vec<i64>,
+    // Current allocation count that triggers a collection. Recomputed after every
+    // collect() to track the live set (see collect); gcMinThreshold is the
+    // configured floor it never drops below.
+    gcThreshold: i64,
+    gcMinThreshold: i64,
+    // How much headroom to leave between collections, as a multiple of the live
+    // set. Higher trades peak memory for less marking; the marking cost per
+    // allocation is amortized 1/gcGrowthFactor.
+    gcGrowthFactor: i64,
+    gcRuns: i64,
+    gcStats: bool,
+}
+
+// The interpreter, reachable without being threaded through a parameter.
+//
+// Node-API callbacks arrive from C with no context: the addon calls napi_* on some
+// foreign stack, and there is no way to hand it a &mut Interp. A raw pointer back to
+// a local is not expressible either (`*u8 as &mut Interp` is correctly rejected), so
+// the state itself lives here and every entry point borrows it.
+//
+// Module-scope runtime initialization is not supported, so this is a zero literal
+// that main() overwrites with makeInterp().
+pub var gInterp: Interp = Interp {
+    scopes: Vec.new(), freeList: Vec.new(), active: Vec.new(),
+    nonCtorFns: Vec.new(), strict: false, objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: Arena { id: 0, data: Vec.new(), gens: Vec.new(), freeList: Vec.new(), live: 0 }, funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), vmStack: Vec.new(), vmSp: 0, hostRoots: Vec.new(), hostRootLive: Vec.new(),
+    modPaths: Vec.new(), modBlocks: Vec.new(), modStrict: Vec.new(), modExports: Vec.new(), modState: Vec.new(), modDirStack: Vec.new(), modPathStack: Vec.new(), fnFileStack: Vec.new(),
+    throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
+    optShort: false, pendingLabel: "", callDepthLimit: 10000,
+    rngState: 88172645463325252,
+    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, nativeKeys: Vec.new(), nativeProps: Vec.new(), resolverProps: Vec.new(), dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, symbolCounter: 0, anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actEnv: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, reportedMissing: Vec.new(), httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false
+}
+
+fn allocObj(st: &mut Interp, isArray: bool): i64 {
+    st.allocSinceGc = st.allocSinceGc + 1
+    let obj = JSObj {
+        props: Vec.new(), elems: Vec.new(), holes: Vec.new(), logicalLen: -1, isArray: isArray, ctor: -1, proto: -1, protoNull: false, isArguments: false, lengthNonWritable: false, isError: false, frozen: false, fnStatInit: false, noExtend: false, sealed: false, isGlobal: false, isArrayBuffer: false, abDetached: false, isDataView: false, promiseState: -1, isBound: false, isEnv: false, isFunctionLike: false, isDate: false, isMap: false, isSet: false, isProxy: false, isGenerator: false, isAsyncGenerator: false, extra: 0, mark: false, free: false
+    }
+    // reuse a freed slot if one exists (indices are stable — handles hold them),
+    // otherwise grow the arena
+    if st.objFreeList.len() > 0 {
+        let idx = st.objFreeList.pop()!
+        st.objects[idx] = obj
+        return idx
+    }
+    st.objects.push(obj)
+    return st.objects.len() - 1
+}
+
+// Give object `o` a PRIVATE JSObjExtra slot (allocating or reusing one) and
+// return its index, so a rare field can be written. Idempotent: an object that
+// already owns a slot keeps it. Never returns 0 (the shared default).
+pub fn ensureExtra(st: &mut Interp, o: i64): i64 {
+    let cur = st.objects[o].extra
+    if cur != 0 {
+        return cur
+    }
+    if st.objExtraFree.len() > 0 {
+        let idx = st.objExtraFree.pop()!
+        // a reused slot may hold a swept object's stale values — reset it
+        st.objExtras[idx] = defaultExtra()
+        st.objects[o].extra = idx
+        return idx
+    }
+    st.objExtras.push(defaultExtra())
+    let idx = st.objExtras.len() - 1
+    st.objects[o].extra = idx
+    return idx
+}
+
+// Reserve an accessor slot for a getter/setter pair. Every accessor property
+// owns exactly one slot: never hand the same AccId to two properties, or
+// freeing one would strand the other on a recycled entry.
+fn allocAccessor(st: &mut Interp, getter: JSValue, setter: JSValue): Handle<Accessor> {
+    return arenaAlloc(st.accessors, Accessor { getter: getter, setter: setter })
+}
+
+// Release the slot a property held, if it was an accessor. Clearing the pair
+// here (rather than at reuse) keeps a freed slot from pinning JSValues.
+fn freeAccessor(st: &mut Interp, acc: Option<Handle<Accessor>>) {
+    match acc {
+        Option.Some(h) => {
+            // a stale handle returns false rather than recycling someone else's
+            // live slot, so a double free is refused instead of aliasing
+            arenaFree(st.accessors, h)
+        }
+        Option.None => {
+        }
+    }
+}
+
+// Free the accessor slots of every property on `obj` (object sweep, or any path
+// that drops the whole property bag at once).
+fn freeObjAccessors(st: &mut Interp, obj: i64) {
+    var i: i64 = 0
+    while i < st.objects[obj].props.len() {
+        let acc = st.objects[obj].props[i].acc
+        freeAccessor(st, acc)
+        i = i + 1
+    }
+}
+
+// Getter of an accessor property (undefined if the property is a data property
+// or the accessor has no getter).
+pub fn accGetter(st: &Interp, acc: Option<Handle<Accessor>>): JSValue {
+    match acc {
+        Option.Some(h) => {
+            match arenaGet(st.accessors, h) {
+                Option.Some(pair) => {
+                    return cloneValue(pair.getter)
+                }
+                Option.None => {
+                    return JSValue.Undefined
+                }
+            }
+        }
+        Option.None => {
+            return JSValue.Undefined
+        }
+    }
+}
+
+pub fn accSetter(st: &Interp, acc: Option<Handle<Accessor>>): JSValue {
+    match acc {
+        Option.Some(h) => {
+            match arenaGet(st.accessors, h) {
+                Option.Some(pair) => {
+                    return cloneValue(pair.setter)
+                }
+                Option.None => {
+                    return JSValue.Undefined
+                }
+            }
+        }
+        Option.None => {
+            return JSValue.Undefined
+        }
+    }
+}
+
+// Whether property `idx` on `obj` is an accessor (the read every property path
+// used to make against an inline `isAccessor` bool).
+pub fn propIsAccessor(st: &Interp, obj: i64, idx: i64): bool {
+    match st.objects[obj].props[idx].acc {
+        Option.Some(_) => {
+            return true
+        }
+        Option.None => {
+            return false
+        }
+    }
+}
+
+// Return an object's private extra slot to the free list (called by the sweep).
+// A no-op for the shared default (0). Clearing the payload here rather than at
+// reuse keeps freed slots from pinning JSValues the collector already released.
+fn releaseExtra(st: &mut Interp, o: i64) {
+    let ex = st.objects[o].extra
+    if ex != 0 {
+        if st.objExtras[ex].nativeBufOwned && st.objExtras[ex].nativeBufPtr != 0 {
+            unsafe {
+                free(st.objExtras[ex].nativeBufPtr as *u8)
+            }
+        }
+        st.objExtras[ex] = defaultExtra()
+        st.objExtraFree.push(ex)
+        st.objects[o].extra = 0
+    }
+}
+
+// A String wrapper's own index and length properties: readable and enumerable
+// (the indices) but frozen, matching the descriptors node reports. They are
+// materialised eagerly because the string behind them can never change.
+// The shape every built-in function's own `name` and `length` carry: readable,
+// not writable, not enumerable, but CONFIGURABLE — which is what lets a shim
+// redefine them. objSetFrozenOwn is the wrong shape for these (it also clears
+// configurable), and a plain objSet leaves them writable.
+pub fn objSetBuiltinAttr(st: &mut Interp, obj: i64, key: string, value: JSValue) {
+    st.objects[obj].props.push(Prop {
+        key: key, value: value, acc: Option.None, writable: false, enumerable: false, configurable: true
+    })
+}
+
+pub fn objSetFrozenOwn(st: &mut Interp, obj: i64, key: string, value: JSValue, enumerable: bool) {
+    st.objects[obj].props.push(Prop {
+        key: key, value: value, acc: Option.None, writable: false, enumerable: enumerable, configurable: false
+    })
+}
+
+// A wrapper object's primitive, or Undefined when the object is not a wrapper.
+// Lives here rather than in eval.milo because builtins.milo needs it too (JSON
+// serialises a wrapper as its primitive) and cannot import from eval.
+pub fn boxedPrimitive(st: &Interp, h: i64): JSValue {
+    return cloneValue(st.objExtras[st.objects[h].extra].boxed)
+}
+
+pub fn isWrapperObj(st: &Interp, h: i64): bool {
+    match boxedPrimitive(st, h) {
+        JSValue.Undefined => {
+            return false
+        }
+        _ => {
+            return true
+        }
+    }
+}
+
+pub fn newObject(st: &mut Interp): i64 {
+    return allocObj(st, false)
+}
+
+pub fn newArray(st: &mut Interp): i64 {
+    let o = allocObj(st, true)
+    // Link the REAL prototype rather than relying on the name-whitelist dispatch
+    // that used to fake it, so ordinary member lookup finds array methods and
+    // a user's `Array.prototype.foo = …` is reachable like it is in a real engine.
+    // -1 until setupGlobals has built it: arrays allocated during startup simply
+    // have no proto, exactly as before.
+    if st.arrayProtoObj >= 0 {
+        st.objects[o].proto = st.arrayProtoObj
+    }
+    return o
+}
+
+// Promises settle synchronously — there is no event loop, so `new Promise(cb)`
+// whose cb resolves later never settles and awaiting it yields undefined.
+pub fn newPromise(st: &mut Interp, state: i64, value: JSValue): i64 {
+    let o = allocObj(st, false)
+    st.objects[o].promiseState = state
+    if st.promiseProtoObj >= 0 {
+        st.objects[o].proto = st.promiseProtoObj
+    }
+    // a promise always owns a private extra: its value + reactions live there,
+    // and the GC/settle paths reach them through it whenever promiseState >= 0
+    let ex = ensureExtra(st, o)
+    st.objExtras[ex].promiseValue = value
+    // born rejected with no handlers — an async body that threw builds its
+    // result this way, bypassing settlePromise, so track it here or the
+    // rejection is silently droppable
+    if state == 2 {
+        st.unhandledRejects.push(o)
+    }
+    return o
+}
+
+pub fn isPromise(st: &Interp, o: i64): bool {
+    return st.objects[o].promiseState >= 0
+}
+
+pub fn isPromiseCtor(st: &Interp, o: i64): bool {
+    return st.promiseCtorObj >= 0 && o == st.promiseCtorObj
+}
+
+pub fn objGet(st: &Interp, obj: i64, key: &string): JSValue {
+    var i: i64 = 0
+    let n = st.objects[obj].props.len()
+    while i < n {
+        if st.objects[obj].props[i].key == key {
+            return cloneValue(st.objects[obj].props[i].value)
+        }
+        i = i + 1
+    }
+    return JSValue.Undefined
+}
+
+// Mark an existing own property non-enumerable, so it stays out of Object.keys,
+// for-in, spread and JSON.stringify. Used for the error surface (name/message/
+// stack), which the spec makes non-enumerable — `Object.keys(new TypeError("x"))`
+// is `[]` in a real engine, and code that spreads or serializes a caught error
+// otherwise picks up three fields that should not be there.
+// A built-in's own `name` / `length`: the spec gives both
+// { writable: false, enumerable: false, configurable: true }, and test262 has a
+// name.js and a length.js per method that check exactly that with
+// verifyProperty — which also deletes the property to prove it is configurable.
+pub fn objDefineBuiltinAttr(st: &mut Interp, obj: i64, key: string, value: JSValue) {
+    var i: i64 = 0
+    while i < st.objects[obj].props.len() {
+        if st.objects[obj].props[i].key == key {
+            st.objects[obj].props[i].value = value
+            st.objects[obj].props[i].writable = false
+            st.objects[obj].props[i].enumerable = false
+            st.objects[obj].props[i].configurable = true
+            return
+        }
+        i = i + 1
+    }
+    st.objects[obj].props.push(Prop {
+        key: key, value: value, acc: Option.None, writable: false, enumerable: false, configurable: true
+    }
+    )
+}
+
+// An ORDINARY function's `prototype`: { writable: true, enumerable: false,
+// configurable: false }. Distinct from objDefineProtoAttr below, which is the
+// non-writable form a built-in constructor and a class use. This engine keeps no
+// class flag on FuncDef, so a class reports writable:true here — wrong in one
+// attribute, against the property having been entirely absent before.
+pub fn objDefineFnProtoAttr(st: &mut Interp, obj: i64, key: string, value: JSValue) {
+    var i: i64 = 0
+    while i < st.objects[obj].props.len() {
+        if st.objects[obj].props[i].key == key {
+            st.objects[obj].props[i].value = value
+            st.objects[obj].props[i].writable = true
+            st.objects[obj].props[i].enumerable = false
+            st.objects[obj].props[i].configurable = false
+            return
+        }
+        i = i + 1
+    }
+    st.objects[obj].props.push(Prop {
+        key: key, value: value, acc: Option.None, writable: true, enumerable: false, configurable: false
+    }
+    )
+}
+
+// A built-in constructor's `prototype`: { writable: false, enumerable: false,
+// configurable: false }. test262 checks this per constructor with
+// verifyNotWritable / verifyNotConfigurable.
+pub fn objDefineProtoAttr(st: &mut Interp, obj: i64, key: string, value: JSValue) {
+    var i: i64 = 0
+    while i < st.objects[obj].props.len() {
+        if st.objects[obj].props[i].key == key {
+            st.objects[obj].props[i].value = value
+            st.objects[obj].props[i].writable = false
+            st.objects[obj].props[i].enumerable = false
+            st.objects[obj].props[i].configurable = false
+            return
+        }
+        i = i + 1
+    }
+    st.objects[obj].props.push(Prop {
+        key: key, value: value, acc: Option.None, writable: false, enumerable: false, configurable: false
+    }
+    )
+}
+
+// RegExp's lastIndex is the odd one out: writable but NOT configurable.
+pub fn objSetNonConfigurable(st: &mut Interp, obj: i64, key: &string) {
+    var i: i64 = 0
+    while i < st.objects[obj].props.len() {
+        if st.objects[obj].props[i].key == key {
+            st.objects[obj].props[i].configurable = false
+            return
+        }
+        i = i + 1
+    }
+}
+
+pub fn objSetNonEnumerable(st: &mut Interp, obj: i64, key: &string) {
+    var i: i64 = 0
+    let n = st.objects[obj].props.len()
+    while i < n {
+        if st.objects[obj].props[i].key == key {
+            st.objects[obj].props[i].enumerable = false
+            return
+        }
+        i = i + 1
+    }
+}
+
+// Lowest-level mutators invalidate builtin-prototype fast paths. Guarding here
+// rather than only at setMember means defineProperty, delete and accessor
+// installation are all covered without each remembering to do it.
+fn touchedBuiltinProto(st: &mut Interp, obj: i64) {
+    if obj == st.arrayProtoObj {
+        st.arrayProtoPristine = false
+    }
+    if obj == st.stringProtoObj {
+        st.stringProtoPristine = false
+    }
+}
+
+pub fn objSet(st: &mut Interp, obj: i64, key: string, value: JSValue) {
+    touchedBuiltinProto(st, obj)
+    // private fields (#name, the only keys milojs stores with a leading '#') are
+    // non-enumerable: they must not appear in JSON.stringify, Object.keys, for-in
+    // or spread. Setting it here covers every enumeration site at once.
+    let enumer = !(key.len() > 0 && key[0] == 35 as u8)
+    var i: i64 = 0
+    let n = st.objects[obj].props.len()
+    while i < n {
+        if st.objects[obj].props[i].key == key {
+            // Assignment to an EXISTING property keeps its attributes; only a new
+            // one gets the defaults. Resetting enumerable here made
+            // `Array.prototype.join = f` turn a non-enumerable builtin into an
+            // enumerable one, after which `for (k in [1,2])` yielded "join".
+            let wasEnum = st.objects[obj].props[i].enumerable
+            // overwriting an accessor with a data property drops its pair
+            freeAccessor(st, st.objects[obj].props[i].acc)
+            st.objects[obj].props[i] = Prop {
+                key: key, value: value, acc: Option.None, writable: true, enumerable: wasEnum, configurable: true
+            }
+            return
+        }
+        i = i + 1
+    }
+    st.objects[obj].props.push(Prop {
+        key: key, value: value, acc: Option.None, writable: true, enumerable: enumer, configurable: true
+    }
+    )
+}
+
+// Index of `key` in a Map/Set's entry list, or -1. Keys compare by strict
+// equality, so objects match by identity.
+// Map/Set key identity is SameValueZero, not strict equality: the one difference
+// that matters is NaN, which is its own key here even though NaN !== NaN. Without
+// this a NaN key can be stored but never looked up again.
+pub fn sameValueZero(a: &JSValue, b: &JSValue): bool {
+    match a {
+        JSValue.Number(x) => {
+            match b {
+                JSValue.Number(y) => {
+                    if x != x && y != y {
+                        return true
+                    }
+                    return x == y
+                }
+                _ => {
+                    return false
+                }
+            }
+        }
+        _ => {
+        }
+    }
+    return jsStrictEquals(a, b)
+}
+
+pub fn mapFind(st: &Interp, o: i64, key: &JSValue): i64 {
+    var i: i64 = 0
+    while i < st.objExtras[st.objects[o].extra].mapKeys.len() {
+        if sameValueZero(st.objExtras[st.objects[o].extra].mapKeys[i], key) {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+pub fn mapPut(st: &mut Interp, o: i64, key: JSValue, value: JSValue) {
+    let at = mapFind(st, o, key)
+    if at >= 0 {
+        st.objExtras[st.objects[o].extra].mapVals[at] = value
+        return
+    }
+    st.objExtras[st.objects[o].extra].mapKeys.push(key)
+    st.objExtras[st.objects[o].extra].mapVals.push(value)
+}
+
+// Define (or replace) an accessor property.
+pub fn objDefineAccessor(st: &mut Interp, obj: i64, key: string, getter: JSValue, setter: JSValue) {
+    touchedBuiltinProto(st, obj)
+    var i: i64 = 0
+    let n = st.objects[obj].props.len()
+    while i < n {
+        if st.objects[obj].props[i].key == key {
+            // redefining reuses nothing: the old pair (if any) is released first
+            freeAccessor(st, st.objects[obj].props[i].acc)
+            let id = allocAccessor(st, getter, setter)
+            st.objects[obj].props[i] = Prop {
+                key: key, value: JSValue.Undefined, acc: Option.Some(id), writable: true, enumerable: true, configurable: true
+            }
+            return
+        }
+        i = i + 1
+    }
+    let id = allocAccessor(st, getter, setter)
+    st.objects[obj].props.push(Prop {
+        key: key, value: JSValue.Undefined, acc: Option.Some(id), writable: true, enumerable: true, configurable: true
+    }
+    )
+}
+
+// Remove an own property. An array index becomes a hole (undefined) rather than
+// shifting the remaining elements, matching JS.
+// Writing array.length truncates or extends with holes; JS treats it as a real
+// operation, and `arr.length = 0` is the standard way to clear an array.
+pub fn arrIsHole(st: &Interp, obj: i64, idx: i64): bool {
+    if idx < 0 || idx >= arrLen(st, obj) {
+        return true
+    }
+    if idx >= st.objects[obj].elems.len() {
+        return objOwnIndex(st, obj, i64ToStr(idx)) < 0
+    }
+    var i: i64 = 0
+    let n = st.objects[obj].holes.len()
+    while i < n {
+        if st.objects[obj].holes[i] == idx {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+pub fn arrMarkHole(st: &mut Interp, obj: i64, idx: i64) {
+    if !arrIsHole(st, obj, idx) {
+        st.objects[obj].holes.push(idx)
+    }
+}
+
+fn arrClearHole(st: &mut Interp, obj: i64, idx: i64) {
+    if st.objects[obj].holes.len() == 0 {
+        return
+    }
+    var kept: Vec<i64> = Vec.new()
+    var i: i64 = 0
+    while i < st.objects[obj].holes.len() {
+        if st.objects[obj].holes[i] != idx {
+            kept.push(st.objects[obj].holes[i])
+        }
+        i = i + 1
+    }
+    st.objects[obj].holes = kept
+}
+
+pub fn setArrayLength(st: &mut Interp, obj: i64, n: i64) {
+    var target = n
+    if target < 0 {
+        target = 0
+    }
+    let oldLen = arrLen(st, obj)
+    while st.objects[obj].elems.len() > target {
+        let _ = st.objects[obj].elems.pop()
+    }
+    // shrink: forget hole records past the new end
+    if st.objects[obj].holes.len() > 0 {
+        var kept: Vec<i64> = Vec.new()
+        var i: i64 = 0
+        while i < st.objects[obj].holes.len() {
+            if st.objects[obj].holes[i] < target {
+                kept.push(st.objects[obj].holes[i])
+            }
+            i = i + 1
+        }
+        st.objects[obj].holes = kept
+    }
+    // Truncation removes sparse numeric properties too; otherwise growing the
+    // array again would incorrectly resurrect elements above the old length.
+    if target < oldLen {
+        // Drop the sparse numeric props at or past the new length in place (back
+        // to front), rather than rebuilding the whole bag by cloning survivors.
+        var p: i64 = st.objects[obj].props.len() - 1
+        while p >= 0 {
+            let keyIndex = asArrayIndex(st.objects[obj].props[p].key)
+            if keyIndex >= target {
+                freeAccessor(st, st.objects[obj].props[p].acc)
+                st.objects[obj].props.remove(p)
+            }
+            p = p - 1
+        }
+    }
+    if target == st.objects[obj].elems.len() {
+        st.objects[obj].logicalLen = -1
+    } else {
+        st.objects[obj].logicalLen = target
+    }
+}
+
+// Delete an own property. Returns whether the delete "succeeded" in JS terms:
+// true if the key was removed or was absent, false if it is a non-configurable
+// own property (which stays). `delete` evaluates to this bool.
+pub fn objDeleteKey(st: &mut Interp, obj: i64, key: &string): bool {
+    touchedBuiltinProto(st, obj)
+    if st.objects[obj].isArray {
+        let ai = asArrayIndex(key)
+        if ai >= 0 && ai < st.objects[obj].elems.len() {
+            // delete leaves length alone but the slot becomes a HOLE:
+            // `ai in arr` and hasOwnProperty must say false from now on
+            st.objects[obj].elems[ai] = JSValue.Undefined
+            arrMarkHole(st, obj, ai)
+            return true
+        }
+    }
+    // a non-configurable own property cannot be deleted (delete returns false)
+    let idx = objOwnIndex(st, obj, key)
+    if idx >= 0 && !st.objects[obj].props[idx].configurable {
+        return false
+    }
+    // Remove in place: `Vec.remove` moves the element out, so deleting one key
+    // costs a memmove instead of deep-cloning every surviving property (a key
+    // string plus a JSValue each). Back to front so earlier indices stay valid
+    // while the scan continues.
+    var i: i64 = st.objects[obj].props.len() - 1
+    while i >= 0 {
+        if st.objects[obj].props[i].key == key {
+            freeAccessor(st, st.objects[obj].props[i].acc)
+            st.objects[obj].props.remove(i)
+        }
+        i = i - 1
+    }
+    return true
+}
+
+// Index of `key` on `obj` itself (not its prototype chain), or -1.
+pub fn objOwnIndex(st: &Interp, obj: i64, key: &string): i64 {
+    var i: i64 = 0
+    let n = st.objects[obj].props.len()
+    while i < n {
+        if st.objects[obj].props[i].key == key {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// If `o` is a milojs Buffer, return the handle of its backing byte array, else
+// -1. This is what lets buf[i] read and write a byte: node's Buffer is a
+// Uint8Array, but milojs backs it with a plain object holding a JS array in
+// `.bytes`, so the numeric property is not otherwise present and buf[i] would be
+// undefined. Gated on the non-enumerable `__isBuf` marker the Buffer constructor
+// stamps (buffer.js) — NOT the mere shape — so a user object that happens to
+// have `{ bytes, length }` is never mis-indexed as a buffer.
+pub fn bufferBytesHandle(st: &Interp, o: i64): i64 {
+    if objOwnIndex(st, o, "__isBuf") < 0 {
+        return -1
+    }
+    let bi = objOwnIndex(st, o, "bytes")
+    if bi < 0 {
+        return -1
+    }
+    match st.objects[o].props[bi].value {
+        JSValue.Obj(bh) => {
+            if st.objects[bh].isArray {
+                return bh
+            }
+        }
+        _ => {
+        }
+    }
+    return -1
+}
+
+// Return the native byte-view object stored in a Buffer's `.bytes`, or -1 for
+// ordinary JavaScript-backed Buffers and unrelated objects.
+pub fn bufferNativeViewHandle(st: &Interp, o: i64): i64 {
+    if objOwnIndex(st, o, "__isBuf") < 0 {
+        return -1
+    }
+    let bi = objOwnIndex(st, o, "bytes")
+    if bi < 0 {
+        return -1
+    }
+    match st.objects[o].props[bi].value {
+        JSValue.Obj(view) => {
+            if st.objExtras[st.objects[view].extra].nativeBufLen >= 0 {
+                return view
+            }
+        }
+        _ => {
+        }
+    }
+    return -1
+}
+
+pub fn nativeBufferLen(st: &Interp, o: i64): i64 {
+    return st.objExtras[st.objects[o].extra].nativeBufLen
+}
+
+pub fn nativeBufferPtr(st: &Interp, o: i64): i64 {
+    return st.objExtras[st.objects[o].extra].nativeBufPtr
+}
+
+pub fn nativeBufferGet(st: &Interp, o: i64, at: i64): JSValue {
+    let ex = st.objects[o].extra
+    if at < 0 || at >= st.objExtras[ex].nativeBufLen {
+        return JSValue.Undefined
+    }
+    unsafe {
+        let p = (st.objExtras[ex].nativeBufPtr + at) as *u8
+        return JSValue.Number((*p) as f64)
+    }
+}
+
+pub fn nativeBufferSet(st: &mut Interp, o: i64, at: i64, value: f64): bool {
+    let ex = st.objects[o].extra
+    if at < 0 || at >= st.objExtras[ex].nativeBufLen {
+        return false
+    }
+    unsafe {
+        let p = (st.objExtras[ex].nativeBufPtr + at) as *u8
+        *p = ((value as i64) & 255) as u8
+    }
+    return true
+}
+
+// A key names an array element only if it is a canonical non-negative integer
+// ("0", "1", ...); returns that index, or -1 for any other key (which addresses a
+// string property instead, per JS).
+pub fn asArrayIndex(key: &string): i64 {
+    let n = key.len()
+    if n == 0 {
+        return -1
+    }
+    if key[0] == '0' && n > 1 {
+        return -1
+    }
+    // A valid array index is a canonical uint32 STRICTLY less than 2^32-1, so the
+    // largest is 4294967294 (10 digits). >10 digits can't be an index and would
+    // overflow the i64 accumulator into a bogus small value — reject up front.
+    if n > 10 {
+        return -1
+    }
+    var idx: i64 = 0
+    var i: i64 = 0
+    while i < n {
+        let c = key[i]
+        if c < '0' || c > '9' {
+            return -1
+        }
+        idx = idx * 10 + (c as i64 - 48)
+        i = i + 1
+    }
+    // 4294967295 (2^32-1) and above are string keys, not indices, in JS
+    if idx >= 4294967295 {
+        return -1
+    }
+    return idx
+}
+
+// JS own-property enumeration order: integer-index keys ascending first, then
+// the remaining string keys in insertion order. Returns prop indices into
+// st.objects[o].props in that order. Symbol-keyed props (stored with the
+// "@@sym:" prefix, including internal ones like Symbol.iterator) are omitted —
+// string-key enumeration never yields symbols in JS. Enumeration sites
+// (Object.keys/values/entries, for-in, spread, Object.assign) iterate these
+// instead of 0..len so `{ 2:a, 1:b, 10:c, x:d }` enumerates 1,2,10,x and a
+// symbol key never leaks into keys()/for-in/JSON — matching V8/node.
+// A property key is a symbol iff it carries the "@@sym:" sentinel prefix that
+// symbol values stringify to (see makeSymbol in eval.milo). Kept here so
+// runtime.milo stays free of an eval.milo import cycle.
+pub fn isSymbolKey(s: &string): bool {
+    return s.len() >= 6 && s[0] == '@' && s[1] == '@' && s[2] == 's' && s[3] == 'y' && s[4] == 'm' && s[5] == ':'
+}
+
+pub fn isPrivateKey(k: &string): bool {
+    return k.len() > 0 && k[0] == '#'
+}
+
+pub fn enumOrder(st: &Interp, o: i64): Vec<i64> {
+    let np = st.objects[o].props.len()
+    var ints: Vec<i64> = Vec.new()
+    var strs: Vec<i64> = Vec.new()
+    var i: i64 = 0
+    while i < np {
+        if isSymbolKey(st.objects[o].props[i].key) {
+            i = i + 1
+            continue
+        }
+        // a PRIVATE member is stored as an ordinary property keyed "#name@class"
+        // so the existing property machinery carries it, but it must not appear
+        // in Object.keys, getOwnPropertyNames, for-in or JSON — it is not a
+        // property of the object as far as JS is concerned.
+        if isPrivateKey(st.objects[o].props[i].key) {
+            i = i + 1
+            continue
+        }
+        if asArrayIndex(st.objects[o].props[i].key) >= 0 {
+            ints.push(i)
+        } else {
+            strs.push(i)
+        }
+        i = i + 1
+    }
+    // insertion sort ints by their integer key value (property sets are small)
+    var a: i64 = 1
+    while a < ints.len() {
+        let cur = ints[a]
+        let curKey = asArrayIndex(st.objects[o].props[cur].key)
+        var b: i64 = a - 1
+        while b >= 0 && asArrayIndex(st.objects[o].props[ints[b]].key) > curKey {
+            ints[b + 1] = ints[b]
+            b = b - 1
+        }
+        ints[b + 1] = cur
+        a = a + 1
+    }
+    var out: Vec<i64> = Vec.new()
+    var j: i64 = 0
+    while j < ints.len() {
+        out.push(ints[j])
+        j = j + 1
+    }
+    j = 0
+    while j < strs.len() {
+        out.push(strs[j])
+        j = j + 1
+    }
+    return out
+}
+
+pub fn arrGet(st: &Interp, obj: i64, idx: i64): JSValue {
+    if idx < 0 {
+        return JSValue.Undefined
+    }
+    if idx < arrLen(st, obj) {
+        if idx < st.objects[obj].elems.len() && !arrIsHole(st, obj, idx) {
+            return cloneValue(st.objects[obj].elems[idx])
+        }
+        // A hole INSIDE the element vector may still be an own property: an
+        // index given attributes by defineProperty moves out of the element
+        // vector, which has no room for them, and is holed there. Looking only
+        // past the end missed that case and the read answered undefined.
+        let sparse = objOwnIndex(st, obj, i64ToStr(idx))
+        if sparse >= 0 {
+            return cloneValue(st.objects[obj].props[sparse].value)
+        }
+    }
+    // Past the end is the same case as a hole: no own property, so the read
+    // continues up the chain. Truncating with `a.length = 0` re-exposes an
+    // inherited index that the array's own element was shadowing.
+    return protoIndexValue(st, obj, idx)
+}
+
+// A HOLE is the ABSENCE of an own property, so the read continues up the
+// prototype chain: with `Array.prototype[1] = 1`, `[0]` extended to length 2
+// reads 1 at index 1, not undefined. Reading a hole as undefined made every
+// hole shadow the inherited index the spec says it should expose.
+fn protoIndexValue(st: &Interp, obj: i64, idx: i64): JSValue {
+    let key = i64ToStr(idx)
+    var cur = st.objects[obj].proto
+    while cur >= 0 {
+        let pi = objOwnIndex(st, cur, key)
+        if pi >= 0 {
+            return cloneValue(st.objects[cur].props[pi].value)
+        }
+        if st.objects[cur].isArray && !arrIsHole(st, cur, idx) {
+            return arrGet(st, cur, idx)
+        }
+        cur = st.objects[cur].proto
+    }
+    return JSValue.Undefined
+}
+
+// HasProperty for an array index: an own element, an own sparse property, or
+// anything the prototype chain supplies. indexOf/lastIndexOf and the callback
+// methods are specified over PRESENT indices, and "present" includes inherited
+// ones — which is why this is not simply !arrIsHole.
+pub fn arrHasIndex(st: &Interp, obj: i64, idx: i64): bool {
+    if idx < 0 {
+        return false
+    }
+    if !arrIsHole(st, obj, idx) {
+        return true
+    }
+    let key = i64ToStr(idx)
+    var cur = st.objects[obj].proto
+    while cur >= 0 {
+        if objOwnIndex(st, cur, key) >= 0 {
+            return true
+        }
+        if st.objects[cur].isArray && !arrIsHole(st, cur, idx) {
+            return true
+        }
+        cur = st.objects[cur].proto
+    }
+    return false
+}
+
+// Sequential writes stay dense. Far writes use the ordinary numeric property
+// bag so a sparse index cannot force allocation of every preceding hole.
+pub fn arrSet(st: &mut Interp, obj: i64, idx: i64, value: JSValue) {
+    if idx < 0 {
+        return
+    }
+    let oldLen = arrLen(st, obj)
+    if idx < st.objects[obj].elems.len() {
+        st.objects[obj].elems[idx] = value
+        arrClearHole(st, obj, idx)
+    } else if st.objects[obj].elems.len() == idx {
+        st.objects[obj].elems.push(value)
+    } else {
+        objSet(st, obj, i64ToStr(idx), value)
+    }
+    if idx >= oldLen {
+        st.objects[obj].logicalLen = idx + 1
+        if st.objects[obj].logicalLen == st.objects[obj].elems.len() {
+            st.objects[obj].logicalLen = -1
+        }
+    }
+}
+
+pub fn objHas(st: &Interp, o: i64, key: &string): bool {
+    // The global object holds no properties of its own: a top-level `var` or
+    // function declaration is a binding in scope 0, and globalThis mirrors it on
+    // read and write. Own-key QUERIES have to mirror it too, or
+    // `hasOwnProperty(globalThis, "$DONE")` denies a global that is plainly
+    // there (test262's async harness refuses to run on that answer).
+    if st.objects[o].isGlobal && scopeHasOwn(st, 0, key) {
+        return true
+    }
+    var i: i64 = 0
+    let n = st.objects[o].props.len()
+    while i < n {
+        if st.objects[o].props[i].key == key {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// objHas over the prototype chain, so a synthesised fallback method never
+// shadows one a prototype actually defines.
+pub fn objHasInChain(st: &Interp, o: i64, key: &string): bool {
+    var cur = o
+    while cur >= 0 {
+        if objHas(st, cur, key) {
+            return true
+        }
+        let next = st.objects[cur].proto
+        if next >= 0 {
+            cur = next
+        } else if cur != st.objectProtoObj && st.objectProtoObj >= 0 {
+            // A plain object's `proto` field is -1: the link to Object.prototype
+            // is resolved by type, not stored, so a raw walk of the field stops
+            // one level short and reports `toString` as absent.
+            cur = st.objectProtoObj
+        } else {
+            cur = -1
+        }
+    }
+    return false
+}
+
+// The .prototype object for a function, created on first access and cached
+// (a GC root via funcProtos). Grows the sparse map as needed.
+// Property bag for a function's own (static) properties. Separate from
+// funcProtos, which holds what instances inherit.
+// Lazily created property bag for a native constructor.
+// nativeKeys/nativeProps are one association list, not a map keyed by an id: a
+// Native is a variant, not an integer, so there is nothing to index a Vec with.
+// Entries are appended on first use, and the families that live here are
+// bounded (one entry per Builtin, one per typed-array kind), so the scan is
+// short and does not grow with the program.
+fn nativePropsSlot(st: &Interp, n: &Native): i64 {
+    var i: i64 = 0
+    while i < st.nativeKeys.len() {
+        if nativeEq(st.nativeKeys[i], n) {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// Resolvers are the exception, and get an index rather than a scan: a program
+// mints two per promise, and scanning a list that grows with them made a loop
+// over 50k promises 24x slower. The key is the promise's own handle, an index
+// into the object arena, so nothing else is numbered from it.
+fn resolverPropsSlot(promise: i64, isReject: bool): i64 {
+    if isReject {
+        return promise * 2 + 1
+    }
+    return promise * 2
+}
+
+fn newNativePropsObj(st: &mut Interp): i64 {
+    let o = newObject(st)
+    // A native IS callable, so its property bag must inherit Function.prototype
+    // — that is what makes `String.constructor` resolve to Function and
+    // `Object.getPrototypeOf(String)` answer Function.prototype.
+    st.objects[o].isFunctionLike = true
+    return o
+}
+
+// The property bag a native already has, or -1. The read-only half of
+// getNativeProps, for callers that hold an immutable Interp and must not
+// materialise a bag as a side effect of asking.
+pub fn nativePropsOf(st: &Interp, n: &Native): i64 {
+    match n {
+        Native.Resolver(promise, isReject) => {
+            let k = resolverPropsSlot(promise, isReject)
+            if k >= st.resolverProps.len() {
+                return -1
+            }
+            return st.resolverProps[k]
+        }
+        _ => {
+        }
+    }
+    let slot = nativePropsSlot(st, n)
+    if slot < 0 {
+        return -1
+    }
+    return st.nativeProps[slot]
+}
+
+pub fn getNativeProps(st: &mut Interp, n: &Native): i64 {
+    match n {
+        Native.Resolver(promise, isReject) => {
+            let k = resolverPropsSlot(promise, isReject)
+            while st.resolverProps.len() <= k {
+                st.resolverProps.push(-1)
+            }
+            if st.resolverProps[k] < 0 {
+                st.resolverProps[k] = newNativePropsObj(st)
+            }
+            return st.resolverProps[k]
+        }
+        _ => {
+        }
+    }
+    let slot = nativePropsSlot(st, n)
+    if slot >= 0 {
+        return st.nativeProps[slot]
+    }
+    let o = newNativePropsObj(st)
+    st.nativeKeys.push(cloneNative(n))
+    st.nativeProps.push(o)
+    return o
+}
+
+pub fn getFuncStatics(st: &mut Interp, fnIdx: i64, envIdx: i64): i64 {
+    // no valid closure env (e.g. a synthesized value): fall back to the global
+    // fnIdx-keyed slot — collisions there are the pre-existing, rarer behavior
+    if envIdx < 0 || envIdx >= st.scopes.len() {
+        while st.funcStatics.len() <= fnIdx {
+            st.funcStatics.push(-1)
+        }
+        if st.funcStatics[fnIdx] < 0 {
+            let o = newObject(st)
+            st.funcStatics[fnIdx] = o
+        }
+        return st.funcStatics[fnIdx]
+    }
+    var k: i64 = 0
+    let n = st.scopes[envIdx].fnStatKeys.len()
+    while k < n {
+        if st.scopes[envIdx].fnStatKeys[k] == fnIdx {
+            return st.scopes[envIdx].fnStatVals[k]
+        }
+        k = k + 1
+    }
+    let o = newObject(st)
+    st.scopes[envIdx].fnStatKeys.push(fnIdx)
+    st.scopes[envIdx].fnStatVals.push(o)
+    return o
+}
+
+pub fn getFuncProto(st: &mut Interp, fnIdx: i64): i64 {
+    while st.funcProtos.len() <= fnIdx {
+        st.funcProtos.push(-1)
+    }
+    if st.funcProtos[fnIdx] < 0 {
+        let p = newObject(st)
+        st.funcProtos[fnIdx] = p
+    }
+    return st.funcProtos[fnIdx]
+}
+
+// `Foo.prototype.constructor` — non-enumerable, so it stays out of for-in and
+// Object.keys on every instance that inherits it. Needs the constructor's
+// closure env, which getFuncProto doesn't have, so callers pass it in.
+pub fn linkProtoConstructor(st: &mut Interp, proto: i64, fnIdx: i64, envIdx: i64) {
+    var i: i64 = 0
+    while i < st.objects[proto].props.len() {
+        if st.objects[proto].props[i].key == "constructor" {
+            return
+        }
+        i = i + 1
+    }
+    st.objects[proto].props.push(Prop {
+        key: "constructor", value: JSValue.Func(fnIdx, envIdx), acc: Option.None, writable: true, enumerable: false, configurable: true
+    }
+    )
+}
+
+pub fn arrLen(st: &Interp, obj: i64): i64 {
+    if st.objects[obj].logicalLen >= 0 {
+        return st.objects[obj].logicalLen
+    }
+    return st.objects[obj].elems.len()
+}
+
+pub fn arrPush(st: &mut Interp, obj: i64, value: JSValue) {
+    arrSet(st, obj, arrLen(st, obj), value)
+}
+
+pub fn newScope(st: &mut Interp, parent: i64): i64 {
+    st.allocSinceGc = st.allocSinceGc + 1
+    let sc = Scope {
+        parent: parent, vars: Vec.new(), mark: false,
+        fnStatKeys: Vec.new(), fnStatVals: Vec.new(), annexBFns: Vec.new(), withObj: -1,
+        dispRecv: Vec.new(), dispFn: Vec.new()
+    }
+    if st.freeList.len() > 0 {
+        let idx = st.freeList.pop()!
+        st.scopes[idx] = sc
+        return idx
+    }
+    st.scopes.push(sc)
+    return st.scopes.len() - 1
+}
+
+// Roots pushed/popped around every call and block body. Popping makes a
+// completed frame collectable at the next GC safepoint.
+pub fn pushActive(st: &mut Interp, scope: i64) {
+    st.active.push(scope)
+}
+
+pub fn popActive(st: &mut Interp) {
+    let _ = st.active.pop()
+}
+
+pub fn pushTemp(st: &mut Interp, v: JSValue) {
+    st.tempRoots.push(v)
+}
+
+pub fn popTemp(st: &mut Interp) {
+    let _ = st.tempRoots.pop()
+}
+
+// Mark whatever a value keeps alive: a closure roots its captured scope, an
+// object handle roots its heap slot; primitives root nothing. The three mark
+// functions are mutually recursive and all idempotent (mark flags), so cyclic
+// closure/object graphs terminate.
+fn markValue(st: &mut Interp, v: &JSValue) {
+    match v {
+        JSValue.Func(_f, envIdx) => {
+            markScope(st, envIdx)
+        }
+        JSValue.Obj(objIdx) => {
+            markObject(st, objIdx)
+        }
+        JSValue.Native(n) => {
+            // a resolve/reject function carries its promise handle, and must keep
+            // that promise alive — otherwise a resolver held in a closure or timer
+            // outlives the promise it settles
+            match n {
+                Native.Resolver(promise, _isReject) => {
+                    markObject(st, promise)
+                }
+                _ => {
+                }
+            }
+        }
+        _ => {
+            // other primitives reference no heap slot
+        }
+    }
+}
+
+// Mark an object live, then everything its property values reach.
+// The heap slot a value keeps alive, as bare indices (-1 = none). Returned by
+// value so the caller's borrow of the arena element ends before it recurses.
+struct MarkTarget {
+    obj: i64,
+    scope: i64,
+}
+
+// Mirrors markValue's cases exactly, but yields handles instead of a value.
+fn markTargetOf(v: &JSValue): MarkTarget {
+    match v {
+        JSValue.Func(_f, envIdx) => {
+            return MarkTarget {
+                obj: -1, scope: envIdx
+            }
+        }
+        JSValue.Obj(o) => {
+            return MarkTarget {
+                obj: o, scope: -1
+            }
+        }
+        JSValue.Native(n) => {
+            // a resolve/reject function carries its promise handle, and must keep
+            // that promise alive
+            match n {
+                Native.Resolver(promise, _isReject) => {
+                    return MarkTarget {
+                        obj: promise, scope: -1
+                    }
+                }
+                _ => {
+                    return MarkTarget {
+                        obj: -1, scope: -1
+                    }
+                }
+            }
+        }
+        _ => {
+            // other primitives reference no heap slot
+            return MarkTarget {
+                obj: -1, scope: -1
+            }
+        }
+    }
+}
+
+// Mark whatever the value at an already-borrowed slot references.
+fn markVia(st: &mut Interp, t: MarkTarget) {
+    markObject(st, t.obj)
+    markScope(st, t.scope)
+}
+
+// Append a value's reference targets to pending work lists.
+fn pushMarkTargets(v: &JSValue, objs: &mut Vec<i64>, scopes: &mut Vec<i64>) {
+    let t = markTargetOf(v)
+    if t.obj >= 0 {
+        objs.push(t.obj)
+    }
+    if t.scope >= 0 {
+        scopes.push(t.scope)
+    }
+}
+
+// The children are gathered into local Vecs before being marked because a borrow
+// of st.objects[i] cannot be held across the recursive markObject(st, ..) call.
+// Gather HANDLES, not values: this previously cloned every property and element
+// into a Vec<JSValue>, so each collection deep-copied the whole live heap
+// (strings included). That made marking, not tracing, the dominant cost of a
+// GC — 43% of matmul.
+fn markObject(st: &mut Interp, i: i64) {
+    if i < 0 {
+        return
+    }
+    if st.objects[i].mark {
+        return
+    }
+    st.objects[i].mark = true
+    let proto = st.objects[i].proto
+    var objs: Vec<i64> = Vec.new()
+    var scopes: Vec<i64> = Vec.new()
+    var k: i64 = 0
+    let n = st.objects[i].props.len()
+    while k < n {
+        pushMarkTargets(st.objects[i].props[k].value, objs, scopes)
+        // an accessor property keeps its getter/setter alive
+        match st.objects[i].props[k].acc {
+            Option.Some(h) => {
+                match arenaGet(st.accessors, h) {
+                    Option.Some(pair) => {
+                        pushMarkTargets(pair.getter, objs, scopes)
+                        pushMarkTargets(pair.setter, objs, scopes)
+                    }
+                    Option.None => {
+                    }
+                }
+            }
+            Option.None => {
+            }
+        }
+        k = k + 1
+    }
+    var e: i64 = 0
+    let ne = st.objects[i].elems.len()
+    while e < ne {
+        pushMarkTargets(st.objects[i].elems[e], objs, scopes)
+        e = e + 1
+    }
+    // a promise keeps its value and every pending reaction alive
+    if st.objects[i].promiseState >= 0 {
+        pushMarkTargets(st.objExtras[st.objects[i].extra].promiseValue, objs, scopes)
+        var r: i64 = 0
+        while r < st.objExtras[st.objects[i].extra].reactions.len() {
+            pushMarkTargets(st.objExtras[st.objects[i].extra].reactions[r].onFulfilled, objs, scopes)
+            pushMarkTargets(st.objExtras[st.objects[i].extra].reactions[r].onRejected, objs, scopes)
+            objs.push(st.objExtras[st.objects[i].extra].reactions[r].derived)
+            r = r + 1
+        }
+    }
+    // a Map/Set keeps its entries alive
+    if st.objects[i].isMap || st.objects[i].isSet {
+        var mk: i64 = 0
+        while mk < st.objExtras[st.objects[i].extra].mapKeys.len() {
+            pushMarkTargets(st.objExtras[st.objects[i].extra].mapKeys[mk], objs, scopes)
+            mk = mk + 1
+        }
+        var mv: i64 = 0
+        while mv < st.objExtras[st.objects[i].extra].mapVals.len() {
+            pushMarkTargets(st.objExtras[st.objects[i].extra].mapVals[mv], objs, scopes)
+            mv = mv + 1
+        }
+    }
+    // a bound function keeps its target, receiver and pre-bound args alive
+    // (payload in the side table; isBound never set without a private extra)
+    if st.objects[i].isBound {
+        let ex = st.objects[i].extra
+        pushMarkTargets(st.objExtras[ex].boundTarget, objs, scopes)
+        pushMarkTargets(st.objExtras[ex].boundThis, objs, scopes)
+        var b: i64 = 0
+        while b < st.objExtras[ex].boundArgs.len() {
+            pushMarkTargets(st.objExtras[ex].boundArgs[b], objs, scopes)
+            b = b + 1
+        }
+    }
+    // a proxy keeps its target and handler alive. Without this the target was
+    // collected while the proxy was still reachable, and its slot was reused —
+    // a live prisma client silently lost every property the moment a second
+    // client was constructed.
+    if st.objects[i].isProxy {
+        let ex = st.objects[i].extra
+        pushMarkTargets(st.objExtras[ex].proxyTarget, objs, scopes)
+        pushMarkTargets(st.objExtras[ex].proxyHandler, objs, scopes)
+    }
+    // a typed-array view keeps its backing ArrayBuffer alive
+    if st.objExtras[st.objects[i].extra].taBuf >= 0 {
+        objs.push(st.objExtras[st.objects[i].extra].taBuf)
+    }
+    // an array-like adapter keeps the receiver it copied from alive: callbacks
+    // still hand that handle out, and a GC mid-callback would otherwise reuse
+    // its slot
+    if st.objExtras[st.objects[i].extra].arrayLikeOrig >= 0 {
+        objs.push(st.objExtras[st.objects[i].extra].arrayLikeOrig)
+    }
+    // an object keeps its prototype alive
+    if proto >= 0 {
+        markObject(st, proto)
+    }
+    for child in objs {
+        markObject(st, child)
+    }
+    for sc in scopes {
+        markScope(st, sc)
+    }
+}
+
+// Mark a scope live, then everything it can reach: its lexical parent and every
+// value bound in it (closures → their env, objects → their heap slot).
+fn markScope(st: &mut Interp, i: i64) {
+    if i < 0 {
+        return
+    }
+    if st.scopes[i].mark {
+        return
+    }
+    st.scopes[i].mark = true
+    // a `with` object is reachable only from its scope
+    if st.scopes[i].withObj >= 0 {
+        markObject(st, st.scopes[i].withObj)
+    }
+    let parent = st.scopes[i].parent
+    // handles, not cloned values — see markObject
+    var objs: Vec<i64> = Vec.new()
+    var scopes: Vec<i64> = Vec.new()
+    var k: i64 = 0
+    let n = st.scopes[i].vars.len()
+    while k < n {
+        pushMarkTargets(st.scopes[i].vars[k].value, objs, scopes)
+        k = k + 1
+    }
+    // A `using` resource and its snapshotted dispose method are reachable ONLY
+    // from here once the binding is shadowed or the value reassigned, so they are
+    // roots in their own right; without this a resource could be collected before
+    // its disposer ran.
+    var dk: i64 = 0
+    let dn = st.scopes[i].dispRecv.len()
+    while dk < dn {
+        pushMarkTargets(st.scopes[i].dispRecv[dk], objs, scopes)
+        pushMarkTargets(st.scopes[i].dispFn[dk], objs, scopes)
+        dk = dk + 1
+    }
+    // this scope's per-instance function statics are roots for anything they hold
+    var fsvals: Vec<i64> = Vec.new()
+    var fk: i64 = 0
+    let fn2 = st.scopes[i].fnStatVals.len()
+    while fk < fn2 {
+        fsvals.push(st.scopes[i].fnStatVals[fk])
+        fk = fk + 1
+    }
+    markScope(st, parent)
+    for child in objs {
+        markObject(st, child)
+    }
+    for sc in scopes {
+        markScope(st, sc)
+    }
+    for fs in fsvals {
+        markObject(st, fs)
+    }
+}
+
+// Mark-sweep over both arenas. SAFE ONLY at execBlock statement boundaries: there
+// every live value is stored in a scope binding (a root) and no closure/object is
+// in-flight on the native stack mid-expression, so nothing reachable is missed.
+pub fn collect(st: &mut Interp) {
+    var i: i64 = 0
+    while i < st.scopes.len() {
+        st.scopes[i].mark = false
+        i = i + 1
+    }
+    var oi: i64 = 0
+    while oi < st.objects.len() {
+        st.objects[oi].mark = false
+        oi = oi + 1
+    }
+    // roots: global scope 0 + the whole dynamic call/block stack. Objects are
+    // marked transitively from the values bound in reachable scopes.
+    markScope(st, 0)
+    var a: i64 = 0
+    while a < st.active.len() {
+        markScope(st, st.active[a])
+        a = a + 1
+    }
+    var t: i64 = 0
+    while t < st.tempRoots.len() {
+        let tv = cloneValue(st.tempRoots[t])
+        markValue(st, tv)
+        t = t + 1
+    }
+    var vs: i64 = 0
+    while vs < st.vmSp {
+        let vv = cloneValue(st.vmStack[vs])
+        markValue(st, vv)
+        vs = vs + 1
+    }
+    var hr: i64 = 0
+    while hr < st.hostRoots.len() {
+        if st.hostRootLive[hr] {
+            let hv = cloneValue(st.hostRoots[hr])
+            markValue(st, hv)
+        }
+        hr = hr + 1
+    }
+    if st.throwing {
+        let tv = cloneValue(st.thrownValue)
+        markValue(st, tv)
+    }
+    // A suspended activation is not running, so its roots are not in st.active
+    // or st.tempRoots — they were lifted into its saved context. Skipping them
+    // frees objects out from under an activation that is only parked, which
+    // surfaces as a use-after-free when it resumes.
+    var av: i64 = 0
+    while av < st.actEnv.len() {
+        markScope(st, st.actEnv[av])
+        var ag: i64 = 0
+        while ag < st.actArgs[av].len() {
+            let argv = cloneValue(st.actArgs[av][ag])
+            markValue(st, argv)
+            ag = ag + 1
+        }
+        let tv2 = cloneValue(st.actThis[av])
+        markValue(st, tv2)
+        // the promise this activation will settle — see actPromise
+        markObject(st, st.actPromise[av])
+        av = av + 1
+    }
+    var sc: i64 = 0
+    while sc < st.suspended.len() {
+        var ai: i64 = 0
+        while ai < st.suspended[sc].active.len() {
+            markScope(st, st.suspended[sc].active[ai])
+            ai = ai + 1
+        }
+        var ti: i64 = 0
+        while ti < st.suspended[sc].tempRoots.len() {
+            let sv = cloneValue(st.suspended[sc].tempRoots[ti])
+            markValue(st, sv)
+            ti = ti + 1
+        }
+        if st.suspended[sc].throwing {
+            let sv = cloneValue(st.suspended[sc].thrownValue)
+            markValue(st, sv)
+        }
+        sc = sc + 1
+    }
+    // a promise a parked activation awaits must survive to be settleable — the
+    // awaiter's saved ctx usually roots it too, but this registry is the
+    // invariant: an entry here IS a liveness claim on the promise
+    var awr: i64 = 0
+    while awr < st.awaitPromise.len() {
+        markObject(st, st.awaitPromise[awr])
+        awr = awr + 1
+    }
+    // A generator parked at a yield has its body-task execution in `suspended`
+    // (marked above), but its env/args/this and the in-transit yielded/sent/err
+    // values live only in these vectors — collect must mark them, or a GC while
+    // the generator is suspended frees objects it will use on the next resume.
+    // The gen object itself is marked too: a for-of holds it only as a temp on
+    // the driving frame, and dropping it mid-iteration would orphan its task.
+    var gv: i64 = 0
+    while gv < st.genObj.len() {
+        markObject(st, st.genObj[gv])
+        markScope(st, st.genEnv[gv])
+        markScope(st, st.genScope[gv])
+        var ga: i64 = 0
+        while ga < st.genArgs[gv].len() {
+            let gav = cloneValue(st.genArgs[gv][ga])
+            markValue(st, gav)
+            ga = ga + 1
+        }
+        let gt = cloneValue(st.genThis[gv])
+        markValue(st, gt)
+        let gy = cloneValue(st.genYielded[gv])
+        markValue(st, gy)
+        let gs = cloneValue(st.genSent[gv])
+        markValue(st, gs)
+        let ge = cloneValue(st.genErr[gv])
+        markValue(st, ge)
+        gv = gv + 1
+    }
+    // cached module.exports are roots — a loaded module's exports outlive its scope
+    var me: i64 = 0
+    while me < st.modExports.len() {
+        let mv = cloneValue(st.modExports[me])
+        markValue(st, mv)
+        me = me + 1
+    }
+    // %GeneratorPrototype% is a root in its own right. It is normally reachable
+    // through some generator function's .prototype below, but it is created
+    // BEFORE that link is made, and a collection in that window would sweep it.
+    if st.genProtoObj >= 0 {
+        markObject(st, st.genProtoObj)
+    }
+    // every function's .prototype object is a root (methods live on it)
+    var fp: i64 = 0
+    while fp < st.funcProtos.len() {
+        if st.funcProtos[fp] >= 0 {
+            markObject(st, st.funcProtos[fp])
+        }
+        fp = fp + 1
+    }
+    // pending timer callbacks and queued microtasks are roots — nothing else
+    // references them until they run
+    var tm: i64 = 0
+    while tm < st.timers.len() {
+        if st.timers[tm].active {
+            let cb = cloneValue(st.timers[tm].cb)
+            markValue(st, cb)
+            var ta: i64 = 0
+            while ta < st.timers[tm].args.len() {
+                let argVal = cloneValue(st.timers[tm].args[ta])
+                markValue(st, argVal)
+                ta = ta + 1
+            }
+        }
+        tm = tm + 1
+    }
+    var mt: i64 = 0
+    while mt < st.microtasks.len() {
+        let mcb = cloneValue(st.microtasks[mt].cb)
+        let marg = cloneValue(st.microtasks[mt].arg)
+        markValue(st, mcb)
+        markValue(st, marg)
+        // the derived promise of a discarded `p.then(cb)` is referenced only by
+        // this queued microtask once settlePromise has cleared p.reactions
+        if st.microtasks[mt].derived >= 0 {
+            markObject(st, st.microtasks[mt].derived)
+        }
+        mt = mt + 1
+    }
+    // constructor-side objects held only in Interp fields are roots: nothing in
+    // the scope chain references them, since the globals bind the native itself
+    if st.dateCtorProps >= 0 {
+        markObject(st, st.dateCtorProps)
+    }
+    if st.stringCtorProps >= 0 {
+        markObject(st, st.stringCtorProps)
+    }
+    if st.arrayCtorObj >= 0 {
+        markObject(st, st.arrayCtorObj)
+    }
+    if st.promiseCtorObj >= 0 {
+        markObject(st, st.promiseCtorObj)
+    }
+    // a listening server is reachable only from this registry
+    var hs: i64 = 0
+    var pf: i64 = 0
+    while pf < st.fetches.len() {
+        markObject(st, st.fetches[pf].promise)
+        pf = pf + 1
+    }
+    while hs < st.httpServers.len() {
+        markObject(st, st.httpServers[hs])
+        hs = hs + 1
+    }
+    // native-constructor property bags are roots too
+    var np: i64 = 0
+    while np < st.nativeProps.len() {
+        if st.nativeProps[np] >= 0 {
+            markObject(st, st.nativeProps[np])
+        }
+        np = np + 1
+    }
+    var rp: i64 = 0
+    while rp < st.resolverProps.len() {
+        if st.resolverProps[rp] >= 0 {
+            markObject(st, st.resolverProps[rp])
+        }
+        rp = rp + 1
+    }
+    // as are static-property bags
+    var fs: i64 = 0
+    while fs < st.funcStatics.len() {
+        if st.funcStatics[fs] >= 0 {
+            markObject(st, st.funcStatics[fs])
+        }
+        fs = fs + 1
+    }
+    var freed: i64 = 0
+    var s: i64 = 0
+    while s < st.scopes.len() {
+        let isFree = st.scopes[s].parent == GC_FREE
+        if s != 0 && !isFree && !st.scopes[s].mark {
+            st.scopes[s].vars = Vec.new()
+            st.scopes[s].parent = GC_FREE
+            st.freeList.push(s)
+            freed = freed + 1
+        }
+        s = s + 1
+    }
+    var ofreed: i64 = 0
+    var os: i64 = 0
+    while os < st.objects.len() {
+        if !st.objects[os].free && !st.objects[os].mark {
+            releaseExtra(st, os)
+            // the object's accessor slots die with it, or the side table grows
+            // without bound across a long-running server's request objects
+            freeObjAccessors(st, os)
+            st.objects[os].props = Vec.new()
+            st.objects[os].elems = Vec.new()
+            st.objects[os].free = true
+            st.objFreeList.push(os)
+            ofreed = ofreed + 1
+        }
+        os = os + 1
+    }
+    st.gcRuns = st.gcRuns + 1
+    st.allocSinceGc = 0
+
+    // Proportional heap growth: let the next collection wait until roughly as
+    // many allocations have happened as there are live cells. A FIXED threshold
+    // makes total marking O(n^2) — the live set grows with the program's data
+    // while collections keep firing every `threshold` allocations, so each of
+    // the O(n/threshold) runs marks O(n) cells. Scaling the trigger with the
+    // live set amortizes marking to O(1) per allocation.
+    let live = (st.scopes.len() - st.freeList.len()) + (st.objects.len() - st.objFreeList.len())
+    st.gcThreshold = live * st.gcGrowthFactor
+    if st.gcThreshold < st.gcMinThreshold {
+        st.gcThreshold = st.gcMinThreshold
+    }
+
+    if st.gcStats {
+        let liveSlots = st.scopes.len() - st.freeList.len()
+        let liveObjs = st.objects.len() - st.objFreeList.len()
+        print("[gc] run " + i64ToStr(st.gcRuns) + ": freed " + i64ToStr(freed) + " scopes / " + i64ToStr(ofreed) + " objs, live " + i64ToStr(liveSlots) + " scopes / " + i64ToStr(liveObjs) + " objs, arena " + i64ToStr(st.scopes.len()) + "/" + i64ToStr(st.objects.len()))
+    }
+}
+
+// Run a collection if enough allocations happened since the last one. Called
+// only from execBlock between statements (the GC safepoint).
+pub fn maybeGc(st: &mut Interp) {
+    if st.allocSinceGc >= st.gcThreshold {
+        collect(st)
+    }
+}
+
+pub fn scopeDefine(st: &mut Interp, scope: i64, name: string, value: JSValue) {
+    // redeclaration in the same scope overwrites (sloppy JS)
+    var i = st.scopes[scope].vars.len() - 1
+    while i >= 0 {
+        if st.scopes[scope].vars[i].name == name {
+            st.scopes[scope].vars[i] = Binding {
+                name: name, value: value
+            }
+            return
+        }
+        i = i - 1
+    }
+    st.scopes[scope].vars.push(Binding {
+        name: name, value: value
+    }
+    )
+}
+
+// `with (obj)` puts an object in the identifier chain. A name the object has —
+// its own or inherited — shadows every binding further out, which is the whole
+// point of the statement.
+//
+// Limitation, deliberate: these consult the object with objHas/objGet, so an
+// ACCESSOR property on a with-object is read as its raw slot rather than by
+// running the getter. The lookup helpers have no Prog and so cannot re-enter the
+// interpreter; `with` over a getter is rare enough not to justify threading one
+// through the identifier hot path.
+fn withHas(st: &Interp, obj: i64, name: &string): bool {
+    var cur = obj
+    while cur >= 0 {
+        if objHas(st, cur, name) {
+            return true
+        }
+        cur = st.objects[cur].proto
+    }
+    return false
+}
+
+fn withGet(st: &Interp, obj: i64, name: &string): JSValue {
+    var cur = obj
+    while cur >= 0 {
+        if objHas(st, cur, name) {
+            return objGet(st, cur, name)
+        }
+        cur = st.objects[cur].proto
+    }
+    return JSValue.Undefined
+}
+
+pub fn scopeLookup(st: &Interp, scope: i64, name: &string): JSValue {
+    var s = scope
+    while s >= 0 {
+        if st.scopes[s].withObj >= 0 && withHas(st, st.scopes[s].withObj, name) {
+            return withGet(st, st.scopes[s].withObj, name)
+        }
+        var i = st.scopes[s].vars.len() - 1
+        while i >= 0 {
+            if st.scopes[s].vars[i].name == name {
+                return cloneValue(st.scopes[s].vars[i].value)
+            }
+            i = i - 1
+        }
+        s = st.scopes[s].parent
+    }
+    return JSValue.Undefined
+}
+
+// Lookup and existence check in one chain walk — the identifier-read hot path
+// previously walked the whole chain twice (scopeHas, then scopeLookup).
+pub fn scopeTryLookup(st: &Interp, scope: i64, name: &string): Option<JSValue> {
+    var s = scope
+    while s >= 0 {
+        if st.scopes[s].withObj >= 0 && withHas(st, st.scopes[s].withObj, name) {
+            return Option.Some(withGet(st, st.scopes[s].withObj, name))
+        }
+        var i = st.scopes[s].vars.len() - 1
+        while i >= 0 {
+            if st.scopes[s].vars[i].name == name {
+                return Option.Some(cloneValue(st.scopes[s].vars[i].value))
+            }
+            i = i - 1
+        }
+        s = st.scopes[s].parent
+    }
+    return Option.None
+}
+
+// Is `name` bound anywhere on the scope chain? Distinguishes an undeclared
+// identifier from one declared and holding undefined — the two are otherwise
+// indistinguishable, which silently turns typos into undefined.
+// Like scopeHas, but stops before the GLOBAL scope. `eval` now has a global
+// binding (get-intrinsic reads it as a value), and the direct-call form must
+// still work — it is only a user binding that shadows it that should turn
+// `eval(x)` into an ordinary call.
+pub fn scopeHasBelowGlobal(st: &Interp, scope: i64, name: &string): bool {
+    var s = scope
+    while s > 0 {
+        var i = st.scopes[s].vars.len() - 1
+        while i >= 0 {
+            if st.scopes[s].vars[i].name == name {
+                return true
+            }
+            i = i - 1
+        }
+        s = st.scopes[s].parent
+    }
+    return false
+}
+
+pub fn scopeHas(st: &Interp, scope: i64, name: &string): bool {
+    var s = scope
+    while s >= 0 {
+        if st.scopes[s].withObj >= 0 && withHas(st, st.scopes[s].withObj, name) {
+            return true
+        }
+        var i = st.scopes[s].vars.len() - 1
+        while i >= 0 {
+            if st.scopes[s].vars[i].name == name {
+                return true
+            }
+            i = i - 1
+        }
+        s = st.scopes[s].parent
+    }
+    return false
+}
+
+// Is `name` bound in this scope itself (not a parent)? Hoisting must not
+// clobber a binding of the same name from an enclosing scope.
+pub fn scopeHasOwn(st: &Interp, scope: i64, name: &string): bool {
+    var i = st.scopes[scope].vars.len() - 1
+    while i >= 0 {
+        if st.scopes[scope].vars[i].name == name {
+            return true
+        }
+        i = i - 1
+    }
+    return false
+}
+
+// Assignment walks the chain; if unbound, creates a global (sloppy JS).
+// `name` is borrowed, not owned: this runs on every assignment, and taking it by
+// value made each caller clone the identifier string, a malloc/free pair per
+// `x = ...`. Only the `value` field is written for the same reason: replacing
+// the whole Binding dropped the old name string and moved an identical one back
+// in, when a match on `name` already proves the stored name is correct.
+// Worth ~5-10% on every bench in bench/ (measured against 5b377bd).
+pub fn scopeAssign(st: &mut Interp, scope: i64, name: &string, value: JSValue) {
+    var s = scope
+    while s >= 0 {
+        if st.scopes[s].withObj >= 0 && withHas(st, st.scopes[s].withObj, name) {
+            objSet(st, st.scopes[s].withObj, name.clone(), value)
+            return
+        }
+        var i = st.scopes[s].vars.len() - 1
+        while i >= 0 {
+            if st.scopes[s].vars[i].name == name {
+                st.scopes[s].vars[i].value = value
+                return
+            }
+            i = i - 1
+        }
+        s = st.scopes[s].parent
+    }
+    // Nothing declared this name anywhere. Sloppy code creates a global; STRICT
+    // code raises a ReferenceError instead, which is the single most useful
+    // thing strict mode does and the reason a typo'd assignment is caught at all.
+    if st.strict {
+        st.throwing = true
+        st.thrownValue = makeError(st, "ReferenceError", name.clone() + " is not defined")
+        return
+    }
+    st.scopes[0].vars.push(Binding {
+        name: name.clone(), value: value
+    }
+    )
+}

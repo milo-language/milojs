@@ -11,7 +11,7 @@
 // 2. OWN `name` AND `length`, with the spec's
 //    { writable: false, enumerable: false, configurable: true }. The arity table
 //    is generated from node — see builtinArity / builtinStaticArity in
-//    src/eval.milo, and docs/backlog.md for how to regenerate it.
+//    src/engine/eval.milo, and docs/backlog.md for how to regenerate it.
 const hop = Function.prototype.call.bind(Object.prototype.hasOwnProperty);
 const join = Function.prototype.call.bind(Array.prototype.join);
 const pie = Function.prototype.call.bind(Object.prototype.propertyIsEnumerable);

@@ -149,7 +149,7 @@ Error family (`Error`/`TypeError`/`RangeError`/`SyntaxError`/`ReferenceError`) +
 big one — String methods (`length`/index/`toUpperCase`/`trim`/`slice`/`split`/`indexOf`/
 `includes`/`replace`/…) and Array methods (`map`/`filter`/`reduce`/`forEach`/`join`/`indexOf`/
 `slice`/`reverse`/`concat`/…), all byte-identical to bun, including `.split().map().join()`
-chaining. String helpers live in a new `src/builtins.milo`; callback array methods stay in `src/eval.milo`
+chaining. String helpers live in a new `src/engine/builtins.milo`; callback array methods stay in `src/engine/eval.milo`
 (they need `callFunction`). *Hazard found:* Milo flat-compiles all files into one namespace, so
 milojs helper names must not collide with std (mine shadowed `std/string`'s `strIndexOf` and broke
 std internally until renamed).
@@ -167,7 +167,7 @@ class pattern works. This was the last core *language* gap.
 (byte-identical to bun — no FFI), `sqrt`/`pow` via the hardware/libc extern (IEEE
 correctly-rounded), `random` via a pure-Milo xorshift64 PRNG, plus `PI`/`E`. `Math` is a global
 object with native-fn methods.
-**Regex landed (4481b3f):** a pure-Milo backtracking engine in `src/regex.milo` (pattern → node tree
+**Regex landed (4481b3f):** a pure-Milo backtracking engine in `src/engine/regex.milo` (pattern → node tree
 → bytecode → recursive backtracking VM). Char classes/ranges/negation, `\d\w\s`, quantifiers
 `*+?{n,m}` greedy+lazy, groups/`(?:)`, alternation, anchors `^$`, `\b\B`, flags `i/g/m`.
 `new RegExp` + `re.test`/`re.exec` + `str.replace(re,$1)`/`str.match`. Byte-identical to bun (incl.

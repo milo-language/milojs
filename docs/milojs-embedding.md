@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: milojs-embedding
 purpose: design and acceptance contract for the public C embedding API
-key-files: src/libmilojs.milo, src/driver.milo, src/runtime.milo, src/eval.milo, src/ast.milo
+key-files: src/libmilojs.milo, src/engine/driver.milo, src/engine/runtime.milo, src/engine/eval.milo, src/engine/ast.milo
 update-when: an ABI function lands, ownership changes, or multi-context constraints change
 last-verified: 2026-07-30
 -->

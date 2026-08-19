@@ -1,0 +1,2086 @@
+// Node-API (N-API) host surface — enough of the C ABI for a real .node addon to
+// register itself and run against milojs.
+//
+// A .node addon is a plain shared library whose only entry point is
+// napi_register_module_v1. It exports no JS API; it BUILDS one by calling back
+// into these functions. So the addon's undefined-symbol list is the exact contract
+// (see scripts/napi-probe.ts), and every function here is an adapter between the
+// C ABI and the interpreter.
+//
+// Two things make this work at all:
+//   - milo emits unmangled C symbols, so `fn napi_get_undefined` IS the symbol the
+//     addon links against. nothing needs exporting or annotating.
+//   - the host must be linked with -Wl,-export_dynamic, or the addon's undefined
+//     symbols can't resolve against it and dlopen fails outright.
+//
+// napi_value is an opaque pointer-sized handle. It is NOT a JSValue: values move
+// as the object arena compacts, and the addon holds handles across calls. So a
+// handle is an index into gNapi.handles (biased by 1 so that 0 is a valid "null
+// handle"), and the table is a GC root for as long as the addon can reach it.
+
+from "std/io" import {
+    writeStdout
+}
+from "../engine/value" import {
+    JSValue, cloneValue, toNum, truthy
+}
+from "../engine/runtime" import {
+    Interp, gInterp, newObject, newArray, objGet, objSet, objSetNonEnumerable,
+    ensureExtra, scopeLookup, getFuncProto, bufferBytesHandle,
+    bufferNativeViewHandle, nativeBufferLen, nativeBufferPtr, nativeBufferSet
+}
+from "std/os" import {
+    malloc, memset
+}
+
+// napi_status — only the values this surface can actually produce.
+pub let NAPI_OK: i32 = 0
+pub let NAPI_INVALID_ARG: i32 = 1
+pub let NAPI_GENERIC_FAILURE: i32 = 9
+pub let NAPI_PENDING_EXCEPTION: i32 = 10
+
+// A function implemented by the addon. `fnPtr` is a napi_callback:
+//   napi_value (*)(napi_env, napi_callback_info)
+// `data` is the opaque void* the addon asked us to hand back via napi_get_cb_info.
+struct NapiFn {
+    fnPtr: i64,
+    data: i64,
+}
+
+// One in-flight call into an addon callback. napi_callback_info is opaque to the
+// addon, so it is just an index into this stack — which must be a stack, not a
+// single slot: a callback can call back into JS, which can call another callback.
+struct NapiCall {
+    args: Vec<JSValue>,
+    thisVal: JSValue,
+    fnIdx: i64,
+}
+
+// A settlement requested by an addon. settlePromise lives in eval.milo, which
+// already imports this module, so recording the request here and draining it there
+// avoids an import cycle.
+struct NapiPending {
+    promise: i64,
+    state: i64,
+    value: JSValue,
+}
+
+// A threadsafe function: a JS callback an addon may invoke from any thread.
+struct NapiTsfn {
+    jsFunc: JSValue,
+    callJsCb: i64,
+    context: i64,
+    // Threads that still hold this function. It keeps the event loop alive while
+    // positive (node does the same), so releasing every reference is what lets a
+    // script exit after prisma's $disconnect.
+    refs: i64,
+    // napi_unref_threadsafe_function: still callable, but no longer a reason to
+    // keep the loop running
+    unrefed: bool,
+}
+
+struct NapiState {
+    // handle index -> the value it denotes; slot 0 is unused so handle 0 can mean null
+    handles: Vec<JSValue>,
+    // set once the addon has been handed its exports object
+    registered: bool,
+    // a counter handed out as the handle for each open handle scope, so an addon
+    // that nests or compares them sees distinct values
+    scopeSeq: i64,
+    // storage for napi_get_last_error_info's napi_extended_error_info, which the
+    // caller reads AFTER this call returns and so must outlive it
+    lastErrorInfo: *u8,
+    fns: Vec<NapiFn>,
+    calls: Vec<NapiCall>,
+    pending: Vec<NapiPending>,
+    tsfns: Vec<NapiTsfn>,
+    // promises handed to an addon that have not settled yet. while any is
+    // outstanding the addon still owes us a result, so the event loop must stay
+    // alive — otherwise the process exits before a tokio worker replies.
+    liveDeferred: i64,
+    // self-pipe: a foreign thread writes a queued call here, the event loop reads it
+    tsfnR: i32,
+    tsfnW: i32,
+}
+
+var gNapi: NapiState = NapiState {
+    handles: Vec.new(), registered: false, scopeSeq: 0, lastErrorInfo: 0 as *u8, fns: Vec.new(), calls: Vec.new(), pending: Vec.new(), tsfns: Vec.new(), liveDeferred: 0, tsfnR: -1, tsfnW: -1
+}
+
+// Wrap a value in a fresh handle. Handles are never reused within a run: the addon
+// may hold one indefinitely, and recycling a slot would silently retarget it.
+pub fn napiHandle(v: JSValue): i64 {
+    if gNapi.handles.len() == 0 {
+        // slot 0 reserved so a returned handle is never the null pointer
+        gNapi.handles.push(JSValue.Undefined)
+    }
+    let root = cloneValue(v)
+    gNapi.handles.push(v)
+    // Node-API handles may outlive the callback that created them. Mirror each
+    // one into the interpreter's foreign-host root set so collection cannot
+    // recycle its object while the addon still owns the handle.
+    gInterp.hostRoots.push(root)
+    gInterp.hostRootLive.push(true)
+    return gNapi.handles.len() - 1
+}
+
+// Resolve a handle back to its value. Out-of-range yields Undefined rather than
+// trapping — a misbehaving addon must not take the process down.
+pub fn napiValueOf(h: i64): JSValue {
+    if h <= 0 || h >= gNapi.handles.len() {
+        return JSValue.Undefined
+    }
+    return cloneValue(gNapi.handles[h])
+}
+
+// Read a pointer-sized handle out of an out-param slot written by the addon.
+extern fn memcpy(_dst: *u8, _src: *u8, _n: i64): *u8
+
+fn napiReadHandle(p: *u8): i64 {
+    unsafe {
+        var buf: [i64; 1] = [0; 1]
+        memcpy(buf as *u8, p, 8)
+        return buf[0]
+    }
+}
+
+pub fn napiWriteHandle(p: *u8, h: i64) {
+    unsafe {
+        var buf: [i64; 1] = [h; 1]
+        memcpy(p, buf as *u8, 8)
+    }
+}
+
+// Number of handles currently live — for tests and diagnostics.
+fn napiHandleCount(): i64 {
+    if gNapi.handles.len() == 0 {
+        return 0
+    }
+    return gNapi.handles.len() - 1
+}
+
+fn napiReset() {
+    gNapi.handles = Vec.new()
+    gNapi.registered = false
+}
+
+// ── C ABI helpers ──
+
+// Out-params are raw C pointers of varying width, so each write is explicit about
+// its size: a handle and a double are 8 bytes, napi_status/typeof enums are 4, and
+// a C bool is 1. Writing the wrong width silently corrupts the addon's stack.
+fn napiWriteI32(p: *u8, v: i32) {
+    unsafe {
+        var buf: [i32; 1] = [v; 1]
+        memcpy(p, buf as *u8, 4)
+    }
+}
+
+fn napiWriteF64(p: *u8, v: f64) {
+    unsafe {
+        var buf: [f64; 1] = [v; 1]
+        memcpy(p, buf as *u8, 8)
+    }
+}
+
+fn napiWriteBool(p: *u8, v: bool) {
+    unsafe {
+        var b: u8 = 0 as u8
+        if v {
+            b = 1 as u8
+        }
+        var buf: [u8; 1] = [b; 1]
+        memcpy(p, buf as *u8, 1)
+    }
+}
+
+// NAPI_AUTO_LENGTH is (size_t)-1: the string is null-terminated instead of counted.
+fn napiReadStr(p: *u8, len: i64): string {
+    unsafe {
+        if len < 0 {
+            return _cstrToString(p)
+        }
+        var out = String.withCapacity(len)
+        var i: i64 = 0
+        while i < len {
+            out.push(_loadU8(((p as i64) + i) as *u8))
+            i = i + 1
+        }
+        return out
+    }
+}
+
+// ── value creation ──
+
+@externalLinkage
+pub fn napi_get_undefined(_env: *u8, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteHandle(result, napiHandle(JSValue.Undefined))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_get_null(_env: *u8, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteHandle(result, napiHandle(JSValue.Null))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_get_boolean(_env: *u8, value: bool, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteHandle(result, napiHandle(JSValue.Bool(value)))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_create_int32(_env: *u8, value: i32, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteHandle(result, napiHandle(JSValue.Number(value as f64)))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_create_uint32(_env: *u8, value: i32, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteHandle(result, napiHandle(JSValue.Number((value as i64) as f64)))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_create_int64(_env: *u8, value: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteHandle(result, napiHandle(JSValue.Number(value as f64)))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_create_double(_env: *u8, value: f64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteHandle(result, napiHandle(JSValue.Number(value)))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_create_string_utf8(_env: *u8, str: *u8, length: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteHandle(result, napiHandle(JSValue.Str(napiReadStr(str, length))))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_create_object(_env: *u8, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    let o = newObject(gInterp)
+    napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_create_array(_env: *u8, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    let o = newArray(gInterp)
+    napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_create_array_with_length(_env: *u8, length: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    let o = newArray(gInterp)
+    if length > 0 {
+        setArrayLength(gInterp, o, length)
+    }
+    napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
+    return NAPI_OK
+}
+
+// ── properties ──
+
+@externalLinkage
+pub fn napi_set_named_property(_env: *u8, object: i64, utf8name: *u8, value: i64): i32 {
+    match napiValueOf(object) {
+        JSValue.Obj(o) => {
+            objSet(gInterp, o, napiReadStr(utf8name, -1), napiValueOf(value))
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+@externalLinkage
+pub fn napi_get_named_property(_env: *u8, object: i64, utf8name: *u8, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    match napiValueOf(object) {
+        JSValue.Obj(o) => {
+            let v = objGet(gInterp, o, napiReadStr(utf8name, -1))
+            napiWriteHandle(result, napiHandle(v))
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+// ── value extraction ──
+
+@externalLinkage
+pub fn napi_get_value_double(_env: *u8, value: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteF64(result, toNum(napiValueOf(value)))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_get_value_int32(_env: *u8, value: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteI32(result, toNum(napiValueOf(value)) as i32)
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_get_value_bool(_env: *u8, value: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteBool(result, truthy(napiValueOf(value)))
+    return NAPI_OK
+}
+
+// napi_valuetype: undefined 0, null 1, boolean 2, number 3, string 4, symbol 5,
+// object 6, function 7, external 8, bigint 9
+@externalLinkage
+pub fn napi_typeof(_env: *u8, value: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    match napiValueOf(value) {
+        JSValue.Undefined => {
+            napiWriteI32(result, 0)
+        }
+        JSValue.Null => {
+            napiWriteI32(result, 1)
+        }
+        JSValue.Bool(_b) => {
+            napiWriteI32(result, 2)
+        }
+        JSValue.Number(_n) => {
+            napiWriteI32(result, 3)
+        }
+        JSValue.Str(_s) => {
+            napiWriteI32(result, 4)
+        }
+        JSValue.BigInt(_s) => {
+            napiWriteI32(result, 9)
+        }
+        JSValue.Func(_f, _e) => {
+            napiWriteI32(result, 7)
+        }
+        JSValue.Native(_i) => {
+            napiWriteI32(result, 7)
+        }
+        JSValue.Obj(o) => {
+            if gInterp.objects[o].isFunctionLike {
+                napiWriteI32(result, 7)
+            } else {
+                napiWriteI32(result, 6)
+            }
+        }
+    }
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_is_array(_env: *u8, value: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    match napiValueOf(value) {
+        JSValue.Obj(o) => {
+            napiWriteBool(result, gInterp.objects[o].isArray)
+        }
+        _ => {
+            napiWriteBool(result, false)
+        }
+    }
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_get_array_length(_env: *u8, value: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    match napiValueOf(value) {
+        JSValue.Obj(o) => {
+            napiWriteI32(result, arrLen(gInterp, o) as i32)
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+// ── functions implemented by the addon ──
+
+// napi_create_function(env, utf8name, length, cb, data, result)
+//
+// The result is a milojs object carrying the callback's registry index. It reports
+// as a function to typeof and is dispatched by callValue, so from JS it is
+// indistinguishable from any other callable.
+@externalLinkage
+pub fn napi_create_function(_env: *u8, _utf8name: *u8, _length: i64, cb: i64, data: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    if cb == 0 {
+        return NAPI_INVALID_ARG
+    }
+    gNapi.fns.push(NapiFn {
+        fnPtr: cb, data: data
+    }
+    )
+    let o = newObject(gInterp)
+    let _en = ensureExtra(gInterp, o)
+    gInterp.objExtras[gInterp.objects[o].extra].napiFn = gNapi.fns.len() - 1
+    gInterp.objects[o].isFunctionLike = true
+    napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
+    return NAPI_OK
+}
+
+// napi_get_cb_info(env, cbinfo, argc, argv, this_arg, data)
+//
+// `argc` is in/out: on entry the size of the addon's argv buffer, on exit the
+// number of arguments actually copied. Real argument count is reported even when
+// the buffer is smaller, which is how addons detect being under-called.
+@externalLinkage
+pub fn napi_get_cb_info(_env: *u8, cbinfo: i64, argc: *u8, argv: *u8, thisArg: *u8, data: *u8): i32 {
+    if cbinfo < 0 || cbinfo >= gNapi.calls.len() {
+        return NAPI_INVALID_ARG
+    }
+    let total = gNapi.calls[cbinfo].args.len()
+    var want: i64 = 0
+    unsafe {
+        if (argv as i64) != 0 && (argc as i64) != 0 {
+            var abuf: [i64; 1] = [0; 1]
+            memcpy(abuf as *u8, argc, 8)
+            want = abuf[0]
+            var i: i64 = 0
+            while i < want {
+                var h: i64 = 0
+                if i < total {
+                    h = napiHandle(cloneValue(gNapi.calls[cbinfo].args[i]))
+                } else {
+                    // JS pads missing arguments with undefined
+                    h = napiHandle(JSValue.Undefined)
+                }
+                napiWriteHandle(((argv as i64) + i * 8) as *u8, h)
+                i = i + 1
+            }
+        }
+        if (argc as i64) != 0 {
+            napiWriteHandle(argc, total)
+        }
+        if (thisArg as i64) != 0 {
+            napiWriteHandle(thisArg, napiHandle(cloneValue(gNapi.calls[cbinfo].thisVal)))
+        }
+        if (data as i64) != 0 {
+            let fi = gNapi.calls[cbinfo].fnIdx
+            var dv: i64 = 0
+            if fi >= 0 && fi < gNapi.fns.len() {
+                dv = gNapi.fns[fi].data
+            }
+            napiWriteHandle(data, dv)
+        }
+    }
+    return NAPI_OK
+}
+
+// Invoke an addon-implemented function. Called by callValue when a JS call lands on
+// an object whose napiFn is set.
+pub fn napiInvoke(fnIdx: i64, args: Vec<JSValue>, thisVal: JSValue): JSValue {
+    if fnIdx < 0 || fnIdx >= gNapi.fns.len() {
+        return JSValue.Undefined
+    }
+    let ptr = gNapi.fns[fnIdx].fnPtr
+    gNapi.calls.push(NapiCall {
+        args: args, thisVal: thisVal, fnIdx: fnIdx
+    }
+    )
+    let cbinfo = gNapi.calls.len() - 1
+    unsafe {
+        let f = (ptr as *u8) as extern (*u8, i64) => i64
+        let rh = f(0 as *u8, cbinfo)
+        // pop only our own frame; a nested call already popped its own
+        while gNapi.calls.len() > cbinfo {
+            let _d = gNapi.calls.pop()
+        }
+        return napiValueOf(rh)
+    }
+}
+
+// ── module loading ──
+
+extern fn dlopen(_path: *u8, _flags: i32): *u8
+
+extern fn dlsym(_handle: *u8, _symbol: *u8): *u8
+// dlerror explains WHY a load failed (a missing symbol, a wrong architecture).
+// Without it "dlopen failed" is unactionable, and an addon that fails to link is
+// exactly the case where the reason is the whole story.
+extern fn dlerror(): *u8
+
+// Load a .node addon and run its registration, returning the exports it produced.
+//
+// The real entry point is napi_register_module_v1(env, exports): we hand it a fresh
+// object and it populates it, but it may also return a DIFFERENT value, which then
+// becomes module.exports. Both shapes are legal and addons use both.
+pub fn napiLoadAddon(path: &string): Result<JSValue, string> {
+    unsafe {
+        let h = dlopen(path as *u8, 2)
+        if (h as i64) == 0 {
+            // `bindings` probes a list of candidate paths and expects a MISSING
+            // file to be recoverable: it rethrows anything whose message does
+            // not read as not-found, so "dlopen failed" stopped the search at
+            // the first candidate instead of walking on to build/Release.
+            if !fileExists(path.clone()) {
+                return Result.Err("Could not find module at path: " + path.clone())
+            }
+            let err = dlerror()
+            if (err as i64) != 0 {
+                return Result.Err("dlopen failed for " + path.clone() + ": " + _cstrToString(err))
+            }
+            return Result.Err("dlopen failed for " + path.clone())
+        }
+        let sym = dlsym(h, "napi_register_module_v1")
+        if (sym as i64) == 0 {
+            return Result.Err("not a node-api addon (no napi_register_module_v1): " + path.clone())
+        }
+        let exportsObj = newObject(gInterp)
+        let eh = napiHandle(JSValue.Obj(exportsObj))
+        let reg = (sym as *u8) as extern (*u8, i64) => i64
+        let rh = reg(0 as *u8, eh)
+        gNapi.registered = true
+        if rh != 0 && rh != eh {
+            return Result.Ok(napiValueOf(rh))
+        }
+        return Result.Ok(JSValue.Obj(exportsObj))
+    }
+}
+
+// ── not yet implemented ──
+//
+// Present so a real addon can load and register: dlopen resolves eagerly, so one
+// absent symbol makes the whole module fail with no partial progress. Each returns
+// napi_ok without producing a value, which is a lie an addon may act on — these are
+// the remaining work, not a finished surface.
+
+@externalLinkage
+pub fn napi_add_env_cleanup_hook(_a0: *u8, _a1: *u8, _a2: *u8): i32 {
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_coerce_to_object(_a0: *u8, _a1: *u8, _a2: *u8): i32 {
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_create_bigint_words(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8): i32 {
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_create_external_buffer(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8, _a5: *u8): i32 {
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_fatal_error(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8) {
+}
+
+@externalLinkage
+pub fn napi_fatal_exception(_a0: *u8, _a1: *u8): i32 {
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_get_and_clear_last_exception(_a0: *u8, _a1: *u8): i32 {
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_get_value_bigint_int64(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8): i32 {
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_get_value_bigint_uint64(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8): i32 {
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_get_value_bigint_words(_a0: *u8, _a1: *u8, _a2: *u8, _a3: *u8, _a4: *u8): i32 {
+    return NAPI_OK
+}
+
+// ── classes and native state ──
+
+// napi_property_descriptor, verified against js_native_api_types.h with the real
+// compiler (sizeof 64):
+//   0 utf8name  8 name  16 method  24 getter  32 setter  40 value  48 attributes  56 data
+let NAPI_PD_SIZE: i64 = 64
+let NAPI_PD_UTF8NAME: i64 = 0
+let NAPI_PD_METHOD: i64 = 16
+let NAPI_PD_VALUE: i64 = 40
+// napi_static — a static member lives on the constructor, not the prototype
+let NAPI_STATIC: i32 = 1024
+let NAPI_PD_ATTRIBUTES: i64 = 48
+
+pub fn napiLoadI64(p: *u8): i64 {
+    unsafe {
+        var b: [i64; 1] = [0; 1]
+        memcpy(b as *u8, p, 8)
+        return b[0]
+    }
+}
+
+fn napiLoadI32(p: *u8): i32 {
+    unsafe {
+        var b: [i32; 1] = [0; 1]
+        memcpy(b as *u8, p, 4)
+        return b[0]
+    }
+}
+
+// Register a callback and return the milojs object that dispatches to it.
+fn napiMakeFn(cb: i64, data: i64): i64 {
+    gNapi.fns.push(NapiFn {
+        fnPtr: cb, data: data
+    }
+    )
+    let o = newObject(gInterp)
+    let _en = ensureExtra(gInterp, o)
+    gInterp.objExtras[gInterp.objects[o].extra].napiFn = gNapi.fns.len() - 1
+    gInterp.objects[o].isFunctionLike = true
+    return o
+}
+
+// napi_define_class(env, utf8name, length, constructor, data, property_count,
+//                   properties, result)
+//
+// Produces a constructor object plus a prototype carrying the instance methods.
+// `new Ctor()` links the instance's proto here, so method lookup finds them.
+@externalLinkage
+pub fn napi_define_class(_env: *u8, _utf8name: *u8, _length: i64, constructor: i64, data: i64, propertyCount: i64, properties: *u8, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    if constructor == 0 {
+        return NAPI_INVALID_ARG
+    }
+    let ctor = napiMakeFn(constructor, data)
+    let proto = newObject(gInterp)
+    var i: i64 = 0
+    unsafe {
+        while i < propertyCount {
+            let base = (properties as i64) + i * NAPI_PD_SIZE
+            let namePtr = napiLoadI64((base + NAPI_PD_UTF8NAME) as *u8)
+            if namePtr != 0 {
+                let pname = napiReadStr(namePtr as *u8, -1)
+                let method = napiLoadI64((base + NAPI_PD_METHOD) as *u8)
+                let attrs = napiLoadI32((base + NAPI_PD_ATTRIBUTES) as *u8)
+                // static members hang off the constructor; everything else off the prototype
+                var target = proto
+                if (attrs & NAPI_STATIC) != 0 {
+                    target = ctor
+                }
+                if method != 0 {
+                    let m = napiMakeFn(method, napiLoadI64((base + 56) as *u8))
+                    objSet(gInterp, target, pname, JSValue.Obj(m))
+                } else {
+                    let vh = napiLoadI64((base + NAPI_PD_VALUE) as *u8)
+                    objSet(gInterp, target, pname, napiValueOf(vh))
+                }
+            }
+            i = i + 1
+        }
+    }
+    objSet(gInterp, ctor, "prototype", JSValue.Obj(proto))
+    napiWriteHandle(result, napiHandle(JSValue.Obj(ctor)))
+    return NAPI_OK
+}
+
+// napi_wrap(env, js_object, native_object, finalize_cb, finalize_hint, result)
+//
+// The finalizer is accepted but never invoked yet: milojs's collector has no
+// finalizer hook, so a wrapped native allocation outlives its JS object.
+@externalLinkage
+pub fn napi_wrap(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _finalizeHint: i64, _result: *u8): i32 {
+    match napiValueOf(jsObject) {
+        JSValue.Obj(o) => {
+            let _ew = ensureExtra(gInterp, o)
+            gInterp.objExtras[gInterp.objects[o].extra].napiWrap = nativeObject
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+@externalLinkage
+pub fn napi_unwrap(_env: *u8, jsObject: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    match napiValueOf(jsObject) {
+        JSValue.Obj(o) => {
+            napiWriteHandle(result, gInterp.objExtras[gInterp.objects[o].extra].napiWrap)
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+// ── remaining mechanical surface ──
+
+@externalLinkage
+
+// index is uint32_t, NOT size_t. Declaring it i64 reads the undefined upper half
+// of the 32-bit argument slot on AArch64, so the index came through as garbage and
+// every element resolved to undefined.
+pub fn napi_get_element(_env: *u8, object: i64, index32: i32, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    let index = index32 as i64
+    match napiValueOf(object) {
+        JSValue.Obj(o) => {
+            if index >= 0 && index < arrLen(gInterp, o) {
+                napiWriteHandle(result, napiHandle(arrGet(gInterp, o, index)))
+            } else {
+                napiWriteHandle(result, napiHandle(JSValue.Undefined))
+            }
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+@externalLinkage
+pub fn napi_set_element(_env: *u8, object: i64, index32: i32, value: i64): i32 {
+    let index = index32 as i64
+    match napiValueOf(object) {
+        JSValue.Obj(o) => {
+            arrSet(gInterp, o, index, napiValueOf(value))
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+@externalLinkage
+pub fn napi_has_named_property(_env: *u8, object: i64, utf8name: *u8, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    match napiValueOf(object) {
+        JSValue.Obj(o) => {
+            let key = napiReadStr(utf8name, -1)
+            var found = false
+            var i: i64 = 0
+            while i < gInterp.objects[o].props.len() {
+                if gInterp.objects[o].props[i].key == key {
+                    found = true
+                }
+                i = i + 1
+            }
+            napiWriteBool(result, found)
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+@externalLinkage
+pub fn napi_get_value_uint32(_env: *u8, value: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteI32(result, toNum(napiValueOf(value)) as i32)
+    return NAPI_OK
+}
+
+// napi_get_value_string_utf8(env, value, buf, bufsize, result)
+// A NULL buf means "just tell me the length", which is how addons size their
+// allocation before the real call.
+@externalLinkage
+pub fn napi_get_value_string_utf8(_env: *u8, value: i64, buf: *u8, bufsize: i64, result: *u8): i32 {
+    let s = toStr(napiValueOf(value))
+    unsafe {
+        if (buf as i64) == 0 {
+            if (result as i64) != 0 {
+                napiWriteHandle(result, s.len())
+            }
+            return NAPI_OK
+        }
+        var n = s.len()
+        if n > bufsize - 1 {
+            n = bufsize - 1
+        }
+        var i: i64 = 0
+        while i < n {
+            var one: [u8; 1] = [s[i]; 1]
+            memcpy(((buf as i64) + i) as *u8, one as *u8, 1)
+            i = i + 1
+        }
+        var z: [u8; 1] = [0 as u8; 1]
+        memcpy(((buf as i64) + n) as *u8, z as *u8, 1)
+        if (result as i64) != 0 {
+            napiWriteHandle(result, n)
+        }
+    }
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_coerce_to_string(_env: *u8, value: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteHandle(result, napiHandle(JSValue.Str(toStr(napiValueOf(value)))))
+    return NAPI_OK
+}
+
+// ── errors and globals ──
+
+// napi_get_property(env, object, key, result) — key is a napi_value, not a C string
+@externalLinkage
+pub fn napi_get_property(_env: *u8, object: i64, key: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    match napiValueOf(object) {
+        JSValue.Obj(o) => {
+            let v = objGet(gInterp, o, toStr(napiValueOf(key)))
+            napiWriteHandle(result, napiHandle(v))
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+@externalLinkage
+pub fn napi_get_global(_env: *u8, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    // scope 0 is the global scope; addons use this to reach globalThis
+    let o = newObject(gInterp)
+    gInterp.objects[o].isGlobal = true
+    napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
+    return NAPI_OK
+}
+
+fn napiMakeError(msgVal: JSValue): i64 {
+    let o = newObject(gInterp)
+    gInterp.objects[o].isError = true
+    objSet(gInterp, o, "name", JSValue.Str("Error"))
+    objSet(gInterp, o, "message", JSValue.Str(toStr(msgVal)))
+    return o
+}
+
+@externalLinkage
+pub fn napi_create_error(_env: *u8, _code: i64, msg: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    let o = napiMakeError(napiValueOf(msg))
+    napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
+    return NAPI_OK
+}
+
+// Raise a JS exception. The addon returns to us immediately afterwards, and the
+// pending throw is what callers observe.
+@externalLinkage
+pub fn napi_throw(_env: *u8, error: i64): i32 {
+    gInterp.throwing = true
+    gInterp.thrownValue = napiValueOf(error)
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_throw_error(_env: *u8, _code: *u8, msg: *u8): i32 {
+    let o = napiMakeError(JSValue.Str(napiReadStr(msg, -1)))
+    gInterp.throwing = true
+    gInterp.thrownValue = JSValue.Obj(o)
+    return NAPI_OK
+}
+
+// napi_get_property_names(env, object, result) — own enumerable string keys, as an
+// array. napi-rs's serde deserializer walks this to build a struct, so a stub that
+// returns napi_ok without writing anything leaves it reading an uninitialized
+// handle off its own stack.
+@externalLinkage
+pub fn napi_get_property_names(_env: *u8, object: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    match napiValueOf(object) {
+        JSValue.Obj(o) => {
+            let arr = newArray(gInterp)
+            var i: i64 = 0
+            while i < gInterp.objects[o].props.len() {
+                let k = gInterp.objects[o].props[i].key.clone()
+                gInterp.objects[arr].elems.push(JSValue.Str(k))
+                i = i + 1
+            }
+            napiWriteHandle(result, napiHandle(JSValue.Obj(arr)))
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+// ── buffers and references ──
+
+// Allocate the stable native view used as a Buffer's `.bytes`. Keeping ownership
+// on the view means `const bytes = buf.bytes` also keeps the allocation alive.
+fn napiNewBufferView(length: i64, source: *u8): i64 {
+    if length < 0 {
+        return -1
+    }
+    var allocLen = length
+    if allocLen == 0 {
+        allocLen = 1
+    }
+    var ptr: *u8 = 0 as *u8
+    unsafe {
+        ptr = malloc(allocLen)
+        if (ptr as i64) == 0 {
+            return -1
+        }
+        if length > 0 {
+            if (source as i64) != 0 {
+                memcpy(ptr, source, length)
+            } else {
+                memset(ptr, 0, length)
+            }
+        }
+    }
+    let view = newObject(gInterp)
+    gInterp.objects[view].proto = gInterp.arrayProtoObj
+    let ex = ensureExtra(gInterp, view)
+    gInterp.objExtras[ex].nativeBufPtr = ptr as i64
+    gInterp.objExtras[ex].nativeBufLen = length
+    gInterp.objExtras[ex].nativeBufOwned = true
+    return view
+}
+
+fn napiBufferPrototype(): i64 {
+    match scopeLookup(gInterp, 0, "Buffer") {
+        JSValue.Func(fnIdx, _env) => {
+            return getFuncProto(gInterp, fnIdx)
+        }
+        _ => {
+            return -1
+        }
+    }
+}
+
+fn napiWrapBufferView(view: i64): i64 {
+    let buf = newObject(gInterp)
+    let proto = napiBufferPrototype()
+    if proto >= 0 {
+        gInterp.objects[buf].proto = proto
+    }
+    objSet(gInterp, buf, "bytes", JSValue.Obj(view))
+    objSet(gInterp, buf, "length", JSValue.Number(nativeBufferLen(gInterp, view) as f64))
+    objSet(gInterp, buf, "__isBuf", JSValue.Bool(true))
+    objSetNonEnumerable(gInterp, buf, "__isBuf")
+    return buf
+}
+
+// JavaScript-created Buffers use a JS array. Promote it once when native code
+// asks for a pointer so later C and JS mutations share the stable allocation.
+fn napiEnsureBufferView(buf: i64): i64 {
+    let existing = bufferNativeViewHandle(gInterp, buf)
+    if existing >= 0 {
+        return existing
+    }
+    let bytes = bufferBytesHandle(gInterp, buf)
+    if bytes < 0 {
+        return -1
+    }
+    let n = gInterp.objects[bytes].elems.len()
+    let view = napiNewBufferView(n, 0 as *u8)
+    if view < 0 {
+        return -1
+    }
+    var i: i64 = 0
+    while i < n {
+        let _ = nativeBufferSet(gInterp, view, i, toNum(gInterp.objects[bytes].elems[i]))
+        i = i + 1
+    }
+    objSet(gInterp, buf, "bytes", JSValue.Obj(view))
+    return view
+}
+
+@externalLinkage
+pub fn napi_create_buffer(_env: *u8, length: i64, data: *u8, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    if (result as i64) == 0 || (data as i64) == 0 || length < 0 {
+        return NAPI_INVALID_ARG
+    }
+    let view = napiNewBufferView(length, 0 as *u8)
+    if view < 0 {
+        return NAPI_GENERIC_FAILURE
+    }
+    let buf = napiWrapBufferView(view)
+    napiWriteHandle(data, nativeBufferPtr(gInterp, view))
+    napiWriteHandle(result, napiHandle(JSValue.Obj(buf)))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_create_buffer_copy(_env: *u8, length: i64, source: *u8, data: *u8, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    if (result as i64) == 0 || length < 0 || (length > 0 && (source as i64) == 0) {
+        return NAPI_INVALID_ARG
+    }
+    let view = napiNewBufferView(length, source)
+    if view < 0 {
+        return NAPI_GENERIC_FAILURE
+    }
+    let buf = napiWrapBufferView(view)
+    if (data as i64) != 0 {
+        napiWriteHandle(data, nativeBufferPtr(gInterp, view))
+    }
+    napiWriteHandle(result, napiHandle(JSValue.Obj(buf)))
+    return NAPI_OK
+}
+
+// A JavaScript Buffer is a real Uint8Array subclass now, so its bytes live in
+// the engine's ArrayBuffer rather than in a `.bytes` native view. Returns the
+// address of the view's first byte and its length, or -1 when `o` is not a
+// typed array at all.
+fn napiTypedArrayBytes(o: i64): i64 {
+    let ex = gInterp.objects[o].extra
+    if ex < 0 {
+        return -1
+    }
+    let buf = gInterp.objExtras[ex].taBuf
+    if buf < 0 || gInterp.objects[o].isDataView {
+        return -1
+    }
+    let base = gInterp.objExtras[gInterp.objects[buf].extra].bytes.ptr() as i64
+    return base + gInterp.objExtras[ex].taOffset
+}
+
+fn napiTypedArrayLen(o: i64): i64 {
+    let ex = gInterp.objects[o].extra
+    if ex < 0 {
+        return -1
+    }
+    if gInterp.objExtras[ex].taBuf < 0 || gInterp.objects[o].isDataView {
+        return -1
+    }
+    return gInterp.objExtras[ex].taLen
+}
+
+@externalLinkage
+pub fn napi_get_buffer_info(_env: *u8, value: i64, data: *u8, length: *u8): i32 {
+    match napiValueOf(value) {
+        JSValue.Obj(buf) => {
+            // The engine's own storage is already stable and shared, so a
+            // typed-array Buffer needs no promotion to a native view: handing
+            // back a copy here would make C mutations invisible to JS.
+            let taPtr = napiTypedArrayBytes(buf)
+            if taPtr >= 0 {
+                if (data as i64) != 0 {
+                    napiWriteHandle(data, taPtr)
+                }
+                if (length as i64) != 0 {
+                    napiWriteHandle(length, napiTypedArrayLen(buf))
+                }
+                return NAPI_OK
+            }
+            let view = napiEnsureBufferView(buf)
+            if view < 0 {
+                return NAPI_INVALID_ARG
+            }
+            if (data as i64) != 0 {
+                napiWriteHandle(data, nativeBufferPtr(gInterp, view))
+            }
+            if (length as i64) != 0 {
+                napiWriteHandle(length, nativeBufferLen(gInterp, view))
+            }
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+// Every predicate MUST write its out-param. Returning napi_ok without doing so
+// leaves the caller reading an uninitialized bool off its own stack — napi-rs then
+// took a plain string for a Buffer and the whole deserialize failed with a bare
+// InvalidArg and no reason string.
+@externalLinkage
+pub fn napi_is_buffer(_env: *u8, value: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    match napiValueOf(value) {
+        JSValue.Obj(o) => {
+            napiWriteBool(result, bufferBytesHandle(gInterp, o) >= 0
+                || bufferNativeViewHandle(gInterp, o) >= 0
+                || napiTypedArrayBytes(o) >= 0)
+        }
+        _ => {
+            napiWriteBool(result, false)
+        }
+    }
+    return NAPI_OK
+}
+
+// References keep a value alive across calls. There is no finalizer hook in the
+// collector yet, so a reference is simply a handle that is never released — it
+// over-retains rather than freeing something the addon still points at.
+@externalLinkage
+pub fn napi_create_reference(_env: *u8, value: i64, _initialRefcount: i32, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteHandle(result, napiHandle(napiValueOf(value)))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_get_reference_value(_env: *u8, ref: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteHandle(result, napiHandle(napiValueOf(ref)))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_delete_reference(_env: *u8, _ref: i64): i32 {
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_reference_unref(_env: *u8, _ref: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    unsafe {
+        if (result as i64) != 0 {
+            napiWriteI32(result, 0)
+        }
+    }
+    return NAPI_OK
+}
+
+// ── promises ──
+
+// napi_create_promise(env, deferred, promise)
+//
+// The deferred and the promise are the same underlying object here, handed out as
+// two handles: milojs settles a promise in place, so there is no separate resolver
+// state to track.
+fn napiSettle(p: i64, state: i64, value: JSValue) {
+    if gNapi.liveDeferred > 0 {
+        gNapi.liveDeferred = gNapi.liveDeferred - 1
+    }
+    gNapi.pending.push(NapiPending {
+        promise: p, state: state, value: value
+    }
+    )
+}
+
+// True while an addon owes us a settlement. Keeps the event loop from exiting
+// before a worker thread replies.
+pub fn napiHasPendingWork(): bool {
+    // A live threadsafe function counts: napi-rs resolves an async call by
+    // invoking one from a tokio worker, without ever creating a deferred here,
+    // so a registered tsfn means a settlement can still arrive from off-thread.
+    // Node keeps its loop alive for a ref'd tsfn for the same reason.
+    if gNapi.liveDeferred > 0 || gNapi.pending.len() > 0 {
+        return true
+    }
+    var i: i64 = 0
+    while i < gNapi.tsfns.len() {
+        if gNapi.tsfns[i].refs > 0 && !gNapi.tsfns[i].unrefed {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// Whether a settlement can still arrive from an addon's own threads. Unlike
+// napiHasPendingWork this ignores unref'd-ness: napi-rs unrefs its threadsafe
+// functions (so they must not keep the process alive), yet they are exactly how
+// a query result comes back, so a blocked await still has to wait on them.
+// The await's own deadline is the backstop if the addon never answers.
+pub fn napiMayDeliver(): bool {
+    if gNapi.liveDeferred > 0 || gNapi.pending.len() > 0 {
+        return true
+    }
+    var i: i64 = 0
+    while i < gNapi.tsfns.len() {
+        if gNapi.tsfns[i].refs > 0 {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// Drained by the interpreter after any call into an addon.
+pub fn napiTakePending(): Vec<NapiPending> {
+    var out: Vec<NapiPending> = Vec.new()
+    while gNapi.pending.len() > 0 {
+        out.push(gNapi.pending.remove(0))
+    }
+    return out
+}
+
+@externalLinkage
+pub fn napi_create_promise(_env: *u8, deferred: *u8, promise: *u8): i32 {
+    let p = newPromise(gInterp, 0, JSValue.Undefined)
+    gNapi.liveDeferred = gNapi.liveDeferred + 1
+    napiWriteHandle(deferred, napiHandle(JSValue.Obj(p)))
+    napiWriteHandle(promise, napiHandle(JSValue.Obj(p)))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_resolve_deferred(_env: *u8, deferred: i64, resolution: i64): i32 {
+    match napiValueOf(deferred) {
+        JSValue.Obj(p) => {
+            napiSettle(p, 1, napiValueOf(resolution))
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+@externalLinkage
+pub fn napi_reject_deferred(_env: *u8, deferred: i64, rejection: i64): i32 {
+    match napiValueOf(deferred) {
+        JSValue.Obj(p) => {
+            napiSettle(p, 2, napiValueOf(rejection))
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+// ── threadsafe functions ──
+//
+// Prisma runs a tokio worker pool and settles its promises from those threads.
+// A worker must never touch the interpreter, so napi_call_threadsafe_function does
+// exactly one thing: write the queued call into a self-pipe. The event loop drains
+// it on the main thread, where calling into JS is safe.
+//
+// No mutex is needed. A write of <= PIPE_BUF is atomic, so concurrent workers cannot
+// interleave within a record.
+
+fn napiEnsurePipe() {
+    if gNapi.tsfnR >= 0 {
+        return
+    }
+    unsafe {
+        var fds: [i32; 2] = [0; 2]
+        if pipe(fds as *i32) != 0 {
+            return
+        }
+        // fd 0/1 would mean pipe() never wrote the array: reading stdin returns EOF
+        // and writing "succeeds" straight to the terminal, so the queue silently
+        // never delivers. Refuse rather than run in that state.
+        if fds[0] <= 2 || fds[1] <= 2 {
+            return
+        }
+        // the loop polls; a blocking read would stall the whole interpreter
+        let _r = setNonblocking(fds[0])
+        gNapi.tsfnR = fds[0]
+        gNapi.tsfnW = fds[1]
+    }
+}
+
+@externalLinkage
+pub fn napi_create_threadsafe_function(_env: *u8, func: i64, _asyncResource: i64, _asyncResourceName: i64, _maxQueueSize: i64, _initialThreadCount: i64, _threadFinalizeData: i64, _threadFinalizeCb: i64, context: i64, callJsCb: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiEnsurePipe()
+    var initialRefs = _initialThreadCount
+    if initialRefs < 1 {
+        initialRefs = 1
+    }
+    gNapi.tsfns.push(NapiTsfn {
+        jsFunc: napiValueOf(func), callJsCb: callJsCb, context: context, refs: initialRefs, unrefed: false
+    }
+    )
+    // the opaque handle is 1-based so a valid tsfn is never a null pointer
+    napiWriteHandle(result, gNapi.tsfns.len())
+    return NAPI_OK
+}
+
+// CALLED FROM A FOREIGN THREAD. Touch nothing but the pipe fd, which is read-only
+// after setup.
+@externalLinkage
+pub fn napi_call_threadsafe_function(func: i64, data: i64, _isBlocking: i32): i32 {
+    unsafe {
+        if gNapi.tsfnW < 0 {
+            return NAPI_INVALID_ARG
+        }
+        var rec: [i64; 2] = [func; 2]
+        rec[1] = data
+        let n = write(gNapi.tsfnW, rec as *u8, 16)
+        if n != 16 {
+            return NAPI_INVALID_ARG
+        }
+    }
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_get_threadsafe_function_context(func: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    let i = func - 1
+    if i < 0 || i >= gNapi.tsfns.len() {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteHandle(result, gNapi.tsfns[i].context)
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_acquire_threadsafe_function(_func: i64): i32 {
+    let i = _func - 1
+    if i >= 0 && i < gNapi.tsfns.len() {
+        gNapi.tsfns[i].refs = gNapi.tsfns[i].refs + 1
+    }
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_release_threadsafe_function(_func: i64, _mode: i32): i32 {
+    let i = _func - 1
+    if i >= 0 && i < gNapi.tsfns.len() {
+        // mode 1 is napi_tsfn_abort: drop every outstanding reference at once
+        if _mode == 1 {
+            gNapi.tsfns[i].refs = 0
+        } else if gNapi.tsfns[i].refs > 0 {
+            gNapi.tsfns[i].refs = gNapi.tsfns[i].refs - 1
+        }
+    }
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_unref_threadsafe_function(_env: *u8, _func: i64): i32 {
+    let i = _func - 1
+    if i >= 0 && i < gNapi.tsfns.len() {
+        gNapi.tsfns[i].unrefed = true
+    }
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_ref_threadsafe_function(_env: *u8, _func: i64): i32 {
+    let i = _func - 1
+    if i >= 0 && i < gNapi.tsfns.len() {
+        gNapi.tsfns[i].unrefed = false
+    }
+    return NAPI_OK
+}
+
+// One queued threadsafe call, taken off the pipe on the main thread.
+struct NapiTsfnCall {
+    tsfn: i64,
+    data: i64,
+}
+
+// Non-blocking drain. Returns the calls that were waiting.
+pub fn napiPollTsfn(): Vec<NapiTsfnCall> {
+    var out: Vec<NapiTsfnCall> = Vec.new()
+    if gNapi.tsfnR < 0 {
+        return out
+    }
+    unsafe {
+        var going = true
+        while going {
+            var rec: [i64; 2] = [0; 2]
+            let n = read(gNapi.tsfnR, rec as *u8, 16)
+            if n == 16 {
+                out.push(NapiTsfnCall {
+                    tsfn: rec[0], data: rec[1]
+                }
+                )
+            } else {
+                going = false
+            }
+        }
+    }
+    return out
+}
+
+// Run one queued call on the main thread. When the addon supplied a call_js_cb it
+// owns the dispatch entirely (that is where it converts `data` into JS values);
+// otherwise the spec says to invoke the JS function with no arguments.
+pub fn napiRunTsfnCall(c: &NapiTsfnCall): JSValue {
+    let i = c.tsfn - 1
+    if i < 0 || i >= gNapi.tsfns.len() {
+        return JSValue.Undefined
+    }
+    let cb = gNapi.tsfns[i].callJsCb
+    if cb != 0 {
+        let jsh = napiHandle(cloneValue(gNapi.tsfns[i].jsFunc))
+        unsafe {
+            let f = (cb as *u8) as extern (*u8, i64, i64, i64) => void
+            f(0 as *u8, jsh, gNapi.tsfns[i].context, c.data)
+        }
+        return JSValue.Undefined
+    }
+    return cloneValue(gNapi.tsfns[i].jsFunc)
+}
+
+extern fn usleep(_usec: u32): i32
+
+// Yield the CPU while waiting on an addon's worker thread. Polling flat out would
+// burn a core for the whole duration of a query.
+pub fn napiWaitBriefly() {
+    unsafe {
+        let _r = usleep(200 as u32)
+    }
+}
+
+pub fn napiHasTsfn(): bool {
+    return gNapi.tsfns.len() > 0
+}
+
+// ── entry points an addon needs at LINK time ─────────────────────────────────
+//
+// These were absent from the binary rather than stubbed, so dlopen failed before
+// a single line of the addon ran: `sharp` names 52 Node-API symbols and 18 of
+// them were missing. A missing symbol is not a missing feature, it is a module
+// that cannot load at all, which is why they land together.
+
+// Handle scopes. Every handle this runtime hands out is already mirrored into
+// the interpreter's foreign-host root set for its lifetime, so a scope has no
+// storage to reclaim and these are bookkeeping. The scope handle is a counter so
+// an addon that compares or nests them sees distinct values.
+@externalLinkage
+pub fn napi_open_handle_scope(_env: *u8, result: *u8): i32 {
+    gNapi.scopeSeq = gNapi.scopeSeq + 1
+    if (result as i64) != 0 {
+        napiWriteHandle(result, gNapi.scopeSeq)
+    }
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_close_handle_scope(_env: *u8, _scope: i64): i32 {
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_open_escapable_handle_scope(_env: *u8, result: *u8): i32 {
+    gNapi.scopeSeq = gNapi.scopeSeq + 1
+    if (result as i64) != 0 {
+        napiWriteHandle(result, gNapi.scopeSeq)
+    }
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_close_escapable_handle_scope(_env: *u8, _scope: i64): i32 {
+    return NAPI_OK
+}
+
+// Escaping a value to the enclosing scope. With no per-scope storage the value
+// already outlives the scope, so this hands back a fresh handle to the same
+// value rather than moving anything.
+@externalLinkage
+pub fn napi_escape_handle(_env: *u8, _scope: i64, escapee: i64, result: *u8): i32 {
+    if (result as i64) != 0 {
+        napiWriteHandle(result, napiHandle(napiValueOf(escapee)))
+    }
+    return NAPI_OK
+}
+
+// napi_get_last_error_info(env, const napi_extended_error_info** result)
+// The struct is { const char* error_message; void* engine_reserved;
+//                 uint32_t engine_error_code; napi_status error_code; }
+// A caller reads it after a failure to build a message, so the pointer must be
+// to storage that outlives this call: it is a single reused static record.
+@externalLinkage
+pub fn napi_get_last_error_info(_env: *u8, result: *u8): i32 {
+    unsafe {
+        if (gNapi.lastErrorInfo as i64) == 0 {
+            // { const char* error_message; void* engine_reserved;
+            //   uint32_t engine_error_code; napi_status error_code; }
+            // 8 + 8 + 4 + 4 = 24 bytes, zeroed: a null message and napi_ok.
+            gNapi.lastErrorInfo = malloc(24)
+            let _z = memset(gNapi.lastErrorInfo, 0 as i32, 24)
+        }
+        if (result as i64) != 0 {
+            napiWriteHandle(result, gNapi.lastErrorInfo as i64)
+        }
+    }
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_is_exception_pending(_env: *u8, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteBool(result, gInterp.throwing)
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_create_type_error(_env: *u8, _code: i64, msg: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    let o = newObject(gInterp)
+    gInterp.objects[o].isError = true
+    objSet(gInterp, o, "name", JSValue.Str("TypeError"))
+    objSet(gInterp, o, "message", JSValue.Str(toStr(napiValueOf(msg))))
+    objSet(gInterp, o, "stack", JSValue.Str("TypeError: " + toStr(napiValueOf(msg))))
+    napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
+    return NAPI_OK
+}
+
+// latin1 is one byte per code point, so each byte is its own code point rather
+// than a UTF-8 continuation. Decoding it as UTF-8 mangles anything over 0x7f.
+@externalLinkage
+pub fn napi_create_string_latin1(_env: *u8, str: *u8, length: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    unsafe {
+        var out = String.withCapacity(16)
+        if length < 0 {
+            var i: i64 = 0
+            var go = true
+            while go {
+                let b = _loadU8(((str as i64) + i) as *u8)
+                if (b as i64) == 0 {
+                    go = false
+                } else {
+                    encodeCodepoint(out, b as i32)
+                    i = i + 1
+                }
+            }
+        } else {
+            var i: i64 = 0
+            while i < length {
+                encodeCodepoint(out, _loadU8(((str as i64) + i) as *u8) as i32)
+                i = i + 1
+            }
+        }
+        napiWriteHandle(result, napiHandle(JSValue.Str(out)))
+    }
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_get_value_int64(_env: *u8, value: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    napiWriteHandle(result, toNum(napiValueOf(value)) as i64)
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_has_property(_env: *u8, object: i64, key: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    match napiValueOf(object) {
+        JSValue.Obj(o) => {
+            // objHasInChain, not a hand-rolled walk over `.proto`: a plain
+            // object's proto field is -1 and the link to Object.prototype is
+            // resolved by type, so walking the raw field misses everything
+            // inherited.
+            napiWriteBool(result, objHasInChain(gInterp, o, toStr(napiValueOf(key))))
+            return NAPI_OK
+        }
+        _ => {
+            napiWriteBool(result, false)
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+@externalLinkage
+pub fn napi_has_own_property(_env: *u8, object: i64, key: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    match napiValueOf(object) {
+        JSValue.Obj(o) => {
+            napiWriteBool(result, objHas(gInterp, o, toStr(napiValueOf(key))))
+            return NAPI_OK
+        }
+        _ => {
+            napiWriteBool(result, false)
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+// napi_get_typedarray_info(env, ta, type*, length*, data**, arraybuffer*, offset*)
+// `length` is in ELEMENTS and `data` points at the view's first byte, not the
+// buffer's: an addon that reads the buffer base for a subarray sees the wrong
+// pixels.
+@externalLinkage
+pub fn napi_get_typedarray_info(_env: *u8, typedarray: i64, ttype: *u8, length: *u8, data: *u8, arraybuffer: *u8, byteOffset: *u8): i32 {
+    match napiValueOf(typedarray) {
+        JSValue.Obj(o) => {
+            let ex = gInterp.objects[o].extra
+            let buf = gInterp.objExtras[ex].taBuf
+            if buf < 0 {
+                return NAPI_INVALID_ARG
+            }
+            let kind = gInterp.objExtras[ex].taKind
+            let off = gInterp.objExtras[ex].taOffset
+            if (ttype as i64) != 0 {
+                napiWriteI32(ttype, napiTypedArrayType(kind))
+            }
+            if (length as i64) != 0 {
+                napiWriteHandle(length, gInterp.objExtras[ex].taLen)
+            }
+            if (byteOffset as i64) != 0 {
+                napiWriteHandle(byteOffset, off)
+            }
+            if (arraybuffer as i64) != 0 {
+                napiWriteHandle(arraybuffer, napiHandle(JSValue.Obj(buf)))
+            }
+            if (data as i64) != 0 {
+                let base = gInterp.objExtras[gInterp.objects[buf].extra].bytes.ptr() as i64
+                napiWriteHandle(data, base + off)
+            }
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+// napi_typedarray_type: int8 0, uint8 1, uint8_clamped 2, int16 3, uint16 4,
+// int32 5, uint32 6, float32 7, float64 8, bigint64 9, biguint64 10
+fn napiTypedArrayType(kind: i64): i32 {
+    // runtime.milo's kind encoding (u8 0, i8 1, u16 2, i16 3, u32 4, i32 5,
+    // f32 6, f64 7, u8clamped 8) mapped onto napi_typedarray_type's order
+    // (int8 0, uint8 1, uint8_clamped 2, int16 3, uint16 4, int32 5, uint32 6,
+    // float32 7, float64 8). The two disagree, so this is a real translation.
+    if kind == 0 {
+        return 1 as i32
+    }
+    if kind == 1 {
+        return 0 as i32
+    }
+    if kind == 2 {
+        return 4 as i32
+    }
+    if kind == 3 {
+        return 3 as i32
+    }
+    if kind == 4 {
+        return 6 as i32
+    }
+    if kind == 5 {
+        return 5 as i32
+    }
+    if kind == 6 {
+        return 7 as i32
+    }
+    if kind == 8 {
+        return 2 as i32
+    }
+    return 8 as i32
+}
+
+// napi_define_properties(env, object, count, descriptors)
+// The same descriptor layout napi_define_class walks, applied to an existing
+// object. Accessors are honoured: a getter-only descriptor must not become a
+// data property, or an addon's computed field reads as a function.
+@externalLinkage
+pub fn napi_define_properties(_env: *u8, object: i64, propertyCount: i64, properties: *u8): i32 {
+    match napiValueOf(object) {
+        JSValue.Obj(target) => {
+            var i: i64 = 0
+            unsafe {
+                while i < propertyCount {
+                    let base = (properties as i64) + i * NAPI_PD_SIZE
+                    let namePtr = napiLoadI64((base + NAPI_PD_UTF8NAME) as *u8)
+                    var pname = ""
+                    if namePtr != 0 {
+                        pname = napiReadStr(namePtr as *u8, -1)
+                    } else {
+                        // the name may arrive as a napi_value instead of a C string
+                        let nameVal = napiLoadI64((base + 8) as *u8)
+                        if nameVal != 0 {
+                            pname = toStr(napiValueOf(nameVal))
+                        }
+                    }
+                    if pname.len() > 0 {
+                        let method = napiLoadI64((base + NAPI_PD_METHOD) as *u8)
+                        let getter = napiLoadI64((base + 24) as *u8)
+                        let setter = napiLoadI64((base + 32) as *u8)
+                        let data = napiLoadI64((base + 56) as *u8)
+                        if getter != 0 || setter != 0 {
+                            var g = JSValue.Undefined
+                            var sfn = JSValue.Undefined
+                            if getter != 0 {
+                                g = JSValue.Obj(napiMakeFn(getter, data))
+                            }
+                            if setter != 0 {
+                                sfn = JSValue.Obj(napiMakeFn(setter, data))
+                            }
+                            objDefineAccessor(gInterp, target, pname, g, sfn)
+                        } else if method != 0 {
+                            objSet(gInterp, target, pname, JSValue.Obj(napiMakeFn(method, data)))
+                        } else {
+                            objSet(gInterp, target, pname, napiValueOf(napiLoadI64((base + NAPI_PD_VALUE) as *u8)))
+                        }
+                    }
+                    i = i + 1
+                }
+            }
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+// napi_add_finalizer(env, js_object, native_object, cb, hint, result)
+//
+// Recorded, not scheduled. milojs's collector has no finalizer hook (the same
+// limitation napi_wrap documents), so the callback is kept against the object
+// rather than dropped silently: an addon that registers one and never sees it
+// run leaks, and that is worth saying in one place instead of pretending.
+@externalLinkage
+pub fn napi_add_finalizer(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _finalizeHint: i64, result: *u8): i32 {
+    match napiValueOf(jsObject) {
+        JSValue.Obj(o) => {
+            let _ea = ensureExtra(gInterp, o)
+            if gInterp.objExtras[gInterp.objects[o].extra].napiWrap == 0 {
+                gInterp.objExtras[gInterp.objects[o].extra].napiWrap = nativeObject
+            }
+            if (result as i64) != 0 {
+                napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
+            }
+            return NAPI_OK
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+// ── async work ──
+//
+// node runs `execute` on a libuv threadpool and `complete` back on the loop
+// thread. milojs has one JS thread and no worker pool, so queueing runs execute
+// immediately and then complete, in that order. An addon sees its work finish
+// correctly; what it does NOT get is parallelism, so a long execute blocks the
+// loop instead of overlapping with it. Honest and useful is better here than
+// absent, which is a module that will not link.
+struct NapiWork {
+    execute: i64,
+    complete: i64,
+    data: i64,
+    done: bool,
+}
+
+var gNapiWork: Vec<NapiWork> = Vec.new()
+
+@externalLinkage
+pub fn napi_create_async_work(_env: *u8, _asyncResource: i64, _asyncResourceName: i64, execute: i64, complete: i64, data: i64, result: *u8): i32 {
+    gNapiWork.push(NapiWork {
+        execute: execute, complete: complete, data: data, done: false
+    }
+    )
+    if (result as i64) != 0 {
+        napiWriteHandle(result, gNapiWork.len())
+    }
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_queue_async_work(_env: *u8, work: i64): i32 {
+    let idx = work - 1
+    if idx < 0 || idx >= gNapiWork.len() {
+        return NAPI_INVALID_ARG
+    }
+    if gNapiWork[idx].done {
+        return NAPI_OK
+    }
+    gNapiWork[idx].done = true
+    let ex = gNapiWork[idx].execute
+    let comp = gNapiWork[idx].complete
+    let data = gNapiWork[idx].data
+    unsafe {
+        if ex != 0 {
+            let f = (ex as *u8) as extern (*u8, *u8) => void
+            f(0 as *u8, data as *u8)
+        }
+        if comp != 0 {
+            // (env, napi_status status, void* data); status 0 is napi_ok
+            let c = (comp as *u8) as extern (*u8, i32, *u8) => void
+            c(0 as *u8, 0 as i32, data as *u8)
+        }
+    }
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_delete_async_work(_env: *u8, work: i64): i32 {
+    let idx = work - 1
+    if idx < 0 || idx >= gNapiWork.len() {
+        return NAPI_INVALID_ARG
+    }
+    gNapiWork[idx].execute = 0
+    gNapiWork[idx].complete = 0
+    return NAPI_OK
+}
+
+// napi_create_external / napi_get_value_external
+//
+// An external wraps an opaque C pointer in a JS value the addon can hand back to
+// itself later. There is no JS-visible shape: the pointer is kept on the object
+// and only the addon can read it out. fsevents stores its event-stream handle
+// this way.
+@externalLinkage
+pub fn napi_create_external(_env: *u8, data: i64, _finalizeCb: i64, _finalizeHint: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    let o = newObject(gInterp)
+    let _ex = ensureExtra(gInterp, o)
+    gInterp.objExtras[gInterp.objects[o].extra].napiWrap = data
+    gInterp.objExtras[gInterp.objects[o].extra].napiIsExternal = true
+    napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
+    return NAPI_OK
+}
+
+@externalLinkage
+pub fn napi_get_value_external(_env: *u8, value: i64, result: *u8): i32 {
+    // node answers napi_invalid_arg for a NULL out-param. Writing to it
+    // instead killed the process mid-callback with no output and exit
+    // code 0, which a CI run reads as success.
+    if (result as i64) == 0 {
+        return NAPI_INVALID_ARG
+    }
+    match napiValueOf(value) {
+        JSValue.Obj(o) => {
+            napiWriteHandle(result, gInterp.objExtras[gInterp.objects[o].extra].napiWrap)
+            return NAPI_OK
+        }
+        _ => {
+            napiWriteHandle(result, 0)
+            return NAPI_INVALID_ARG
+        }
+    }
+}
