@@ -43,6 +43,32 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## Array.prototype.join: nested separator, and a cycle that killed the process
+
+754 Array method/argument combinations against node, same technique as the regex
+and String sweeps. Two bugs, both in `join`, and the second is the more serious.
+
+**The separator leaked into nested arrays.** It applies only at the level it was
+given: a nested array is converted by ToString, which is its own `toString`, which
+is `join()` with the DEFAULT comma. milojs recursed with the outer separator, so
+`[1,[2,3]].join("-")` was `"1-2-3"` where node gives `"1-2,3"`. Nine of the nine
+differences were this.
+
+**An indirect cycle killed the process silently.** The guard compared the element
+against the immediate receiver, which catches `a.push(a)` but not `a.push([a])`.
+The two-array cycle recursed until the native stack died, and the process exited
+**0 having printed nothing** — the worst failure shape available, since a caller
+sees success. It now tracks every array currently being joined and pops on the way
+out, so the same array appearing twice at ONE level is still rendered twice rather
+than being mistaken for a cycle.
+
+Note the differential sweep did not find the cycle bug: it came from following the
+first bug into the recursion. `tests/arrayJoinNesting.js` covers both, and the
+pre-fix engine prints four of its ten lines and then dies.
+
+All 754 combinations now match node. Array is otherwise clean, including holes,
+`sort` stability, `length` assignment, and the copying methods.
+
 ## `"".repeat(Infinity)` hung the engine, and what String differential testing found
 
 Same technique as the regex sweep, 2340 String method/argument combinations against

@@ -614,9 +614,23 @@ fn strConcatProg(prog: &Prog, s: &string, args: &Vec<JSValue>, st: &mut Interp):
 // join with each element converted through `prog`. The prog-free joinArray
 // remains for the coercion paths that have no Prog to re-enter user code with.
 fn joinArrayProg(prog: &Prog, st: &mut Interp, o: i64, sep: &string): string {
+    var seen: Vec<i64> = Vec.new()
+    return joinArrayInner(prog, st, o, sep, seen)
+}
+
+// `seen` is every array currently being joined, not just the outermost one. The
+// old guard compared against the immediate receiver, which catches `a.push(a)`
+// but not `a.push([a])`: an INDIRECT cycle recursed until the native stack died,
+// and the process exited 0 having printed nothing.
+//
+// The separator is only used at THIS level. A nested array is converted by
+// ToString, which is its own toString, which is join() with the DEFAULT comma, so
+// `[1,[2,3]].join("-")` is "1-2,3" and not "1-2-3".
+fn joinArrayInner(prog: &Prog, st: &mut Interp, o: i64, sep: &string, seen: &mut Vec<i64>): string {
     var out = ""
     var i: i64 = 0
     let n = arrLen(st, o)
+    seen.push(o)
     while i < n {
         if i > 0 {
             out = out + sep
@@ -630,11 +644,16 @@ fn joinArrayProg(prog: &Prog, st: &mut Interp, o: i64, sep: &string): string {
             _ => {
                 let eh = objHandle(e)
                 if eh >= 0 && st.objects[eh].isArray {
-                    // a cycle would otherwise recurse until the native stack ran
-                    // out; JS renders a self-referencing array element as empty
-                    if eh == o {
-                    } else {
-                        out = out + joinArrayProg(prog, st, eh, sep)
+                    var cyclic = false
+                    var si: i64 = 0
+                    while si < seen.len() {
+                        if seen[si] == eh {
+                            cyclic = true
+                        }
+                        si = si + 1
+                    }
+                    if !cyclic {
+                        out = out + joinArrayInner(prog, st, eh, ",", seen)
                     }
                 } else {
                     out = out + toStrProg(prog, e, st)
@@ -643,6 +662,7 @@ fn joinArrayProg(prog: &Prog, st: &mut Interp, o: i64, sep: &string): string {
         }
         i = i + 1
     }
+    let _popped = seen.pop()
     return out
 }
 
