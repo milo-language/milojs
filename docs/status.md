@@ -3,7 +3,7 @@ system: status
 purpose: canonical current capability, evidence, and next-milestone dashboard for milojs
 key-files: src/milojs-engine.milo, src/milojs.milo, tests/run.sh, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts
 update-when: a product gate lands, a conformance sweep is rerun, or the supported host surface changes
-last-verified: 2026-08-18 (native id enum, node-compat sweep, and the socket read that was freezing the event loop) (property escapes, numeric regex escapes, runtime strict mode, null prototypes, iterator helpers on generators; the failing-area table re-measured)
+last-verified: 2026-08-19 (Gate 4 decided from measurements: bytecode subset landed, calls blocked on in-VM frames at depth 1 vs 2156)
 -->
 
 # milojs status
@@ -349,12 +349,30 @@ to isolated contexts is specified in `docs/milojs-embedding.md`.
 
 ### Gate 4: performance architecture
 
-Decide on bytecode from measurements, not chronology. A bytecode VM is justified
-when tree-walker dispatch, native stack depth, or suspension complexity blocks a
-published gate. Keep the tree walker as a differential oracle if the VM lands.
+Decided, from measurements. A dispatch loop over flat opcodes is worth about 12x
+the tree walker on identical work with unboxed values, and about 5x once values
+are boxed `JSValue`. `src/engine/bytecode.milo` acts on that: a numeric,
+property-access and object-literal subset compiles, everything else falls back to
+the tree walker, and both engine sweeps held their exact numbers through every
+step. The tree walker stays, which Gate 4 already asked for: it is the fallback
+and the differential oracle at once.
 
-The tree walker keeps the implementation understandable but is substantially
-slower than a production bytecode VM or JIT.
+What the measurements also settled, and this is the part that bounds the stage:
+
+- **Calls do not compile by handing control back to `callValue`.** A
+  self-recursive function reaches depth 1 that way, against 2156 for the tree
+  walker (node: 10398). The cause is `runChunk`'s own native frame, not the
+  per-call chunk copy. The VM has to own its call frames first, which is the same
+  prerequisite generators-on-a-saved-IP has.
+- **Boxing costs half the win.** That reopens the tagged-enum decision recorded
+  in `docs/milojs-roadmap.md`, but after calls land, not before: the frame stack
+  is worth more than the value representation.
+- Property reads and writes were the cheapest real wins and are already taken.
+  Per-bench numbers live in the commit messages and move with the tree; the
+  ratios above are the durable part.
+
+The tree walker keeps the implementation understandable and is still what runs
+anything the compiler declines.
 
 ## Immediate order
 

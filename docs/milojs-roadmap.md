@@ -3,7 +3,7 @@ system: roadmap
 purpose: staged plan to grow milojs into a JavaScript engine AND runtime that stands on its own
 key-files: src/milojs.milo, src/milojs-engine.milo
 update-when: a stage lands (check the box, note the commit) or the acceptance target changes
-last-verified: 2026-07-30
+last-verified: 2026-08-19
 -->
 
 # milojs roadmap — a JavaScript engine written in Milo
@@ -25,8 +25,9 @@ The engine differential suite currently covers 74 expected-output JavaScript
 files (plus one unscored memory benchmark) and is also run with collection at
 every GC safepoint. The remaining roadmap is:
 
-- **Stage 4:** replace or supplement the tree walker with bytecode for practical
-  performance and shallower native stacks.
+- **Stage 4:** supplement the tree walker with bytecode. Partly landed: a numeric,
+  property-access and object-literal subset compiles and falls back for the rest. Calls are
+  the remaining prize and need the VM to own its call frames (see the stage section).
 - **Stage 5:** complete host compatibility. Server HTTP and async fetch work;
   client `http.request`/`http.get`, TLS serving, child processes, generators,
   class fields/getters, computed `require`, and other package-facing edges do not.
@@ -195,11 +196,49 @@ target (local, pure-JS, self-contained `assert()`), but its `test_language.js` n
 Until then: byte-identical-vs-bun differential smokes in `tests/`. Package test suites don't
 apply (they need the node runtime = minibun's layer, not the engine).
 
-### Stage 4 — bytecode VM ⬜
-Compile the AST to a register or stack bytecode; retire the tree-walker. Needed for speed and
-for a sane implementation of exceptions (`try`/`catch`/`throw` as unwinding), generators, and
-`for`/`switch`. Keep the tree-walker as an oracle to differential-test the VM against.
-**Gate:** every Stage 1–3 demo produces identical output on the VM; exceptions work.
+### Stage 4 — bytecode VM 🟡 (a subset compiles; calls do not)
+`src/engine/bytecode.milo` compiles a `for` statement or a whole function body to a flat
+opcode array and runs it in one dispatch loop, falling back to the tree-walker for anything
+outside its subset. That fallback is the design, not a stopgap: both engine sweeps held their
+exact numbers through every step below, because a chunk that cannot be compiled is never run.
+
+**Compiles today:** numbers, strings, locals, arithmetic and comparisons, `if`/`while`,
+`return`, property reads and writes, plain object literals. Arithmetic fast-paths two numbers
+and hands everything else to the evaluator's own `evalBinValues`/`memberOfValue`/
+`setMemberOfValue`, so there is one implementation of ToPrimitive ordering and of the
+primitive-receiver rules, not two.
+
+**Rooting:** the frame lives on `Interp` as `vmStack`/`vmSp` and `collect` marks `0..vmSp`, so
+"what is live" is one array rather than whatever the evaluator happened to be holding. Any
+opcode that re-enters the evaluator publishes the exact live top first. Verified under
+`MILOJS_GC_THRESHOLD=1`, which collects on every allocation.
+
+**Three measurements that decide the rest of this stage.** Per-bench numbers move with the
+tree, so they live in the commit messages and `bench/`; these are the durable findings:
+
+- A dispatch loop is worth about **12x** the tree-walker on identical work when values are
+  unboxed `f64`, and about **5x** once they are boxed `JSValue`. So the boxing question below
+  is not academic: it costs half the win.
+- **Calls cannot be compiled by handing control back to `callValue`.** A self-recursive
+  function reaches depth **1** that way, against **2156** for the tree-walker (node: 10398).
+  It is not the per-call chunk copy; removing that changed nothing. It is `runChunk`'s own
+  native frame: one large dispatch function whose frame dwarfs the tree-walker's chain of
+  small ones, paid again at every level. The VM needs its own frame stack, pushing a frame and
+  continuing the same dispatch loop, before any call compiles. That is also what generators on
+  a saved instruction pointer will need.
+- Two narrower blockers found on the way, both real: `callValue` **drops `thisVal` for a
+  `JSValue.Native`** (it forwards to `callNativeProg`, which takes no receiver), and
+  `callBuiltinByName` is **not** a general substitute: it is one branch of `callMember`'s
+  per-object-kind dispatch, and using it generally broke `Reflect.apply`. Method calls need
+  the first of those fixed.
+
+**Coverage, measured with acorn over node's `test/parallel`** (3,979 files): the corpus has 618
+loops and 21,617 function bodies, which is why the function body is a compilation unit and not
+just the loop. Supporting calls is worth about **39 more points** of covered function bodies
+than anything else on the list, three times the next largest step.
+
+**Gate:** every Stage 1–3 demo produces identical output with the VM enabled; both engine
+sweeps unchanged; `tests/deepRecursion.js` passes.
 
 ### Stage 5 — host compatibility: the builtins real packages reach for ⬜
 Complete the standard library and Node surface that npm packages actually touch. Server HTTP and
@@ -257,8 +296,10 @@ is not yet lowered — irrelevant, an engine API is opaque pointers anyway.)
 
 ## Open questions
 - Value representation: tagged Milo enum (clean, a word of tag overhead) vs NaN-boxed f64
-  (QuickJS-style, denser, unsafe bit-twiddling). Lean: **tagged enum through Stage 4**, revisit
-  boxing only if the VM benchmarks demand it.
+  (QuickJS-style, denser, unsafe bit-twiddling). Lean was **tagged enum through Stage 4**,
+  revisiting boxing only if the VM benchmarks demanded it. They now do: boxing measured at 2x
+  on the compiled subset, i.e. half the dispatch win. Revisit after calls land, not before:
+  the frame stack is worth more than the representation.
 - GC: mark-sweep (simple, stop-the-world) vs ref-count-with-cycle-collector (QuickJS's choice,
   incremental but complex). Lean: **mark-sweep first** — correctness before pause times.
 - Keep the tree-walker permanently as a differential oracle, or delete it after Stage 4? (lean:
