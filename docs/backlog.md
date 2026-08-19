@@ -8,6 +8,48 @@ last-verified: 2026-08-18 (re-read after the native id enum landed; the NATIVE_*
 
 # milojs backlog
 
+## OPEN: an embedder gets STATUS_OK and a line on its stderr for a dropped rejection
+
+Swept all 17 `eprint` sites and drove the remaining ones from a C consumer of
+`libmilojs.a`. Most are correct:
+
+| site | embedded behaviour | verdict |
+|---|---|---|
+| parser diagnostics (7) | silent, `evalSourceValue` sets `quiet: true` | correct |
+| uncaught throw | silent, returned as `STATUS_JS_EXCEPTION` | correct |
+| `console.error` | writes to host stderr | correct, that is the program writing |
+| `[gc]` stats | opt-in flag | correct |
+| unhandled promise rejection | **writes to host stderr, returns STATUS_OK** | wrong |
+
+```
+unhandled rejection        rc=0
+rejection in then          rc=0
+--- host stderr
+Unhandled promise rejection: Error: unhandled
+Unhandled promise rejection: Error: late
+```
+
+For the CLI this is right: node prints and exits nonzero. For a library it is
+the same defect as the other three in this class, with the additional problem
+that the embedder has no way to learn a rejection was dropped. Suppressing the
+print alone would make it worse, not better: silent instead of misdirected.
+
+The fix is an ABI decision, so it is not being made unilaterally:
+
+1. **Poll API.** `milojs_unhandled_count` / `milojs_unhandled_copy(index)`, drained
+   by the host. Honest, costs public surface, and matches how the exception
+   channel already works.
+2. **Fold into the eval status.** Return `STATUS_JS_EXCEPTION` from
+   `milojs_eval` when a rejection went unhandled during that eval. No new
+   surface, but wrong in the general case: a later eval can still attach a
+   handler, so the rejection is not necessarily final at that point.
+3. **A host callback** registered at context creation. Most flexible, largest
+   surface, and needs a rule for what a callback may do re-entrantly.
+
+Option 1 is the one to build. The CLI keeps printing exactly as it does now,
+because it IS the host.
+
+
 ## Every optional-dependency probe wrote to stderr, and carried no `e.code`
 
 Third instance of the host-stderr class, found by sweeping all 17 `eprint` sites
