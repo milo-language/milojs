@@ -10499,7 +10499,7 @@ pub fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
 // Does NOT pushActive: the caller decides how the scope is rooted. A plain call
 // roots it on the dynamic stack; a generator roots it through Interp.genScope,
 // because the scope outlives the call that created it.
-fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JSValue>, thisVal: &JSValue, st: &mut Interp): i64 {
+pub fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JSValue>, thisVal: &JSValue, st: &mut Interp): i64 {
     let callScope = newScope(st, envIdx)
     // arrows have no own `this` — it stays lexical (resolved up the scope chain)
     if !prog.funcs[fIdx].isArrow {
@@ -10571,6 +10571,30 @@ fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JSValu
     return callScope
 }
 
+// The recursion guard every JS call has to pass, shared with the VM's own call
+// opcode (src/engine/bytecode.milo) so the two cannot drift into two different
+// ceilings. Answers true having ALREADY set the pending RangeError.
+//
+// Without this, runaway recursion exhausts the native stack and the process dies
+// with no JS-level error — express's error middleware expects a catchable
+// RangeError instead.
+// stackHeadroom() is the guard that actually protects the stack: it measures the
+// task we are standing on, so it is right on the 256 MB interpreter task and on
+// an 8 MB generator body alike. callDepthLimit is a backstop set to node's
+// observable ceiling (~10k frames) so scripts that probe recursion depth see a
+// comparable number; whichever fires first wins. A call the VM keeps in its own
+// frames spends no native stack at all, so there the counter is the only one of
+// the two that can fire.
+pub fn callGuardTripped(st: &mut Interp): bool {
+    let head = stackHeadroom()
+    if st.callDepth >= st.callDepthLimit || (head >= 0 && head < stackReserveBytes()) {
+        st.throwing = true
+        st.thrownValue = makeError(st, "RangeError", "Maximum call stack size exceeded")
+        return true
+    }
+    return false
+}
+
 fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
     // R1: an async call runs its body on its own activation and returns at that
     // body's first await. Cleared immediately so a nested async call spawns.
@@ -10591,18 +10615,7 @@ fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
             return spawnActivation(fIdx, envIdx, argVals, thisVal, st, caller)
         }
     }
-    // Without this, runaway recursion exhausts the native stack and the process
-    // dies with no JS-level error — express's error middleware expects a
-    // catchable RangeError instead.
-    // stackHeadroom() is the guard that actually protects the stack: it measures
-    // the task we are standing on, so it is right on the 256 MB interpreter task
-    // and on an 8 MB generator body alike. callDepthLimit is a backstop set to
-    // node's observable ceiling (~10k frames) so scripts that probe recursion
-    // depth see a comparable number; whichever fires first wins.
-    let head = stackHeadroom()
-    if st.callDepth >= st.callDepthLimit || (head >= 0 && head < stackReserveBytes()) {
-        st.throwing = true
-        st.thrownValue = makeError(st, "RangeError", "Maximum call stack size exceeded")
+    if callGuardTripped(st) {
         return JSValue.Undefined
     }
     let genBody = st.suppressGenSpawn
@@ -14135,7 +14148,7 @@ fn funcArity(prog: &Prog, fIdx: i64): i64 {
     return n
 }
 
-fn isSuperName(name: &string): bool {
+pub fn isSuperName(name: &string): bool {
     if name.len() < 8 {
         return false
     }
@@ -15841,70 +15854,77 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
             if st.throwing {
                 return JSValue.Undefined
             }
-            match calleeVal {
-                JSValue.Func(fIdx, envIdx) => {
-                    pushTemp(st, JSValue.Func(fIdx, envIdx))
-                    let argVals = evalArgs(prog, argsIdx, st, scope)
-                    // An argument expression that threw ABORTS the call: without this the
-                    // callee still ran with the arguments evaluated so far, so
-                    // `arr.push(boom())` pushed a value and a Promise executor's
-                    // `resolve(boom())` settled the promise with undefined.
-                    if st.throwing {
-                        return JSValue.Undefined
-                    }
-                    let r = callFunction(prog, fIdx, envIdx, argVals, JSValue.Undefined, st)
-                    popTemp(st)
-                    return r
-                }
-                JSValue.Native(id) => {
-                    let argVals = evalArgs(prog, argsIdx, st, scope)
-                    // An argument expression that threw ABORTS the call: without this the
-                    // callee still ran with the arguments evaluated so far, so
-                    // `arr.push(boom())` pushed a value and a Promise executor's
-                    // `resolve(boom())` settled the promise with undefined.
-                    if st.throwing {
-                        return JSValue.Undefined
-                    }
-                    return callNativeAsFunction(prog, id, argVals, st)
-                }
-                JSValue.Obj(bo) => {
-                    // bound methods, addon functions and proxies are all callable
-                    // objects rather than Func/Native values
-                    if st.objects[bo].isBound || st.objects[bo].isProxy || st.objExtras[st.objects[bo].extra].napiFn >= 0 {
-                        let argVals = evalArgs(prog, argsIdx, st, scope)
-                        // An argument expression that threw ABORTS the call: without this the
-                        // callee still ran with the arguments evaluated so far, so
-                        // `arr.push(boom())` pushed a value and a Promise executor's
-                        // `resolve(boom())` settled the promise with undefined.
-                        if st.throwing {
-                            return JSValue.Undefined
-                        }
-                        return callValue(prog, JSValue.Obj(bo), argVals, JSValue.Undefined, st)
-                    }
-                    // Array(n) without `new` behaves identically to new Array(n)
-                    if st.arrayCtorObj >= 0 && bo == st.arrayCtorObj {
-                        let argVals = evalArgs(prog, argsIdx, st, scope)
-                        // An argument expression that threw ABORTS the call: without this the
-                        // callee still ran with the arguments evaluated so far, so
-                        // `arr.push(boom())` pushed a value and a Promise executor's
-                        // `resolve(boom())` settled the promise with undefined.
-                        if st.throwing {
-                            return JSValue.Undefined
-                        }
-                        return makeArrayFromCtor(st, argVals)
-                    }
-                    st.throwing = true
-                    st.thrownValue = makeError(st, "TypeError", describeCallee(prog, calleeId) + " is not a function" + currentModule(st))
-                    return JSValue.Undefined
-                }
-                _ => {
-                    st.throwing = true
-                    st.thrownValue = makeError(st, "TypeError", describeCallee(prog, calleeId) + " is not a function" + currentModule(st))
-                    return JSValue.Undefined
-                }
+            // The callable check comes BEFORE the arguments, so `x(boom())` on a
+            // non-function reports the TypeError rather than running boom().
+            if !isPlainCallable(st, calleeVal) {
+                throwNotAFunction(st, describeCallee(prog, calleeId))
+                return JSValue.Undefined
             }
+            // the callee stays rooted across the argument expressions, any one of
+            // which can allocate and collect
+            pushTemp(st, cloneValue(calleeVal))
+            let argVals = evalArgs(prog, argsIdx, st, scope)
+            // An argument expression that threw ABORTS the call: without this the
+            // callee still ran with the arguments evaluated so far, so
+            // `arr.push(boom())` pushed a value and a Promise executor's
+            // `resolve(boom())` settled the promise with undefined.
+            if st.throwing {
+                popTemp(st)
+                return JSValue.Undefined
+            }
+            let r = callPlainValue(prog, calleeVal, argVals, st)
+            popTemp(st)
+            return r
         }
     }
+}
+
+// Is this value callable as a PLAIN call — `f(x)`, no receiver? Func and Native
+// are the ordinary cases; bound methods, Node-API functions and proxies are
+// callable objects instead. Answering this before the arguments are evaluated is
+// what makes `x(boom())` on a non-function report the TypeError.
+pub fn isPlainCallable(st: &Interp, v: &JSValue): bool {
+    match v {
+        JSValue.Func(_f, _e) => {
+            return true
+        }
+        JSValue.Native(_id) => {
+            return true
+        }
+        JSValue.Obj(o) => {
+            if st.objects[o].isBound || st.objects[o].isProxy || st.objExtras[st.objects[o].extra].napiFn >= 0 {
+                return true
+            }
+            // Array(n) without `new` behaves identically to new Array(n)
+            if st.arrayCtorObj >= 0 && o == st.arrayCtorObj {
+                return true
+            }
+            return false
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+// Perform a plain call on an already-checked callable. Shared with the VM's call
+// opcode, which cannot reuse callValue alone: callValue has no Array-without-new
+// case. argVals is consumed.
+pub fn callPlainValue(prog: &Prog, calleeVal: &JSValue, argVals: Vec<JSValue>, st: &mut Interp): JSValue {
+    if let JSValue.Obj(o) = calleeVal {
+        let callableObj = st.objects[o].isBound || st.objects[o].isProxy || st.objExtras[st.objects[o].extra].napiFn >= 0
+        if !callableObj && st.arrayCtorObj >= 0 && o == st.arrayCtorObj {
+            return makeArrayFromCtor(st, argVals)
+        }
+    }
+    return callValue(prog, calleeVal, argVals, JSValue.Undefined, st)
+}
+
+// The "x is not a function" TypeError, raised from both the tree walker and the
+// VM so the message a fixture prints does not depend on which one ran the call.
+pub fn throwNotAFunction(st: &mut Interp, what: &string) {
+    st.throwing = true
+    st.thrownValue = makeError(st, "TypeError", what.clone() + " is not a function" + currentModule(st))
 }
 
 // Run the try/catch portion independently so execTry can decide whether a

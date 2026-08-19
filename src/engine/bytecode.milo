@@ -7,16 +7,25 @@
 // walk; propFew 653x vs propMany 768x isolates the property scan). What they
 // cannot price is the tree walk itself. This can.
 //
-// Scope: a `for` statement whose init, condition, update and body mention only
-// numbers, arithmetic, comparisons, `if`, `while` and nested blocks. No calls,
-// no property access, no strings, no closures, no break/continue/return/throw.
-// Anything else compiles to None and the tree walker runs the loop exactly as
-// before, so no conformance number can move.
+// Scope: a `for` statement, or a whole function body, built from numbers,
+// strings, locals, arithmetic, comparisons, `if`, `while`, `return`, property
+// reads and writes, object literals, and calls of a plain identifier. Anything
+// else compiles to None and the tree walker runs it exactly as before.
 //
-// The subset allocates nothing, so no value on this stack is ever a heap value:
-// the collector cannot see this stack and does not need to. That is the only
-// reason a partial VM is safe to run ahead of the rooting work in
-// docs/milojs-arena-safety.md.
+// THE STACK IS A GC ROOT, and only up to `st.vmSp`: `collect` marks 0..vmSp and
+// nothing above it. So every op that can allocate — or that can re-enter the
+// evaluator, which can allocate — must publish its EXACT live top into st.vmSp
+// first. Anything left above vmSp is swept, and the symptom is an intermittent
+// wrong answer rather than a crash. Run the fixtures under
+// MILOJS_GC_THRESHOLD=1 after touching any op that calls out.
+//
+// CALLS STAY INSIDE THE DISPATCH LOOP. A compiled callee gets a VmFrame and
+// `pc = 0` in the same runChunk invocation, because runChunk's own native frame
+// is large: routing each compiled call back out through callValue ->
+// callFunctionBody -> runChunk collapsed recursion depth from 2156 frames to 1.
+// A callee that does not compile (a native, a generator, an async or bound
+// function, a proxy) still costs one native round trip through callPlainValue,
+// which is what the tree walker pays for every call anyway.
 //
 // MEASURED, so the next step is not guessed at: converting this stack and its
 // locals to `Vec<JSValue>`, changing nothing else, costs 2x (emptyLoop 18->38ms,
@@ -28,10 +37,9 @@
 // it paid for boxing but not for the per-operand type check and slow path a
 // general VM also needs.
 //
-// It also means skipping the per-statement `maybeGc` safepoint is not a
-// deferral but a no-op: `maybeGc` collects on `allocSinceGc >= gcThreshold`, and
-// a compiled loop never allocates, so the counter it reads cannot move while
-// one runs. There is no interrupt or deadline check riding on that safepoint.
+// There is no per-op `maybeGc` safepoint. Collection happens where it always
+// does — inside the allocators the ops call — and nothing else rides on that
+// safepoint: no interrupt, no deadline check.
 
 from "./ast" import {
     Prog, Expr, Stmt, ExprId, StmtId, BlockId
@@ -40,10 +48,12 @@ from "./value" import {
     JSValue, cloneValue, truthy
 }
 from "./runtime" import {
-    Interp, scopeTryLookup, scopeAssign, newObject
+    Interp, scopeTryLookup, scopeAssign, newObject, pushActive, popActive
 }
 from "./eval" import {
-    evalBinValues, toNumProg, toNumArg, memberOfValue, setMemberOfValue
+    evalBinValues, toNumProg, toNumArg, memberOfValue, setMemberOfValue,
+    bindActivationScope, callGuardTripped, callPlainValue, isPlainCallable,
+    throwNotAFunction, isSuperName
 }
 
 // An enum rather than integer opcodes so the dispatch `match` lowers to a jump
@@ -82,6 +92,9 @@ enum Op {
     // under each property write.
     Dup,
     Pop,
+    // Call the value at [top - argc] with the argc values above it, replacing
+    // all of them with the result. See the arg packing in compExpr.
+    Call,
     // Leave the chunk with the value on top of the stack as the function's
     // result. Only a body chunk may contain one: a loop chunk that swallowed a
     // `return` would run the loop and then carry on past it.
@@ -99,6 +112,9 @@ pub struct Chunk {
     // are neither, because nothing outside can observe them.
     slotNames: Vec<string>,
     slotOuter: Vec<bool>,
+    // High-water mark of the operand area above the slots, counted once at
+    // compile time. Every call used to rescan the whole op array for it.
+    need: i64,
 }
 
 struct Comp {
@@ -282,16 +298,53 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                 }
             }
         }
-        // A CALL is deliberately absent, and it is the next thing worth adding:
-        // it covers 39 more points of node's test/parallel than anything else.
-        // Two things block it, both measured rather than guessed:
-        //   - callValue drops thisVal for a JSValue.Native (it forwards to
-        //     callNativeProg, which takes no receiver), so `h.call(o, "a")`
-        //     answered undefined. The tree walker avoids it because callMember
-        //     resolves the receiver at the call site.
-        //   - calling out of the VM and back into the tree walker ADDS native
-        //     frames per JS frame, so tests/deepRecursion.js stopped reaching
-        //     1000 frames. Calls have to stay inside the VM to pay off.
+        // `f(x)` only — a PLAIN identifier callee, where `this` genuinely is
+        // undefined. A method call `o.m(x)` is deliberately absent: callValue
+        // DROPS thisVal for a JSValue.Native (it forwards to callNativeProg,
+        // which takes no receiver), so `h.call(o, "a")` answered undefined, and
+        // routing natives through callBuiltinByName instead is not equivalent —
+        // that is one branch of callMember's per-object-kind dispatch, and using
+        // it generally broke Reflect.apply. Method calls need callValue to carry
+        // `this` to natives first.
+        Expr.Call(calleeId, argsIdx) => {
+            match prog.exprs[calleeId.index] {
+                Expr.Ident(name) => {
+                    // Three identifiers are not ordinary calls at all: evalCall
+                    // gives direct `eval` the CALLER's scope, resolves `require`
+                    // against the running module, and threads `this` explicitly
+                    // through a desugared `super(...)`.
+                    if name == "eval" || name == "require" || isSuperName(name) {
+                        c.ok = false
+                        return
+                    }
+                    let argc = prog.argLists[argsIdx.index].len()
+                    // The arg word packs the count into 8 bits (see below).
+                    if argc > 255 {
+                        c.ok = false
+                        return
+                    }
+                    let cs = slotOf(c, name, false)
+                    emitOp(c, Op.Load, cs)
+                    var ai: i64 = 0
+                    while ai < argc {
+                        // a spread argument is an Expr.Spread, which lands in the
+                        // reject-everything-else arm below
+                        compExpr(prog, c, prog.argLists[argsIdx.index][ai])
+                        ai = ai + 1
+                    }
+                    // One arg word, two operands: the low 8 bits are the argument
+                    // count and the rest is the strs slot holding the callee's
+                    // NAME, which only the "x is not a function" TypeError needs.
+                    // A Chunk carries one i64 per op, and a second array for a
+                    // field two opcodes use would cost every op a word.
+                    let ns = strSlot(c, name)
+                    emitOp(c, Op.Call, argc + ns * 256)
+                }
+                _ => {
+                    c.ok = false
+                }
+            }
+        }
         Expr.Bin(op, a, b) => {
             let o = binOpFor(op)
             match o {
@@ -452,6 +505,37 @@ fn compStmt(prog: &Prog, c: &mut Comp, id: StmtId) {
     }
 }
 
+// High-water mark of the operand area, counted once per chunk. Every op that
+// pushes counts; the ones that pop are not subtracted, so this is an upper bound
+// rather than a simulation of the stack.
+fn operandNeed(c: &Comp): i64 {
+    var need: i64 = 0
+    var d: i64 = 0
+    while d < c.ops.len() {
+        match c.ops[d] {
+            Op.Const => {
+                need = need + 1
+            }
+            Op.Load => {
+                need = need + 1
+            }
+            Op.Str => {
+                need = need + 1
+            }
+            Op.NewObj => {
+                need = need + 1
+            }
+            Op.Dup => {
+                need = need + 1
+            }
+            _ => {
+            }
+        }
+        d = d + 1
+    }
+    return need
+}
+
 // Compile a `for` statement, or answer None when any part of it falls outside
 // the subset.
 pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
@@ -486,9 +570,10 @@ pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
             if !c.ok {
                 return Option.None
             }
+            let need = operandNeed(c)
             return Option.Some(Chunk {
                 ops: c.ops, args: c.args, consts: c.consts, strs: c.strs,
-                slotNames: c.slotNames, slotOuter: c.slotOuter,
+                slotNames: c.slotNames, slotOuter: c.slotOuter, need: need,
             })
         }
         _ => {
@@ -541,91 +626,121 @@ fn vmSet(st: &mut Interp, at: i64, v: JSValue) {
     st.vmStack[at] = v
 }
 
-fn vmPush(st: &mut Interp, v: JSValue) {
-    let at = st.vmSp
-    vmSet(st, at, v)
-    st.vmSp = at + 1
+// One suspended VM frame: everything the caller needs to carry on once the
+// callee returns. The caller's Chunk travels beside it in `frameChunks` rather
+// than as an index into gChunks, because compiling a callee PUSHES onto gChunks:
+// a &Chunk into that vector would be left dangling mid-dispatch, which showed up
+// as ch.args reading length 0 (see tryRunFor).
+struct VmFrame {
+    pc: i64,
+    base: i64,
+    // The caller slot the result lands in. It held the callee value, so the
+    // caller's operand top on resume is one past it.
+    resSlot: i64,
+    scope: i64,
+    strict: bool,
 }
 
-// Run a compiled loop. Answers false without touching anything when an outer
-// name the loop reads is missing or is not a number, in which case the caller
-// must run the tree walker instead.
+// Publish every outer slot back into the scope it came from. A frame keeps free
+// names in slots, so nothing it has written is visible to a callee — or to the
+// tree walker — until this runs.
+fn vmFlushOuter(st: &mut Interp, ch: &Chunk, base: i64, scope: i64) {
+    var k: i64 = 0
+    while k < ch.slotNames.len() {
+        if ch.slotOuter[k] {
+            scopeAssign(st, scope, ch.slotNames[k], cloneValue(st.vmStack[base + k]))
+        }
+        k = k + 1
+    }
+}
+
+// Re-read every outer slot after a call. The callee can assign a name this frame
+// is holding in a slot; without this the frame would keep reading its pre-call
+// snapshot and then flush that stale value back over the callee's write. A name
+// that has stopped resolving (a deleted global) keeps its slot rather than
+// inventing a ReferenceError the tree walker would raise at the read.
+fn vmSeedOuter(st: &mut Interp, ch: &Chunk, base: i64, scope: i64) {
+    var k: i64 = 0
+    while k < ch.slotNames.len() {
+        if ch.slotOuter[k] {
+            if let Option.Some(v) = scopeTryLookup(st, scope, ch.slotNames[k]) {
+                st.vmStack[base + k] = v
+            }
+        }
+        k = k + 1
+    }
+}
+
+// Lay a frame's slots down at `at`. Answers false when an outer name has no
+// binding anywhere, which means this chunk cannot run: only the tree walker can
+// raise that ReferenceError. Nothing has been written when it answers false.
+//
+// Takes the chunk by INDEX and re-reads gChunks per access on purpose: a scope
+// chain with a `with` over a proxy turns a lookup into a JS call, which can
+// compile another body and reallocate gChunks under a held &Chunk.
+fn vmSeedFrame(st: &mut Interp, cid: i64, at: i64, scope: i64): bool {
+    var i: i64 = 0
+    while i < gChunks[cid].slotNames.len() {
+        if gChunks[cid].slotOuter[i] {
+            match scopeTryLookup(st, scope, gChunks[cid].slotNames[i]) {
+                Option.Some(v) => {
+                    vmSet(st, at + i, v)
+                }
+                Option.None => {
+                    return false
+                }
+            }
+        } else {
+            vmSet(st, at + i, JSValue.Undefined)
+        }
+        i = i + 1
+    }
+    // Give the operand area real values and count it into the rooted range: a
+    // number costs the collector nothing to mark, and every op that can collect
+    // still republishes its own exact top before it does.
+    var r: i64 = 0
+    while r < gChunks[cid].need {
+        vmSet(st, at + gChunks[cid].slotNames.len() + r, JSValue.Number(0.0))
+        r = r + 1
+    }
+    st.vmSp = at + gChunks[cid].slotNames.len() + gChunks[cid].need
+    return true
+}
+
+// Run a compiled chunk, and every compiled chunk it calls, in ONE dispatch loop.
 // Answers None when the chunk cannot run and the caller must fall back to the
 // tree walker; that decision is made before any side effect. Otherwise answers
 // the value the body returned, or Undefined for a loop chunk and for a body that
 // fell off its end.
-pub fn runChunk(prog: &Prog, ch: &Chunk, st: &mut Interp, scope: i64): Option<JSValue> {
-    let nslots = ch.slotNames.len()
-    let base = st.vmSp
-
-    // Seed the frame's locals. An outer name that is missing, or is bound to
-    // anything but a number, means this chunk cannot run: the caller falls back
-    // to the tree walker, and nothing has been written yet.
-    var i: i64 = 0
-    while i < nslots {
-        var seed = JSValue.Undefined
-        if ch.slotOuter[i] {
-            // An outer name with no binding at all means this chunk cannot run:
-            // the tree walker has to raise the ReferenceError. Decided here,
-            // before any side effect.
-            match scopeTryLookup(st, scope, ch.slotNames[i]) {
-                Option.Some(v) => {
-                    seed = v
-                }
-                Option.None => {
-                    st.vmSp = base
-                    return Option.None
-                }
-            }
-        }
-        vmPush(st, seed)
-        i = i + 1
+pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSValue> {
+    // Owned copy of the ACTIVE chunk, for the reallocation reason in VmFrame.
+    var ch = gChunks[cid]
+    let base0 = st.vmSp
+    var base = base0
+    var curScope = scope
+    if !vmSeedFrame(st, cid, base, curScope) {
+        st.vmSp = base0
+        return Option.None
     }
 
-    // Reserve the frame's whole operand range up front and root it once, rather
-    // than restating vmSp after every instruction. Sound because no op in this
-    // subset allocates, so no collect can land mid-loop, and every reserved slot
-    // holds a number, so rooting a slot the loop is not using costs nothing.
-    // A widened subset that can allocate must go back to an exact vmSp at each
-    // op that can collect, or clear the slots above the live top.
-    var need: i64 = 0
-    var d: i64 = 0
-    while d < ch.ops.len() {
-        match ch.ops[d] {
-            Op.Const => {
-                need = need + 1
-            }
-            Op.Load => {
-                need = need + 1
-            }
-            Op.Str => {
-                need = need + 1
-            }
-            Op.NewObj => {
-                need = need + 1
-            }
-            Op.Dup => {
-                need = need + 1
-            }
-            _ => {
-            }
-        }
-        d = d + 1
-    }
-    var reserved: i64 = 0
-    while reserved < need {
-        vmPush(st, JSValue.Number(0.0))
-        reserved = reserved + 1
-    }
-
+    var frames: Vec<VmFrame> = Vec.new()
+    var frameChunks: Vec<Chunk> = Vec.new()
+    // Chunk index of a callee entered by the op just dispatched, or -1.
+    var pendingCid: i64 = -1
     var retVal = JSValue.Undefined
-    var sp = base + nslots
+    var sp = base + ch.slotNames.len()
     var pc: i64 = 0
-    // An op's fallback can throw (a Symbol coerced, a getter that raises). Without
-    // this the loop kept executing the rest of the chunk with the exception
-    // pending, which both wasted work and let a later op overwrite the result the
-    // caller would have seen as thrown.
-    while pc < ch.ops.len() && !st.throwing {
+    var done = false
+    var flushedOnThrow = false
+    while !done {
+        // Set by Ret and Halt: this frame is finished and the one under it (if
+        // any) resumes.
+        var leaving = false
+        // Every chunk ends in Halt and no jump target is past it, so this cannot
+        // fire; it keeps a compiler bug from indexing off the end of the array.
+        if pc >= ch.ops.len() || pc < 0 {
+            pc = ch.ops.len() - 1
+        }
         let a = ch.args[pc]
         match ch.ops[pc] {
             Op.Const => {
@@ -861,40 +976,162 @@ pub fn runChunk(prog: &Prog, ch: &Chunk, st: &mut Interp, scope: i64): Option<JS
                 sp = sp - 1
                 pc = pc + 1
             }
+            Op.Call => {
+                let argc = a % 256
+                let nameSlot = a / 256
+                let calleeSlot = sp - argc - 1
+                // Publish the exact live top BEFORE anything that can allocate:
+                // collect marks 0..vmSp and nothing above it, and the callee
+                // value and every argument sit below this.
+                st.vmSp = sp
+                let calleeVal = cloneValue(st.vmStack[calleeSlot])
+                var argVals: Vec<JSValue> = Vec.new()
+                var ai: i64 = 0
+                while ai < argc {
+                    argVals.push(cloneValue(st.vmStack[calleeSlot + 1 + ai]))
+                    ai = ai + 1
+                }
+                // Whatever this frame is holding in its slots has to be in the
+                // scope chain before the callee resolves a single free name.
+                vmFlushOuter(st, ch, base, curScope)
+                var handled = false
+                if let JSValue.Func(fIdx, envIdx) = calleeVal {
+                    let cid2 = bodyChunkOf(prog, fIdx)
+                    if cid2 >= 0 {
+                        handled = true
+                        // The same guard callFunctionBody applies. A frame here
+                        // costs no native stack, so the depth counter is the only
+                        // half of it that can fire.
+                        if !callGuardTripped(st) {
+                            // Everything callFunctionBody does for an ordinary
+                            // call, minus the parts the subset rules out:
+                            // hoistBlock (a compiled body has no `var` and no
+                            // function declaration) and runDisposals (no `using`).
+                            st.suppressAsyncSpawn = false
+                            st.suppressGenSpawn = false
+                            st.callDepth = st.callDepth + 1
+                            let callScope = bindActivationScope(prog, fIdx, envIdx, argVals, JSValue.Undefined, st)
+                            pushActive(st, callScope)
+                            // The callee's frame goes ABOVE this one's operands,
+                            // so every live value in every frame stays below vmSp
+                            // and stays marked.
+                            if vmSeedFrame(st, cid2, sp, callScope) {
+                                st.fnFileStack.push(prog.funcs[fIdx].file.clone())
+                                frames.push(VmFrame {
+                                    pc: pc + 1, base: base, resSlot: calleeSlot,
+                                    scope: curScope, strict: st.strict,
+                                })
+                                // Strictness belongs to the function being
+                                // entered, not to its caller.
+                                st.strict = prog.funcs[fIdx].isStrict
+                                base = sp
+                                sp = base + gChunks[cid2].slotNames.len()
+                                curScope = callScope
+                                pc = 0
+                                pendingCid = cid2
+                            } else {
+                                // A free name the callee reads is bound nowhere:
+                                // only the tree walker raises that ReferenceError.
+                                // Undo the activation and take the slow path.
+                                popActive(st)
+                                st.callDepth = st.callDepth - 1
+                                handled = false
+                            }
+                        }
+                    }
+                }
+                if !handled && !st.throwing {
+                    // A native, a generator, an async or bound function, a proxy,
+                    // or a body outside the subset: one native round trip, which
+                    // is what the tree walker pays for every call it makes.
+                    if isPlainCallable(st, calleeVal) {
+                        let res = callPlainValue(prog, calleeVal, argVals, st)
+                        sp = calleeSlot + 1
+                        st.vmSp = sp
+                        vmSet(st, calleeSlot, res)
+                        vmSeedOuter(st, ch, base, curScope)
+                    } else {
+                        throwNotAFunction(st, ch.strs[nameSlot])
+                    }
+                    pc = pc + 1
+                }
+            }
             Op.Ret => {
                 sp = sp - 1
                 retVal = cloneValue(st.vmStack[sp])
-                pc = ch.ops.len()
+                leaving = true
             }
             Op.Halt => {
-                pc = ch.ops.len()
+                retVal = JSValue.Undefined
+                leaving = true
             }
         }
-        // A callee that threw stops the chunk where it stands. Side effects up
-        // to here have happened, which is what the tree walker would also have
-        // done; st.throwing carries the exception out to whoever called us.
+        // Switching the active chunk happens out here: `ch` cannot be moved out
+        // from under the match that is reading its opcode.
+        if pendingCid >= 0 {
+            frameChunks.push(ch)
+            ch = gChunks[pendingCid]
+            pendingCid = -1
+        }
         if st.throwing {
-            pc = ch.ops.len()
+            // A throw stops the chunk where it stands, and every frame it stands
+            // on. Side effects up to here have happened, which is what the tree
+            // walker would also have done.
+            //
+            // The frame that THREW still flushes: its writes since its last call
+            // live only in its slots. The frames under it must NOT — each of them
+            // flushed immediately before the call that is now unwinding, so
+            // flushing again would put a stale snapshot back over whatever the
+            // callee wrote.
+            vmFlushOuter(st, ch, base, curScope)
+            flushedOnThrow = true
+            while frames.len() > 0 {
+                popActive(st)
+                st.callDepth = st.callDepth - 1
+                let _f = st.fnFileStack.pop()
+                let fr = frames.pop()!
+                st.strict = fr.strict
+                ch = frameChunks.pop()!
+                base = fr.base
+                curScope = fr.scope
+            }
             retVal = JSValue.Undefined
+            done = true
+        } else if leaving {
+            if frames.len() == 0 {
+                done = true
+            } else {
+                // The callee is finished: publish its writes, drop its
+                // activation, and resume the caller with the result in the slot
+                // the callee value occupied.
+                vmFlushOuter(st, ch, base, curScope)
+                popActive(st)
+                st.callDepth = st.callDepth - 1
+                let _f = st.fnFileStack.pop()
+                let fr = frames.pop()!
+                st.strict = fr.strict
+                ch = frameChunks.pop()!
+                base = fr.base
+                curScope = fr.scope
+                pc = fr.pc
+                sp = fr.resSlot + 1
+                st.vmStack[fr.resSlot] = retVal
+                retVal = JSValue.Undefined
+                st.vmSp = sp
+                vmSeedOuter(st, ch, base, curScope)
+            }
         }
     }
 
-    var k: i64 = 0
-    while k < nslots {
-        if ch.slotOuter[k] {
-            scopeAssign(st, scope, ch.slotNames[k], cloneValue(st.vmStack[base + k]))
-        }
-        k = k + 1
+    if !flushedOnThrow {
+        vmFlushOuter(st, ch, base, curScope)
     }
     // Drop the whole frame in one move: everything at or above vmSp is dead and
     // collect stops marking there.
-    st.vmSp = base
+    st.vmSp = base0
     return Option.Some(retVal)
 }
 
-// One compiled chunk per `for` statement, keyed by its StmtId index.
-// gLoopIdx[i] is 0 before the statement has been looked at, -1 once it has been
-// rejected, and chunk index + 1 once it compiled.
 // Set from MILOJS_NO_BYTECODE by the entry points. With it on, every expression
 // runs through the tree-walking evaluator instead of a compiled chunk, which
 // makes the two paths a DIFFERENTIAL PAIR: the whole fixture suite must produce
@@ -906,7 +1143,13 @@ pub fn runChunk(prog: &Prog, ch: &Chunk, st: &mut Interp, scope: i64): Option<JS
 // unrelated reason caught it.
 pub var gVmDisabled: bool = false
 
-var gLoopChunks: Vec<Chunk> = Vec.new()
+// Every compiled chunk, loop and body alike, in one store. One store rather than
+// two because a frame refers to its chunk by index and the two kinds call each
+// other: a loop chunk can contain a call, and a body chunk can contain a loop.
+var gChunks: Vec<Chunk> = Vec.new()
+
+// gLoopIdx[i] is 0 before that `for` statement has been looked at, -1 once it has
+// been rejected, and chunk index + 1 once it compiled.
 var gLoopIdx: Vec<i64> = Vec.new()
 
 // Run this `for` through the compiled path, or answer false to say the tree
@@ -922,8 +1165,8 @@ pub fn tryRunFor(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): bool {
     if slot == 0 {
         match compileFor(prog, id) {
             Option.Some(ch) => {
-                gLoopChunks.push(ch)
-                slot = gLoopChunks.len()
+                gChunks.push(ch)
+                slot = gChunks.len()
             }
             Option.None => {
                 slot = -1
@@ -934,12 +1177,7 @@ pub fn tryRunFor(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): bool {
     if slot < 0 {
         return false
     }
-    // Take an OWNED copy before running. A nested call inside this chunk can
-    // compile another function, which pushes onto gLoopChunks/gBodyChunks and
-    // reallocates it: a &Chunk into the vector would be left dangling, and it
-    // showed up as `ch.args` reading length 0 mid-dispatch.
-    let ch = gLoopChunks[slot - 1]
-    if let Option.Some(_v) = runChunk(prog, ch, st, scope) {
+    if let Option.Some(_v) = runChunk(prog, slot - 1, st, scope) {
         return true
     }
     return false
@@ -948,7 +1186,6 @@ pub fn tryRunFor(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): bool {
 
 // One compiled chunk per function body, keyed by its index in prog.funcs. Same
 // three states as gLoopIdx.
-var gBodyChunks: Vec<Chunk> = Vec.new()
 var gBodyIdx: Vec<i64> = Vec.new()
 
 // Compile a whole function body, or answer None. Worth far more than the `for`
@@ -981,17 +1218,24 @@ pub fn compileBody(prog: &Prog, fIdx: i64): Option<Chunk> {
     if !c.ok {
         return Option.None
     }
+    let need = operandNeed(c)
     return Option.Some(Chunk {
         ops: c.ops, args: c.args, consts: c.consts, strs: c.strs,
-        slotNames: c.slotNames, slotOuter: c.slotOuter,
+        slotNames: c.slotNames, slotOuter: c.slotOuter, need: need,
     })
 }
 
-// Run this function body as bytecode, or answer None to say the tree walker
-// still has to run it. Compilation happens once per function.
-pub fn tryRunBody(prog: &Prog, fIdx: i64, st: &mut Interp, scope: i64): Option<JSValue> {
+// The chunk index for this function's body, or -1 if its body does not compile.
+// Compilation happens once per function, and the answer is cached either way.
+// This is also the single point MILOJS_NO_BYTECODE turns the VM off at: with no
+// chunk index there is no frame for the evaluator to enter and none for the VM's
+// own Op.Call to enter either.
+pub fn bodyChunkOf(prog: &Prog, fIdx: i64): i64 {
     if gVmDisabled {
-        return Option.None
+        return -1
+    }
+    if fIdx < 0 || fIdx >= prog.funcs.len() {
+        return -1
     }
     while gBodyIdx.len() <= fIdx {
         gBodyIdx.push(0)
@@ -1000,8 +1244,8 @@ pub fn tryRunBody(prog: &Prog, fIdx: i64, st: &mut Interp, scope: i64): Option<J
     if slot == 0 {
         match compileBody(prog, fIdx) {
             Option.Some(ch) => {
-                gBodyChunks.push(ch)
-                slot = gBodyChunks.len()
+                gChunks.push(ch)
+                slot = gChunks.len()
             }
             Option.None => {
                 slot = -1
@@ -1010,19 +1254,27 @@ pub fn tryRunBody(prog: &Prog, fIdx: i64, st: &mut Interp, scope: i64): Option<J
         gBodyIdx[fIdx] = slot
     }
     if slot < 0 {
+        return -1
+    }
+    return slot - 1
+}
+
+// Run this function body as bytecode, or answer None to say the tree walker
+// still has to run it. This is the entry the TREE WALKER uses; a compiled body
+// called from compiled code never comes through here, it gets a VmFrame instead.
+pub fn tryRunBody(prog: &Prog, fIdx: i64, st: &mut Interp, scope: i64): Option<JSValue> {
+    let cid = bodyChunkOf(prog, fIdx)
+    if cid < 0 {
         return Option.None
     }
-    // Owned copy, for the reallocation reason spelled out in tryRunFor.
-    let ch = gBodyChunks[slot - 1]
-    return runChunk(prog, ch, st, scope)
+    return runChunk(prog, cid, st, scope)
 }
 
 // Drop every cached chunk. The cache is keyed by an index into the program
 // arena, so a fresh program reusing those indices would otherwise run another
 // statement's code.
 pub fn resetLoopCache() {
-    gLoopChunks.clear()
+    gChunks.clear()
     gLoopIdx.clear()
-    gBodyChunks.clear()
     gBodyIdx.clear()
 }

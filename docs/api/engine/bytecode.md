@@ -1,5 +1,14 @@
 ## engine/bytecode
 
+### `bodyChunkOf`
+
+```milo
+pub fn bodyChunkOf(prog: &Prog, fIdx: i64): i64
+```
+
+The chunk index for this function's body, or -1 if its body does not compile.
+Compilation happens once per function, and the answer is cached either way.
+
 ### `compileBody`
 
 ```milo
@@ -38,12 +47,10 @@ statement's code.
 ### `runChunk`
 
 ```milo
-pub fn runChunk(prog: &Prog, ch: &Chunk, st: &mut Interp, scope: i64): Option<JSValue>
+pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSValue>
 ```
 
-Run a compiled loop. Answers false without touching anything when an outer
-name the loop reads is missing or is not a number, in which case the caller
-must run the tree walker instead.
+Run a compiled chunk, and every compiled chunk it calls, in ONE dispatch loop.
 Answers None when the chunk cannot run and the caller must fall back to the
 tree walker; that decision is made before any side effect. Otherwise answers
 the value the body returned, or Undefined for a loop chunk and for a body that
@@ -56,7 +63,8 @@ pub fn tryRunBody(prog: &Prog, fIdx: i64, st: &mut Interp, scope: i64): Option<J
 ```
 
 Run this function body as bytecode, or answer None to say the tree walker
-still has to run it. Compilation happens once per function.
+still has to run it. This is the entry the TREE WALKER uses; a compiled body
+called from compiled code never comes through here, it gets a VmFrame instead.
 
 ### `tryRunFor`
 

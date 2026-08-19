@@ -64,6 +64,22 @@ pub fn bigStrOf(v: &JSValue): string
 
 the decimal string of a BigInt, or "" for anything else
 
+### `bindActivationScope`
+
+```milo
+pub fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JSValue>, thisVal: &JSValue, st: &mut Interp): i64
+```
+
+One activation's scope: `this`, `new.target`, the self-name of a named function
+expression, the declared parameters, and `arguments`. Split out of
+callFunctionBody because makeGenerator needs exactly the same bindings — the
+spec performs FunctionDeclarationInstantiation when a generator is CALLED, not
+at its first next() — and two copies of this would drift.
+
+Does NOT pushActive: the caller decides how the scope is rooted. A plain call
+roots it on the dynamic stack; a generator roots it through Interp.genScope,
+because the scope outlives the call that created it.
+
 ### `builtinArityOn`
 
 ```milo
@@ -113,15 +129,26 @@ V8-style stack trace can name the file each frame belongs to. Wrapping rather
 than editing callFunctionBody's many early returns keeps the push and pop
 paired without touching its control flow.
 
-### `callNativeAsFunction`
+### `callGuardTripped`
 
 ```milo
-pub fn callNativeAsFunction(prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn callGuardTripped(st: &mut Interp): bool
 ```
 
-A native invoked as a PLAIN FUNCTION, as opposed to through `new` or from the
-engine's own construction paths -- which is the distinction the guard needs and
-which callNativeProg cannot make, because both arrive there.
+The recursion guard every JS call has to pass, shared with the VM's own call
+opcode (src/engine/bytecode.milo) so the two cannot drift into two different
+ceilings. Answers true having ALREADY set the pending RangeError.
+
+Without this, runaway recursion exhausts the native stack and the process dies
+with no JS-level error — express's error middleware expects a catchable
+RangeError instead.
+stackHeadroom() is the guard that actually protects the stack: it measures the
+task we are standing on, so it is right on the 256 MB interpreter task and on
+an 8 MB generator body alike. callDepthLimit is a backstop set to node's
+observable ceiling (~10k frames) so scripts that probe recursion depth see a
+comparable number; whichever fires first wins. A call the VM keeps in its own
+frames spends no native stack at all, so there the counter is the only one of
+the two that can fire.
 
 ### `callNativeProg`
 
@@ -129,7 +156,21 @@ which callNativeProg cannot make, because both arrive there.
 pub fn callNativeProg(prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue
 ```
 
-_Undocumented._
+Native dispatch for the call sites that hold a Prog. callNative itself does
+not, so any native whose answer depends on re-entering user code has to be
+intercepted here — otherwise `String(obj)` reports "[object Object]" for an
+object whose toString says otherwise, while `${obj}` and `"" + obj` (both of
+which run the full ToPrimitive) disagree with it.
+
+### `callPlainValue`
+
+```milo
+pub fn callPlainValue(prog: &Prog, calleeVal: &JSValue, argVals: Vec<JSValue>, st: &mut Interp): JSValue
+```
+
+Perform a plain call on an already-checked callable. Shared with the VM's call
+opcode, which cannot reuse callValue alone: callValue has no Array-without-new
+case. argVals is consumed.
 
 ### `callValue`
 
@@ -368,6 +409,25 @@ _Undocumented._
 
 ```milo
 pub fn isoFromMillis(ms: f64): string
+```
+
+_Undocumented._
+
+### `isPlainCallable`
+
+```milo
+pub fn isPlainCallable(st: &Interp, v: &JSValue): bool
+```
+
+Is this value callable as a PLAIN call — `f(x)`, no receiver? Func and Native
+are the ordinary cases; bound methods, Node-API functions and proxies are
+callable objects instead. Answering this before the arguments are evaluated is
+what makes `x(boom())` on a non-function report the TypeError.
+
+### `isSuperName`
+
+```milo
+pub fn isSuperName(name: &string): bool
 ```
 
 _Undocumented._
@@ -787,6 +847,15 @@ pub fn taSetElem(st: &mut Interp, view: i64, i: i64, v: f64)
 ```
 
 _Undocumented._
+
+### `throwNotAFunction`
+
+```milo
+pub fn throwNotAFunction(st: &mut Interp, what: &string)
+```
+
+The "x is not a function" TypeError, raised from both the tree walker and the
+VM so the message a fixture prints does not depend on which one ran the call.
 
 ### `timeClip`
 
