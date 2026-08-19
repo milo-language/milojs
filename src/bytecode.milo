@@ -18,6 +18,16 @@
 // reason a partial VM is safe to run ahead of the rooting work in
 // docs/milojs-arena-safety.md.
 //
+// MEASURED, so the next step is not guessed at: converting this stack and its
+// locals to `Vec<JSValue>`, changing nothing else, costs 2x (emptyLoop 18->38ms,
+// arith 38->78ms, numRead 38->78ms, localRead and deepRead 18->28ms). A real VM
+// has to carry boxed values, so the ~12x this shows over the tree walker is
+// really ~6x once it does, and that 2x comes back only from the value
+// representation (NaN-boxing, or unboxed local slots), not from more opcodes.
+// The number is a lower bound: that experiment kept the numeric-only subset, so
+// it paid for boxing but not for the per-operand type check and slow path a
+// general VM also needs.
+//
 // It also means skipping the per-statement `maybeGc` safepoint is not a
 // deferral but a no-op: `maybeGc` collects on `allocSinceGc >= gcThreshold`, and
 // a compiled loop never allocates, so the counter it reads cannot move while
