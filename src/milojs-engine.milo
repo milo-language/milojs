@@ -104,6 +104,24 @@ fn main(): i32 {
             if let Option.Some(_v) = Env.get("MILOJS_GC_STATS") {
                 gcStats = true
             }
+            // Headroom multiple over the live set between collections. The
+            // runtime has honoured this for a while; the engine hardcoded 2,
+            // which meant the GC-stress pass could never squeeze the engine
+            // binary harder than live*2 no matter what MILOJS_GC_THRESHOLD said,
+            // because collect() resets the trigger to max(floor, live*growth).
+            var gcGrowth: i64 = 2
+            // 0 is allowed and is the only setting that really collects at
+            // every safepoint: the trigger is max(floor, live*growth), so any
+            // positive growth scales with the live set and thins out as the heap
+            // grows. AGENTS.md claimed MILOJS_GC_THRESHOLD=1 collected on every
+            // allocation; it never did.
+            if let Option.Some(gv) = Env.get("MILOJS_GC_GROWTH") {
+                if let Option.Some(n) = parseInt(gv) {
+                    if n >= 0 {
+                        gcGrowth = n
+                    }
+                }
+            }
             // Force every expression through the tree-walking evaluator. The
             // fixture suite is run both ways and the outputs must match, which is
             // what stops a compiled opcode from quietly disagreeing with the
@@ -111,7 +129,7 @@ fn main(): i32 {
             if let Option.Some(_b) = Env.get("MILOJS_NO_BYTECODE") {
                 gVmDisabled = true
             }
-            gInterp = makeInterp(gcStats, gcThreshold, 2)
+            gInterp = makeInterp(gcStats, gcThreshold, gcGrowth)
             bootInterp(gInterp)
             // The prelude and the program must share one Prog: a JSValue.Func
             // carries an index into prog.funcs, so a function parsed into a

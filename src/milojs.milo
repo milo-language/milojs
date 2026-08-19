@@ -292,9 +292,11 @@ fn main(): i32 {
     }
     // Headroom multiple over the live set between collections (see collect).
     var gcGrowth: i64 = 2
+    // 0 is allowed: see the note in src/milojs-engine.milo. It is the only
+    // setting that collects at every safepoint.
     if let Option.Some(gv) = Env.get("MILOJS_GC_GROWTH") {
         if let Option.Some(n) = parseInt(gv) {
-            if n > 0 {
+            if n >= 0 {
                 gcGrowth = n
             }
         }

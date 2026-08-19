@@ -282,9 +282,18 @@ MILOJS_ENGINE_BIN=/tmp/mj-engine MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run.
 MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run-repl.sh
 ./tests/run-embed.sh
 MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run-napi.sh
-# and the same fixtures again, collecting on EVERY allocation
-MILOJS_GC_THRESHOLD=1 MILOJS_ENGINE_BIN=/tmp/mj-engine MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run.sh
+# and the same fixtures again, collecting at every safepoint
+MILOJS_GC_GROWTH=0 MILOJS_GC_THRESHOLD=1 MILOJS_ENGINE_BIN=/tmp/mj-engine MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run.sh
 ```
+
+`MILOJS_GC_GROWTH=0` is the part that matters and it is newer than this file's
+advice. `collect()` resets the trigger to `max(MILOJS_GC_THRESHOLD, live * growth)`,
+so with the default growth of 2 the live set dominates and the threshold is
+ignored: 2000 retained allocations collect 5 times at `MILOJS_GC_THRESHOLD=1` and
+4 times at the 1024 default. Growth 0 is the only setting that really collects at
+every safepoint, and the same program then collects 4672 times. It costs about
+34x wall time on allocation-heavy code, which is why it is a targeted tool rather
+than the default for every suite.
 
 Run the last one after any change that adds an allocation to a loop. It is the
 only thing that finds an unrooted local: a value reachable only from a Milo stack
@@ -383,7 +392,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/check-docs.mjs` | doc-meta present, key-files real, AGENTS tables complete, and a staleness ratchet against each doc's key-files |
 | `tools/check-readme.mjs` | the README's allowed sections, in order, each within a prose budget — explanations belong in `docs/` |
 | `tools/gen-facts.mjs` | compiles the numbers prose quotes (line counts, fixture counts, entry points) into `<!--fact:...-->` spans. `--check` gates, `--list` prints them all. |
-| `tools/fuzz.sh` | crash fuzzer over the memory-managed core: random allocating programs under `MILOJS_GC_THRESHOLD=1`, compared to node on the SHAPE of the outcome (crash/hang, over-accept, over-reject) and never on output text. `tools/fuzz.sh [first] [last]`; flagged seeds are saved to `/tmp/fuzz-seed-<n>.js`. Not in CI: it is a sweep, not a gate. |
+| `tools/fuzz.sh` | crash fuzzer over the memory-managed core: random allocating programs under `MILOJS_GC_THRESHOLD=1` (see the growth note above: that is a mild setting, not every-allocation), compared to node on the SHAPE of the outcome (crash/hang, over-accept, over-reject) and never on output text. `tools/fuzz.sh [first] [last]`; flagged seeds are saved to `/tmp/fuzz-seed-<n>.js`. Not in CI: it is a sweep, not a gate. |
 | `tools/precommit.sh` | every cheap gate below, in one command. See "Wiring the hook". |
 
 Build more of these. If you find yourself running the same multi-step incantation
