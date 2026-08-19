@@ -203,6 +203,29 @@ pub fn definePropOf(prog: &Prog, st: &mut Interp, v: &JSValue, key: &string, d: 
 
 _Undocumented._
 
+### `evalBinValues`
+
+```milo
+pub fn evalBinValues(prog: &Prog, op: &string, va: JSValue, vb: JSValue, st: &mut Interp): JSValue
+```
+
+The three largest arms of evalExprFallback, lifted out of it. Dispatch is
+unchanged; the FRAME is the point. A function reserves the sum of every arm's
+locals, so the biggest arms set the entry price every OTHER node routed through
+the fallback pays. These three were chosen because the front dispatcher already
+handles Bin directly and Un/New are not on any hot path, so none of them gains
+a call it did not already make. ObjLit and SetMember were tried here too and
+REVERTED: both are reached only through the fallback, so extracting them added
+a real call to a hot node and cost 3-5% on objChurn for no further depth.
+
+Effect: fallback frame 9264 -> ~2.9 KB, and max nested-expression depth roughly
+triples (see docs/backlog.md).
+The value-level half of a binary operator: everything after both operands
+have been evaluated. Split out of evalBinArm so the bytecode VM runs the same
+semantics rather than a second copy of them — a duplicated implementation of
+ToPrimitive ordering is exactly the kind that drifts and is then wrong in one
+place only.
+
 ### `evalExpr`
 
 ```milo

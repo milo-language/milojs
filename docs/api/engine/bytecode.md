@@ -38,7 +38,7 @@ statement's code.
 ### `runChunk`
 
 ```milo
-pub fn runChunk(ch: &Chunk, st: &mut Interp, scope: i64): Option<JSValue>
+pub fn runChunk(prog: &Prog, ch: &Chunk, st: &mut Interp, scope: i64): Option<JSValue>
 ```
 
 Run a compiled loop. Answers false without touching anything when an outer
