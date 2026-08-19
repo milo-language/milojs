@@ -1993,6 +1993,17 @@ fn arrGetDyn(prog: &Prog, o: i64, idx: i64, st: &mut Interp): JSValue {
     if orig >= 0 {
         return getMemberDyn(prog, orig, i64ToStr(idx), st)
     }
+    // An own ACCESSOR on an index shadows the dense slot: after
+    // `Object.defineProperty(a, 0, {get(){...}})` the element is still present in
+    // `elems`, so the fast path below returned the stale value it had before the
+    // getter was installed and every callback method saw the wrong element.
+    // Guarded on props being non-empty, so an ordinary array pays one length check.
+    if st.objects[o].props.len() > 0 {
+        let ai = objOwnIndex(st, o, i64ToStr(idx))
+        if ai >= 0 && propIsAccessor(st, o, ai) {
+            return getMemberDyn(prog, o, i64ToStr(idx), st)
+        }
+    }
     if !arrIsHole(st, o, idx) {
         return arrGet(st, o, idx)
     }

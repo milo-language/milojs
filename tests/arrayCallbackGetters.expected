@@ -1,0 +1,10 @@
+map [99,2]
+forEach [99,2]
+filter [99,2]
+some true
+every true
+reduce 101
+flatMap [99,2]
+proto-getter-unchanged [7,2]
+plain-array-unchanged [2,4,6]
+holes-unchanged [1,3]

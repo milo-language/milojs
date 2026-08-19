@@ -13650,20 +13650,6 @@ fn napi_call_function(_env: *u8, recv: i64, func: i64, argc: i64, argv: *u8, res
     return NAPI_OK
 }
 
-fn makeCbArgs(st: &Interp, o: i64, i: i64): Vec<JSValue> {
-    var v: Vec<JSValue> = Vec.new()
-    v.push(arrGet(st, o, i))
-    v.push(JSValue.Number(i as f64))
-    // on a scratch array adapting an array-like receiver, the spec hands the
-    // callback the ORIGINAL object, not the copy the method is walking
-    let orig = st.objExtras[st.objects[o].extra].arrayLikeOrig
-    if orig >= 0 {
-        v.push(JSValue.Obj(orig))
-    } else {
-        v.push(JSValue.Obj(o))
-    }
-    return v
-}
 
 pub fn isoFromMillis(ms: f64): string {
     if ms != ms {

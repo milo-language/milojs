@@ -43,6 +43,41 @@ the per-iteration-scope optimisation below: an engine built from the commit
 before it prints `1,1` too. Not yet covered by a fixture, because a fixture has
 to match node and this one cannot yet.
 
+## Dup unifier: the duplicate that drifted was arrGet vs arrGetDyn
+
+Scanned all 672 functions in `src/` for identical and near-identical bodies. Eight
+exact duplicates, 267 pairs between 80% and 99% similar. Most are legitimately
+parallel (getter/setter, bool/number, the napi int width variants, which differ
+only in their PARAMETER types), and `napi_has_property` vs `napi_has_own_property`
+correctly differ in exactly the one call that matters (`objHasInChain` vs
+`objHas`).
+
+The pair that had drifted was `makeCbArgs` / `makeCbArgsDyn`, and following it
+found the real bug one level down. Every Array.prototype method does a real
+[[Get]] per index, so an own ACCESSOR on an index has to be observed:
+
+```js
+var a = [1, 2];
+Object.defineProperty(a, 0, { get(){ return 99; } });
+a.map(x => x)        // milojs [1,2], node [99,2]
+```
+
+The element is STILL in the dense element storage after defineProperty, so
+`arrGetDyn`'s fast path returned the value the slot held BEFORE the getter was
+installed. A getter reached through the PROTOTYPE already worked, which is what
+made it hard to see: the chain walk was right, the own-accessor case was not.
+Guarded on `props.len() > 0`, so an ordinary array pays one length check.
+
+`makeCbArgs` itself turned out to have ZERO callers, so it went too (routine 4
+falling out of routine 3).
+
+**Known remaining gap, with a number:** `methods.milo` has 28 raw `arrGet` reads
+against 9 `arrGetDyn`. `find`, `findLast` and `slice` are among the raw ones and
+still miss an own index accessor. Converting all 28 is not mechanical: some are
+internal scratch work where a re-entrant getter would be wrong, and each one that
+becomes dynamic can run user code mid-loop. It wants its own pass with the
+re-entrancy question answered per site.
+
 ## Crash fuzzer: two bugs no suite or sweep had found
 
 `tools/fuzz.sh` generates random programs that allocate, capture, nest and discard,
