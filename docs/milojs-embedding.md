@@ -28,6 +28,25 @@ undefined `sqlite3_*` symbols until the host names the library. `tests/run-embed
 `MILOJS_EMBED_LIBS` for nonstandard toolchains. Release packaging should replace
 this manual list with `pkg-config` metadata.
 
+## What an embedded script can reach
+
+The library exposes the ECMAScript language and nothing else. Script code inside
+an embedded context has no filesystem, process, socket, or sqlite access: those
+71 capabilities are `__`-prefixed globals installed by `installHostGlobals` in
+`src/runtime/host.milo`, which only the `milojs` runtime binary calls.
+
+This was not always true, and it is worth stating plainly because the previous
+behaviour was the opposite of what an embedder would assume. `setupGlobals` in
+the engine bootstrap installed all 71, so any script run through `libmilojs` or
+`milojs-engine` could call `__spawnSync("/bin/sh", ...)` and get a shell. A host
+embedding a JS engine to run untrusted or semi-trusted script had no sandbox at
+all, and no import edge or type signature revealed it.
+
+`tools/check-layering.sh` now runs both binaries and asserts the split directly:
+`typeof __spawnSync` must be `undefined` under `milojs-engine` and `function`
+under `milojs`. An embedder that wants a host surface builds it deliberately on
+top of the ABI rather than inheriting one by accident.
+
 ## Current architectural constraint
 
 The interpreter is not yet multi-context:

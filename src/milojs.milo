@@ -53,6 +53,9 @@ from "./engine/builtins" import {
 from "std/process" import {
     exePath
 }
+from "./runtime/host" import {
+    installHostGlobals
+}
 from "./runtime/modules" import {
     preloadGraph, dirOf, fileExists
 }
@@ -260,6 +263,7 @@ fn main(): i32 {
         // no script → interactive REPL
         gInterp = makeInterp(false, 1024, 2)
         bootInterp(gInterp)
+        installHostGlobals(gInterp)
         setupNodeGlobals(gInterp, "<repl>", scriptArgs)
         return repl(gInterp)
     }
@@ -297,6 +301,7 @@ fn main(): i32 {
         }
     }
     bootInterp(gInterp)
+    installHostGlobals(gInterp)
     setupNodeGlobals(gInterp, path.clone(), scriptArgs)
     if envFile.len() > 0 {
         loadEnvFile(gInterp, envFile)

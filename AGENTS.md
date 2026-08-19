@@ -57,7 +57,7 @@ that list is a ratchet: an unregistered crossing fails, and so does a registered
 one that has been removed. Read that file before assuming the split is clean —
 the evaluator's builtin dispatch still reaches `host.milo`, `napi.milo` and
 `modules.milo` (<!--fact:layering-exempt-edges-->4<!--/fact--> registered edges), and `src/engine/bootstrap.milo` installs
-<!--fact:layering-host-globals-->71<!--/fact--> host natives into the engine binary's global scope.
+<!--fact:layering-host-globals-->0<!--/fact--> host natives into the engine binary's global scope.
 
 ## Before you write any Milo
 

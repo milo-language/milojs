@@ -41,6 +41,20 @@ the runtime (the server side blocks on accept too). Returns the raw HTTP
 response text prefixed with 'O', or 'E' + message on any failure — the JS side
 (lib/node-fetch.js) strips the sentinel and parses the response.
 
+### `installHostGlobals`
+
+```milo
+pub fn installHostGlobals(st: &mut Interp)
+```
+
+The host capability surface, installed as `__`-prefixed globals for the
+JS-written runtime modules to call. This lives here, and is called only from
+src/milojs.milo, because installing it is what grants a script the ability to
+spawn processes, open files and open sockets. src/engine/bootstrap.milo used to
+install all 71, which meant `milojs-engine` and every libmilojs embedder handed
+arbitrary JS a working __spawnSync. An embedder that wants these opts in by
+calling this; the language itself never does.
+
 ### `parseDottedQuad`
 
 ```milo

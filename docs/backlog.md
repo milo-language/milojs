@@ -8,6 +8,52 @@ last-verified: 2026-08-18 (re-read after the native id enum landed; the NATIVE_*
 
 # milojs backlog
 
+## The engine binary handed every script a working `__spawnSync`
+
+Routine #5 (abstraction police) against the layering gate the split shipped
+with. The gate was sound; what it recorded was not. Its exemption file listed 71
+`host-native` globals as registered exceptions, meaning `src/engine/bootstrap.milo`
+installed sqlite, tcp, udp, zlib, spawn, kill, fd and full filesystem natives.
+Registered as debt, never measured. Measured:
+
+```
+$ .dev/mj-engine /tmp/esc.js
+typeof __spawnSync: function
+spawn: {"status":0,"stdout":"pwned\n","error":false}
+```
+
+`milojs-engine` is the language-only binary, and `src/libmilojs.milo` is the
+public C embedding library built from the same bootstrap. Every embedder linking
+libmilojs to run script was handing that script process spawn, file open and
+socket connect as bare globals. The entire point of embedding a JS engine is to
+run code you do not fully trust.
+
+The fix was a move, not a refactor: the 71 `scopeDefine` calls were one
+contiguous block (two engine intrinsics, `__callFrames` and `__byteLength`, were
+mixed in and stayed). They are now `installHostGlobals` in
+`src/runtime/host.milo`, called only from `src/milojs.milo` immediately after
+`bootInterp`. No engine-side JS referenced any of them, checked before the move:
+`lib/engine-prelude.js` and `lib/temporal.js` are clean. Engine global surface
+goes 85 -> 14, all intrinsics.
+
+**The gate changed shape, and that is the point.** Half 2 used to accept a
+registry of 71 exceptions; a host native in the engine bootstrap now simply
+fails. Added half 3, a capability probe that runs the binaries: `typeof
+__spawnSync` must be `undefined` under `milojs-engine` and `function` under
+`milojs`. Source-reading halves cannot see what a binary actually exposes, and
+the reverse assertion stops the gate being satisfiable by breaking the runtime.
+It has teeth: it failed on the stale pre-fix `.dev/mj-engine` before the rebuild.
+
+Lesson for the exemption-registry pattern generally: a registered exemption is a
+claim that the violation is harmless, and nothing checks that claim. Four import
+edges carry arguments about refactor cost, which is honest debt. Seventy-one
+capability grants carried the word "host-native" and no argument at all, and the
+volume is what made them invisible.
+
+Gates: dev.sh 6/6, GC-stress 280/280, QuickJS 102/149 unchanged, node-compat
+sample 203/400 (50.7%), check-layering 0 violations with 2 binaries probed.
+
+
 ## Dead-code sweep: 13 removals, and a sweep that scored a missing binary
 
 Routine #4 (dead-code removal) over `src/**/*.milo` (24 files after the

@@ -14,10 +14,12 @@
 #
 #   1. IMPORT EDGES — a file on the engine side importing from src/runtime/.
 #   2. ENGINE GLOBAL SURFACE — src/engine/bootstrap.milo defines the `__`-prefixed
-#      natives that the JS-written built-ins call. Some of those are engine
-#      intrinsics (__construct, __reflectGet); most are host bindings (sqlite,
-#      tcp, spawn, fs), and they are installed by the ENGINE, so `milojs-engine`
-#      answers `function` for __sqliteOpen. No import edge shows that.
+#      natives that the JS-written built-ins call. It used to install the host
+#      bindings too (sqlite, tcp, spawn, fs), so `milojs-engine` answered
+#      `function` for __sqliteOpen and any script it ran could call __spawnSync.
+#      No import edge showed that. Those 71 now live in
+#      src/runtime/host.milo:installHostGlobals, called only from src/milojs.milo,
+#      and the engine bootstrap may install intrinsics ONLY.
 #
 # Both halves are ratchets against src/.layering-exempt, in the shape
 # tests/.node-oracle-exempt already uses here: every hole in the rule is a line
@@ -130,7 +132,7 @@ BOOTSTRAP="src/engine/bootstrap.milo"
 globals=$(grep -oE 'scopeDefine\(st, 0, "__[A-Za-z0-9_]+"' "$BOOTSTRAP" \
     | sed -E 's/.*"(.*)"/\1/' | sort -u)
 n_globals=$(printf '%s' "$globals" | grep -c . )
-if [ "$n_globals" -lt 50 ]; then
+if [ "$n_globals" -lt 10 ]; then
     echo "check-layering: only $n_globals __-globals found in $BOOTSTRAP — the scan is broken" >&2
     exit 1
 fi
@@ -142,7 +144,9 @@ for g in $unclassified; do
     status=1
     echo "unclassified engine global: $g"
     echo "    $BOOTSTRAP installs it, so the milojs-engine binary exposes it."
-    echo "    Add a 'global: $g <engine-intrinsic|host-native> <argument>' line to $EXEMPT_FILE."
+    echo "    If it is an engine intrinsic, add a 'global: $g engine-intrinsic <argument>'"
+    echo "    line to $EXEMPT_FILE. If it is a host capability, it does not belong in the"
+    echo "    engine bootstrap at all: install it from installHostGlobals in src/runtime/host.milo."
 done
 
 gone=$(comm -13 <(echo "$globals") <(echo "$classified"))
@@ -151,10 +155,40 @@ for g in $gone; do
     echo "stale global classification: $g is no longer installed by $BOOTSTRAP — delete its line from $EXEMPT_FILE"
 done
 
+# --- half 3: the capability probe ---
+#
+# Halves 1 and 2 read source. This runs the binaries, because the property that
+# actually matters is what a script can reach at runtime: an embedder linking
+# libmilojs, or anyone running milojs-engine, must not be handed a working
+# __spawnSync. Skipped when the binaries have not been built.
+probe=$(mktemp /tmp/layering-probe.XXXXXX.js)
+printf 'console.log(typeof __spawnSync, typeof __openSync, typeof __tcpConnect)\n' > "$probe"
+n_probed=0
+if [ -x .dev/mj-engine ]; then
+    got=$(.dev/mj-engine "$probe" 2>&1)
+    n_probed=$((n_probed + 1))
+    if [ "$got" != "undefined undefined undefined" ]; then
+        status=1
+        echo "capability leak: milojs-engine exposes host natives ($got)"
+        echo "    the engine binary must not grant spawn/file/socket access; those are"
+        echo "    installed by installHostGlobals in src/runtime/host.milo, runtime-only."
+    fi
+fi
+# The other direction: the runtime binary must still HAVE them, or this gate
+# would pass by breaking the product it is protecting.
+if [ -x .dev/mj-runtime ]; then
+    got=$(.dev/mj-runtime "$probe" 2>&1)
+    n_probed=$((n_probed + 1))
+    if [ "$got" != "function function function" ]; then
+        status=1
+        echo "runtime lost its host natives: expected all three defined, got ($got)"
+    fi
+fi
+rm -f "$probe"
+
 if [ "$status" -eq 0 ] && [ "$quiet" -eq 0 ]; then
     n_viol=$(printf '%s' "$seen_sorted" | grep -c . )
-    n_host=$(grep -cE '^global:.* host-native' "$EXEMPT_FILE")
     echo "check-layering: $n_files engine files, $n_edges imports, $n_globals engine globals checked"
-    echo "check-layering: 0 unregistered engine->runtime edges ($n_viol registered), 0 unclassified globals ($n_host registered as host)"
+    echo "check-layering: 0 unregistered engine->runtime edges ($n_viol registered), 0 host natives in the engine bootstrap, $n_probed binaries probed"
 fi
 exit "$status"
