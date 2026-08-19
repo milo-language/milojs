@@ -21,7 +21,7 @@ from "./eval" import {
     toStrProg, callBuiltinByName, makeError, currentModule, isCallable, isSymbolStr, symbolDisplay, isBigIntVal, bigStrOf, callValue, makeArrayIterator, taCurrentLen, taElemValue
 }
 from "./value" import {
-    JSValue, hexDigitVal, wsRunAt, wsRunBefore
+    JSValue, hexDigitVal, wsRunAt, wsRunBefore, truthy
 }
 from "./runtime" import {
     Interp, newObject, objSet
@@ -1822,8 +1822,42 @@ fn buildMatchArray(st: &mut Interp, s: &string, saves: &Vec<i64>, rid: i64): JSV
 pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSValue {
     // the prototype's flag accessors, dispatched under an internal name so they
     // cannot shadow an instance's own data property of the same name
-    if name.len() > 8 && strSlice(name.clone(), 0, 8) == "__reGet_" {
-        return objGet(st, o, strSlice(name.clone(), 8, name.len()))
+    if isRegexAccessorName(name) {
+        let prop = strSlice(name.clone(), 8, name.len())
+        if st.objExtras[st.objects[o].extra].regexId >= 0 {
+            return objGet(st, o, prop)
+        }
+        // %RegExp.prototype% is not a RegExp — it has no [[OriginalFlags]] — and
+        // the spec answers for it specifically rather than throwing. Every
+        // es-shim package reads these off the prototype at load time to decide
+        // what the engine supports, so throwing here killed all 53 of them.
+        if o == st.regexProtoObj {
+            if prop == "source" {
+                return JSValue.Str("(?:)")
+            }
+            if prop == "flags" {
+                return JSValue.Str("")
+            }
+            return JSValue.Undefined
+        }
+        // `flags` is generic: it is defined as reading the OTHER accessors off
+        // whatever object it is handed, in this order, so a plain object with
+        // `global: true` answers "g".
+        if prop == "flags" {
+            var out = ""
+            if truthy(objGet(st, o, "hasIndices")) { out = out + "d" }
+            if truthy(objGet(st, o, "global")) { out = out + "g" }
+            if truthy(objGet(st, o, "ignoreCase")) { out = out + "i" }
+            if truthy(objGet(st, o, "multiline")) { out = out + "m" }
+            if truthy(objGet(st, o, "dotAll")) { out = out + "s" }
+            if truthy(objGet(st, o, "unicode")) { out = out + "u" }
+            if truthy(objGet(st, o, "unicodeSets")) { out = out + "v" }
+            if truthy(objGet(st, o, "sticky")) { out = out + "y" }
+            return JSValue.Str(out)
+        }
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Method RegExp.prototype." + name.clone() + " called on incompatible receiver")
+        return JSValue.Undefined
     }
     // RegExp.prototype[@@match](str) and friends: delegate to the String method
     // that actually implements the operation in this engine
@@ -2502,6 +2536,15 @@ pub fn isStringMethodName(n: &string): bool {
     return n == "charAt" || n == "charCodeAt" || n == "codePointAt" || n == "at" || n == "indexOf" || n == "lastIndexOf" || n == "includes" || n == "startsWith" || n == "endsWith" || n == "slice" || n == "substring" || n == "substr" || n == "split" || n == "replace" || n == "replaceAll" || n == "toUpperCase" || n == "toLowerCase" || n == "toLocaleUpperCase" || n == "toLocaleLowerCase" || n == "isWellFormed" || n == "toWellFormed" || n == "trim" || n == "trimStart" || n == "trimEnd" || n == "trimLeft" || n == "trimRight" || n == "padStart" || n == "padEnd" || n == "repeat" || n == "concat" || n == "localeCompare" || n == "normalize" || n == "match" || n == "matchAll" || n == "search" || n == "toString" || n == "valueOf" || isHtmlMethodName(n)
 }
 
+// The prototype's flag accessors, which the spec lets an ORDINARY object
+// receive: `get RegExp.prototype.flags` reads its result off the receiver's
+// properties, and the single-flag getters answer undefined for %RegExp.prototype%
+// itself. Both are how regexp.prototype.flags (and everything downstream of it)
+// feature-detects the engine.
+pub fn isRegexAccessorName(n: &string): bool {
+    return n.len() > 8 && strSlice(n.clone(), 0, 8) == "__reGet_"
+}
+
 pub fn isRegexMethodName(n: &string): bool {
     if n.len() > 8 && strSlice(n.clone(), 0, 8) == "__reGet_" {
         return true
@@ -2631,17 +2674,23 @@ pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>, st: &
             return JSValue.Str(bnToRadix(bigStrOf(recv), radix))
         }
     }
-    if args.len() > 0 && !isUndefinedValue(args[0]) {
-        let radix = numToIndex(toNum(args[0]))
-        // 2..36, and anything else is a RangeError rather than a silent fallback
-        // to base 10: `(5).toString(1)` answered "5".
-        if radix < 2 || radix > 36 {
-            st.throwing = true
-            st.thrownValue = makeError(st, "RangeError", "toString() radix must be between 2 and 36")
-            return JSValue.Undefined
-        }
-        if radix != 10 {
-            return JSValue.Str(numToRadix(toNum(recv), radix))
+    // Only NUMBER.prototype.toString takes a radix. This ran for every primitive
+    // receiver, so `"abc".toString(1)` and `true.toString(1)` threw RangeError
+    // where node answers "abc" and "true" — and tape passes an index straight
+    // into toString, which took out all 53 package suites at their first require.
+    if let JSValue.Number(_rn) = recv {
+        if args.len() > 0 && !isUndefinedValue(args[0]) {
+            let radix = numToIndex(toNum(args[0]))
+            // 2..36, and anything else is a RangeError rather than a silent
+            // fallback to base 10: `(5).toString(1)` answered "5".
+            if radix < 2 || radix > 36 {
+                st.throwing = true
+                st.thrownValue = makeError(st, "RangeError", "toString() radix argument must be between 2 and 36")
+                return JSValue.Undefined
+            }
+            if radix != 10 {
+                return JSValue.Str(numToRadix(toNum(recv), radix))
+            }
         }
     }
     // number.toLocaleString() → thousands-grouped default-locale form

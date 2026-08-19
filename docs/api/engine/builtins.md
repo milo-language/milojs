@@ -44,6 +44,18 @@ and method extraction (`Array.prototype.slice.call(args)`). These predicates say
 whether a receiver answers to a name, so the member paths can hand back a bound
 method instead of undefined.
 
+### `isRegexAccessorName`
+
+```milo
+pub fn isRegexAccessorName(n: &string): bool
+```
+
+The prototype's flag accessors, which the spec lets an ORDINARY object
+receive: `get RegExp.prototype.flags` reads its result off the receiver's
+properties, and the single-flag getters answer undefined for %RegExp.prototype%
+itself. Both are how regexp.prototype.flags (and everything downstream of it)
+feature-detects the engine.
+
 ### `isRegexMethodName`
 
 ```milo

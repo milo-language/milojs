@@ -24,6 +24,7 @@ from "./strutil" import {
     strSlice
 }
 from "./builtins" import {
+    isRegexAccessorName,
     stringMethod, jsCharAt, mjStringifyVal, mjJsonParse, mjJsonOmitted, numToIndex, regexMethod, isRegexMethodName, makeRegex, regexArgFor, stringRegexOp, stringOpNeedsRegexArg, isStringRegexOp, primitiveMethod, isStringMethodName, isPrimitiveMethodName
 }
 from "./bigint" import {
@@ -1065,6 +1066,15 @@ fn brandOk(st: &mut Interp, boundObj: i64, mname: &string, recv: &JSValue): bool
     let brand = st.objExtras[st.objects[boundObj].extra].boundBrand
     if brandMatches(st, brand, recv) {
         return true
+    }
+    // RegExp's flag accessors take any OBJECT receiver: `flags` reads its answer
+    // off the receiver's properties, and %RegExp.prototype% has its own defined
+    // answers. regexMethod decides which; the brand cannot, because it only sees
+    // the receiver. A primitive receiver still fails here, as the spec requires.
+    if brand == BRAND_REGEXP && isRegexAccessorName(mname) {
+        if let JSValue.Obj(_h) = recv {
+            return true
+        }
     }
     st.throwing = true
     if brand == BRAND_CALLABLE {
@@ -2336,7 +2346,9 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             // a bound regex/buffer/typed-array method re-dispatches through here,
             // so these must be reachable or an extracted method silently does
             // nothing (no throw, no result — the process just unwinds)
-            if st.objExtras[st.objects[o].extra].regexId >= 0 && isRegexMethodName(name) {
+            // The flag ACCESSORS are generic in the spec (see regexMethod), so
+            // they have to reach it for a receiver that is not a regex at all.
+            if isRegexMethodName(name) && (st.objExtras[st.objects[o].extra].regexId >= 0 || isRegexAccessorName(name)) {
                 return regexMethod(st, o, name, args)
             }
             if st.objects[o].isDataView && isDataViewMethodName(name) {

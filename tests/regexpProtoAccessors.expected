@@ -1,0 +1,14 @@
+flags "" "gs" throws TypeError
+source "(?:)" throws TypeError throws TypeError
+global undefined throws TypeError throws TypeError
+ignoreCase undefined throws TypeError throws TypeError
+multiline undefined throws TypeError throws TypeError
+dotAll undefined throws TypeError throws TypeError
+sticky undefined throws TypeError throws TypeError
+unicode undefined throws TypeError throws TypeError
+hasIndices undefined throws TypeError throws TypeError
+unicodeSets undefined throws TypeError throws TypeError
+gi ab true false
+abc true ff ff
+RangeError toString() radix argument must be between 2 and 36
+RangeError toString() radix argument must be between 2 and 36
