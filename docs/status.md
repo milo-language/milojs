@@ -3,7 +3,7 @@ system: status
 purpose: current conformance numbers, product gate state, and what is next
 key-files: docs/conformance/node-compat.json, docs/node-compat.md, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, scripts/node-compat-sweep.ts
 update-when: a sweep is rerun or a product gate changes state
-last-verified: 2026-08-20 (node-compat.md is the table alone now, so the whole-suite totals and the peer comparison are cited here rather than there)
+last-verified: 2026-08-20 (node-compat re-measured with the confirm pass; node-compat.md is the table alone now, so the whole-suite totals and the peer comparison are cited here rather than there)
 -->
 
 # milojs status
@@ -130,4 +130,5 @@ that gate fail until the bullet is deleted.
 3. `http` (71/371) and `fs` (80/219), the two largest scored areas.
 4. Temporal, the largest addressable test262 bucket.
 5. Make the async-generator body's runnability explicit, then retry the request
-   queue. It is the only known hang.
+   queue. It is the only known hang in the engine; the runtime has 157 more,
+   ratcheted in `docs/conformance/defect-budget.json`.

@@ -6,12 +6,12 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "582d44b003265f8f75929d47f06e09f7b336ba90",
-    "dirty": false,
-    "date": "2026-08-19"
+    "revision": "cb6a82fdb6ffdd9b2790f3b10dc177c8d41ee38f",
+    "date": "2026-08-20",
+    "dirty": false
   },
-  "runtime": "~/git/milo-language/milojs/.claude/worktrees/querystring-compat/.dev/mj-runtime",
-  "runtimeVersion": "milojs 0.1.0 (dev 3dbbb27)",
+  "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
+  "runtimeVersion": "milojs 0.1.0 (dev caebd34)",
   "selection": {
     "directory": null,
     "sample": null,
@@ -27,13 +27,14 @@
     "total": 3373,
     "crashes": 2,
     "parseFailures": 5,
-    "timeouts": 164
+    "timeouts": 164,
+    "hangs": 157
   },
   "areas": [
     {
       "area": "http",
-      "pass": 85,
-      "fail": 286,
+      "pass": 86,
+      "fail": 285,
       "skipped": 6,
       "total": 377
     },
@@ -53,8 +54,8 @@
     },
     {
       "area": "stream",
-      "pass": 55,
-      "fail": 109,
+      "pass": 54,
+      "fail": 110,
       "skipped": 1,
       "total": 165
     },

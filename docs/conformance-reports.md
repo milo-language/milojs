@@ -3,7 +3,7 @@ system: conformance-reports
 purpose: reproducible procedure and format for the checked-in test262, QuickJS and Node sweep evidence
 key-files: scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, scripts/node-compat-sweep.ts, docs/status.md
 update-when: report flags, schema, corpus policy, or score publication policy changes
-last-verified: 2026-08-20 (re-read after docs/node-compat.md was cut down to the table alone; the sweep procedure, the report format and the peer-measurement rule are unchanged)
+last-verified: 2026-08-20 (re-read when the node sweep gained its confirm pass and a totals.hangs field, and when docs/node-compat.md was cut down to the table alone; the procedure and the publication rule are unchanged)
 -->
 
 # conformance reports
@@ -23,6 +23,11 @@ by default — a committed file, not a scratch artifact — containing:
   cannot tell a headline conformance score from a 2.8% spot check, which is what
   the test262 row is. `docs/status.md` publishes the fraction beside the score;
 - pass, fail, skip, and selected totals;
+- the defect counts that are NOT ordinary failures: `crashes`, `parseFailures`,
+  and, for node-compat, `timeouts` and `hangs`. `timeouts` is the raw count at the
+  10s per-case limit and moves with how loaded the machine was; `hangs` is the
+  subset that timed out AGAIN in the sweep's confirm pass at 45s. Only `hangs`
+  reproduces, so it is the one `tools/check-defect-budget.mjs` ratchets;
 - complete failure buckets and case names;
 - per-area test262 totals.
 
@@ -147,8 +152,9 @@ Two rules are enforced rather than asked for:
   `gen-facts` prints how many commits the published score is behind HEAD. That is
   reported, not gated: an unrelated commit should not turn a score red.
 
-A partial or filtered run must not be published at all; `--dir` and `--limit`
-exist for investigation, and their reports belong under a `--json` scratch path.
+A partial or filtered run must not be published at all; `--dir`, `--sample` and
+`--files` exist for investigation, and their reports belong under a `--json`
+scratch path.
 There is no `-f`: unrecognised arguments are ignored, so a mistyped filter runs
 the WHOLE corpus rather than failing. An unfiltered run takes about 12 minutes
 and is the only way to rank failure causes — the 1500-case sample is too thin to
