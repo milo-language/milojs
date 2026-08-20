@@ -22,7 +22,6 @@ fn evalAssignExpr:name 1
 fn evalBinArm:op 1
 fn evalBinaryExpr:op 1
 fn evalMemberExpr:name 1
-fn evalUnArm:op 1
 fn getMemberDyn:key 1
 fn getOwnPropDescOf:key 1
 fn memberOfValue:name 1

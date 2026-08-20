@@ -8460,13 +8460,71 @@ fn evalBinArm(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Interp, s
         return evalBinValues(prog, op, va, vb, st)
 }
 
+// Which unary operator this is, as a value rather than a borrow. `op` points
+// INTO prog.exprs, and evaluating the operand can require() a module into that
+// same shared Prog, which moves the storage — so the operator has to be decided
+// before the operand runs, never compared after it.
+//
+// This is tools/ast-ref-allow.txt's `fn evalUnArm:op` entry, and it was not
+// theoretical. `typeof process.getBuiltinModule('fs')` answered `false` about
+// one run in six: the require moved the AST, every comparison against the
+// dangling string failed, and the function fell out to its `!` fallback — so
+// `typeof` returned a boolean, which it cannot otherwise ever do.
+// The unary operators, as a value rather than a borrow into the AST.
+enum UnOp {
+    // Not is first because it is also the fallback: evalUnArm has always
+    // treated an operator it does not recognise as `!`.
+    Not,
+    Neg,
+    Plus,
+    BitNot,
+    TypeOf,
+    Void,
+    Await,
+    Yield,
+    YieldStar,
+    Delete,
+}
+
+fn unOpOf(op: &string): UnOp {
+    if op == "-" {
+        return UnOp.Neg
+    }
+    if op == "+" {
+        return UnOp.Plus
+    }
+    if op == "~" {
+        return UnOp.BitNot
+    }
+    if op == "typeof" {
+        return UnOp.TypeOf
+    }
+    if op == "void" {
+        return UnOp.Void
+    }
+    if op == "await" {
+        return UnOp.Await
+    }
+    if op == "yield" {
+        return UnOp.Yield
+    }
+    if op == "yield*" {
+        return UnOp.YieldStar
+    }
+    if op == "delete" {
+        return UnOp.Delete
+    }
+    return UnOp.Not
+}
+
 fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): JSValue {
+        let code = unOpOf(op)
         // delete needs the unevaluated target, not its value
-        if op == "delete" {
+        if code == UnOp.Delete {
             return evalDelete(prog, a, st, scope)
         }
         // typeof is the one context where an undeclared name is legal
-        if op == "typeof" {
+        if code == UnOp.TypeOf {
             if let Expr.Ident(iname) = prog.exprs[a.index] {
                 if !scopeHas(st, scope, iname) {
                     return JSValue.Str("undefined")
@@ -8476,12 +8534,12 @@ fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): 
         let va = evalExpr(prog, a, st, scope)
         // The numeric unary operators coerce, and ToNumber of a SYMBOL throws.
         // `typeof` and `void` do not convert and are handled above/below.
-        if isSymbolValue(va) && (op == "-" || op == "+" || op == "~") {
+        if isSymbolValue(va) && (code == UnOp.Neg || code == UnOp.Plus || code == UnOp.BitNot) {
             st.throwing = true
             st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a number")
             return JSValue.Undefined
         }
-        if op == "-" {
+        if code == UnOp.Neg {
             // BigInt negation stays a BigInt; unary + on a BigInt throws in JS
             if isBigIntVal(va) {
                 return JSValue.BigInt(bnNeg(bigStrOf(va)))
@@ -8499,11 +8557,11 @@ fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): 
             }
             return JSValue.Number(-toNum(va))
         }
-        if op == "~" && isBigIntVal(va) {
+        if code == UnOp.BitNot && isBigIntVal(va) {
             // ~x on a BigInt is -(x+1); exact and cheap without full bitwise
             return JSValue.BigInt(bnSub(bnNeg(bigStrOf(va)), "1"))
         }
-        if op == "typeof" {
+        if code == UnOp.TypeOf {
             // a bind() result is an object internally but a function to JS
             let th = objHandle(va)
             if th >= 0 && (st.objects[th].isBound || st.objects[th].isFunctionLike) {
@@ -8515,16 +8573,16 @@ fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): 
             }
             return JSValue.Str(typeofStr(va))
         }
-        if op == "void" {
+        if code == UnOp.Void {
             return JSValue.Undefined
         }
-        if op == "await" {
+        if code == UnOp.Await {
             return awaitValue(prog, va, st)
         }
-        if op == "yield" {
+        if code == UnOp.Yield {
             return genYield(va, st)
         }
-        if op == "yield*" {
+        if code == UnOp.YieldStar {
             // Delegate: drive the operand's iterator, re-yielding each value to
             // our own consumer. The value of `yield* it` is the inner
             // iterator's return value (the value carried by its {done:true}).
@@ -8710,7 +8768,7 @@ fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): 
             }
             return last
         }
-        if op == "+" {
+        if code == UnOp.Plus {
             // ToNumber of a BigInt is a TypeError -- unary plus is the one
             // arithmetic operator BigInt does not support, precisely so that
             // `+x` cannot silently lose precision. Answering the numeric value
@@ -8727,7 +8785,7 @@ fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): 
             }
             return JSValue.Number(toNum(va))
         }
-        if op == "~" {
+        if code == UnOp.BitNot {
             // ToInt32 goes through ToNumber, so an object is ToPrimitive'd first:
             // `~[1]` is -2, not -1. toInt32 alone read the object as 0.
             if objHandle(va) >= 0 {
