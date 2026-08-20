@@ -90,6 +90,26 @@ function dirtyInTree(rel) {
   } catch { return false; }
 }
 
+// A shallow clone answers "HEAD" for every path, because HEAD is the only commit
+// it has. That does not read as an error anywhere: `git log -1 -- <path>` prints
+// a perfectly good timestamp, every doc looks touched at once, and the gate goes
+// from "did this doc's subject move" to "is HEAD newer than this doc's
+// last-verified date" without saying a word about it. CI's default checkout is
+// depth 1, so that is where it happened. Refuse instead.
+function shallow() {
+  try {
+    return execFileSync("git", ["rev-parse", "--is-shallow-repository"], {
+      encoding: "utf8", cwd: ROOT, stdio: ["ignore", "pipe", "ignore"],
+    }).trim() === "true";
+  } catch { return false; }
+}
+if (shallow()) {
+  console.error("check-docs: this is a SHALLOW clone, so git cannot say when a doc's key-files last moved.");
+  console.error("  Every path would answer HEAD and the staleness ratchet would measure the commit date instead.");
+  console.error("  Fetch full history (actions/checkout with fetch-depth: 0, or `git fetch --unshallow`).");
+  process.exit(2);
+}
+
 // Last commit that touched any of the doc's own key-files. That is the moment the
 // doc's subject matter moved; anything the doc asserts predates it.
 function lastTouched(paths) {

@@ -10,7 +10,17 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # Full history, not the default depth-1. tools/check-docs.mjs asks git when
+      # each doc's key-files last moved; in a shallow clone every path answers
+      # "HEAD", so the staleness half silently stopped measuring drift and started
+      # measuring whether HEAD's commit date is newer than the doc's last-verified
+      # line. Six docs whose key-files nothing had touched failed that way, and on
+      # a commit made before 17:00 local the same tree would have passed, because
+      # the answer turned on the committer's timezone. The check itself now
+      # refuses to run shallow rather than mis-measure.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
