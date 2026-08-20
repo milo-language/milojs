@@ -3,7 +3,7 @@ system: backlog
 purpose: the open list. What is broken or missing, why it is not trivial, and what to do next
 key-files: src/engine/eval.milo, src/engine/builtins.milo, src/engine/parser.milo, src/engine/methods.milo, src/engine/runtime.milo, src/engine/driver.milo, src/engine/bytecode.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, lib/http.js, bench/run.sh, bench/arith.js
 update-when: an item lands (delete it), or a sweep/probe finds a new gap (add it)
-last-verified: 2026-08-19, every item below re-probed against .dev/mj-engine and node; six entries that had gone stale were deleted rather than carried
+last-verified: 2026-08-19 (re-checked against the evalUnArm change: the unary operator is now decided into a UnOp before the operand is evaluated, which fixes a dangling AST borrow and changes no behaviour this doc describes)
 -->
 
 # milojs backlog

@@ -3,7 +3,7 @@ system: milojs-generators
 purpose: how generators work in milojs (status), plus the pre-implementation design kept as historical rationale
 key-files: src/engine/eval.milo, src/engine/parser.milo, src/engine/ast.milo
 update-when: generator behaviour changes, or a claim in the historical half is found to have rotted
-last-verified: 2026-08-19 (re-read end to end: the design half below described generators as unimplemented and prescribed a per-task current-generator stack, both contradicted by the status half of this same file; marked historical, contradictions struck, and the rotted spawnActivation line number removed)
+last-verified: 2026-08-19 (re-checked against the evalUnArm change: the unary operator is now decided into a UnOp before the operand is evaluated, which fixes a dangling AST borrow and changes no behaviour this doc describes)
 -->
 
 # milojs: generators (design of record)

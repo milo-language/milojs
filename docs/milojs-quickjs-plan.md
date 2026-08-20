@@ -3,7 +3,7 @@ system: milojs
 purpose: active work plan for improving the QuickJS-suite score without confusing historical gaps with current code
 key-files: scripts/quickjs-sweep.ts, src/engine/parser.milo, src/engine/eval.milo, src/engine/runtime.milo, lib/engine-prelude.js, src/milojs-engine.milo
 update-when: the sweep is rerun, a failure bucket changes, or a lane lands
-last-verified: 2026-08-19 (re-read end to end: the headline cited a corpus revision that does not resolve, so it was re-derived from the committed report; lane 2's dispatch claim measured per receiver; lane 5's two items found already shipped and replaced with the Prog-mutability conflict that is actually open)
+last-verified: 2026-08-19 (re-checked against the evalUnArm change: the unary operator is now decided into a UnOp before the operand is evaluated, which fixes a dangling AST borrow and changes no behaviour this doc describes)
 -->
 
 # milojs QuickJS-parity plan
