@@ -85,6 +85,13 @@ echo "check-packages: $ran suites run ($skipped_node not runnable under node), $
 
 # A baseline rather than a target: this number moves with the corpus as well as
 # with the engine, so the gate is "did it go DOWN", never "is it high enough".
+#
+# It must be the FLOOR ACROSS PLATFORMS, not whatever the last machine to run it
+# saw. The same corpus and engine score ~15 assertions lower on the linux runner
+# than on darwin (measured twice: 1369/1354 before the builtin-list fix, and
+# 1460/1445 after). Record a darwin figure here and CI fails on a delta that is
+# the platform, not a regression — which is how this gate spent its whole life
+# red without anyone reading it.
 if [ -f "$BASELINE" ]; then
   read -r b_assert b_full < "$BASELINE"
   if [ "$milook" -lt "$b_assert" ] || [ "$full" -lt "$b_full" ]; then
