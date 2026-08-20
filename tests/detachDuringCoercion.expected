@@ -1,0 +1,7 @@
+copyWithin start detaches threw TypeError
+copyWithin end detaches threw TypeError
+fill value coercion detaches threw TypeError
+fill end detaches threw TypeError
+DataView set value detaches threw TypeError
+sort comparator detaches threw TypeError
+survived

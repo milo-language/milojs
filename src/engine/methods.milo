@@ -2617,8 +2617,14 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
             snap.push(arrGetDyn(prog, o, s, st))
             s = s + 1
         }
+        // Bounded by the CURRENT element count, not by `n`. `n` was read before
+        // the index arguments were coerced, and coercion runs user code: a
+        // valueOf that detaches the buffer empties elems, leaving `n` describing
+        // an array that no longer exists. Indexing on the stale bound aborted the
+        // process ("index out of bounds: 0/0"), which is not a throw a program
+        // can catch. sort() a few hundred lines down already had this right.
         var k: i64 = 0
-        while k < snap.len() && target + k < n {
+        while k < snap.len() && target + k < n && target + k < st.objects[o].elems.len() {
             st.objects[o].elems[target + k] = cloneValue(snap[k])
             k = k + 1
         }
@@ -2650,8 +2656,10 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         if end > n {
             end = n
         }
+        // Same stale-bound hazard as copyWithin: `end` derives from `n`, read
+        // before the range arguments ran user coercions.
         var i = start
-        while i < end {
+        while i < end && i < st.objects[o].elems.len() {
             st.objects[o].elems[i] = cloneValue(v)
             i = i + 1
         }
