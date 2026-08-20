@@ -290,11 +290,14 @@ fn joinArray(st: &mut Interp, o: i64, sep: &string): string {
 // toString. Returns Option.Some(primitive) when the method exists, else None so
 // the caller falls through to the ordinary coercion.
 fn trySymToPrimitive(prog: &Prog, h: i64, hint: &string, st: &mut Interp): Option<JSValue> {
+    // Copied out of the AST before anything below can re-enter the
+    // interpreter and move the program storage this reference points into.
+    let hintCopy = hint.clone()
     let m = getMemberDyn(prog, h, symToPrimitiveKey(), st)
     if isCallableIn(st, m) {
         pushTemp(st, JSValue.Obj(h))
         var args: Vec<JSValue> = Vec.new()
-        args.push(JSValue.Str(hint.clone()))
+        args.push(JSValue.Str(hintCopy.clone()))
         let r = callValue(prog, m, args, JSValue.Obj(h), st)
         popTemp(st)
         return Option.Some(r)
@@ -1149,11 +1152,14 @@ fn applyArgsInto(prog: &Prog, st: &mut Interp, v: &JSValue, out: &mut Vec<JSValu
 // same rejection into a plain `false` — and it cannot do that by catching, since
 // a Test262Error raised by user code inside a proxy trap must still propagate.
 fn descRejectReason(st: &mut Interp, o: i64, key: &string, d: i64): string {
+    // Copied out of the AST before anything below can re-enter the
+    // interpreter and move the program storage this reference points into.
+    let keyCopy = key.clone()
     let hasGet = objHasInChain(st, d, "get")
     let hasSet = objHasInChain(st, d, "set")
     let hasValue = objHasInChain(st, d, "value")
     let hasWritable = objHasInChain(st, d, "writable")
-    let cannotRedefine = "Cannot redefine property: " + key.clone()
+    let cannotRedefine = "Cannot redefine property: " + keyCopy.clone()
     // an accessor descriptor and a data descriptor cannot be combined
     if (hasGet || hasSet) && (hasValue || hasWritable) {
         return "Invalid property descriptor. Cannot both specify accessors and a value or writable attribute"
@@ -1172,9 +1178,9 @@ fn descRejectReason(st: &mut Interp, o: i64, key: &string, d: i64): string {
     }
     // adding a property to a non-extensible object is rejected; changing one
     // that is already there stays legal
-    let existing = objOwnIndex(st, o, key)
+    let existing = objOwnIndex(st, o, keyCopy)
     if existing < 0 && (st.objects[o].frozen || st.objects[o].sealed || st.objects[o].noExtend) {
-        return "Cannot define property " + key.clone() + ", object is not extensible"
+        return "Cannot define property " + keyCopy.clone() + ", object is not extensible"
     }
     if existing >= 0 && st.objects[o].frozen {
         return cannotRedefine
@@ -7041,11 +7047,14 @@ struct ArrayDefineResult {
 }
 
 fn arrayDefineOwn(prog: &Prog, st: &mut Interp, o: i64, key: &string, d: i64): ArrayDefineResult {
+    // Copied out of the AST before anything below can re-enter the
+    // interpreter and move the program storage this reference points into.
+    let keyCopy = key.clone()
     let notMine = ArrayDefineResult { handled: false, ok: true }
     if !st.objects[o].isArray {
         return notMine
     }
-    if key.clone() == "length" {
+    if keyCopy.clone() == "length" {
         if objHasInChain(st, d, "get") || objHasInChain(st, d, "set") {
             // length cannot become an accessor
             return ArrayDefineResult { handled: true, ok: false }
@@ -7075,7 +7084,7 @@ fn arrayDefineOwn(prog: &Prog, st: &mut Interp, o: i64, key: &string, d: i64): A
         }
         return ArrayDefineResult { handled: true, ok: true }
     }
-    let ai = asArrayIndex(key)
+    let ai = asArrayIndex(keyCopy)
     if ai < 0 {
         return notMine
     }
@@ -7115,7 +7124,7 @@ fn arrayDefineOwn(prog: &Prog, st: &mut Interp, o: i64, key: &string, d: i64): A
     if turnsOffAttr {
         if ai < arrLen(st, o) && !arrIsHole(st, o, ai) {
             let cur = arrGet(st, o, ai)
-            objSet(st, o, key.clone(), cur)
+            objSet(st, o, keyCopy.clone(), cur)
             st.objects[o].holes.push(ai)
         }
         return notMine
@@ -7139,14 +7148,17 @@ fn applyDescriptor(st: &mut Interp, o: i64, key: &string, d: i64) {
 // Reflect.defineProperty can report it as `false`. A RangeError from an invalid
 // array length is a real throw in both spellings and still propagates.
 fn applyDescriptorQuiet(st: &mut Interp, o: i64, key: &string, d: i64): bool {
+    // Copied out of the AST before anything below can re-enter the
+    // interpreter and move the program storage this reference points into.
+    let keyCopy = key.clone()
     // An array's indices and `length` are not Prop entries — arrayDefineOwn owns
-    // them. It reports `handled: false` for any other key so the ordinary path
+    // them. It reports `handled: false` for any other keyCopy so the ordinary path
     // below still runs, and `ok: false` when the definition must be rejected.
-    let ar = arrayDefineOwn(gProg, st, o, key, d)
+    let ar = arrayDefineOwn(gProg, st, o, keyCopy, d)
     if ar.handled {
         return ar.ok
     }
-    let existed = objOwnIndex(st, o, key) >= 0
+    let existed = objOwnIndex(st, o, keyCopy) >= 0
     // objSet/objDefineAccessor write through the ordinary property path, which
     // resets the attributes to a plain data property's defaults. Redefining an
     // existing property must keep whatever the descriptor does not name, so the
@@ -7155,7 +7167,7 @@ fn applyDescriptorQuiet(st: &mut Interp, o: i64, key: &string, d: i64): bool {
     var prevConf = false
     var prevWrit = false
     if existed {
-        let pi = objOwnIndex(st, o, key)
+        let pi = objOwnIndex(st, o, keyCopy)
         prevEnum = st.objects[o].props[pi].enumerable
         prevConf = st.objects[o].props[pi].configurable
         prevWrit = st.objects[o].props[pi].writable
@@ -7164,14 +7176,14 @@ fn applyDescriptorQuiet(st: &mut Interp, o: i64, key: &string, d: i64): bool {
     let hasSet = objHasInChain(st, d, "set")
     let hasValue = objHasInChain(st, d, "value")
     if hasGet || hasSet {
-        objDefineAccessor(st, o, key.clone(), getMember(st, d, "get"), getMember(st, d, "set"))
+        objDefineAccessor(st, o, keyCopy.clone(), getMember(st, d, "get"), getMember(st, d, "set"))
     } else if hasValue {
-        objSet(st, o, key.clone(), getMember(st, d, "value"))
+        objSet(st, o, keyCopy.clone(), getMember(st, d, "value"))
     } else if !existed {
         // a new property with no value named at all is undefined
-        objSet(st, o, key.clone(), JSValue.Undefined)
+        objSet(st, o, keyCopy.clone(), JSValue.Undefined)
     }
-    let at = objOwnIndex(st, o, key)
+    let at = objOwnIndex(st, o, keyCopy)
     if at >= 0 {
         if objHasInChain(st, d, "enumerable") {
             st.objects[o].props[at].enumerable = truthy(getMember(st, d, "enumerable"))
@@ -10976,13 +10988,16 @@ fn proxyHandlerOf(st: &Interp, o: i64): JSValue {
 // between `new Proxy(t, {get: 1})` throwing and quietly behaving like `t`.
 // Callers must check st.throwing before using the result.
 fn proxyTrapChecked(prog: &Prog, st: &mut Interp, o: i64, name: &string): JSValue {
+    // Copied out of the AST before anything below can re-enter the
+    // interpreter and move the program storage this reference points into.
+    let nameCopy = name.clone()
     if proxyRevoked(st, o) {
-        return throwTypeErr(st, "Cannot perform '" + name.clone() + "' on a proxy that has been revoked")
+        return throwTypeErr(st, "Cannot perform '" + nameCopy.clone() + "' on a proxy that has been revoked")
     }
     let h = objHandle(st.objExtras[st.objects[o].extra].proxyHandler)
     // the handler may itself be a proxy, so this read has to go through the
     // dynamic member path rather than reading its slots
-    let t = getMemberDyn(prog, h, name, st)
+    let t = getMemberDyn(prog, h, nameCopy, st)
     if st.throwing {
         return JSValue.Undefined
     }
@@ -10990,7 +11005,7 @@ fn proxyTrapChecked(prog: &Prog, st: &mut Interp, o: i64, name: &string): JSValu
         return JSValue.Undefined
     }
     if !isCallableIn(st, t) {
-        return throwTypeErr(st, "'" + name.clone() + "' trap must be a function")
+        return throwTypeErr(st, "'" + nameCopy.clone() + "' trap must be a function")
     }
     return t
 }
@@ -11549,7 +11564,10 @@ pub fn definePropOf(prog: &Prog, st: &mut Interp, v: &JSValue, key: &string, d: 
 // a non-configurable non-writable data property has to be reported by value, and
 // a non-configurable accessor with no getter has to be reported as undefined.
 fn checkProxyGetResult(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, r: &JSValue) {
-    let td = getOwnPropDescOf(prog, st, target, key)
+    // Copied out of the AST before anything below can re-enter the
+    // interpreter and move the program storage this reference points into.
+    let keyCopy = key.clone()
+    let td = getOwnPropDescOf(prog, st, target, keyCopy)
     if st.throwing {
         return
     }
@@ -11559,19 +11577,22 @@ fn checkProxyGetResult(prog: &Prog, st: &mut Interp, target: &JSValue, key: &str
     }
     if objHasInChain(st, tdh, "get") {
         if isUndefinedValue(getMember(st, tdh, "get")) && !isUndefinedValue(r) {
-            let _t = throwTypeErr(st, "'get' on proxy: property '" + key.clone() + "' is a non-configurable accessor property on the proxy target and does not have a getter function, but the trap did not return 'undefined'")
+            let _t = throwTypeErr(st, "'get' on proxy: property '" + keyCopy.clone() + "' is a non-configurable accessor property on the proxy target and does not have a getter function, but the trap did not return 'undefined'")
         }
         return
     }
     if !truthy(getMember(st, tdh, "writable")) && !sameValue(r, getMember(st, tdh, "value")) {
-        let _t = throwTypeErr(st, "'get' on proxy: property '" + key.clone() + "' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value")
+        let _t = throwTypeErr(st, "'get' on proxy: property '" + keyCopy.clone() + "' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value")
     }
 }
 
 // The mirror for a set trap that reported success: a target property that
 // cannot be written may not be reported as written.
 fn checkProxySetResult(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, v: &JSValue) {
-    let td = getOwnPropDescOf(prog, st, target, key)
+    // Copied out of the AST before anything below can re-enter the
+    // interpreter and move the program storage this reference points into.
+    let keyCopy = key.clone()
+    let td = getOwnPropDescOf(prog, st, target, keyCopy)
     if st.throwing {
         return
     }
@@ -11581,7 +11602,7 @@ fn checkProxySetResult(prog: &Prog, st: &mut Interp, target: &JSValue, key: &str
     }
     if objHasInChain(st, tdh, "set") {
         if isUndefinedValue(getMember(st, tdh, "set")) {
-            let _t = throwTypeErr(st, "'set' on proxy: trap returned truish for property '" + key.clone() + "' which exists in the proxy target as a non-configurable and non-writable accessor property without a setter")
+            let _t = throwTypeErr(st, "'set' on proxy: trap returned truish for property '" + keyCopy.clone() + "' which exists in the proxy target as a non-configurable and non-writable accessor property without a setter")
         }
         return
     }
@@ -11589,7 +11610,7 @@ fn checkProxySetResult(prog: &Prog, st: &mut Interp, target: &JSValue, key: &str
         return
     }
     if !truthy(getMember(st, tdh, "writable")) && !sameValue(v, getMember(st, tdh, "value")) {
-        let _t = throwTypeErr(st, "'set' on proxy: trap returned truish for property '" + key.clone() + "' which exists in the proxy target as a non-configurable and non-writable data property with a different value")
+        let _t = throwTypeErr(st, "'set' on proxy: trap returned truish for property '" + keyCopy.clone() + "' which exists in the proxy target as a non-configurable and non-writable data property with a different value")
     }
 }
 
@@ -11859,6 +11880,9 @@ pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec
 // access always passes the object it read through, so this cannot go through
 // getMemberDyn — the whole point of the argument is to differ from the target.
 fn reflectGet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, receiver: &JSValue): JSValue {
+    // Copied out of the AST before anything below can re-enter the
+    // interpreter and move the program storage this reference points into.
+    let keyCopy = key.clone()
     let o = objHandle(target)
     if o >= 0 && st.objects[o].isProxy {
         let trap = proxyTrapChecked(prog, st, o, "get")
@@ -11867,17 +11891,17 @@ fn reflectGet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, rece
         }
         let tv = proxyTargetOf(st, o)
         if isUndefinedValue(trap) {
-            return reflectGet(prog, st, tv, key, receiver)
+            return reflectGet(prog, st, tv, keyCopy, receiver)
         }
         var args: Vec<JSValue> = Vec.new()
         args.push(cloneValue(tv))
-        args.push(JSValue.Str(key.clone()))
+        args.push(JSValue.Str(keyCopy.clone()))
         args.push(cloneValue(receiver))
         let r = callTrap(prog, st, o, trap, args)
         if st.throwing {
             return JSValue.Undefined
         }
-        checkProxyGetResult(prog, st, tv, key, r)
+        checkProxyGetResult(prog, st, tv, keyCopy, r)
         if st.throwing {
             return JSValue.Undefined
         }
@@ -11885,7 +11909,7 @@ fn reflectGet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, rece
     }
     var cur = propertyBagOf(st, target)
     while cur >= 0 {
-        let pi = objOwnIndex(st, cur, key)
+        let pi = objOwnIndex(st, cur, keyCopy)
         if pi >= 0 {
             if propIsAccessor(st, cur, pi) {
                 let getter = accGetter(st, st.objects[cur].props[pi].acc)
@@ -11903,7 +11927,7 @@ fn reflectGet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, rece
     // builtin method) still live behind the member path
     let bag = propertyBagOf(st, target)
     if bag >= 0 {
-        return getMemberDyn(prog, bag, key, st)
+        return getMemberDyn(prog, bag, keyCopy, st)
     }
     return JSValue.Undefined
 }
@@ -11912,6 +11936,9 @@ fn reflectGet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, rece
 // `receiver` rather than on the target, and a rejected write is reported as
 // `false` instead of being silently dropped or thrown.
 fn reflectSet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, v: &JSValue, receiver: &JSValue): bool {
+    // Copied out of the AST before anything below can re-enter the
+    // interpreter and move the program storage this reference points into.
+    let keyCopy = key.clone()
     let o = objHandle(target)
     if o >= 0 && st.objects[o].isProxy {
         let trap = proxyTrapChecked(prog, st, o, "set")
@@ -11920,11 +11947,11 @@ fn reflectSet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, v: &
         }
         let tv = proxyTargetOf(st, o)
         if isUndefinedValue(trap) {
-            return reflectSet(prog, st, tv, key, v, receiver)
+            return reflectSet(prog, st, tv, keyCopy, v, receiver)
         }
         var args: Vec<JSValue> = Vec.new()
         args.push(cloneValue(tv))
-        args.push(JSValue.Str(key.clone()))
+        args.push(JSValue.Str(keyCopy.clone()))
         args.push(cloneValue(v))
         args.push(cloneValue(receiver))
         let r = callTrap(prog, st, o, trap, args)
@@ -11934,12 +11961,12 @@ fn reflectSet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, v: &
         if !truthy(r) {
             return false
         }
-        checkProxySetResult(prog, st, tv, key, v)
+        checkProxySetResult(prog, st, tv, keyCopy, v)
         return !st.throwing
     }
     var cur = propertyBagOf(st, target)
     while cur >= 0 {
-        let pi = objOwnIndex(st, cur, key)
+        let pi = objOwnIndex(st, cur, keyCopy)
         if pi >= 0 {
             if propIsAccessor(st, cur, pi) {
                 let setter = accSetter(st, st.objects[cur].props[pi].acc)
@@ -11969,7 +11996,7 @@ fn reflectSet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, v: &
     // another [[Set]]: re-entering [[Set]] here would loop forever whenever the
     // receiver is the proxy the write started from.
     if st.objects[rh].isProxy {
-        let ed = getOwnPropDescOf(prog, st, receiver, key)
+        let ed = getOwnPropDescOf(prog, st, receiver, keyCopy)
         if st.throwing {
             return false
         }
@@ -11991,30 +12018,30 @@ fn reflectSet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, v: &
             objSet(st, nd, "configurable", JSValue.Bool(true))
         }
         popTemp(st)
-        return definePropOf(prog, st, receiver, key, nd)
+        return definePropOf(prog, st, receiver, keyCopy, nd)
     }
     if st.objects[rh].frozen {
         return false
     }
-    let ri = objOwnIndex(st, rh, key)
+    let ri = objOwnIndex(st, rh, keyCopy)
     if ri >= 0 {
         if propIsAccessor(st, rh, ri) || !st.objects[rh].props[ri].writable {
             return false
         }
     } else if st.objects[rh].noExtend || st.objects[rh].sealed {
         // the array fast path below still has to honour non-extensibility
-        if !(st.objects[rh].isArray && asArrayIndex(key) >= 0 && asArrayIndex(key) < arrLen(st, rh)) {
+        if !(st.objects[rh].isArray && asArrayIndex(keyCopy) >= 0 && asArrayIndex(keyCopy) < arrLen(st, rh)) {
             return false
         }
     }
     if st.objects[rh].isArray {
-        let ai = asArrayIndex(key)
+        let ai = asArrayIndex(keyCopy)
         if ai >= 0 {
             arrSet(st, rh, ai, cloneValue(v))
             return true
         }
     }
-    setMemberDyn(prog, rh, key.clone(), cloneValue(v), st)
+    setMemberDyn(prog, rh, keyCopy.clone(), cloneValue(v), st)
     return !st.throwing
 }
 
@@ -15736,6 +15763,9 @@ fn errorStackFrames(st: &Interp): string {
 // A user assignment replaces it with a Func/Obj, and then the call has to go
 // through ordinary property dispatch or the assignment is silently ignored.
 fn consoleMethodIsPristine(st: &mut Interp, scope: i64, name: &string): bool {
+    // Copied out of the AST before anything below can re-enter the
+    // interpreter and move the program storage this reference points into.
+    let nameCopy = name.clone()
     if !scopeHas(st, scope, "console") {
         return true
     }
@@ -15744,7 +15774,7 @@ fn consoleMethodIsPristine(st: &mut Interp, scope: i64, name: &string): bool {
     if h < 0 {
         return true
     }
-    match getMember(st, h, name) {
+    match getMember(st, h, nameCopy) {
         JSValue.Native(_n) => {
             return true
         }

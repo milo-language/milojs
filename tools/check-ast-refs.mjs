@@ -78,7 +78,15 @@ function checkBinding(label, name, rawBody, atLine) {
   const body = rawBody.replace(/\/\/.*/g, "");
   const call = body.search(reentrantRe);
   if (call < 0) return;
-  const after = body.slice(call);
+  // Scan from the END of that call's argument list, not from its name. Handing
+  // the string TO the call is safe — the callee gets it before anything has run
+  // — and counting those made the gate report sites that were already correct.
+  let depth = 0, from = body.length;
+  for (let i = body.indexOf("(", call); i < body.length; i++) {
+    if (body[i] === "(") depth++;
+    else if (body[i] === ")") { depth--; if (depth === 0) { from = i + 1; break; } }
+  }
+  const after = body.slice(from);
   // A use is any mention that is not part of a longer identifier.
   const used = new RegExp(`(?<![\\w.])${name}\\b`).test(after);
   if (!used) return;
