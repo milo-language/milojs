@@ -371,7 +371,15 @@ function runOne(f: string, index: number): Promise<Row> {
       // filed under that line: the fails file showed reasons like "11 |
       // ReflectApply," and the crash count read zero while the machine was
       // producing twenty crash reports an hour.
-      const why = signal ? `crash(${signal})` : (whyFrom(stderr) || `exit ${code}`);
+      // A file the runtime could not PARSE is its own category, not one more
+      // assertion failure: one missing syntax feature takes a whole file with it,
+      // and 227 of these were scored as PASSES until the runtime stopped exiting 0
+      // on a syntax error. Counting them separately is what makes the size of the
+      // parser gap visible instead of spread across 227 one-off buckets.
+      const parse = /^milojs: .*: (expected |unexpected |Identifier .* has already been declared|function statements require)/m.exec(stderr);
+      const why = signal ? `crash(${signal})`
+        : parse ? `parse: ${parse[1].trim()}`
+        : (whyFrom(stderr) || `exit ${code}`);
       finish({ file: f, ok: false, why, skipped: false, skipWhy: "" });
     });
   });
@@ -529,6 +537,11 @@ if (verbose) {
 // it stayed invisible for as long as it was averaged into a four-digit fail
 // count.
 const crashes = rows.filter((r) => r.why.startsWith("crash(")).length;
+const parseFailures = rows.filter((r) => r.why.startsWith("parse: ")).length;
+if (parseFailures > 0) {
+  console.log(`\n${parseFailures} case(s) never RAN: the parser could not read the source.`);
+  console.log("  A parse gap is one missing syntax feature taking a whole file with it, not N separate bugs.");
+}
 if (crashes > 0) {
   console.log(`\n!! ${crashes} case(s) killed the runtime with a signal:`);
   rows.filter((r) => r.why.startsWith("crash(")).slice(0, 12)
@@ -551,7 +564,7 @@ const report = {
   runtime: tilde(RUNTIME),
   runtimeVersion: RUNTIME_VERSION,
   selection: { directory: subDir || null, sample: sampleN, seed: "0x5eed17", available: files.length, excludedNodeInternal: excluded },
-  totals: { pass, fail, skipped, ran, total: rows.length, crashes },
+  totals: { pass, fail, skipped, ran, total: rows.length, crashes, parseFailures },
   areas: areaRows,
 };
 writeFileSync(jsonPath, JSON.stringify(report, null, 2) + "\n");
