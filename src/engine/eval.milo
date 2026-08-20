@@ -439,7 +439,21 @@ fn toPrimitiveDefault(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
         }
     }
     popTemp(st)
-    return JSValue.Str("[object Object]")
+    return noPrimitive(st)
+}
+
+// Both conversion methods were unusable — missing, not callable, or answering
+// another object. The spec's answer is a TypeError, and it used to be the string
+// "[object Object]": `String({ toString: 5 })` quietly produced that instead of
+// throwing, which is how a non-callable toString reached the caller as a value.
+// Guarded on st.throwing so a toString that threw keeps ITS error rather than
+// having this one written over it.
+fn noPrimitive(st: &mut Interp): JSValue {
+    if !st.throwing {
+        st.throwing = true
+        st.thrownValue = makeError(st, "TypeError", "Cannot convert object to primitive value")
+    }
+    return JSValue.Str("")
 }
 
 // ToPrimitive with the STRING hint: toString before valueOf, the reverse of the
@@ -481,7 +495,7 @@ fn toPrimitiveString(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
         }
     }
     popTemp(st)
-    return JSValue.Str("[object Object]")
+    return noPrimitive(st)
 }
 
 // ToString for the paths that DO have a Prog, so a user-defined toString is
@@ -9310,13 +9324,16 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
         }
         Expr.CompoundAssign(targetIdx, op, rhsIdx) => {
             let cur = readLValue(prog, targetIdx, st, scope)
+            pushTemp(st, cloneValue(cur))
             let rhs = evalExpr(prog, rhsIdx, st, scope)
-            // a BigInt operand takes the arbitrary-precision path, same as a
-            // plain binary expression — evalBin would coerce it through f64
-            let result = if isBigIntVal(cur) || isBigIntVal(rhs) {
-                evalBigIntBin(op, cloneValue(cur), cloneValue(rhs), st)
-            } else {
-                evalBin(op, cur, rhs)
+            popTemp(st)
+            // `x += y` is `x = x + y` and must convert the same way: evalBin
+            // alone has no interp access, so an object operand never reached
+            // ToPrimitive and a symbol never threw — `s += ''` on a symbol
+            // silently left the symbol in place where `s + ''` was a TypeError.
+            let result = evalBinValues(prog, op, cloneValue(cur), cloneValue(rhs), st)
+            if st.throwing {
+                return JSValue.Undefined
             }
             writeLValue(prog, targetIdx, st, scope, cloneValue(result))
             return result

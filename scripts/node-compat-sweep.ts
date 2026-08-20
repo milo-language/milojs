@@ -69,9 +69,13 @@ const jobs = arg("--jobs") ? parseInt(arg("--jobs")!) : Math.min(8, memJobs);
 // A --dir or --sample run is a DIAGNOSTIC, not the published number: the same
 // rule the test262 sweep follows, and for the same reason. Only a whole-suite
 // run may write the committed report. --sample belongs here as much as --dir:
-// a 400-case sample scores 51.7% where the full 3373 score 48.7%, and it used
-// to overwrite the committed report with that number, so gen-facts published a
-// sample as the suite.
+// a sample and the whole suite score DIFFERENTLY, and --sample used to overwrite
+// the committed report, so gen-facts published a sample as the suite.
+//
+// The two scores this comment used to quote are gone on purpose. They had rotted
+// by more than 30 points against docs/conformance/node-compat.json while still
+// reading as current — a typed score in prose is precisely what §"Mechanize it,
+// don't maintain it" forbids. The live pair is in that report; read it there.
 const isCanonical = !subDir && sampleN === null;
 const jsonPath = arg("--json") ?? (isCanonical ? "docs/conformance/node-compat.json" : ".dev/node-compat-partial.json");
 const failsPath = arg("--fails");
