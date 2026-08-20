@@ -16095,6 +16095,12 @@ pub fn throwNotAFunction(st: &mut Interp, what: &string) {
 // Run the try/catch portion independently so execTry can decide whether a
 // finally block exists before it creates a Flow that later code must inspect.
 fn execTryBody(prog: &Prog, tryB: BlockId, param: &string, catchB: Option<BlockId>, st: &mut Interp, scope: i64): Flow {
+    // COPIED before the try block runs, for the same reason as the ForOf binding
+    // name: the block can parse new source (a require), and this reference points
+    // into the program store that parsing appends to. Read afterwards it can come
+    // back empty, which would silently drop the catch binding — `catch (e)` with
+    // no `e` in scope.
+    let paramName = param.clone()
     let tryScope = newScope(st, scope)
     pushActive(st, tryScope)
     var flow = execBlock(prog, tryB, st, tryScope)
@@ -16111,8 +16117,8 @@ fn execTryBody(prog: &Prog, tryB: BlockId, param: &string, catchB: Option<BlockI
             st.thrownValue = JSValue.Undefined
             let catchScope = newScope(st, scope)
             pushActive(st, catchScope)
-            if param.len() > 0 {
-                scopeDefine(st, catchScope, param.clone(), caught)
+            if paramName.len() > 0 {
+                scopeDefine(st, catchScope, paramName.clone(), caught)
             }
             flow = execBlock(prog, catchBlock, st, catchScope)
             runDisposals(prog, st, catchScope)
