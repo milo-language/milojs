@@ -29,9 +29,22 @@ if (start < 0) {
 const end = milo.indexOf('\nfn ', start + 10);
 const body = milo.slice(start, end < 0 ? milo.length : end);
 
-const known = new Set(builtinModules.flatMap((m) => [m, m.replace(/^node:/, '')]));
+// Emit the spelling NODE uses, not the one builtinSource() is keyed by.
+//
+// A builtin that an npm package predates appears in node's list ONLY as
+// "node:sqlite": bare `require("sqlite")` has to keep resolving through
+// node_modules, and src/runtime/modules.milo enforces exactly that in
+// builtinRequiresPrefix(). Accepting either spelling and then emitting the bare
+// one put a specifier in the list that this runtime refuses to load, and
+// is-core-module requires every entry — so it threw where the throw could not
+// be caught and took the remaining 48 assertions of that suite with it.
+const bare = new Set(builtinModules.filter((m) => !m.startsWith('node:')));
+const prefixOnly = new Set(
+  builtinModules.filter((m) => m.startsWith('node:')).map((m) => m.slice(5)).filter((m) => !bare.has(m)),
+);
 const names = [...new Set([...body.matchAll(/name == "([^"]+)"/g)].map((m) => m[1]))]
-  .filter((n) => known.has(n))
+  .map((n) => (bare.has(n) ? n : prefixOnly.has(n) ? `node:${n}` : null))
+  .filter(Boolean)
   .sort();
 
 if (names.length === 0) {
