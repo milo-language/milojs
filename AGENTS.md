@@ -411,6 +411,15 @@ above instead: a corpus under `/tmp` gets reaped, and the sweep then reports
 
 `--sample N` is seeded, so the same N is comparable across runs; `-v` lists every
 failing case and `--json <file>` writes the machine-readable form.
+`--files <list>` runs exactly the newline-separated cases named in a file, which
+is how a hang gets investigated; like `--dir` and `--sample`, it cannot write the
+committed report.
+
+The node sweep ends with a CONFIRM PASS: every case that hit the 10s per-case
+limit is run again at 45s (`--confirm-timeout`, 0 disables). `totals.timeouts` is
+the raw first-pass count and moves with machine load; `totals.hangs` is what
+survived the second run, and that is the number `tools/check-defect-budget.mjs`
+ratchets.
 
 Never type a score into prose — see `docs/conformance-reports.md` §Publication
 rule. `docs/backlog.md` carries no scores at all; the headline numbers are compiled

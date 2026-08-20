@@ -22,7 +22,12 @@ let bad = 0;
 // with whatever the runtime learned to finish, and demanding ceremony for every
 // improvement would just train people to bump the number without reading it.
 const EXACT = new Set(["crashes"]);
-const METRICS = ["crashes", "timeouts", "parseFailures"];
+// `hangs` rather than `timeouts` for the sweep that has both: a timeout at the
+// 10s per-case limit is partly a statement about how loaded the machine was, and
+// ratcheting it gated on the machine's mood (162 -> 164 -> 163 across three runs
+// of engines differing by one fix). `hangs` counts only the cases that timed out
+// AGAIN at 45s in the sweep's confirm pass, which reproduces.
+const METRICS = ["crashes", "hangs", "timeouts", "parseFailures"];
 
 for (const [suite, entry] of Object.entries(budgets)) {
   if (suite.startsWith("_")) continue;

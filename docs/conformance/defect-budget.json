@@ -1,14 +1,14 @@
 {
   "_comment": "Per-suite ceilings for defects that are NOT ordinary failures. A crash, a hang and a file the parser cannot read are each a different thing from 'the runtime returned the wrong answer', and averaged into a four-digit fail count all three are invisible. tools/check-defect-budget.mjs enforces these against the committed report.",
-  "_directions": "crashes is exact (it must match, in both directions \u2014 they are rare and individually known). timeouts and parseFailures are ceilings: they may drop without ceremony, but never rise.",
+  "_directions": "crashes is exact (it must match, in both directions — they are rare and individually known). hangs and parseFailures are ceilings: they may drop without ceremony, but never rise. hangs, not timeouts: a 10s timeout under a loaded pool is partly a statement about the machine, and the sweep's confirm pass re-runs every timed-out case at 45s so the ratcheted number reproduces.",
   "node-compat": {
     "crashes": 2,
-    "timeouts": 162,
+    "hangs": 157,
     "parseFailures": 5,
     "known": [
       "crash: test-signal-args.js sends itself SIGINT; milojs has no process.on('SIGINT'), so the default action kills it",
       "crash: test-signal-handler.js, same with SIGHUP",
-      "timeouts: sampled cases sat past 45s against a 10s limit, so these are hangs, not slowness"
+      "hangs: 157 cases still time out at 45s in the confirm pass, so they are wedged, not slow. The raw 10s timeout count sits a few above this and is NOT ratcheted: it moved 162/164/163 across three runs of engines differing by one fix, because a handful of merely-slow cases cross the 10s line depending on machine load."
     ]
   },
   "test262": {

@@ -50,6 +50,13 @@ const arg = (name: string) => { const i = argv.indexOf(name); return i >= 0 ? ar
 const verbose = argv.includes("-v");
 const sampleN = arg("--sample") ? parseInt(arg("--sample")!) : null;
 const subDir = arg("--dir") ?? "";
+// --files <path> runs exactly the cases named in a newline-separated list, which
+// is how a hang is investigated: the timeout count moved 162 -> 164 -> 163 across
+// three runs of near-identical trees, and telling a case that HANGS from one that
+// merely lost a race for the machine means re-running just the timed-out set with
+// a long limit and few jobs. Diagnostic only, like --dir and --sample: it must
+// never write the committed report.
+const fileList = arg("--files") ?? null;
 const timeoutMs = arg("--timeout") ? parseInt(arg("--timeout")!) : 10_000;
 // Each case is a separate process that mostly waits, and ~7% of them hang until
 // the timeout kills them, so a serial run spends most of its wall clock asleep:
@@ -76,7 +83,7 @@ const jobs = arg("--jobs") ? parseInt(arg("--jobs")!) : Math.min(8, memJobs);
 // by more than 30 points against docs/conformance/node-compat.json while still
 // reading as current — a typed score in prose is precisely what §"Mechanize it,
 // don't maintain it" forbids. The live pair is in that report; read it there.
-const isCanonical = !subDir && sampleN === null;
+const isCanonical = !subDir && sampleN === null && fileList === null;
 const jsonPath = arg("--json") ?? (isCanonical ? "docs/conformance/node-compat.json" : ".dev/node-compat-partial.json");
 const failsPath = arg("--fails");
 // --leaks names the cases that leave processes behind. A sweep that slowly eats
@@ -210,6 +217,18 @@ if (!keepAll) {
 }
 const excluded = before - files.length;
 if (subDir) files = files.filter((f) => f.startsWith(`test-${subDir}`));
+if (fileList) {
+  const want = new Set(readFileSync(fileList, "utf8").split("\n").map((l) => l.trim()).filter(Boolean));
+  const known = new Set(files);
+  const absent = [...want].filter((f) => !known.has(f));
+  // A misspelled name would otherwise silently shrink the run, which is the
+  // failure mode this whole file exists to refuse.
+  if (absent.length) {
+    console.error(`node-compat-sweep: --files names ${absent.length} case(s) not in the corpus: ${absent.slice(0, 5).join(", ")}`);
+    process.exit(2);
+  }
+  files = files.filter((f) => want.has(f));
+}
 files.sort();
 
 // A seeded sample, so the same N is comparable across runs and across runtimes.
@@ -290,7 +309,7 @@ function envForTest(index: number): NodeJS.ProcessEnv {
 // the runtime under test has a spawn bug they keep multiplying. That is how this
 // sweep took a machine down. Run it under tools/guard.sh as well; this is the
 // inner half of the same defence.
-function runOne(f: string, index: number): Promise<Row> {
+function runOne(f: string, index: number, limitMs: number = timeoutMs): Promise<Row> {
   return new Promise((resolve) => {
     const child = spawn(RUNTIME, [join(PARALLEL, f)], {
       cwd: PARALLEL,
@@ -327,7 +346,7 @@ function runOne(f: string, index: number): Promise<Row> {
       // A runtime wedged in a native call ignores SIGTERM; SIGKILL is not
       // optional here, it is the whole point.
       setTimeout(() => killGroup("SIGKILL"), 2_000).unref();
-    }, timeoutMs);
+    }, limitMs);
 
     // detached:true made child.pid the process-group id, so the group is
     // exactly this case's tree and killing it cannot touch a sibling case.
@@ -452,6 +471,39 @@ async function worker() {
 }
 await Promise.all(Array.from({ length: Math.max(1, jobs) }, () => worker()));
 
+// The confirm pass, and the reason the hang ratchet is worth having.
+//
+// The per-case limit is 10s because 3373 cases at anything longer is a sweep
+// nobody runs. But 10s under a pool of 8 (peak 42 processes, 3.9 GB) is close
+// enough to what a merely SLOW case needs that a handful cross the line on one
+// run and not the next: the count went 162 -> 164 -> 163 across three runs of
+// engines that differ by one toPrimitive fix. Ratcheting on that number gates
+// on the machine's mood.
+//
+// So every timed-out case is run again, alone-ish and with a limit long enough
+// that losing a race cannot explain it. What survives BOTH is a hang: measured
+// 157 of 163 the first time this ran, with the other 6 finishing when given
+// room. `timeouts` stays in the report as the raw first-pass count; `hangs` is
+// the reproducible one, and it is what tools/check-defect-budget.mjs ratchets.
+const CONFIRM_MS = arg("--confirm-timeout") ? parseInt(arg("--confirm-timeout")!) : 45_000;
+const timedOutRows = rows.filter((r) => r.why === "timeout");
+let hangs = timedOutRows.length;
+if (CONFIRM_MS > 0 && timedOutRows.length > 0) {
+  process.stdout.write(`\nconfirming ${timedOutRows.length} timeout(s) at ${CONFIRM_MS / 1000}s each\n`);
+  const confirmed: Row[] = new Array(timedOutRows.length);
+  let nextConfirm = 0;
+  async function confirmWorker() {
+    while (true) {
+      const i = nextConfirm++;
+      if (i >= timedOutRows.length) return;
+      confirmed[i] = await runOne(timedOutRows[i].file, i, CONFIRM_MS);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, jobs) }, () => confirmWorker()));
+  hangs = confirmed.filter((r) => r.why === "timeout").length;
+  process.stdout.write(`  ${hangs} still hung, ${timedOutRows.length - hangs} finished when given room\n`);
+}
+
 // Swept again at the end so a normal run leaves the tree clean.
 clearTempDirs("after");
 process.stdout.write("\n");
@@ -555,14 +607,19 @@ if (verbose) {
 // count.
 const crashes = rows.filter((r) => r.why.startsWith("crash(")).length;
 const parseFailures = rows.filter((r) => r.why.startsWith("parse: ")).length;
-// A timeout here is a HANG, not slowness: sampled cases sat past 45s with the
-// per-case limit at 10s. Counted apart from `fail` for the same reason crashes
-// are — a runtime that never returns is a different defect from one that returns
-// the wrong answer, and averaged in it is invisible.
+// Counted apart from `fail` for the same reason crashes are: a runtime that
+// never returns is a different defect from one that returns the wrong answer,
+// and averaged into a four-digit fail count it is invisible. This is the RAW
+// first-pass count at the 10s limit; `hangs` above is the subset that survived
+// the confirm pass, and that is the one to ratchet.
 const timeouts = rows.filter((r) => r.why === "timeout").length;
 if (parseFailures > 0) {
   console.log(`\n${parseFailures} case(s) never RAN: the parser could not read the source.`);
   console.log("  A parse gap is one missing syntax feature taking a whole file with it, not N separate bugs.");
+}
+if (timeouts > 0) {
+  console.log(`\n${timeouts} case(s) hit the ${timeoutMs / 1000}s limit; ${hangs} still hung at ${CONFIRM_MS / 1000}s.`);
+  console.log("  hangs is the ratcheted number: a case that finishes when given room lost a race, it did not wedge.");
 }
 if (crashes > 0) {
   console.log(`\n!! ${crashes} case(s) killed the runtime with a signal:`);
@@ -586,7 +643,7 @@ const report = {
   runtime: tilde(RUNTIME),
   runtimeVersion: RUNTIME_VERSION,
   selection: { directory: subDir || null, sample: sampleN, seed: "0x5eed17", available: files.length, excludedNodeInternal: excluded },
-  totals: { pass, fail, skipped, ran, total: rows.length, crashes, parseFailures, timeouts },
+  totals: { pass, fail, skipped, ran, total: rows.length, crashes, parseFailures, timeouts, hangs },
   areas: areaRows,
 };
 writeFileSync(jsonPath, JSON.stringify(report, null, 2) + "\n");
