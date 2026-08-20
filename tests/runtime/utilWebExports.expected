@@ -1,0 +1,6 @@
+TextEncoder function
+TextDecoder function
+AbortController undefined
+AbortSignal undefined
+encode length: 2
+decode: hi
