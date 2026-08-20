@@ -18,7 +18,7 @@ Open gaps are listed in [docs/backlog.md](backlog.md); per-module detail in
 |---|---|---:|
 | test262 (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->`) | engine | **<!--fact:t262-pct-->79.5%<!--/fact-->** <!--fact:t262-pass-->1169<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> |
 | QuickJS `tests/` | engine | **<!--fact:qjs-pct-->69.8%<!--/fact-->** <!--fact:qjs-pass-->104<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> |
-| Node `test/parallel` | runtime | **<!--fact:node-pct-all-->24.0%<!--/fact-->** <!--fact:node-pass-->808<!--/fact-->/<!--fact:node-total-->3373<!--/fact--> |
+| Node `test/parallel` | runtime | **<!--fact:node-pct-all-->17.2%<!--/fact-->** <!--fact:node-pass-->581<!--/fact-->/<!--fact:node-total-->3373<!--/fact--> |
 | Node `test/parallel` | peer: <!--fact:node-peer-name-->bun 1.3.10<!--/fact--> | **<!--fact:node-peer-pct-all-->40.8%<!--/fact-->** <!--fact:node-peer-pass-->1377<!--/fact-->/<!--fact:node-peer-total-->3373<!--/fact--> |
 
 Corpora: test262 `<!--fact:t262-corpus-->b363f29d<!--/fact-->`, quickjs `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`.
@@ -28,8 +28,8 @@ Node denominator is EVERY selected case. <!--fact:node-skipped-->936<!--/fact-->
 `missing crypto`, and they stay in the denominator on purpose: scoring against
 what ran forgives whatever the runtime cannot attempt, so landing crypto would
 turn 606 silent skips into loud failures and the headline would FALL while the
-runtime got strictly better. Against what ran it is <!--fact:node-pct-->33.2%<!--/fact-->
-(<!--fact:node-pass-->808<!--/fact-->/<!--fact:node-ran-->2437<!--/fact-->); that form is for tracking milojs against itself,
+runtime got strictly better. Against what ran it is <!--fact:node-pct-->23.8%<!--/fact-->
+(<!--fact:node-pass-->581<!--/fact-->/<!--fact:node-ran-->2437<!--/fact-->); that form is for tracking milojs against itself,
 never against another engine, which skips a different amount.
 
 Parse gaps: <!--fact:t262-parsefail-->23<!--/fact--> of <!--fact:t262-fail-->301<!--/fact--> test262 failures (<!--fact:t262-parsefail-pct-->7.6%<!--/fact-->) are syntax; the rest are

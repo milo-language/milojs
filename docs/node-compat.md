@@ -3,7 +3,7 @@ system: node-compat
 purpose: per-module Node compatibility, derived from an export diff against node and from the test sweep
 key-files: tools/gen-node-compat.mjs, docs/conformance/node-compat.json, lib/
 update-when: generated; run `node tools/gen-node-compat.mjs`, never edit by hand
-last-verified: 2026-08-19 (generated from the node-compat sweep at 3a39c5a0)
+last-verified: 2026-08-19 (generated from the node-compat sweep at 9308279d)
 -->
 
 # Node module compatibility
@@ -40,44 +40,44 @@ Read the two cells against each other only through their skip counts. Where milo
 skipped and the peer did not, milojs's denominator is smaller and its rate is
 flattered; the whole-suite line under the table is the comparable form.
 
-Reference surface: node v25.3.0. Sweep at `3a39c5a0`.
+Reference surface: node v25.3.0. Sweep at `9308279d`.
 
 | | module | tests | bun 1.3.10 | exports | missing exports |
 |---|---|---|---|---|---|
-| 🟡 | `child_process` | 61/98 62% (+2 skipped) | 59/97 61% (+3 skipped) | 8/9 89% | `_forkChild` |
-| 🟡 | `cluster` | 48/77 62% (+4 skipped) | 49/78 63% (+3 skipped) | 10/16 63% | `_eventsCount`, `_maxListeners`, `disconnect`, `fork`, `setupMaster`, `setupPrimary` |
-| 🟡 | `domain` | 28/46 61% (+2 skipped) | 2/48 4% | 5/5 100% | none |
 | 🟠 | `timers` | 26/48 54% | 30/48 63% | 7/7 100% | none |
 | 🟠 | `path` | 9/16 56% (+1 skipped) | 10/16 63% (+1 skipped) | 16/17 94% | `_makeLong` |
 | 🟠 | `querystring` | 2/4 50% | 4/4 100% | 6/7 86% | `unescapeBuffer` |
-| 🟠 | `async_hooks` | 21/43 49% (+2 skipped) | 17/45 38% | 5/7 71% | `asyncWrapProviders`, `executionAsyncResource` |
+| 🟠 | `cluster` | 37/77 48% (+4 skipped) | 49/78 63% (+3 skipped) | 10/16 63% | `_eventsCount`, `_maxListeners`, `disconnect`, `fork`, `setupMaster`, `setupPrimary` |
 | 🟠 | `buffer` | 25/56 45% (+1 skipped) | 31/57 54% | 8/13 62% | `Blob`, `File`, `INSPECT_MAX_BYTES`, `resolveObjectURL`, `transcode` |
 | 🟠 | `console` | 9/21 43% | 9/21 43% | 19/25 76% | `context`, `createTask`, `dirxml`, `profile`, `profileEnd`, `timeStamp` |
-| 🟠 | `fs` | 87/219 40% (+8 skipped) | 124/219 57% (+8 skipped) | 80/104 77% | `Dir`, `FileReadStream`, `FileWriteStream`, `ReadStream`, `Utf8Stream`, `WriteStream` +18 more |
-| 🟠 | `stream` | 60/164 37% (+1 skipped) | 103/165 62% | 8/23 35% | `_isArrayBufferView`, `_isUint8Array`, `_uint8ArrayToBuffer`, `addAbortSignal`, `compose`, `destroy` +9 more |
 | 🟠 | `dgram` | 22/60 37% (+4 skipped) | 47/63 75% (+1 skipped) | 2/2 100% | none |
-| 🟠 | `vm` | 23/67 34% | 47/67 70% | 10/10 100% | none |
 | 🟠 | `perf_hooks` | 4/12 33% | 1/12 8% | 11/13 85% | `Performance`, `PerformanceResourceTiming` |
+| 🟠 | `async_hooks` | 15/43 35% (+2 skipped) | 17/45 38% | 5/7 71% | `asyncWrapProviders`, `executionAsyncResource` |
+| 🟠 | `stream` | 55/164 34% (+1 skipped) | 103/165 62% | 8/23 35% | `_isArrayBufferView`, `_isUint8Array`, `_uint8ArrayToBuffer`, `addAbortSignal`, `compose`, `destroy` +9 more |
+| 🟠 | `domain` | 14/46 30% (+2 skipped) | 2/48 4% | 5/5 100% | none |
 | 🔴 | `url` | 4/14 29% | 2/14 14% | 8/14 57% | `URLPattern`, `domainToASCII`, `domainToUnicode`, `fileURLToPathBuffer`, `resolveObject`, `urlToHttpOptions` |
-| 🟠 | `diagnostics_channel` | 18/45 40% (+19 skipped) | 12/64 19% | 6/6 100% | none |
-| 🔴 | `process` | 22/76 29% (+5 skipped) | 29/79 37% (+2 skipped) | 35/83 42% | `_debugEnd`, `_debugProcess`, `_events`, `_eventsCount`, `_exiting`, `_fatalException` +42 more |
 | 🔴 | `events` | 1/4 25% | 3/4 75% | 10/17 59% | `EventEmitterAsyncResource`, `captureRejections`, `getMaxListeners`, `init`, `kMaxEventTargetListeners`, `kMaxEventTargetListenersWarned` +1 more |
-| 🔴 | `assert` | 3/13 23% | 0/13 0% | 20/21 95% | `Assert` |
-| 🔴 | `http` | 86/371 23% (+6 skipped) | 158/377 42% | 12/20 60% | `CloseEvent`, `MessageEvent`, `WebSocket`, `_connectionListener`, `maxHeaderSize`, `setMaxIdleHTTPParsers` +2 more |
-| 🔴 | `net` | 30/133 23% (+3 skipped) | 71/136 52% | 13/17 76% | `BlockList`, `SocketAddress`, `_createServerHandle`, `_normalizeArgs` |
-| 🔴 | `repl` | 19/83 23% (+7 skipped) | 3/88 3% (+2 skipped) | 0/7 0% | `REPLServer`, `REPL_MODE_SLOPPY`, `REPL_MODE_STRICT`, `Recoverable`, `isValidSyntax`, `start` +1 more |
+| 🔴 | `child_process` | 24/98 24% (+2 skipped) | 59/97 61% (+3 skipped) | 8/9 89% | `_forkChild` |
+| 🔴 | `http` | 85/371 23% (+6 skipped) | 158/377 42% | 12/20 60% | `CloseEvent`, `MessageEvent`, `WebSocket`, `_connectionListener`, `maxHeaderSize`, `setMaxIdleHTTPParsers` +2 more |
+| 🔴 | `fs` | 50/219 23% (+8 skipped) | 124/219 57% (+8 skipped) | 80/104 77% | `Dir`, `FileReadStream`, `FileWriteStream`, `ReadStream`, `Utf8Stream`, `WriteStream` +18 more |
+| 🔴 | `net` | 29/133 22% (+3 skipped) | 71/136 52% | 13/17 76% | `BlockList`, `SocketAddress`, `_createServerHandle`, `_normalizeArgs` |
+| 🔴 | `diagnostics_channel` | 13/45 29% (+19 skipped) | 12/64 19% | 6/6 100% | none |
 | 🔴 | `readline` | 3/15 20% | 12/15 80% | 8/8 100% | none |
-| 🔴 | `util` | 3/16 19% (+1 skipped) | 7/16 44% (+1 skipped) | 12/33 36% | `MIMEParams`, `MIMEType`, `TextDecoder`, `TextEncoder`, `_errnoException`, `_exceptionWithHostPort` +15 more |
-| 🔴 | `os` | 1/6 17% | 4/6 67% | 22/23 96% | `loadavg` |
-| 🔴 | `zlib` | 9/58 16% (+1 skipped) | 43/59 73% | 29/47 62% | `BrotliCompress`, `BrotliDecompress`, `Deflate`, `DeflateRaw`, `Gunzip`, `Gzip` +12 more |
-| 🔴 | `module` | 4/24 17% (+3 skipped) | 16/24 67% (+3 skipped) | 4/33 12% | `SourceMap`, `_cache`, `_extensions`, `_findPath`, `_initPaths`, `_load` +23 more |
+| 🔴 | `vm` | 12/67 18% | 47/67 70% | 10/10 100% | none |
+| 🔴 | `process` | 14/76 18% (+5 skipped) | 29/79 37% (+2 skipped) | 35/83 42% | `_debugEnd`, `_debugProcess`, `_events`, `_eventsCount`, `_exiting`, `_fatalException` +42 more |
+| 🔴 | `assert` | 2/13 15% | 0/13 0% | 20/21 95% | `Assert` |
+| 🔴 | `zlib` | 7/58 12% (+1 skipped) | 43/59 73% | 29/47 62% | `BrotliCompress`, `BrotliDecompress`, `Deflate`, `DeflateRaw`, `Gunzip`, `Gzip` +12 more |
+| 🔴 | `util` | 2/16 13% (+1 skipped) | 7/16 44% (+1 skipped) | 12/33 36% | `MIMEParams`, `MIMEType`, `TextDecoder`, `TextEncoder`, `_errnoException`, `_exceptionWithHostPort` +15 more |
 | 🔴 | `v8` | 2/14 14% (+4 skipped) | 2/18 11% | 10/23 43% | `DefaultDeserializer`, `DefaultSerializer`, `Deserializer`, `GCProfiler`, `Serializer`, `getCppHeapStatistics` +7 more |
-| 🔴 | `worker_threads` | 13/118 11% (+7 skipped) | 38/125 30% | 11/21 52% | `BroadcastChannel`, `MessageChannel`, `MessagePort`, `SHARE_ENV`, `isInternalThread`, `isMarkedAsUntransferable` +4 more |
+| 🔴 | `module` | 3/24 13% (+3 skipped) | 16/24 67% (+3 skipped) | 4/33 12% | `SourceMap`, `_cache`, `_extensions`, `_findPath`, `_initPaths`, `_load` +23 more |
+| 🔴 | `repl` | 4/83 5% (+7 skipped) | 3/88 3% (+2 skipped) | 0/7 0% | `REPLServer`, `REPL_MODE_SLOPPY`, `REPL_MODE_STRICT`, `Recoverable`, `isValidSyntax`, `start` +1 more |
 | 🟠 | `tls` | 1/1 100% (+187 skipped) | 55/176 31% (+12 skipped) | 16/18 89% | `getCACertificates`, `setDefaultCACertificates` |
 | 🔴 | `string_decoder` | 0/3 0% | 2/3 67% | 1/1 100% | none |
 | 🔴 | `tty` | 0/2 0% | 1/2 50% | 3/3 100% | none |
+| 🔴 | `os` | 0/6 0% | 4/6 67% | 22/23 96% | `loadavg` |
 | ⚪ | `https` | 0 ran (60 skipped) | 13/58 22% (+2 skipped) | 5/6 83% | `Server` |
 | 🔴 | `sqlite` | 0/1 0% (+12 skipped) | 0/1 0% (+12 skipped) | 3/5 60% | `Session`, `backup` |
+| 🔴 | `worker_threads` | 0/118 0% (+7 skipped) | 38/125 30% | 11/21 52% | `BroadcastChannel`, `MessageChannel`, `MessagePort`, `SHARE_ENV`, `isInternalThread`, `isMarkedAsUntransferable` +4 more |
 | 🔴 | `dns` | 0/19 0% | 11/19 58% | 16/50 32% | `ADDRGETNETWORKPARAMS`, `BADFAMILY`, `BADFLAGS`, `BADHINTS`, `BADNAME`, `BADQUERY` +28 more |
 | ⚪ | `crypto` | 0 ran (121 skipped) | 47/90 52% (+31 skipped) | 7/69 10% | `Certificate`, `Cipheriv`, `Decipheriv`, `DiffieHellman`, `DiffieHellmanGroup`, `ECDH` +56 more |
 | ⚪ | `punycode` | no cases | no cases | 6/6 100% | none |
@@ -88,8 +88,8 @@ Reference surface: node v25.3.0. Sweep at `3a39c5a0`.
 | 🔴 | `trace_events` **(does not load)** | no cases | no cases | 0/2 0% | `createTracing`, `getEnabledCategories` |
 | 🔴 | `wasi` **(does not load)** | no cases | no cases | 0/1 0% | `WASI` |
 
-Across all 43 modules: **645/1948 node cases pass (33%)**, 🟢 0, 🟡 3, 🟠 13, 🔴 22, ⚪ 5. Surface: 466/1056 exports present (44%).
+Across all 43 modules: **475/1948 node cases pass (24%)**, 🟢 0, 🟡 0, 🟠 12, 🔴 26, ⚪ 5. Surface: 466/1056 exports present (44%).
 
-Whole suite, every selected case counted: **808/3373 (24%)**, against bun 1.3.10 at **1377/3373 (41%)**. This is the number to quote. The per-module column above is scored against what RAN, which forgives whatever an engine declines: milojs skips 936 cases and bun skips 145, so the two ran-only rates are not comparable to each other.
+Whole suite, every selected case counted: **581/3373 (17%)**, against bun 1.3.10 at **1377/3373 (41%)**. This is the number to quote. The per-module column above is scored against what RAN, which forgives whatever an engine declines: milojs skips 936 cases and bun skips 145, so the two ran-only rates are not comparable to each other.
 
 Modules that do not load at all: `http2`, `inspector`, `trace_events`, `wasi`.
