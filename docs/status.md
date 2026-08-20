@@ -61,8 +61,10 @@ semantics. QuickJS parse gaps: <!--fact:qjs-parsefail-->0<!--/fact-->.
 
 **[docs/node-compat.md](node-compat.md)**: generated, one row per module,
 banded on that module's node test pass rate, with the export diff beside it as
-the worklist. <!--fact:node-modules-shimmed-->52<!--/fact--> modules shimmed. The totals live there
-rather than here so there is one copy of them.
+the worklist. <!--fact:node-modules-shimmed-->52<!--/fact--> modules shimmed. That
+file is the table and nothing else; the whole-suite totals and the peer
+comparison are in the evidence table at the top of this page, which gen-facts.mjs
+keeps in step with the reports.
 
 ## Fixtures
 
