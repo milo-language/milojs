@@ -95,6 +95,13 @@ if command -v node >/dev/null 2>&1 && ! node tools/check-crash-budget.mjs; then
     status=1
 fi
 
+# A string read out of the AST and used after the interpreter re-enters itself.
+# Two of that class reached users: a for-of binding name that went empty
+# mid-loop, and a SIGSEGV in node's test-global.js. Static, so it costs nothing.
+if command -v node >/dev/null 2>&1 && ! node tools/check-ast-refs.mjs; then
+    status=1
+fi
+
 # src/engine/unicase.milo is generated from node's ICU and says "do not edit by hand",
 # which was a request until this ran. 0.1s.
 if command -v node >/dev/null 2>&1 && ! node tools/gen-unicase.mjs --check; then

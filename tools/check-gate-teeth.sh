@@ -141,6 +141,11 @@ teeth "check-crash-visibility" scripts/node-compat-sweep.ts \
     "perl -pi -e 's/const why = signal \?/const why = false ?/' scripts/node-compat-sweep.ts" \
     "node tools/check-crash-visibility.mjs"
 
+# --- ast refs: a guarded binding name goes back to the raw AST reference ---
+teeth "check-ast-refs" src/engine/eval.milo \
+    "perl -pi -e 's/scopeDefine\(st, iterScope, bindName\.clone\(\), eagerBound\)/scopeDefine(st, iterScope, name.clone(), eagerBound)/' src/engine/eval.milo" \
+    "node tools/check-ast-refs.mjs"
+
 # --- crash budget: one more case dying on a signal ---
 teeth "check-crash-budget" docs/conformance/node-compat.json \
     "perl -pi -e 's/\"crashes\": 2/\"crashes\": 3/' docs/conformance/node-compat.json" \

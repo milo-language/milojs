@@ -1,0 +1,41 @@
+# Sites that read a string out of the AST and use it after the interpreter
+# re-enters itself (tools/check-ast-refs.mjs explains why that is a hazard).
+#
+# This is DEBT, not approval. Each entry is a place where a require() inside the
+# nested call can move the program storage the reference points into. Two of this
+# class have already been caught in the wild and fixed: the for-of binding name
+# (an empty name mid-loop) and node's test-global.js (a SIGSEGV).
+#
+# Format: "<label> <count>". The count may only go DOWN — fix a site, lower the
+# number. The gate fails when a count drops without being written down, so the
+# list cannot rot into a permanent exemption.
+Expr.Assign:name 1
+Expr.CompoundAssign:op 1
+Expr.Ident:fname 1
+Expr.Member:name 4
+Expr.OptMember:name 2
+Stmt.Try:param 1
+fn applyDescriptorQuiet:key 1
+fn arrayDefineOwn:key 1
+fn callBuiltinByName:name 1
+fn callMember:name 1
+fn callMemberValue:name 1
+fn checkProxyGetResult:key 1
+fn checkProxySetResult:key 1
+fn coercedStringArgs:name 1
+fn consoleMethodIsPristine:name 1
+fn definePropOf:key 1
+fn descRejectReason:key 1
+fn evalAssignExpr:name 1
+fn evalBinArm:op 1
+fn evalBinaryExpr:op 1
+fn evalMemberExpr:name 1
+fn evalUnArm:op 1
+fn getMemberDyn:key 1
+fn getOwnPropDescOf:key 1
+fn memberOfValue:name 1
+fn proxyTrapChecked:name 1
+fn reflectGet:key 1
+fn reflectSet:key 1
+fn stringPrimitiveMember:key 1
+fn trySymToPrimitive:hint 1

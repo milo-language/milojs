@@ -16133,11 +16133,15 @@ fn execTryBody(prog: &Prog, tryB: BlockId, param: &string, catchB: Option<BlockI
 // and collect). finally overrides: its own throw or return wins; otherwise the
 // try/catch's pending throw or return is restored.
 fn execTry(prog: &Prog, tryB: BlockId, param: &string, catchB: Option<BlockId>, finallyB: Option<BlockId>, st: &mut Interp, scope: i64): Flow {
+    // Copied once here rather than inside execTryBody: the SECOND call below
+    // happens after the first has run the try block, so by then this reference
+    // may point into storage that parsing has moved.
+    let paramName = param.clone()
     if finallyB is Option.None {
-        return execTryBody(prog, tryB, param, catchB, st, scope)
+        return execTryBody(prog, tryB, paramName, catchB, st, scope)
     }
     let finallyBlock = finallyB!
-    let flow = execTryBody(prog, tryB, param, catchB, st, scope)
+    let flow = execTryBody(prog, tryB, paramName, catchB, st, scope)
 
     // capture what try/catch left pending, then run finally with a clean slate
     let hadThrow = st.throwing
@@ -17235,11 +17239,17 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             // Normal. A labeled non-loop (e.g. `foo: { ... break foo }`) does not,
             // so catch a matching break here — that is what makes break out of a
             // labeled block work.
+            // Copied before the body runs: the comparison below happens AFTER
+            // arbitrary user code, which may have parsed a module and moved the
+            // program storage this reference points into. A label that came back
+            // empty would fail to match its own break, and the break would escape
+            // to whatever encloses this statement.
+            let labelName = label.clone()
             st.pendingLabel = label.clone()
             let f = execStmt(prog, body, st, scope)
             match f {
                 Flow.Break(l) => {
-                    if l == label {
+                    if l == labelName {
                         return Flow.Normal
                     }
                     return Flow.Break(l.clone())
