@@ -157,6 +157,22 @@ teeth "check-ast-refs" src/engine/eval.milo \
     "perl -pi -e 's/scopeDefine\(st, iterScope, bindName\.clone\(\), eagerBound\)/scopeDefine(st, iterScope, name.clone(), eagerBound)/' src/engine/eval.milo" \
     "node tools/check-ast-refs.mjs"
 
+# --- bun's captured claims: the doc quotes them, so a hand edit must go stale.
+# Needs a runtime because gen-node-compat probes one for the export diff; without
+# it the generator exits 2 and the probe cannot tell toothless from unbuildable.
+RUNTIME=""
+for candidate in "${MILOJS_RUNTIME:-}" .dev/mj-runtime /tmp/milojs; do
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then RUNTIME="$candidate"; break; fi
+done
+if [ -n "$RUNTIME" ]; then
+    teeth "gen-node-compat --check (bun claims)" docs/conformance/bun-claims.json \
+        "perl -pi -e 's/\"assert\": \"full\"/\"assert\": \"none\"/' docs/conformance/bun-claims.json" \
+        "MILOJS_RUNTIME=$RUNTIME node tools/gen-node-compat.mjs --check"
+else
+    echo "check-gate-teeth: no milojs runtime, gen-node-compat not probed" >&2
+    skipped=$((skipped + 1))
+fi
+
 # --- defect budget: one more case dying on a signal ---
 teeth "check-defect-budget" docs/conformance/node-compat.json \
     "perl -pi -e 's/\"crashes\": 2/\"crashes\": 3/' docs/conformance/node-compat.json" \
