@@ -7,7 +7,8 @@
   },
   "milojs": {
     "revision": "582d44b003265f8f75929d47f06e09f7b336ba90",
-    "dirty": false
+    "dirty": false,
+    "date": "2026-08-19"
   },
   "runtime": "~/git/milo-language/milojs/.claude/worktrees/querystring-compat/.dev/mj-runtime",
   "runtimeVersion": "milojs 0.1.0 (dev 3dbbb27)",

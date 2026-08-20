@@ -156,6 +156,19 @@ function gitRev(dir: string): string {
     return execFileSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf-8" }).trim();
   } catch { return "unknown"; }
 }
+// The COMMIT DATE of the revision this report measures, recorded at sweep time.
+//
+// gen-node-compat used to look this up with `git show -s <rev>` when it wrote
+// the doc. That works on the machine that ran the sweep and nowhere else:
+// actions/checkout clones shallow, so the cited ancestor is absent in CI, the
+// lookup throws, and the date silently became 1970-01-01 — a generated doc that
+// could never match its own --check. A report is committed evidence, so it
+// carries its own date rather than making every reader re-derive it.
+function gitDate(dir: string): string {
+  try {
+    return execFileSync("git", ["-C", dir, "show", "-s", "--format=%cs", "HEAD"], { encoding: "utf-8" }).trim();
+  } catch { return "unknown"; }
+}
 function gitDirty(dir: string): boolean {
   try {
     // docs/conformance is where the reports themselves land, so a run that has
@@ -569,7 +582,7 @@ const report = {
   schemaVersion: 1,
   suite: "node-compat",
   corpus: { path: tilde(NODE_TESTS), revision: gitRev(NODE_TESTS) },
-  milojs: { revision: gitRev("."), dirty: gitDirty(".") },
+  milojs: { revision: gitRev("."), date: gitDate("."), dirty: gitDirty(".") },
   runtime: tilde(RUNTIME),
   runtimeVersion: RUNTIME_VERSION,
   selection: { directory: subDir || null, sample: sampleN, seed: "0x5eed17", available: files.length, excludedNodeInternal: excluded },

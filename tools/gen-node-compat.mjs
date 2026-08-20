@@ -185,7 +185,14 @@ const claims = existsSync(claimsPath) ? JSON.parse(readFileSync(claimsPath, "utf
 const CLAIM_DOT = { full: "\u{1F7E2}", partial: "\u{1F7E1}", none: "\u{1F534}" };
 const claimOf = (m) => claims?.modules?.[m] ?? null;
 
+// The report states its own date. It used to be looked up here with `git show
+// -s <rev>`, which resolves only where the full history is present: CI clones
+// shallow, so the cited ancestor was absent, the lookup fell back to
+// 1970-01-01, and the generated table could never match the committed one. The
+// git path stays as a fallback for reports written before the field existed.
 const sweepDate = (() => {
+  const stamped = report?.milojs?.date;
+  if (stamped && stamped !== "unknown") return stamped;
   const rev = report?.milojs?.revision;
   if (!rev) return "1970-01-01";
   try {

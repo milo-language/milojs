@@ -162,7 +162,14 @@ for (const rel of docs) {
   // Neither replaces the other. Order alone would accept a whitespace commit as
   // re-verification; the date alone accepted a doc whose subject moved four hours
   // after someone last read it.
-  const touched = lastTouched(keyFiles.filter((f) => f !== rel));
+  // A GENERATED doc cannot answer this check, and does not need to. Its content
+  // is a function of its key-files, so when they move and the derived output is
+  // unchanged there is nothing to edit and no date to bump — it is stale for
+  // ever through no fault of anyone's. Its own generator's --check already
+  // proves it is in step, and proves it harder than an edit-time heuristic can:
+  // it regenerates and compares byte for byte.
+  const generated = /^generated\b/i.test(m["update-when"] ?? "");
+  const touched = generated ? null : lastTouched(keyFiles.filter((f) => f !== rel));
   if (touched) {
     const touchedDay = touched.slice(0, 10);
     // A doc with uncommitted edits is being written right now — that IS the
