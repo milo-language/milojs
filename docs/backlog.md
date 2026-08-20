@@ -378,8 +378,8 @@ line:column, not the paths.
 
 ## Perf: the two shapes that would actually pay
 
-`bench/run.sh` reads **<!--fact:bench-best-->57.7x<!--/fact--> to <!--fact:bench-worst-->1838.5x<!--/fact-->**
-off <!--fact:bench-peer-->bun 1.3.10<!--/fact-->, median <!--fact:bench-median-->410.3x<!--/fact--> across
+`bench/run.sh` reads **<!--fact:bench-best-->57.6x<!--/fact--> to <!--fact:bench-worst-->1907.7x<!--/fact-->**
+off <!--fact:bench-peer-->bun 1.3.10<!--/fact-->, median <!--fact:bench-median-->410x<!--/fact--> across
 <!--fact:bench-count-->13<!--/fact--> benches. Those come from `docs/conformance/bench.json` now
 rather than from a range someone remembered — the prose here said "300-2600x", which bracketed
 the truth on both sides. Best is `<!--fact:bench-best-name-->arith<!--/fact-->`, worst is

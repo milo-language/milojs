@@ -16,7 +16,7 @@ Open gaps are listed in [docs/backlog.md](backlog.md); per-module detail in
 
 | suite | measures | score |
 |---|---|---:|
-| test262 (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->`) | engine | **<!--fact:t262-pct-->80.1%<!--/fact-->** <!--fact:t262-pass-->1178<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> |
+| test262 (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->`) | engine | **<!--fact:t262-pct-->80.4%<!--/fact-->** <!--fact:t262-pass-->1182<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> |
 | QuickJS `tests/` | engine | **<!--fact:qjs-pct-->69.8%<!--/fact-->** <!--fact:qjs-pass-->104<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> |
 | Node `test/parallel` | runtime | **<!--fact:node-pct-all-->17.2%<!--/fact-->** <!--fact:node-pass-->581<!--/fact-->/<!--fact:node-total-->3373<!--/fact--> |
 | Node `test/parallel` | peer: <!--fact:node-peer-name-->bun 1.3.10<!--/fact--> | **<!--fact:node-peer-pct-all-->40.8%<!--/fact-->** <!--fact:node-peer-pass-->1377<!--/fact-->/<!--fact:node-peer-total-->3373<!--/fact--> |
@@ -39,7 +39,7 @@ runtime got strictly better. Against what ran it is <!--fact:node-pct-->23.8%<!-
 (<!--fact:node-pass-->581<!--/fact-->/<!--fact:node-ran-->2437<!--/fact-->); that form is for tracking milojs against itself,
 never against another engine, which skips a different amount.
 
-Parse gaps: <!--fact:t262-parsefail-->23<!--/fact--> of <!--fact:t262-fail-->292<!--/fact--> test262 failures (<!--fact:t262-parsefail-pct-->7.9%<!--/fact-->) are syntax; the rest are
+Parse gaps: <!--fact:t262-parsefail-->23<!--/fact--> of <!--fact:t262-fail-->288<!--/fact--> test262 failures (<!--fact:t262-parsefail-pct-->8.0%<!--/fact-->) are syntax; the rest are
 semantics. QuickJS parse gaps: <!--fact:qjs-parsefail-->0<!--/fact-->.
 
 ### test262 failures by area
@@ -47,14 +47,14 @@ semantics. QuickJS parse gaps: <!--fact:qjs-parsefail-->0<!--/fact-->.
 <!--fact-block:t262-areas-->
 | area | failing | passing |
 |---|---:|---:|
-| `language/expressions` | 47 | 287/334 |
+| `language/expressions` | 44 | 290/334 |
 | `language/statements` | 40 | 242/282 |
 | `built-ins/Object` | 31 | 96/127 |
 | `built-ins/Array` | 22 | 69/91 |
 | `built-ins/Temporal` | 18 | 113/131 |
 | `built-ins/RegExp` | 18 | 55/73 |
-| `built-ins/String` | 9 | 30/39 |
 | `built-ins/TypedArray` | 9 | 29/38 |
+| `built-ins/Promise` | 9 | 16/25 |
 <!--/fact-block-->
 
 ### Node compatibility by module
@@ -117,7 +117,7 @@ that gate fail until the bullet is deleted.
 | 1, embeddable engine preview | partial. C ABI builds, handles survive forced GC, no native-function registration. Reports are now pinned and committed. |
 | 2, credible QuickJS alternative | partial. Every constructor has a real prototype OBJECT, but Map/Set/RegExp/Date/DataView still dispatch their methods by whitelist and ignore an override written onto that prototype (measured per receiver in `docs/milojs-quickjs-plan.md` lane 2). Raw arena indices remain. |
 | 3, Node runtime preview | partial. A real express 4 app boots and serves byte-identical output. See `docs/node-compat.md` for the surface. |
-| 4, performance architecture | **partial, and measured for the first time.** Bytecode VM owns its call frames; recursion depth 2156 to 10000. Tree walker stays as fallback and differential oracle. Against <!--fact:bench-peer-->bun 1.3.10<!--/fact--> on <!--fact:bench-count-->13<!--/fact--> paired microbenches: median **<!--fact:bench-median-->410.3x<!--/fact-->**, worst **<!--fact:bench-worst-->1838.5x<!--/fact-->** (`<!--fact:bench-worst-name-->callFn<!--/fact-->`), best **<!--fact:bench-best-->57.7x<!--/fact-->** (`<!--fact:bench-best-name-->arith<!--/fact-->`). Every bench carries a ceiling in `docs/conformance/bench-budget.json`, enforced by `tools/check-bench-budget.mjs`; before this the gate was a sentence and a VM that made everything 3x slower would have passed it. |
+| 4, performance architecture | **partial, and measured for the first time.** Bytecode VM owns its call frames; recursion depth 2156 to 10000. Tree walker stays as fallback and differential oracle. Against <!--fact:bench-peer-->bun 1.3.10<!--/fact--> on <!--fact:bench-count-->13<!--/fact--> paired microbenches: median **<!--fact:bench-median-->410x<!--/fact-->**, worst **<!--fact:bench-worst-->1907.7x<!--/fact-->** (`<!--fact:bench-worst-name-->callFn<!--/fact-->`), best **<!--fact:bench-best-->57.6x<!--/fact-->** (`<!--fact:bench-best-name-->arith<!--/fact-->`). Every bench carries a ceiling in `docs/conformance/bench-budget.json`, enforced by `tools/check-bench-budget.mjs`; before this the gate was a sentence and a VM that made everything 3x slower would have passed it. |
 
 ## Next
 

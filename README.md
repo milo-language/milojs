@@ -17,7 +17,7 @@ A JavaScript engine and runtime written in the [Milo](https://github.com/milo-la
 
 | suite | score | evidence |
 |---|---|---|
-| [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | <!--fact:t262-pct-->80.1%<!--/fact--> (<!--fact:t262-pass-->1178<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) | [report](docs/conformance/test262.json) · [sweep](scripts/test262-sweep.ts) |
+| [test262](https://github.com/tc39/test262) (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample) | <!--fact:t262-pct-->80.4%<!--/fact--> (<!--fact:t262-pass-->1182<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact-->) | [report](docs/conformance/test262.json) · [sweep](scripts/test262-sweep.ts) |
 | [QuickJS test suite](https://github.com/quickjs-ng/quickjs) | <!--fact:qjs-pct-->69.8%<!--/fact--> (<!--fact:qjs-pass-->104<!--/fact-->/<!--fact:qjs-total-->149<!--/fact-->) | [report](docs/conformance/quickjs.json) · [sweep](scripts/quickjs-sweep.ts) |
 
 ## Node Conformance

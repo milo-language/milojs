@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "3b3f79da65da21ddb38d47b0435c8240ee223cca",
+    "revision": "4800064de049e128c37cfde4c43753b3b44614e9",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -18,8 +18,8 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 1178,
-    "fail": 292,
+    "pass": 1182,
+    "fail": 288,
     "parseFail": 23,
     "skip": 30,
     "scored": 1470,
@@ -29,8 +29,8 @@
   "areas": [
     {
       "area": "language/expressions",
-      "pass": 287,
-      "fail": 47,
+      "pass": 290,
+      "fail": 44,
       "total": 334
     },
     {
@@ -65,8 +65,8 @@
     },
     {
       "area": "built-ins/String",
-      "pass": 30,
-      "fail": 9,
+      "pass": 31,
+      "fail": 8,
       "total": 39
     },
     {
@@ -483,7 +483,7 @@
     },
     {
       "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all",
-      "count": 11,
+      "count": 10,
       "cases": [
         "language/statements/class/elements/privatefieldset-typeerror-5.js",
         "built-ins/Array/prototype/flatMap/target-array-non-extensible.js",
@@ -493,7 +493,6 @@
         "language/statements/generators/restricted-properties.js",
         "built-ins/Array/prototype/copyWithin/return-abrupt-from-start-as-symbol.js",
         "built-ins/Set/prototype/clear/this-not-object-throw-number.js",
-        "built-ins/String/prototype/trimEnd/this-value-object-tostring-returns-object-err.js",
         "built-ins/isFinite/return-abrupt-from-tonumber-number-symbol.js",
         "built-ins/Promise/prototype/then/ctor-null.js"
       ]
@@ -1185,27 +1184,6 @@
       "count": 1,
       "cases": [
         "built-ins/String/fromCharCode/S9.7_A3.1_T4.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: #N: x = new Boolean(true); x -= \"N\"; x === N. Actual: NaN",
-      "count": 1,
-      "cases": [
-        "language/expressions/compound-assignment/S11.13.2_A4.5_T2.5.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: #N: x = new Boolean(true); x -= N; x === N. Actual: NaN",
-      "count": 1,
-      "cases": [
-        "language/expressions/compound-assignment/S11.13.2_A4.5_T2.1.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: #N: x = new String(\"N\"); x *= \"N\"; x === N. Actual: NaN",
-      "count": 1,
-      "cases": [
-        "language/expressions/compound-assignment/S11.13.2_A4.1_T1.3.js"
       ]
     },
     {
