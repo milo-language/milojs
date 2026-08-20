@@ -3,7 +3,7 @@ system: node-compat
 purpose: per-module Node compatibility, derived from an export diff against node and from the test sweep
 key-files: tools/gen-node-compat.mjs, docs/conformance/node-compat.json, lib/
 update-when: generated; run `node tools/gen-node-compat.mjs`, never edit by hand
-last-verified: 2026-08-19 (generated from the node-compat sweep at a182044c)
+last-verified: 2026-08-19 (generated from the node-compat sweep at 582d44b0)
 -->
 
 # Node module compatibility
@@ -19,7 +19,7 @@ The bun 1.3.10 column is this repo's own sweep over the identical files with `MI
 
 Compare the two cells only through their skip counts: a smaller denominator flatters the rate. The whole-suite line under the table is the comparable form.
 
-Reference surface: node v25.3.0. Sweep at `a182044c`.
+Reference surface: node v25.3.0. Sweep at `582d44b0`.
 
 | | module | tests | bun 1.3.10 | bun says | exports | missing exports |
 |---|---|---|---|---|---|---|
@@ -47,8 +47,8 @@ Reference surface: node v25.3.0. Sweep at `a182044c`.
 | 🔴 | `assert` | 2/13 15% | 0/13 0% | 🟢 | 20/21 95% | `Assert` |
 | 🔴 | `zlib` | 7/58 12% (+1 skipped) | 43/59 73% | 🟢 | 29/47 62% | `BrotliCompress`, `BrotliDecompress`, `Deflate`, `DeflateRaw`, `Gunzip`, `Gzip` +12 more |
 | 🔴 | `util` | 2/16 13% (+1 skipped) | 7/16 44% (+1 skipped) | 🟡 | 14/33 42% | `MIMEParams`, `MIMEType`, `_errnoException`, `_exceptionWithHostPort`, `_extend`, `aborted` +13 more |
-| 🔴 | `v8` | 2/14 14% (+4 skipped) | 2/18 11% | 🟡 | 10/23 43% | `DefaultDeserializer`, `DefaultSerializer`, `Deserializer`, `GCProfiler`, `Serializer`, `getCppHeapStatistics` +7 more |
 | 🔴 | `module` | 3/24 13% (+3 skipped) | 16/24 67% (+3 skipped) | 🟡 | 4/33 12% | `SourceMap`, `_cache`, `_extensions`, `_findPath`, `_initPaths`, `_load` +23 more |
+| 🔴 | `v8` | 1/14 7% (+4 skipped) | 2/18 11% | 🟡 | 10/23 43% | `DefaultDeserializer`, `DefaultSerializer`, `Deserializer`, `GCProfiler`, `Serializer`, `getCppHeapStatistics` +7 more |
 | 🔴 | `repl` | 4/83 5% (+7 skipped) | 3/88 3% (+2 skipped) | 🟡 | 0/7 0% | `REPLServer`, `REPL_MODE_SLOPPY`, `REPL_MODE_STRICT`, `Recoverable`, `isValidSyntax`, `start` +1 more |
 | 🟠 | `tls` | 1/1 100% (+187 skipped) | 55/176 31% (+12 skipped) | 🟡 | 16/18 89% | `getCACertificates`, `setDefaultCACertificates` |
 | 🔴 | `string_decoder` | 0/3 0% | 2/3 67% | 🟢 | 1/1 100% | none |
@@ -67,7 +67,7 @@ Reference surface: node v25.3.0. Sweep at `a182044c`.
 | 🔴 | `trace_events` **(does not load)** | no cases | no cases | 🟢 | 0/2 0% | `createTracing`, `getEnabledCategories` |
 | 🔴 | `wasi` **(does not load)** | no cases | no cases | 🟡 | 0/1 0% | `WASI` |
 
-Across all 43 modules: **475/1948 node cases pass (24%)**, 🟢 0, 🟡 0, 🟠 12, 🔴 26, ⚪ 5. Surface: 468/1056 exports present (44%).
+Across all 43 modules: **474/1948 node cases pass (24%)**, 🟢 0, 🟡 0, 🟠 12, 🔴 26, ⚪ 5. Surface: 468/1056 exports present (44%).
 
 Whole suite, every selected case counted: **581/3373 (17%)**, against bun 1.3.10 at **1377/3373 (41%)**. This is the number to quote. The per-module column above is scored against what RAN, which forgives whatever an engine declines: milojs skips 936 cases and bun skips 145, so the two ran-only rates are not comparable to each other.
 

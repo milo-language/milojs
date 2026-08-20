@@ -6,11 +6,11 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "a182044c7b8f765f18845976e1c5d26835136281",
+    "revision": "582d44b003265f8f75929d47f06e09f7b336ba90",
     "dirty": false
   },
-  "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
-  "runtimeVersion": "milojs 0.1.0 (dev 72ae740)",
+  "runtime": "~/git/milo-language/milojs/.claude/worktrees/querystring-compat/.dev/mj-runtime",
+  "runtimeVersion": "milojs 0.1.0 (dev 3dbbb27)",
   "selection": {
     "directory": null,
     "sample": null,
@@ -26,7 +26,7 @@
     "total": 3373,
     "crashes": 2,
     "parseFailures": 5,
-    "timeouts": 162
+    "timeouts": 164
   },
   "areas": [
     {
@@ -226,6 +226,13 @@
       "total": 17
     },
     {
+      "area": "v8",
+      "pass": 1,
+      "fail": 13,
+      "skipped": 4,
+      "total": 18
+    },
+    {
       "area": "cli",
       "pass": 1,
       "fail": 12,
@@ -245,13 +252,6 @@
       "fail": 12,
       "skipped": 0,
       "total": 15
-    },
-    {
-      "area": "v8",
-      "pass": 2,
-      "fail": 12,
-      "skipped": 4,
-      "total": 18
     },
     {
       "area": "assert",
@@ -338,13 +338,6 @@
       "total": 8
     },
     {
-      "area": "global",
-      "pass": 1,
-      "fail": 5,
-      "skipped": 1,
-      "total": 7
-    },
-    {
       "area": "pipe",
       "pass": 3,
       "fail": 5,
@@ -364,6 +357,13 @@
       "fail": 4,
       "skipped": 0,
       "total": 4
+    },
+    {
+      "area": "global",
+      "pass": 2,
+      "fail": 4,
+      "skipped": 1,
+      "total": 7
     },
     {
       "area": "permission",
