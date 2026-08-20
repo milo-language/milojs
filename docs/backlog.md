@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: backlog
 purpose: the open list. What is broken or missing, why it is not trivial, and what to do next
-key-files: src/engine/eval.milo, src/engine/builtins.milo, src/engine/parser.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, lib/http.js, bench/run.sh, bench/arith.js
+key-files: src/engine/eval.milo, src/engine/builtins.milo, src/engine/parser.milo, src/engine/methods.milo, src/engine/runtime.milo, src/engine/driver.milo, src/engine/bytecode.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, lib/http.js, bench/run.sh, bench/arith.js
 update-when: an item lands (delete it), or a sweep/probe finds a new gap (add it)
 last-verified: 2026-08-19, every item below re-probed against .dev/mj-engine and node; six entries that had gone stale were deleted rather than carried
 -->
@@ -41,6 +41,59 @@ intuition: the 1500-case sample is too thin to rank causes.
    ShadowRealm (48) are host features, and `built-ins/Iterator`'s remainder is
    mostly stage-2 proposals (`zip`, `zipKeyed`, `concat`, `chunks`, `windows`)
    that node does not have either.
+
+## Engine: an abrupt completion from a Map iterator HANGS
+
+`built-ins/Map/iterator-item-first-entry-returns-abrupt.js` is the one test262
+crash in the budget, and it is a hang, not a segfault — the harness kills it with
+SIGTERM and the sweep classifies a signal death as a crash. It reproduces
+standalone, so it needs no corpus to work on:
+
+```sh
+cat ~/git/test262/harness/{assert,sta,compareArray}.js \
+    ~/git/test262/test/built-ins/Map/iterator-item-first-entry-returns-abrupt.js > /tmp/case.js
+timeout 8 .dev/mj-engine /tmp/case.js; echo $?      # 124
+```
+
+`new Map(iterable)` where the first entry's own iterator throws: the abrupt
+completion is not unwinding the construction loop, so it spins. Two QuickJS cases
+die the same way (also SIGTERM, also budgeted), and it is worth checking whether
+they are this bug before treating them as three.
+
+Why it is not a one-liner: the loop is inside the Map constructor's builtin arm,
+which reads entries through the generic iteration path, and that path signals a
+throw by setting `st.throwing` rather than by returning a completion — so the fix
+is a missed `st.throwing` check, and finding WHICH one is the work. See the
+section below.
+
+## Exceptions propagate on a hand-checked flag, and nothing gates it
+
+`st.throwing`/`st.thrownValue` on `Interp` is how a JS `throw` travels. It is not
+a `Result` the type system makes you handle: every call site that can throw has to
+remember to test the flag and bail. The count today:
+
+| file | `throwing` reads |
+|---|---:|
+| `src/engine/eval.milo` | 398 |
+| `src/engine/methods.milo` | 82 |
+| `src/engine/builtins.milo` | 14 |
+| `src/engine/driver.milo` | 7 |
+| `src/engine/runtime.milo` | 6 |
+| `src/engine/bytecode.milo` | 3 |
+
+Miss one and execution continues in a throwing state. The symptom is a wrong
+answer or a hang, never a crash — the Map case above is one, and it took a
+test262 timeout to surface it. This is the largest invariant in the engine with
+no gate under it, in a repo where shadowed symbols, layering, doc staleness,
+arity, exit codes and AST-reference lifetimes all have one.
+
+Not a one-liner because the honest fix is a type: make the throwing operations
+return something the checker forces you to inspect, which is a refactor across
+510 sites. A cheaper gate that would catch most of it: a lint that flags any
+statement calling a known-throwing helper whose result is used without an
+intervening `st.throwing` test. Build the lint first and see what it finds before
+committing to the refactor — the point of the count above is that nobody knows
+today how many of the 510 are missing checks rather than deliberate.
 
 ## http: no keep-alive, so every response closes its connection
 
@@ -325,11 +378,19 @@ line:column, not the paths.
 
 ## Perf: the two shapes that would actually pay
 
-`bench/run.sh` reads 300-2600x off bun. A `sample` profile of `bench/arith.js`
-(pure arithmetic, no property access, no strings) puts roughly a third of samples
-in malloc/free/`drop`/`cloneValue` and only a tenth in scope-lookup string
-compares. The gap is per-node dispatch plus allocator traffic on owned values,
-not one mechanism.
+`bench/run.sh` reads **<!--fact:bench-best-->57.7x<!--/fact--> to <!--fact:bench-worst-->1838.5x<!--/fact-->**
+off <!--fact:bench-peer-->bun 1.3.10<!--/fact-->, median <!--fact:bench-median-->410.3x<!--/fact--> across
+<!--fact:bench-count-->13<!--/fact--> benches. Those come from `docs/conformance/bench.json` now
+rather than from a range someone remembered — the prose here said "300-2600x", which bracketed
+the truth on both sides. Best is `<!--fact:bench-best-name-->arith<!--/fact-->`, worst is
+`<!--fact:bench-worst-name-->callFn<!--/fact-->`, and the spread between them is the finding: the
+cost is not uniform, so "milojs is ~400x slower" is not a thing to optimise against.
+
+A `sample` profile of `bench/arith.js` (pure arithmetic, no property access, no strings) puts
+roughly a third of samples in malloc/free/`drop`/`cloneValue` and only a tenth in scope-lookup
+string compares. The gap is per-node dispatch plus allocator traffic on owned values, not one
+mechanism — which is consistent with `arith` being the CHEAPEST bench: it is the one that
+allocates least.
 
 ```sh
 tools/dev.sh                                    # build .dev/mj-engine

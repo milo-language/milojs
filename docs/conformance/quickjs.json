@@ -6,7 +6,7 @@
     "revision": "ef7a3a748b36acc6bb301488111ec57fda2e65a7"
   },
   "milojs": {
-    "revision": "a5a454ac40174fd494ee808fbfc049829b23d65c",
+    "revision": "3b3f79da65da21ddb38d47b0435c8240ee223cca",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -30,18 +30,20 @@
     "parseFail": 0,
     "total": 149,
     "ran": 149,
-    "files": 58
+    "files": 58,
+    "crashes": 2
   },
   "failureBuckets": [
     {
       "reason": "Uncaught Error: assertion failed: got |…|, expected |…|",
-      "count": 23,
+      "count": 24,
       "cases": [
         "bug1498.js:<whole>",
         "bug492.js:test_detach",
         "bug652.js:<whole>",
         "bug858.js:<whole>",
         "for-await-normal-close.js:<whole>",
+        "null_or_undefined.js:<whole>",
         "parse-error-column.js:<whole>",
         "test_bigint.js:test_bigint_asintn",
         "test_builtin.js:test_array",
@@ -49,13 +51,13 @@
         "test_builtin.js:test_eval",
         "test_builtin.js:test_date",
         "test_builtin.js:test_regexp",
+        "test_builtin.js:test_proxy_is_array",
         "test_builtin.js:test_finalization_registry",
         "test_builtin.js:test_exception_source_pos",
         "test_builtin.js:test_function_source_pos",
         "test_builtin.js:test_exception_prepare_stack",
         "test_builtin.js:test_exception_stack_size_limit",
         "test_closure.js:test_eval_const",
-        "test_language.js:test_constructor",
         "test_language.js:test_class",
         "test_language.js:test_function_length",
         "test_language.js:test_number_literals",
@@ -74,7 +76,7 @@
       ]
     },
     {
-      "reason": "timeout/crash (SIGTERM)",
+      "reason": "crash(SIGTERM)",
       "count": 2,
       "cases": [
         "bug1355.js:<whole>",
@@ -89,14 +91,14 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: next is not a function (in /case.js)",
+      "reason": "Uncaught TypeError: next is not a function",
       "count": 1,
       "cases": [
         "bug1368.js:test_next_getter_reentry"
       ]
     },
     {
-      "reason": "Uncaught TypeError: f is not a function (in /bug567.js)",
+      "reason": "Uncaught TypeError: f is not a function",
       "count": 1,
       "cases": [
         "bug567.js:<whole>"
@@ -110,7 +112,7 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: cannot read property '…' of undefined",
+      "reason": "Uncaught TypeError: Cannot read properties of undefined (reading '…')",
       "count": 1,
       "cases": [
         "callsite-isconstructor.js:<whole>"
@@ -131,13 +133,6 @@
       ]
     },
     {
-      "reason": "timeout/crash (SIGUSR1)",
-      "count": 1,
-      "cases": [
-        "test_builtin.js:test_proxy_is_array"
-      ]
-    },
-    {
       "reason": "Uncaught ReferenceError: __super$ is not defined",
       "count": 1,
       "cases": [
@@ -145,7 +140,7 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: cannot read property '…' of a non-object (in /case.js)",
+      "reason": "Uncaught TypeError: Cannot read properties of a non-object (reading '…')",
       "count": 1,
       "cases": [
         "test_for_of_line_numbers.js:<whole>"

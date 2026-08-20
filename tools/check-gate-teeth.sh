@@ -124,6 +124,17 @@ teeth "check-docs (staleness ratchet)" tools/docs-staleness.txt \
     "perl -ni -e 'print unless m{^docs/milojs-arena-safety}' tools/docs-staleness.txt" \
     "node tools/check-docs.mjs"
 
+# --- perf: a bench that regressed past its ceiling ---
+teeth "check-bench-budget (over)" docs/conformance/bench.json \
+    "perl -pi -e 's/\"ratio\": ([0-9.]+)/sprintf(qq{\"ratio\": %.1f}, \$1 * 10)/e' docs/conformance/bench.json" \
+    "node tools/check-bench-budget.mjs"
+
+# --- perf: a bench the budget no longer covers. A renamed bench must not silently
+# stop being checked — that is the "0 checked, exit 0" failure mode this whole
+# script exists for.
+teeth "check-bench-budget (uncovered)" docs/conformance/bench-budget.json \
+    "perl -0pi -e 's/\"arith\":/\"arithRenamed\":/' docs/conformance/bench-budget.json" \
+    "node tools/check-bench-budget.mjs"
 # --- provenance: a hand-edited .expected is the defect verify-expected exists for ---
 teeth "verify-expected" tests/moduleNotFound.expected \
     "printf 'hand written line\n' >> tests/moduleNotFound.expected" \

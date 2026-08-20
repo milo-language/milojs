@@ -6,23 +6,25 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "9b3168a74a38ccc028f41988e86af1f64297b1a5",
+    "revision": "3b3f79da65da21ddb38d47b0435c8240ee223cca",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
   "selection": {
     "directory": null,
+    "available": 48735,
     "sample": 1500,
     "limit": null,
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 1169,
-    "fail": 301,
+    "pass": 1178,
+    "fail": 292,
     "parseFail": 23,
     "skip": 30,
     "scored": 1470,
-    "selected": 1500
+    "selected": 1500,
+    "crashes": 1
   },
   "areas": [
     {
@@ -45,8 +47,8 @@
     },
     {
       "area": "built-ins/Object",
-      "pass": 95,
-      "fail": 32,
+      "pass": 96,
+      "fail": 31,
       "total": 127
     },
     {
@@ -57,14 +59,14 @@
     },
     {
       "area": "built-ins/RegExp",
-      "pass": 54,
-      "fail": 19,
+      "pass": 55,
+      "fail": 18,
       "total": 73
     },
     {
       "area": "built-ins/String",
-      "pass": 28,
-      "fail": 11,
+      "pass": 30,
+      "fail": 9,
       "total": 39
     },
     {
@@ -81,8 +83,8 @@
     },
     {
       "area": "built-ins/Iterator",
-      "pass": 15,
-      "fail": 9,
+      "pass": 16,
+      "fail": 8,
       "total": 24
     },
     {
@@ -105,8 +107,8 @@
     },
     {
       "area": "built-ins/Date",
-      "pass": 12,
-      "fail": 9,
+      "pass": 13,
+      "fail": 8,
       "total": 21
     },
     {
@@ -171,8 +173,8 @@
     },
     {
       "area": "built-ins/Function",
-      "pass": 5,
-      "fail": 1,
+      "pass": 6,
+      "fail": 0,
       "total": 6
     },
     {
@@ -201,8 +203,8 @@
     },
     {
       "area": "built-ins/Symbol",
-      "pass": 3,
-      "fail": 2,
+      "pass": 4,
+      "fail": 1,
       "total": 5
     },
     {
@@ -243,8 +245,8 @@
     },
     {
       "area": "built-ins/Error",
-      "pass": 0,
-      "fail": 3,
+      "pass": 1,
+      "fail": 2,
       "total": 3
     },
     {
@@ -460,28 +462,7 @@
   ],
   "failureBuckets": [
     {
-      "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all",
-      "count": 15,
-      "cases": [
-        "built-ins/Symbol/prototype/toString/toString-default-attributes-strict.js",
-        "built-ins/Error/prototype/toString/called-as-function.js",
-        "language/statements/class/elements/privatefieldset-typeerror-5.js",
-        "built-ins/Array/prototype/flatMap/target-array-non-extensible.js",
-        "built-ins/Array/prototype/shift/set-length-array-length-is-non-writable.js",
-        "built-ins/MapIteratorPrototype/next/does-not-have-mapiterator-internal-slots-map.js",
-        "language/statements/class/definition/invalid-extends.js",
-        "language/statements/generators/restricted-properties.js",
-        "built-ins/Function/prototype/bind/15.3.4.5-2-10.js",
-        "built-ins/Array/prototype/copyWithin/return-abrupt-from-start-as-symbol.js",
-        "built-ins/Set/prototype/clear/this-not-object-throw-number.js",
-        "built-ins/String/prototype/trimEnd/this-value-object-tostring-returns-object-err.js",
-        "built-ins/Object/keys/15.2.3.14-1-4.js",
-        "built-ins/isFinite/return-abrupt-from-tonumber-number-symbol.js",
-        "built-ins/Promise/prototype/then/ctor-null.js"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: cannot read property '…' of undefined",
+      "reason": "Uncaught TypeError: Cannot read properties of undefined (reading '…')",
       "count": 14,
       "cases": [
         "built-ins/ThrowTypeError/extensible.js",
@@ -501,8 +482,25 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected a Test262Error to be thrown but no exception was thrown at al",
+      "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all",
       "count": 11,
+      "cases": [
+        "language/statements/class/elements/privatefieldset-typeerror-5.js",
+        "built-ins/Array/prototype/flatMap/target-array-non-extensible.js",
+        "built-ins/Array/prototype/shift/set-length-array-length-is-non-writable.js",
+        "built-ins/MapIteratorPrototype/next/does-not-have-mapiterator-internal-slots-map.js",
+        "language/statements/class/definition/invalid-extends.js",
+        "language/statements/generators/restricted-properties.js",
+        "built-ins/Array/prototype/copyWithin/return-abrupt-from-start-as-symbol.js",
+        "built-ins/Set/prototype/clear/this-not-object-throw-number.js",
+        "built-ins/String/prototype/trimEnd/this-value-object-tostring-returns-object-err.js",
+        "built-ins/isFinite/return-abrupt-from-tonumber-number-symbol.js",
+        "built-ins/Promise/prototype/then/ctor-null.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a Test262Error to be thrown but no exception was thrown at al",
+      "count": 9,
       "cases": [
         "language/expressions/class/dstr/async-gen-meth-obj-ptrn-prop-eval-err.js",
         "built-ins/Promise/reject/ctx-ctor-throws.js",
@@ -510,8 +508,6 @@
         "built-ins/TypedArray/prototype/toLocaleString/return-abrupt-from-firstelement-valueof.js",
         "language/statements/class/dstr/async-gen-meth-static-obj-ptrn-prop-eval-err.js",
         "built-ins/Iterator/prototype/flatMap/get-next-method-throws.js",
-        "built-ins/RegExp/prototype/Symbol.match/g-get-exec-err.js",
-        "built-ins/RegExp/prototype/Symbol.search/set-lastindex-init-err.js",
         "built-ins/RegExp/prototype/Symbol.match/g-match-empty-coerce-lastindex-err.js",
         "built-ins/Date/prototype/setMilliseconds/arg-to-number-err.js",
         "built-ins/TypedArray/prototype/subarray/speciesctor-get-species-abrupt.js"
@@ -530,7 +526,7 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: createRealm is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103",
+      "reason": "Uncaught TypeError: createRealm is not a function",
       "count": 6,
       "cases": [
         "language/expressions/generators/eval-body-proto-realm.js",
@@ -622,6 +618,15 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Expected a Test262Error but got a TypeError",
+      "count": 3,
+      "cases": [
+        "built-ins/Date/prototype/toJSON/to-primitive-abrupt.js",
+        "built-ins/RegExp/prototype/Symbol.match/g-get-exec-err.js",
+        "built-ins/RegExp/prototype/Symbol.search/set-lastindex-init-err.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Expected a TypeError but got a Test262Error",
       "count": 3,
       "cases": [
@@ -681,7 +686,7 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:TypeError: allSettledKeyed is not a function (in /case.js)",
+      "reason": "Test262:AsyncTestFailure:TypeError: allSettledKeyed is not a function",
       "count": 2,
       "cases": [
         "built-ins/Promise/allSettledKeyed/getownproperty-not-enumerable.js",
@@ -713,11 +718,11 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: cannot read property '…' of a non-object (in /var/folders/zc/m2tbb4v54",
+      "reason": "Uncaught TypeError: Cannot read properties of a non-object (reading '…')",
       "count": 2,
       "cases": [
-        "built-ins/String/prototype/toUpperCase/S15.5.4.18_A1_T8.js",
-        "built-ins/Date/prototype/Symbol.toPrimitive/hint-default-first-invalid.js"
+        "built-ins/parseInt/S15.1.2.2_A9.5.js",
+        "built-ins/String/prototype/toUpperCase/S15.5.4.18_A1_T8.js"
       ]
     },
     {
@@ -840,13 +845,6 @@
       ]
     },
     {
-      "reason": "crash(SIGUSR1)",
-      "count": 1,
-      "cases": [
-        "built-ins/Array/prototype/concat/Array.prototype.concat_non-array.js"
-      ]
-    },
-    {
       "reason": "milojs: /case.js: unexpected '…' afte",
       "count": 1,
       "cases": [
@@ -896,7 +894,7 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:TypeError: allKeyed is not a function (in /case.js)",
+      "reason": "Test262:AsyncTestFailure:TypeError: allKeyed is not a function",
       "count": 1,
       "cases": [
         "built-ins/Promise/allKeyed/symbol-keys.js"
@@ -931,14 +929,14 @@
       ]
     },
     {
-      "reason": "Uncaught RangeError: byte length of BigInt64Array should be a multiple of N (in /var/folde",
+      "reason": "Uncaught RangeError: byte length of BigInt64Array should be a multiple of N (Testing with ",
       "count": 1,
       "cases": [
         "built-ins/TypedArray/prototype/map/BigInt/speciesctor-destination-resizable.js"
       ]
     },
     {
-      "reason": "Uncaught RangeError: byte length of Float64Array should be a multiple of N (in /var/folder",
+      "reason": "Uncaught RangeError: byte length of Float64Array should be a multiple of N (Testing with F",
       "count": 1,
       "cases": [
         "built-ins/TypedArray/prototype/map/speciesctor-get-species-custom-ctor-length-throws-resizable-arraybuffer.js"
@@ -949,6 +947,13 @@
       "count": 1,
       "cases": [
         "language/expressions/logical-or/tco-right.js"
+      ]
+    },
+    {
+      "reason": "Uncaught RangeError: toString() radix argument must be between N and N",
+      "count": 1,
+      "cases": [
+        "built-ins/String/prototype/split/call-split-1-math-pow-2-32-1-instance-is-number.js"
       ]
     },
     {
@@ -963,13 +968,6 @@
       "count": 1,
       "cases": [
         "language/expressions/class/elements/arrow-body-private-derived-cls-direct-eval-contains-superproperty-2.js"
-      ]
-    },
-    {
-      "reason": "Uncaught ReferenceError: __super$C$N is not defined",
-      "count": 1,
-      "cases": [
-        "language/statements/class/elements/super-access-from-arrow-func-on-field.js"
       ]
     },
     {
@@ -1022,10 +1020,17 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: [object Object] is not a function (in /var/folders/zc/m2tbb4v542b9c11g",
+      "reason": "Uncaught TypeError: [object Object] is not a function",
       "count": 1,
       "cases": [
         "language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-generator-function-declaration.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: Cannot create property '…' on undefined '…'",
+      "count": 1,
+      "cases": [
+        "language/statements/class/elements/super-access-from-arrow-func-on-field.js"
       ]
     },
     {
@@ -1036,14 +1041,7 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: cannot read property '…' of a non-object (in /var/folders/zc/",
-      "count": 1,
-      "cases": [
-        "built-ins/parseInt/S15.1.2.2_A9.5.js"
-      ]
-    },
-    {
-      "reason": "Uncaught TypeError: cannot read property '…' of null",
+      "reason": "Uncaught TypeError: Cannot read properties of null (reading '…')",
       "count": 1,
       "cases": [
         "built-ins/RegExp/named-groups/unicode-match.js"
@@ -1057,17 +1055,17 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: hasOwnProperty is not a function (in /var/folders/zc/m2tbb4v542b9c11gk",
+      "reason": "Uncaught TypeError: Function.prototype.apply requires that '…' be a Function",
       "count": 1,
       "cases": [
-        "built-ins/Proxy/revocable/builtin.js"
+        "built-ins/Array/prototype/concat/Array.prototype.concat_non-array.js"
       ]
     },
     {
-      "reason": "Uncaught TypeError: includes is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcm",
+      "reason": "Uncaught TypeError: hasOwnProperty is not a function",
       "count": 1,
       "cases": [
-        "built-ins/Iterator/prototype/includes/exhaustion-does-not-call-return.js"
+        "built-ins/Proxy/revocable/builtin.js"
       ]
     },
     {
@@ -1078,21 +1076,28 @@
       ]
     },
     {
-      "reason": "Uncaught TypeError: Object.defineProperty called on non-object (in /var/folders/zc/m2tbb4v",
+      "reason": "Uncaught TypeError: Method Date.prototype.__dateToPrimitive called on incompatible receive",
+      "count": 1,
+      "cases": [
+        "built-ins/Date/prototype/Symbol.toPrimitive/hint-default-first-invalid.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: Object.defineProperty called on non-object",
       "count": 1,
       "cases": [
         "language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--21.js"
       ]
     },
     {
-      "reason": "Uncaught TypeError: Object.getPrototypeOf called on null or undefined (in /case.js)",
+      "reason": "Uncaught TypeError: Object.getPrototypeOf called on null or undefined",
       "count": 1,
       "cases": [
         "language/statements/async-generator/yield-star-async-from-sync-iterator-inaccessible.js"
       ]
     },
     {
-      "reason": "Uncaught TypeError: toHex is not a function (in /var/folders/zc/m2tbb4v542b9c11gk103tcmh00",
+      "reason": "Uncaught TypeError: toHex is not a function",
       "count": 1,
       "cases": [
         "built-ins/Uint8Array/prototype/toHex/results.js"
@@ -1103,13 +1108,6 @@
       "count": 1,
       "cases": [
         "built-ins/Math/ceil/S15.8.2.6_A6.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: \" abc\".trim() Expected SameValue(«\" abc\"», «\"abc\"») to be true",
-      "count": 1,
-      "cases": [
-        "built-ins/String/prototype/trim/15.5.4.20-4-8.js"
       ]
     },
     {
@@ -1428,7 +1426,7 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected a RangeError but got a TypeError",
+      "reason": "Uncaught undefined: Expected a RangeError but got a Test262Error",
       "count": 1,
       "cases": [
         "built-ins/Iterator/prototype/includes/skipped-elements-negative-integral-rangeerror.js"
@@ -1446,13 +1444,6 @@
       "count": 1,
       "cases": [
         "language/statements/class/elements/privatename-not-valid-eval-earlyerr-3.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Expected a Test262Error but got a TypeError",
-      "count": 1,
-      "cases": [
-        "built-ins/Date/prototype/toJSON/to-primitive-abrupt.js"
       ]
     },
     {
@@ -1495,20 +1486,6 @@
       "count": 1,
       "cases": [
         "built-ins/JSON/stringify/replacer-array-number-object.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Expected SameValue(«\"Ningu$$$m $$$ igual a ningu$$$m. Todo o ser human",
-      "count": 1,
-      "cases": [
-        "built-ins/String/prototype/replaceAll/getSubstitution-0x0024.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Expected SameValue(«\"undefined\"», «\"function\"») to be true",
-      "count": 1,
-      "cases": [
-        "built-ins/Date/prototype/Symbol.toPrimitive/this-val-non-obj.js"
       ]
     },
     {
@@ -1799,13 +1776,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: ordinary object Expected a TypeError to be thrown but no exception was",
-      "count": 1,
-      "cases": [
-        "built-ins/RegExp/prototype/source/this-val-invalid-obj.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: overflow reject exception thrown Expected a RangeError to be thrown bu",
       "count": 1,
       "cases": [
@@ -1866,13 +1836,6 @@
       "count": 1,
       "cases": [
         "built-ins/Math/round/S15.8.2.15_A7.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: The value of __split.constructor is expected to equal the value of Arr",
-      "count": 1,
-      "cases": [
-        "built-ins/String/prototype/split/call-split-1-math-pow-2-32-1-instance-is-number.js"
       ]
     },
     {

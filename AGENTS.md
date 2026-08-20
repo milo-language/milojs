@@ -383,8 +383,18 @@ Need a local corpus, so they are manual, not CI:
 TEST262=~/git/test262 MILOJS_ENGINE=.dev/mj-engine bun scripts/test262-sweep.ts --sample 1500
 QUICKJS_TESTS=~/git/quickjs/tests MILOJS_ENGINE=.dev/mj-engine bun scripts/quickjs-sweep.ts
 NODE_TESTS=~/git/node/test MILOJS_RUNTIME=.dev/mj-runtime bun scripts/node-compat-sweep.ts --sample 400
+bench/run.sh .dev/mj-engine --json docs/conformance/bench.json    # needs bun on PATH, no corpus
 node tools/gen-facts.mjs   # compile the new numbers into the docs
 ```
+
+The bench run is the fourth sweep and works the same way: committed report,
+milojs revision stamped, peer version recorded, refused at publication if the
+tree was dirty. It measures the RATIO against bun rather than a pass rate,
+because absolute milliseconds move with the machine and the ratio does not.
+`tools/check-bench-budget.mjs` holds a ceiling per bench (`--baseline` re-records
+them at +15%; the harness itself repeats to about 3%). Perf was the one axis in
+this repo with a published number and no gate under it, which is why product
+gate 4 could say "decided and underway" for as long as it did.
 
 Each sweep writes committed evidence to `docs/conformance/<suite>.json`, stamped
 with the milojs revision it measured. The first two measure the ENGINE (the

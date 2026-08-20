@@ -73,18 +73,20 @@ First reduce a current failing case and identify the narrower semantic bug.
 
 ### 1. Rebaseline and classify — done
 
-Re-derived from `docs/conformance/quickjs.json` rather than from the deleted 2026-07-30 run:
-**45 failures in 18 buckets.** Two buckets carry 28 of them — 23 plain assertion mismatches and
-5 more where an exception was expected and none came — and the other 16 buckets are one case
-each, spanning parser/evaluator semantics and missing or divergent builtins. Three are not wrong
-answers at all: 2 SIGTERM timeouts and 1 SIGUSR1. Parse gaps:
-`<!--fact:qjs-parsefail-->0<!--/fact-->`.
+Re-derived from `docs/conformance/quickjs.json` rather than from the deleted 2026-07-30 run,
+and the numbers below are compiled from it so they cannot drift again:
+**<!--fact:qjs-fail-->45<!--/fact--> failures in <!--fact:qjs-buckets-->17<!--/fact--> buckets**, of
+which <!--fact:qjs-bucket-singles-->14<!--/fact--> are a single case each. Parse gaps:
+`<!--fact:qjs-parsefail-->0<!--/fact-->`. Not wrong answers at all:
+<!--fact:qjs-crashes-->2<!--/fact--> cases die on a signal (SIGTERM, i.e. the harness timeout), and
+they are budgeted in `docs/conformance/defect-budget.json` rather than averaged into the failure
+count.
 
-The shape of that is the finding. A 23-case bucket whose reason string is `assertion failed: got
-|…|, expected |…|` is not one bug, it is the harness telling you it cannot distinguish them — the
-values are elided, so the bucket is "some assertion, somewhere". Ranking work off bucket size
-here would rank that first and learn nothing. Reduce individual cases; the buckets are an index,
-not a priority order. The verbose report is retained as review evidence outside Git per
+The shape of that is the finding. The largest bucket is <!--fact:qjs-bucket-top-->24<!--/fact-->
+cases whose reason string is `assertion failed: got |…|, expected |…|` — that is not one bug, it
+is the harness saying it cannot tell them apart, because the values are elided. Ranking work by
+bucket size would put it first and learn nothing. Reduce individual cases; the buckets are an
+index, not a priority order. The verbose report is retained as review evidence outside Git per
 `docs/conformance-reports.md`.
 
 Recursive `Function.prototype.call`/`apply` now charges its adapter frame to the

@@ -35,6 +35,14 @@ for (const [suite, entry] of Object.entries(budgets)) {
   const totals = JSON.parse(readFileSync(report, "utf-8")).totals ?? {};
   for (const metric of METRICS) {
     if (entry[metric] === undefined) continue;
+    // The same metric has two spellings across the three sweeps: node-compat
+    // writes totals.parseFailures, test262 and quickjs write totals.parseFail.
+    // Accept either rather than re-running every sweep to unify a key name, but
+    // do not silently accept NEITHER — that is the case below.
+    const ALIASES = { parseFailures: ["parseFailures", "parseFail"] };
+    for (const alt of ALIASES[metric] ?? []) {
+      if (typeof totals[alt] === "number") { totals[metric] = totals[alt]; break; }
+    }
     // A report with no field for a metric predates the sweep learning to count
     // it, so its absence would read as zero — a measurement nobody made.
     if (typeof totals[metric] !== "number") {

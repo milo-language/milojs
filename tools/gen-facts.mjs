@@ -176,6 +176,17 @@ const FACTS = {
   "t262-fail": () => String(report("test262").totals.fail),
   "t262-parsefail-pct": () => pct(report("test262").totals.parseFail ?? 0, report("test262").totals.fail),
   "qjs-parsefail": () => String(report("quickjs").totals.parseFail ?? 0),
+  // The failure SHAPE, not just the count. docs/milojs-quickjs-plan.md lane 1
+  // used to spell its bucket breakdown out in prose, which meant re-typing eight
+  // numbers every sweep; it had drifted to describing a run whose corpus revision
+  // no longer resolves.
+  "qjs-buckets": () => String(report("quickjs").failureBuckets.length),
+  "qjs-bucket-top": () => String(report("quickjs").failureBuckets[0].count),
+  "qjs-bucket-singles": () =>
+    String(report("quickjs").failureBuckets.filter((b) => b.count === 1).length),
+  "qjs-crashes": () => String(report("quickjs").totals.crashes ?? 0),
+  "qjs-fail": () => String(report("quickjs").totals.fail),
+  "t262-crashes": () => String(report("test262").totals.crashes ?? 0),
   "qjs-ran": () => String(report("quickjs").totals.ran ?? report("quickjs").totals.total),
   "qjs-ran-pct": () => pct(report("quickjs").totals.pass, report("quickjs").totals.ran ?? report("quickjs").totals.total),
 
