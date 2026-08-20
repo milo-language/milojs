@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: backlog
 purpose: the open list. What is broken or missing, why it is not trivial, and what to do next
-key-files: src/engine/eval.milo, src/engine/builtins.milo, src/engine/parser.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts
+key-files: src/engine/eval.milo, src/engine/builtins.milo, src/engine/parser.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, lib/http.js, bench/run.sh, bench/arith.js
 update-when: an item lands (delete it), or a sweep/probe finds a new gap (add it)
 last-verified: 2026-08-19, every item below re-probed against .dev/mj-engine and node; six entries that had gone stale were deleted rather than carried
 -->

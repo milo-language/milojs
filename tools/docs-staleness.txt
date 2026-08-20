@@ -4,4 +4,3 @@
 # The list is only ever allowed to shrink. Re-record with --baseline.
 docs/milojs-arena-safety.md
 docs/milojs-async-suspension.md
-docs/milojs-quickjs-plan.md

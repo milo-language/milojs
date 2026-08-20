@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: roadmap
 purpose: staged plan to grow milojs into a JavaScript engine AND runtime that stands on its own
-key-files: src/milojs.milo, src/milojs-engine.milo
+key-files: src/milojs.milo, src/milojs-engine.milo, src/libmilojs.milo, src/engine/bytecode.milo, src/engine/eval.milo, src/engine/builtins.milo, src/engine/regex.milo, scripts/test262-sweep.ts
 update-when: a stage lands (check the box, note the commit) or the acceptance target changes
 last-verified: 2026-08-19
 -->
@@ -9,30 +9,35 @@ last-verified: 2026-08-19
 # milojs roadmap — a JavaScript engine written in Milo
 
 > Current status, evidence, and product gates live in `docs/status.md`. This
-> document preserves the staged architecture and implementation history; older
-> “next” paragraphs below are not a current backlog.
+> document preserves the staged architecture and implementation history; nothing
+> below is a worklist.
 
-## Current snapshot (2026-07-20)
+## Current snapshot (2026-08-19)
 
-The detailed stage notes below preserve the implementation history, but several
-"next" and "still open" paragraphs inside Stage 3 predate the latest work and
-are no longer a current backlog. Since then MiloJS has landed CommonJS/ESM module
-loading, strict equality and additional syntax, promises and a microtask/event
-loop, green-task suspension at `await`, Node compatibility shims, Node-API addon
-loading, and an end-to-end Prisma query-engine proof.
+The stage notes below are implementation HISTORY: what landed, with its commit. Read them for
+how the engine got its shape, never as a worklist — `docs/backlog.md` is the worklist and
+`docs/status.md` is the current state. The "still open" paragraph inside Stage 3 said ten things
+were missing that have all shipped; it now says so, and this file should not accumulate another.
+Since Stage 3, MiloJS has landed CommonJS/ESM module loading, strict equality and additional
+syntax, promises and a microtask/event loop, green-task suspension at `await`, Node
+compatibility shims, Node-API addon loading, and an end-to-end Prisma query-engine proof.
 
 The engine differential suite currently covers 74 expected-output JavaScript
 files (plus one unscored memory benchmark) and is also run with collection at
 every GC safepoint. The remaining roadmap is:
 
 - **Stage 4:** supplement the tree walker with bytecode. Partly landed: a numeric,
-  property-access and object-literal subset compiles and falls back for the rest. Calls are
-  the remaining prize and need the VM to own its call frames (see the stage section).
+  property-access, object-literal and CALL subset compiles and falls back for the rest.
+  Calls landed once the VM got its own frame stack; the value representation is the
+  remaining prize, and it is now the open question (see the stage section).
 - **Stage 5:** complete host compatibility. Server HTTP and async fetch work;
   client `http.request`/`http.get`, TLS serving, child processes, generators,
   class fields/getters, computed `require`, and other package-facing edges do not.
-- **Stage 6:** run and publish a pinned test262 score. The QuickJS sweep harness
-  exists, but it depends on a separate local QuickJS test checkout.
+- **Stage 6:** largely landed, and the box below is behind the tree. `scripts/test262-sweep.ts`
+  runs, the score is published per area in `docs/status.md`, and both sweeps write committed,
+  revision-attributed reports into `docs/conformance/`. What is NOT done is the corpus: neither
+  suite is vendored, so both depend on a local checkout, and test262 is scored from a
+  deterministic 1,500-case sample rather than the whole corpus.
 
 The source and locked fixtures are authoritative when an older stage narrative
 below conflicts with this snapshot.
@@ -64,11 +69,20 @@ binaries. The measure is what real applications it runs and what its conformance
 whether some other host can swap it in.
 
 **The thesis this proves:** Milo already self-hosts its own compiler (lexer → parser → checker →
-codegen → LLVM). A JS interpreter is strictly *less* than that — no monomorphization, no LLVM
-backend. The only piece Milo's ownership model does not hand us for free is a garbage collector,
-because JS object graphs are cyclic (`a.b = a`) and single-owner move semantics cannot express a
-cycle. That GC is the one genuinely new thing built here (Stage 2); everything else is parsing +
-dispatch Milo is already good at.
+codegen → LLVM), so Milo can carry a language implementation of this size and shape. The only
+piece its ownership model does not hand us for free is a garbage collector, because JS object
+graphs are cyclic (`a.b = a`) and single-owner move semantics cannot express a cycle. That GC is
+the one genuinely new *mechanism* built here (Stage 2).
+
+An earlier version of this paragraph said a JS interpreter is "strictly less" than the compiler
+— no monomorphization, no LLVM backend — and that "everything else is parsing + dispatch Milo is
+already good at." That is wrong, and it contradicted §Critical path & honesty six paragraphs
+down, which correctly says full ES2020 is a decade. A compiler is a batch transformation whose
+input language we define; an engine implements a spec we do not control, with observable
+evaluation order, live object identity, and thirty years of accreted edge cases. The evidence is
+in this tree: <!--fact:loc-milo-->48.0k<!--/fact--> lines of Milo, one 17.7k-line evaluator, and
+a test262 score in the seventies on a sample. "Parsing + dispatch" is the sentence that produced
+a 3,100-line `callBuiltin`. Size the work off `docs/status.md`, not off this heading.
 
 ## Do NOT port QuickJS line-by-line
 
@@ -110,6 +124,13 @@ in bindings; sweep adds unmarked non-free slots to the free-list and clears thei
 (one `maybeGc` call), the sole point where every live value is stored in a scope binding and no
 closure is in-flight mid-expression. This makes transient closure refs safe with no temp-root
 plumbing — keeps the collector ~130 lines of plain loops, no `unsafe`, no lifetimes.
+**What actually happened to that claim (recorded here, not quietly dropped):** the "no
+temp-root plumbing" half did not survive the next two stages. Stage 3 added
+`Interp.tempRoots` for in-flight receivers and part-built literals; Stage 4 added
+`vmStack`/`vmSp`, where every allocating opcode must publish its exact live top by hand and the
+failure mode is a wrong answer rather than a crash. The restriction is still in force and is
+now a constraint on the VM (`maybeGc` at exactly one opcode), so it is worth knowing it was
+paid for twice. The ~130-line collector is the part that held.
 **Proof:** GC stress (`tests/gc.js`, ~800k scope allocations) stays byte-identical to `bun`
 *and* `MILOJS_GC_STATS=1` shows the **arena capped at 1028 slots** (vs ~800k without GC), 586
 collections, live working set 2–4, free-list fully reused. Extend `markScope` with object/array
@@ -183,10 +204,11 @@ process/global; ran the tahoeroads express bundle → it's a CommonJS module (`r
 `Object.defineProperty`, express/compression/trpc/prisma...). Booting it is the whole Stage-5
 runtime: **module loader (`require`) is the critical next build**, then `Object.defineProperty`,
 fs/http shims, and every npm package express pulls in (minibun spent many sessions on 20/21
-packages — same surface). Minor parser gaps left: comma operator, `void`/`delete`, `in`, bitwise.
-**Still open (runtime):** **Promises + async event model** (the big one, ties to the green
-scheduler), `switch`, `for...in`/`for...of`, bitwise ops in JS, real `===`. These + minibun's node
-shims are the Stage-5 path to booting minibun on the engine.
+packages — same surface). (Those parser gaps — comma operator, `void`/`delete`, `in`, bitwise — are all closed; see the note at the end of this stage.)
+**Closed since (verified 2026-08-19 by running each):** promises + the async event model,
+`switch`, `for...in`/`for...of`, bitwise ops, real `===`, the comma operator, `void`, `delete`,
+and `in`. Every item this stage listed as open is done; the list is kept only so a reader who
+finds an old failure message here does not reopen one of them as a lane.
 **Gate:** prototype-based method dispatch + a class-ish pattern (constructor + prototype methods).
 
 **Test yardstick (decided):** milojs *is* the engine, so unlike minibun's JSC, both test262 and
@@ -196,14 +218,15 @@ target (local, pure-JS, self-contained `assert()`), but its `test_language.js` n
 Until then: byte-identical-vs-bun differential smokes in `tests/`. Package test suites don't
 apply (they need the node runtime = minibun's layer, not the engine).
 
-### Stage 4 — bytecode VM 🟡 (a subset compiles; calls do not)
+### Stage 4 — bytecode VM 🟡 (a subset compiles, calls included; the value model is the open half)
 `src/engine/bytecode.milo` compiles a `for` statement or a whole function body to a flat
 opcode array and runs it in one dispatch loop, falling back to the tree-walker for anything
 outside its subset. That fallback is the design, not a stopgap: both engine sweeps held their
 exact numbers through every step below, because a chunk that cannot be compiled is never run.
 
 **Compiles today:** numbers, strings, locals, arithmetic and comparisons, `if`/`while`,
-`return`, property reads and writes, plain object literals. Arithmetic fast-paths two numbers
+`return`, property reads and writes, plain object literals, and calls of a plain identifier.
+Arithmetic fast-paths two numbers
 and hands everything else to the evaluator's own `evalBinValues`/`memberOfValue`/
 `setMemberOfValue`, so there is one implementation of ToPrimitive ordering and of the
 primitive-receiver rules, not two.
@@ -219,13 +242,18 @@ tree, so they live in the commit messages and `bench/`; these are the durable fi
 - A dispatch loop is worth about **12x** the tree-walker on identical work when values are
   unboxed `f64`, and about **5x** once they are boxed `JSValue`. So the boxing question below
   is not academic: it costs half the win.
-- **Calls cannot be compiled by handing control back to `callValue`.** A self-recursive
-  function reaches depth **1** that way, against **2156** for the tree-walker (node: 10398).
-  It is not the per-call chunk copy; removing that changed nothing. It is `runChunk`'s own
-  native frame: one large dispatch function whose frame dwarfs the tree-walker's chain of
-  small ones, paid again at every level. The VM needs its own frame stack, pushing a frame and
-  continuing the same dispatch loop, before any call compiles. That is also what generators on
-  a saved instruction pointer will need.
+- **Calls cannot be compiled by handing control back to `callValue`** — and this one is now
+  FIXED, which is why it reads as history rather than as a blocker. A self-recursive function
+  reached depth **1** that way, against **2156** for the tree-walker. It was not the per-call
+  chunk copy; removing that changed nothing. It was `runChunk`'s own native frame: one large
+  dispatch function whose frame dwarfs the tree-walker's chain of small ones, paid again at
+  every level. The fix was the frame stack the finding asked for — `VmFrame` on `Interp`, a
+  compiled callee getting `pc = 0` inside the SAME `runChunk` invocation. Measured now:
+  **10,000 frames**, which is the `callDepthLimit` backstop rather than the native stack (node
+  on this machine: 10,399). A callee that does not compile (a native, a generator, an async or
+  bound function, a proxy) still costs one native round trip through `callPlainValue`, which is
+  what the tree walker pays for every call anyway. The same frame stack is what generators on a
+  saved instruction pointer will need.
 - Two narrower blockers found on the way, both real: `callValue` **drops `thisVal` for a
   `JSValue.Native`** (it forwards to `callNativeProg`, which takes no receiver), and
   `callBuiltinByName` is **not** a general substitute: it is one branch of `callMember`'s
@@ -248,7 +276,7 @@ there is no API-boundary drain to work around.
 **Gate:** a real Express/tRPC application serves its routes under `milojs` end to end. `RegExp`
 and `Date` are the long poles — spec-correctness diverges from "expressible" there.
 
-### Stage 6 — test262 conformance, measured and growing ⬜  ← a first-class goal, not just an app-subset
+### Stage 6 — test262 conformance, measured and growing 🟡 (harness + published score landed; corpus not vendored, scored from a sample)
 **Why this is a real goal, not a footnote:** an engine that only runs "the subset our apps need"
 is a private tool nobody else can trust. What makes milojs usable *as* an embeddable engine
 (the QuickJS-alternative pitch) is a **published, honest conformance number that goes up over
@@ -298,8 +326,15 @@ is not yet lowered — irrelevant, an engine API is opaque pointers anyway.)
 - Value representation: tagged Milo enum (clean, a word of tag overhead) vs NaN-boxed f64
   (QuickJS-style, denser, unsafe bit-twiddling). Lean was **tagged enum through Stage 4**,
   revisiting boxing only if the VM benchmarks demanded it. They now do: boxing measured at 2x
-  on the compiled subset, i.e. half the dispatch win. Revisit after calls land, not before:
-  the frame stack is worth more than the representation.
+  on the compiled subset, i.e. half the dispatch win. The condition attached to that revisit
+  was "after calls land, not before" — **calls have landed, so this is the open decision of
+  Stage 4, not a deferred one.** Note also that "fights the ownership model" (see *Do NOT port
+  QuickJS line-by-line*) is a real argument against NaN-boxing and hand-rolled allocators and
+  the OPPOSITE of true for interned property keys: a `u32` atom is friendlier to move semantics
+  than an owned `string`, because there is nothing to clone and nothing to drop. Atoms were
+  swept into a blanket rejection whose stated reason does not apply to them, and
+  `docs/backlog.md` §Perf re-derived them from a profile two stages later. Do not let the
+  heading do that again to the next idea it happens to share a paragraph with.
 - GC: mark-sweep (simple, stop-the-world) vs ref-count-with-cycle-collector (QuickJS's choice,
   incremental but complex). Lean: **mark-sweep first** — correctness before pause times.
 - Keep the tree-walker permanently as a differential oracle, or delete it after Stage 4? (lean:

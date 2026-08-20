@@ -112,6 +112,22 @@ const FACTS = {
   "t262-scored": () => String(report("test262").totals.scored),
   "t262-skipped": () => String(report("test262").totals.skip),
   "t262-sample": () => String(report("test262").selection.sample),
+  // The corpus the sample was drawn FROM. Published beside the sample size
+  // because 1169/1470 reads like a suite result and is under 3% of one: without
+  // this number a reader cannot tell a headline conformance score from a spot
+  // check, and the per-area rows (built-ins/String 28/39) look like measurements
+  // when they have 39 observations behind them.
+  "t262-available": () => {
+    const n = report("test262").selection.available;
+    if (typeof n !== "number") {
+      throw new Error(
+        "docs/conformance/test262.json records no selection.available — re-run the sweep with a " +
+        "build of scripts/test262-sweep.ts that captures it, or the sample fraction cannot be cited."
+      );
+    }
+    return n.toLocaleString("en-US");
+  },
+  "t262-sample-pct": () => pct(report("test262").selection.sample, report("test262").selection.available),
   "t262-seed": () => String(report("test262").selection.seed),
   "t262-corpus": () => short(report("test262").corpus.revision),
   "qjs-pct": () => pct(report("quickjs").totals.pass, report("quickjs").totals.total ?? report("quickjs").totals.scored),
@@ -162,6 +178,32 @@ const FACTS = {
   "qjs-parsefail": () => String(report("quickjs").totals.parseFail ?? 0),
   "qjs-ran": () => String(report("quickjs").totals.ran ?? report("quickjs").totals.total),
   "qjs-ran-pct": () => pct(report("quickjs").totals.pass, report("quickjs").totals.ran ?? report("quickjs").totals.total),
+
+  // AGENTS.md quotes how much doc debt is grandfathered into the staleness
+  // ratchet. It said "seven docs" while the file listed three — a hand-kept count
+  // of a list whose whole purpose is to shrink.
+  "docs-stale-baselined": () =>
+    String(
+      readFileSync(p("tools/docs-staleness.txt"), "utf8")
+        .split("\n")
+        .filter((l) => l.trim() && !l.trim().startsWith("#")).length
+    ),
+
+  // --- perf ---
+  // Product gate 4 in status.md read "decided and underway" — a narrative where
+  // every other gate has evidence. These come from docs/conformance/bench.json,
+  // written by bench/run.sh --json and bounded by tools/check-bench-budget.mjs.
+  // The ratio is what is published: absolute ms move with the machine.
+  "bench-peer": () => {
+    const r = report("bench");
+    return `${r.peer?.name ?? "peer"} ${r.peer?.version ?? "unknown"}`;
+  },
+  "bench-count": () => String(report("bench").totals.benches),
+  "bench-median": () => `${report("bench").totals.medianRatio}x`,
+  "bench-worst": () => `${report("bench").totals.worstRatio}x`,
+  "bench-worst-name": () => String(report("bench").totals.worstBench),
+  "bench-best": () => `${report("bench").totals.bestRatio}x`,
+  "bench-best-name": () => String(report("bench").totals.bestBench),
 
   "node-modules-shimmed": () =>
     String(

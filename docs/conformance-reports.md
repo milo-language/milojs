@@ -3,7 +3,7 @@ system: conformance-reports
 purpose: reproducible procedure and format for the checked-in test262, QuickJS and Node sweep evidence
 key-files: scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, scripts/node-compat-sweep.ts, docs/status.md
 update-when: report flags, schema, corpus policy, or score publication policy changes
-last-verified: 2026-08-19 (re-read after the sweeps grew a missing-binary guard and unified their default engine path on .dev/; the documented commands were already the .dev/ form and still run)
+last-verified: 2026-08-19 (re-read after test262-sweep began recording selection.available so the sample fraction can be published; the documented commands are unchanged and still run)
 -->
 
 # conformance reports
@@ -18,7 +18,10 @@ by default — a committed file, not a scratch artifact — containing:
   is also what the pre-commit home-path check rejects;
 - **the milojs revision it was measured at, and whether that tree was dirty**;
 - engine path;
-- sample/filter configuration;
+- sample/filter configuration, **including `selection.available`: the size of the
+  corpus the sample was drawn from.** Without it a reader sees `1169/1470` and
+  cannot tell a headline conformance score from a 2.8% spot check, which is what
+  the test262 row is. `docs/status.md` publishes the fraction beside the score;
 - pass, fail, skip, and selected totals;
 - complete failure buckets and case names;
 - per-area test262 totals.

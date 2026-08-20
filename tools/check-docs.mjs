@@ -11,12 +11,25 @@
 //                       most-edited doc in the repo, had none.
 //   key-files exist   — three docs pointed at paths that do not exist
 //                       (std/arena, std/runtime.milo, a fixture that moved).
+//   key-files cover   — the staleness check below is only as good as the list it
+//                       watches, and that list is chosen by the doc itself. The
+//                       roadmap declared src/milojs.milo and src/milojs-engine.milo
+//                       while its only in-progress stage was fourteen paragraphs
+//                       about src/engine/bytecode.milo. bytecode.milo moved three
+//                       hours after the roadmap was last verified and the gate
+//                       stayed green, because it was watching two files the stage
+//                       does not touch. So: every src/, lib/, bench/ or scripts/
+//                       path a doc names in its BODY must be in its key-files.
 //   tables match      — the AGENTS.md tools table said "if you build a tool it
 //                       belongs in this table", and was itself missing two tools.
 //   last-verified     — a hand-typed date that nothing compared against anything.
 //                       Now compared against the commit date of the doc's own
-//                       key-files: if the code moved after the doc was last
-//                       verified, the doc is stale by definition.
+//                       key-files, AND against whether the doc itself was touched
+//                       at or after that commit. The date is the human assertion
+//                       that someone read it; the commit order is what catches a
+//                       same-day move, which a hand-typed date cannot express and
+//                       which is exactly how the roadmap drifted (verified 02:53,
+//                       key-file moved 06:30, same date, green).
 //
 // The staleness half is a RATCHET, not a cliff. tools/verify-contracts.sh already
 // works this way and for the same reason: gating the whole existing backlog would
@@ -37,6 +50,20 @@ const docs = readdirSync(p("docs")).filter((f) => f.endsWith(".md")).map((f) => 
 let fail = 0;
 const stale = [];
 
+// Repo paths a doc's prose names, restricted to the trees whose CONTENTS the doc
+// is making claims about. tools/ is deliberately excluded: every doc names
+// tools/dev.sh, and naming a command you are told to run is not the same as
+// describing an implementation. Only paths that exist count, so a path typo is
+// the NO-FILE check's problem and not reported twice here.
+const SUBJECT_TREES = /\b(?:src|lib|bench|scripts)\/[A-Za-z0-9_.\/-]+\.(?:milo|js|ts|mjs|sh)\b/g;
+
+function namedInBody(rel, metaBlockLength) {
+  const body = readFileSync(p(rel), "utf8").slice(metaBlockLength);
+  return [...new Set([...body.matchAll(SUBJECT_TREES)].map((m) => m[0]))]
+    .filter((f) => existsSync(p(f)))
+    .sort();
+}
+
 function meta(rel) {
   const src = readFileSync(p(rel), "utf8");
   const m = src.match(/^<!--\s*doc-meta\n([\s\S]*?)-->/);
@@ -46,7 +73,21 @@ function meta(rel) {
     const kv = line.match(/^([a-z-]+):\s*(.*)$/);
     if (kv) out[kv[1]] = kv[2].trim();
   }
+  // Where the prose starts, so the coverage check does not read the doc's own
+  // key-files line back as evidence that it named the file.
+  out.metaLength = m[0].length;
   return out;
+}
+
+// Has this path got uncommitted changes? A doc being edited in the working tree is
+// mid-update, and failing it would make the pre-commit hook complain about the very
+// edit that fixes it.
+function dirtyInTree(rel) {
+  try {
+    return execFileSync("git", ["status", "--porcelain", "--", rel], {
+      encoding: "utf8", cwd: ROOT, stdio: ["ignore", "pipe", "ignore"],
+    }).trim().length > 0;
+  } catch { return false; }
 }
 
 // Last commit that touched any of the doc's own key-files. That is the moment the
@@ -85,6 +126,20 @@ for (const rel of docs) {
     }
   }
 
+  // The staleness check is only as sharp as key-files, and key-files is
+  // self-declared. A doc that writes fourteen paragraphs about a file it does not
+  // watch has opted itself out of the gate without saying so.
+  const declared = new Set(keyFiles);
+  for (const f of namedInBody(rel, m.metaLength)) {
+    if (!declared.has(f)) {
+      console.error(
+        `NO-WATCH ${rel}: the body describes ${f}, which is not in its key-files, ` +
+        `so the staleness check cannot see that file move`
+      );
+      fail = 1;
+    }
+  }
+
   // last-verified may carry a parenthetical note after the date; take the date.
   const verified = (m["last-verified"] ?? "").match(/^\d{4}-\d{2}-\d{2}/)?.[0];
   if (!verified) {
@@ -92,9 +147,38 @@ for (const rel of docs) {
     fail = 1;
     continue;
   }
-  const touched = lastTouched(keyFiles);
-  if (touched && touched.slice(0, 10) > verified) {
-    stale.push({ rel, verified, touched: touched.slice(0, 10) });
+
+  // Freshness takes TWO signals, because either one alone has a hole a real drift
+  // has already gone through.
+  //
+  //   the date  — a human asserting they read it. Day granularity is all a
+  //               hand-typed field can carry, and the roadmap drift was 3.5 hours
+  //               wide: verified 02:53, key-file moved 06:30, same date, green.
+  //   the order — did the doc get touched at or after the code did. Git knows this
+  //               to the second and nobody types it. This is what catches
+  //               same-day, and it is satisfied for free by the workflow AGENTS.md
+  //               already asks for: update the doc in the SAME commit.
+  //
+  // Neither replaces the other. Order alone would accept a whitespace commit as
+  // re-verification; the date alone accepted a doc whose subject moved four hours
+  // after someone last read it.
+  const touched = lastTouched(keyFiles.filter((f) => f !== rel));
+  if (touched) {
+    const touchedDay = touched.slice(0, 10);
+    // A doc with uncommitted edits is being written right now — that IS the
+    // same-commit update, seen before the commit exists.
+    const docMoved = dirtyInTree(rel) ? "9999" : lastTouched([rel]);
+    const staleByOrder = !docMoved || docMoved < touched;
+    const staleByDate = touchedDay > verified;
+    if (staleByDate || staleByOrder) {
+      stale.push({
+        rel,
+        verified,
+        touched: touchedDay,
+        why: staleByDate ? "not re-verified since" : "not edited since",
+        at: staleByOrder && !staleByDate ? touched.slice(0, 16) : touchedDay,
+      });
+    }
   }
 }
 
@@ -169,9 +253,9 @@ const allowed = new Set(
 );
 for (const s of stale) {
   if (allowed.has(s.rel)) {
-    console.log(`stale    ${s.rel} (key-files moved ${s.touched}, verified ${s.verified}) — known, in the baseline`);
+    console.log(`stale    ${s.rel} (key-files moved ${s.at}, ${s.why} ${s.verified}) — known, in the baseline`);
   } else {
-    console.error(`STALE    ${s.rel}: key-files last moved ${s.touched}, doc last verified ${s.verified}`);
+    console.error(`STALE    ${s.rel}: key-files last moved ${s.at}, ${s.why} ${s.verified}`);
     fail = 1;
   }
 }

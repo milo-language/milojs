@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: milojs-object-footprint
 purpose: measured per-object memory cost in milojs, and the JSObjExtra side table that shrank it
-key-files: src/engine/runtime.milo
+key-files: src/engine/runtime.milo, src/engine/eval.milo
 update-when: JSObj gains or loses fields, or the side-table split lands
 last-verified: 2026-08-19 (re-measured with the recipe above: 277 bytes per empty object, 126 per property; JSObj itself is unchanged, the Interp field added for the prototype-write check is per-engine, not per-object)
 -->

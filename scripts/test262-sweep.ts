@@ -132,6 +132,12 @@ function walk(dir: string): string[] {
 
 const root = join(T262, "test", subDir);
 let files = walk(root);
+// Before sampling. status.md publishes the pass rate off a 1500-case sample of a
+// ~54k-file corpus, and without this the report cannot say what fraction that is
+// — the reader sees "1169/1470" and has no way to know it is under 3% of the
+// suite. AGENTS.md already warns that 15% of the node corpus cannot resolve a
+// 10-case delta; the same caution has to be legible here.
+const available = files.length;
 if (sampleN && files.length > sampleN) {
   // Fisher-Yates partial shuffle with the seeded PRNG, take the first sampleN
   for (let i = 0; i < sampleN; i++) { const j = i + Math.floor(rand() * (files.length - i)); [files[i], files[j]] = [files[j]!, files[i]!]; }
@@ -287,6 +293,7 @@ if (jsonPath) {
     engine: tilde(ENGINE),
     selection: {
       directory: subDir || null,
+      available,
       sample: sampleN,
       limit: Number.isFinite(limit) ? limit : null,
       seed: sampleN ? "0x2f6e2b1" : null,

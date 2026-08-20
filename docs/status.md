@@ -108,9 +108,9 @@ that gate fail until the bullet is deleted.
 |---|---|
 | 0, green and measurable | **RED**. `linux-arm64` release job aborts on the runtime smoke test with `free(): invalid pointer`, exit 134, since `0f167c5`. Engine binary clean. Rolling tarballs stuck at 2026-08-15. |
 | 1, embeddable engine preview | partial. C ABI builds, handles survive forced GC, no native-function registration. Reports are now pinned and committed. |
-| 2, credible QuickJS alternative | partial. Every constructor has a real prototype; raw arena indices remain. |
+| 2, credible QuickJS alternative | partial. Every constructor has a real prototype OBJECT, but Map/Set/RegExp/Date/DataView still dispatch their methods by whitelist and ignore an override written onto that prototype (measured per receiver in `docs/milojs-quickjs-plan.md` lane 2). Raw arena indices remain. |
 | 3, Node runtime preview | partial. A real express 4 app boots and serves byte-identical output. See `docs/node-compat.md` for the surface. |
-| 4, performance architecture | decided and underway. Bytecode VM owns its call frames; recursion depth 2156 to 10000. Tree walker stays as fallback and differential oracle. |
+| 4, performance architecture | partial. Bytecode VM owns its call frames; recursion depth 2156 to 10000. Tree walker stays as fallback and differential oracle. |
 
 ## Next
 

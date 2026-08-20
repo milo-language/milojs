@@ -1,14 +1,14 @@
 <!-- doc-meta
 system: milojs-generators
-purpose: design of record for generator functions in milojs, reusing the async-activation green-task machinery
+purpose: how generators work in milojs (status), plus the pre-implementation design kept as historical rationale
 key-files: src/engine/eval.milo, src/engine/parser.milo, src/engine/ast.milo
-update-when: generators are implemented or the design changes
-last-verified: 2026-08-19 (re-read after Expr.ImportCall was added to the AST and the bytecode VM grew a pending-throw check: neither touches the generator design, and the generator fixtures are green under both)
+update-when: generator behaviour changes, or a claim in the historical half is found to have rotted
+last-verified: 2026-08-19 (re-read end to end: the design half below described generators as unimplemented and prescribed a per-task current-generator stack, both contradicted by the status half of this same file; marked historical, contradictions struck, and the rotted spawnActivation line number removed)
 -->
 
 # milojs: generators (design of record)
 
-## Status (2026-07-21): slice 2 shipped on the runtime
+## Status (2026-08-19): all three slices shipped, on BOTH binaries
 
 Working and fixture-covered (`tests/runtime/generators.js`,
 `generatorGcRoots.js`), byte-identical to node: `next()`, bidirectional
@@ -66,21 +66,31 @@ collection in that window would sweep it; `collect` marks the field directly and
 
 ---
 
-`function*` already parses far enough to be detected and throw "generator
-functions are not supported"; some `yield` positions still fail to parse. This is
-the design to make them actually run. It reuses the async-activation machinery
-(green tasks + park/unpark + ExecCtx save/restore) already built for await
-suspension — `yield` is structurally the same suspension as `await`, so this is
-cheaper than a from-scratch coroutine.
+# The original design (HISTORICAL — everything below shipped)
+
+Everything from here down is the plan as written BEFORE generators existed, kept
+because the reasoning about suspension is still the best explanation of why the
+implementation looks the way it does. It is not a worklist, and two of its
+prescriptions were wrong — the Status section above records which and why.
+Verified 2026-08-19: `function* g(){ yield 1; yield 2 }` spreads to `[1, 2]` and
+`g().next` is a function under `milojs-engine`, so the "already parses far enough
+to throw 'generator functions are not supported'" framing this section opens with
+has not been true for some time.
+
+The approach was to reuse the async-activation machinery (green tasks +
+park/unpark + ExecCtx save/restore) already built for await suspension — `yield`
+is structurally the same suspension as `await`, so this was cheaper than a
+from-scratch coroutine. That part held.
 
 ## The reused machinery (src/engine/eval.milo)
 
-`spawnActivation` (5073) is the template: it spawns the body on an 8 MB green
-task, the body runs and unparks its caller at the first suspension point, and the
-caller parks and later resumes restoring its ExecCtx via `resumeExecCtx`. Study
-also `saveExecCtx`/`resumeExecCtx`, `schedulerPark`/`schedulerUnpark`, the
+`spawnActivation` is the template: it spawns the body on an 8 MB green task, the
+body runs and unparks its caller at the first suspension point, and the caller
+parks and later resumes restoring its ExecCtx via `resumeExecCtx`. Study also
+`saveExecCtx`/`resumeExecCtx`, `schedulerPark`/`schedulerUnpark`, the
 `actTask`/`actPromise`/`suspended` vectors, and how `collect` marks parked
-activations' roots.
+activations' roots. (This used to cite "`spawnActivation` (5073)". It is at 12466
+today, which is the argument against line numbers in prose: grep the name.)
 
 ## The key difference from async activations
 
@@ -108,9 +118,11 @@ side-table plan) holding:
 
 - **Call a `function*`** → `makeGenerator(fnIdx, env, args, this)`: create the gen
   object, spawn the body task which IMMEDIATELY parks (waiting for the first
-  `next`). Do NOT run the body. Return the gen object. Push the gen onto a
-  CURRENT-GENERATOR stack keyed by task, so a nested `yield` finds its own gen
-  (generators can drive other generators).
+  `next`). Do NOT run the body. Return the gen object. (The plan added "push the
+  gen onto a CURRENT-GENERATOR stack keyed by task". **Not built, and not needed**
+  — see "No current-generator stack" above: each body has its own green task, so
+  `schedulerCurrent()==genTask` already resolves which generator a `yield`
+  belongs to.)
 - **`gen.next(v)`**: if done → `{value: undefined, done: true}`. Else set
   `sent = v`, save the caller's ExecCtx + park the caller, unpark the gen task.
   The gen resumes (restore its ctx), runs to the next `yield`/return/throw, which
@@ -129,8 +141,10 @@ side-table plan) holding:
 
 ## The subtle parts (where R1/R1b-style bugs hide — test each under GC stress)
 
-1. **Current-generator tracking must be a STACK, per task** — a generator can
-   call `next()` on another generator; `yield` must resolve to the innermost.
+1. ~~**Current-generator tracking must be a STACK, per task**~~ — this one was
+   wrong. A generator can call `next()` on another generator, but each body runs
+   on its own green task, so task identity resolves `yield` to the right generator
+   with no stack at all.
 2. **ExecCtx save/restore must be symmetric** — a bare park without saving the
    ctx bypasses R6 and corrupts an unrelated activation (this is exactly what
    sank the R1a bare-yield attempt). yield goes through save/restore like
@@ -142,7 +156,7 @@ side-table plan) holding:
    acceptable (matches a dropped generator in JS), but confirm it does not wedge
    the event loop the way the reverted R1b whole-program-on-green-task did.
 
-## Slices (each: build → tests/run.sh → GC-stress → app smoke → commit)
+## Slices (all three shipped; kept for the ordering argument)
 
 1. Parser + AST: `yield e` / `yield* e` expression, `FuncDef.isGenerator`. (No
    score gain alone — the call still throws — so fold into slice 2.)

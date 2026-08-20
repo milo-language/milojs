@@ -110,8 +110,27 @@ update the doc in the same commit and bump its `last-verified`.
 `tools/check-docs.mjs` compares each doc's `last-verified` against the commit date
 of its own `key-files`: if the code moved after the doc was verified, the doc is
 stale by definition. Existing debt is ratcheted in `tools/docs-staleness.txt` —
-seven docs are on that list today — so only a NEWLY stale doc fails. Re-verify one,
-bump its date, delete its line; the list is only allowed to shrink.
+<!--fact:docs-stale-baselined-->2<!--/fact--> docs are on that list today — so only a NEWLY
+stale doc fails. Re-verify one, bump its date, delete its line; the list is only allowed
+to shrink.
+
+Two things about that check are worth knowing before you write a doc, because both
+were holes it took a real drift to find:
+
+- **`key-files` is not yours to narrow.** The staleness check watches only what the
+  doc declares, so a doc that describes a file it does not list has opted itself
+  out. The roadmap declared two entry points while its only in-progress stage was
+  fourteen paragraphs about `src/engine/bytecode.milo`; the file moved three hours
+  after the doc was verified and the gate stayed green. Every `src/`, `lib/`,
+  `bench/` or `scripts/` path your prose names must be in `key-files`. `tools/`
+  paths are exempt: naming a command you are told to run is not describing an
+  implementation.
+- **Bumping the date is not enough on its own.** Freshness takes two signals: the
+  date you type (a human saying they read it) AND whether the doc was committed
+  at or after its key-files were, which git knows to the second. The second is
+  what catches a same-day move — the roadmap drift was 3.5 hours wide, so no
+  hand-typed date could have expressed it. Update the doc in the SAME commit as
+  the code and both are satisfied without thinking about it.
 
 ## Tests — always run them
 
@@ -423,6 +442,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/check-exit-codes.mjs` | exit status for 9 program shapes, differential against node; a wrong 0 is a case the sweep scores as a pass |
 | `tools/check-ast-refs.mjs` | finds AST strings used after the interpreter re-enters (a require can move the store); baseline may only shrink |
 | `tools/check-defect-budget.mjs` | ratchets per-suite crashes, hangs and unparsable files; crashes exact, the other two ceilings |
+| `tools/check-bench-budget.mjs` | per-bench ceilings on the milojs/peer time ratio from `docs/conformance/bench.json`. Fails on a regression, on a bench the budget does not cover (or covers and the report no longer measures), and on a bench that came in under half its ceiling so the ceiling stopped bounding anything. `--baseline` re-records at +15%. |
 | `tools/check-gate-teeth.sh` | introduces each gate's own violation and requires it to fail; needs a clean tree, so it runs in CI rather than the hook |
 | `tools/check-docs-exec.mjs` | runs the `<!-- exec -->`-tagged examples in the docs and diffs them against the output the docs claim. Needs built binaries; part of `dev.sh`. |
 | `tools/check-docs.mjs` | doc-meta present, key-files real, AGENTS tables complete, and a staleness ratchet against each doc's key-files |
@@ -430,6 +450,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/gen-facts.mjs` | compiles the numbers prose quotes (line counts, fixture counts, entry points) into `<!--fact:...-->` spans. `--check` gates, `--list` prints them all. |
 | `tools/gen-bun-claims.mjs` | captures bun's PUBLISHED compat table to `docs/conformance/bun-claims.json`, so the doc can put bun's claim next to this repo's measurement of the same binary. Asserted, not measured: bun's 🟢 means "implemented", not "node's cases pass". Needs network, so manual like the sweeps; `--check` refetches and fails on drift. |
 | `tools/gen-node-compat.mjs` | writes `docs/node-compat.md`: the sweep's per-area pass rate per module (which is what the colour bands), joined with an export diff against a committed snapshot of what node exports (which is the worklist). `--check` gates; `--refresh` re-records the snapshot. |
+| `tools/gen-bun-claims.mjs` | captures bun's PUBLISHED compatibility table into `docs/conformance/bun-claims.json`, so the claim sits beside the measurement of the same bun binary. Needs network, so it is manual like the sweeps. `--check` refetches and gates. |
 | `tools/fuzz.sh` | crash fuzzer over the memory-managed core: random allocating programs under `MILOJS_GC_THRESHOLD=1` (see the growth note above: that is a mild setting, not every-allocation), compared to node on the SHAPE of the outcome (crash/hang, over-accept, over-reject) and never on output text. `tools/fuzz.sh [first] [last]`; flagged seeds are saved to `/tmp/fuzz-seed-<n>.js`. Not in CI: it is a sweep, not a gate. |
 | `tools/precommit.sh` | every cheap gate below, in one command. See "Wiring the hook". |
 

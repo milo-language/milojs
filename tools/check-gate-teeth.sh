@@ -39,9 +39,18 @@ for candidate in "${MILOJS_ENGINE:-}" .dev/mj-engine /tmp/milojs-engine; do
     if [ -n "$candidate" ] && [ -x "$candidate" ]; then ENGINE="$candidate"; break; fi
 done
 
-# teeth <label> <file-to-mutate> <mutation-shell> <gate-shell>
+# teeth <label> <file-to-mutate> <mutation-shell> <gate-shell> [restore-shell]
+#
+# restore-shell runs AFTER the source is put back, and exists because restoring
+# the source is not the same as restoring the tree. The check-exit-codes probe
+# below mutates src/milojs.milo and REBUILDS to make the mutation real; putting
+# the source back left .dev/mj-runtime holding the mutated binary, with git
+# reporting a clean tree and nothing anywhere saying otherwise. The next person
+# to run check-exit-codes got a genuine-looking failure — "syntax: node exits 1,
+# milojs exits 0" — from a binary the repo had poisoned on its own way out. Any
+# probe that builds has to pass a rebuild here.
 teeth() {
-    local label="$1" file="$2" mutate="$3" gate="$4"
+    local label="$1" file="$2" mutate="$3" gate="$4" restore="${5:-}"
     local backup before after out code
     backup=$(mktemp)
     cp "$file" "$backup"
@@ -56,6 +65,10 @@ teeth() {
     rm -f "$backup"
     if [ "$before" != "$after" ]; then
         echo "check-gate-teeth: FAILED TO RESTORE $file — fix it by hand before committing" >&2
+        exit 3
+    fi
+    if [ -n "$restore" ] && ! eval "$restore"; then
+        echo "check-gate-teeth: post-restore step for $label FAILED — the tree may still hold a mutated build artifact" >&2
         exit 3
     fi
 
@@ -93,6 +106,22 @@ teeth "gen-facts --check" README.md \
 # --- docs: a doc without its meta block ---
 teeth "check-docs (no meta)" docs/milojs-roadmap.md \
     "perl -0pi -e 's/<!-- doc-meta.*?-->//s' docs/milojs-roadmap.md" \
+    "node tools/check-docs.mjs"
+
+# --- docs: a doc that describes a file it does not watch. This is how the roadmap
+# went fourteen paragraphs stale on src/engine/bytecode.milo with the gate green:
+# the staleness check watches key-files, and key-files is written by the doc.
+teeth "check-docs (key-files coverage)" docs/milojs-roadmap.md \
+    "perl -pi -e 's{, src/engine/bytecode\.milo}{} if \$. < 8' docs/milojs-roadmap.md" \
+    "node tools/check-docs.mjs"
+
+# --- docs: the staleness ratchet itself. Dropping a known-stale doc from the
+# baseline without re-verifying it must fail, or the baseline is a list nobody
+# reads. This is also what exercises the freshness path end to end:
+# docs/milojs-arena-safety.md is stale by BOTH signals, the typed date and the
+# commit order.
+teeth "check-docs (staleness ratchet)" tools/docs-staleness.txt \
+    "perl -ni -e 'print unless m{^docs/milojs-arena-safety}' tools/docs-staleness.txt" \
     "node tools/check-docs.mjs"
 
 # --- provenance: a hand-edited .expected is the defect verify-expected exists for ---
@@ -146,7 +175,8 @@ teeth "check-crash-visibility" scripts/node-compat-sweep.ts \
 if [ -x .dev/mj-runtime ]; then
     teeth "check-exit-codes" src/milojs.milo \
         "perl -0pi -e 's/    if gInterp\.parseFailed \{\n        return 1\n    \}\n//' src/milojs.milo && tools/dev.sh --rebuild zzz >/dev/null 2>&1" \
-        "node tools/check-exit-codes.mjs"
+        "node tools/check-exit-codes.mjs" \
+        "tools/dev.sh --rebuild zzz >/dev/null 2>&1 || true"
 else
     echo "check-gate-teeth: no .dev/mj-runtime, check-exit-codes not probed" >&2
     skipped=$((skipped + 1))

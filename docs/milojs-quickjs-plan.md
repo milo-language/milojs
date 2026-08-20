@@ -1,19 +1,31 @@
 <!-- doc-meta
 system: milojs
 purpose: active work plan for improving the QuickJS-suite score without confusing historical gaps with current code
-key-files: scripts/quickjs-sweep.ts, src/engine/parser.milo, src/engine/eval.milo, src/engine/runtime.milo, lib/engine-prelude.js
+key-files: scripts/quickjs-sweep.ts, src/engine/parser.milo, src/engine/eval.milo, src/engine/runtime.milo, lib/engine-prelude.js, src/milojs-engine.milo
 update-when: the sweep is rerun, a failure bucket changes, or a lane lands
-last-verified: 2026-07-30
+last-verified: 2026-08-19 (re-read end to end: the headline cited a corpus revision that does not resolve, so it was re-derived from the committed report; lane 2's dispatch claim measured per receiver; lane 5's two items found already shipped and replaced with the Prog-mutability conflict that is actually open)
 -->
 
 # milojs QuickJS-parity plan
 
-Last measured: **96/166 cases (57.8%)** on 2026-07-30 against QuickJS
-`fced162932e36eb3b2889bd30c8f127a2bf8cf34`.
+Last measured: **<!--fact:qjs-pass-->104<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> cases
+(<!--fact:qjs-pct-->69.8%<!--/fact-->)** against QuickJS `<!--fact:qjs-corpus-->ef7a3a74<!--/fact-->`,
+from `docs/conformance/quickjs.json` — the committed report, not a number typed here. 58 files,
+nine host-facility files skip-listed, `<!--fact:qjs-parsefail-->0<!--/fact-->` parse gaps.
 
-The previous 93/149 (62.4%) result used an older, smaller corpus. The passing
-count increased by three while the corpus added 17 scored cases, so the lower
-percentage is not an engine regression.
+**On the denominator, which has moved twice.** An earlier version of this file led with
+"96/166 cases (57.8%) on 2026-07-30 against `fced162932e36eb3b2889bd30c8f127a2bf8cf34`", and
+argued at length that the drop from a previous 93/149 was honest because the corpus had grown by
+17 scored cases. That paragraph is deleted rather than reconciled, for a reason worth writing
+down: **`fced1629` is not a commit in the QuickJS repository this checkout tracks** (`git
+cat-file -t` cannot resolve it), so 96/166 cannot be reproduced by anyone, including whoever ran
+it. A score whose corpus revision does not resolve is not evidence, and the argument built on top
+of it was defending a denominator that no run can produce again.
+
+The number above is reproducible: it names a revision that exists, it is compiled by
+`tools/gen-facts.mjs` out of a report that records the milojs commit it was measured at, and
+re-running the sweep either agrees with it or fails the gate. If the denominator moves again,
+that is what has to move it.
 
 That number is a development signal, not a compatibility claim. The QuickJS
 suite mixes ECMAScript behavior with QuickJS host facilities, and the corpus is
@@ -61,13 +73,19 @@ First reduce a current failing case and identify the narrower semantic bug.
 
 ### 1. Rebaseline and classify — done
 
-The 2026-07-30 full sweep reports 70 failures. Exact repeated buckets account
-for 47: 27 assertion mismatches, 4 undefined-property reads, 4 engine/runtime
-generator-factor cases, 3 missing `concat` dispatches, 3 calls of a non-function
-value, 2 missing `BigInt64Array` cases, 2 module-fixture `exports` failures, and
-2 timeouts. The remaining 23 are distinct one-case buckets spanning
-parser/evaluator semantics and missing or divergent builtins. The verbose report
-is retained as review evidence outside Git per `docs/conformance-reports.md`.
+Re-derived from `docs/conformance/quickjs.json` rather than from the deleted 2026-07-30 run:
+**45 failures in 18 buckets.** Two buckets carry 28 of them — 23 plain assertion mismatches and
+5 more where an exception was expected and none came — and the other 16 buckets are one case
+each, spanning parser/evaluator semantics and missing or divergent builtins. Three are not wrong
+answers at all: 2 SIGTERM timeouts and 1 SIGUSR1. Parse gaps:
+`<!--fact:qjs-parsefail-->0<!--/fact-->`.
+
+The shape of that is the finding. A 23-case bucket whose reason string is `assertion failed: got
+|…|, expected |…|` is not one bug, it is the harness telling you it cannot distinguish them — the
+values are elided, so the bucket is "some assertion, somewhere". Ranking work off bucket size
+here would rank that first and learn nothing. Reduce individual cases; the buckets are an index,
+not a priority order. The verbose report is retained as review evidence outside Git per
+`docs/conformance-reports.md`.
 
 Recursive `Function.prototype.call`/`apply` now charges its adapter frame to the
 native-stack budget. That changed `bug776.js` from a process `SIGSEGV` to its
@@ -82,6 +100,25 @@ Array, String, and the Error family now use real prototype objects. Map/Set,
 RegExp, Date, DataView, and typed arrays still have whitelist-dispatched methods
 in parts of the property/call path. This causes overrides, extraction, identity,
 and inheritance to disagree with JavaScript even when direct calls work.
+
+**Measured 2026-08-19, because "still whitelist-dispatched" is vaguer than it needs to be.**
+Assigning over the prototype method and calling it on an instance:
+
+| receiver | `Object.getOwnPropertyNames(proto)` has the method | override honoured |
+|---|---|---|
+| `Map.prototype.has` | yes | **no** |
+| `Set.prototype.has` | yes | **no** |
+| `RegExp.prototype.test` | yes | **no** |
+| `Date.prototype.getTime` | yes | **no** |
+| `DataView.prototype.getInt8` | yes | **no** |
+| `Uint8Array.prototype.at` | **no** | no |
+
+So the prototype OBJECT exists and is populated for five of the six; what does not happen is
+consulting it. The property is there to be read and the dispatch ignores it, which is the worst
+of the three possible states — `Object.getOwnPropertyNames` and a direct call both agree with
+node, so nothing looks wrong until someone overrides. Note this is narrower than
+`docs/status.md` gate 2's "every constructor has a real prototype", which is true as written and
+reads as more finished than it is.
 
 Take one receiver family per commit. Preserve the Array pattern: a guarded fast
 path is valid only while the real prototype is pristine; writes permanently
@@ -108,11 +145,25 @@ changing the upstream score.
 
 ### 5. Language semantics that need architecture
 
-Direct `eval` cannot append parsed code while the evaluator holds an immutable
-`Prog`; it needs an explicit design rather than a builtin shim. Engine-side
-generators similarly need either activation support independent of the runtime or
-a documented engine capability boundary. Keep these visible, but do not distort
-the evaluator for a small score increase.
+**Both items this lane listed have been built. Verified 2026-08-19 under `milojs-engine`:**
+
+- Direct `eval` said it "cannot append parsed code while the evaluator holds an immutable
+  `Prog`; it needs an explicit design rather than a builtin shim." It works: `eval("x+1")` reads
+  a surrounding `let`, `eval("function ff(){...}")` declares a function the caller can then call,
+  `eval("var zz = 9")` leaks `zz` into the enclosing scope, `eval("(() => n * 6)")` closes over a
+  local, and `eval("eval('1+2')")` nests. What is left is narrower: `typeof this` inside
+  `eval("'use strict'; ...")` answers `undefined` where node answers `object`, and the QuickJS
+  corpus still fails `test_builtin.js:test_eval` and one `SyntaxError: Unexpected token in eval`.
+  Those are cases, not architecture.
+- Engine-side generators wanted "either activation support independent of the runtime or a
+  documented engine capability boundary." The engine runs the program on a green task, so
+  generators work on both binaries — see `docs/milojs-generators.md`.
+
+**The one genuine architecture item left in this lane is a CONFLICT, not a gap.** This lane
+wanted `Prog` mutable enough for direct `eval`; `docs/milojs-arena-safety.md` is building a
+`BuildingProg -> FrozenProg` phase boundary with compile-fail fixtures for mutation through
+`FrozenProg`. Both are listed as active work, neither cites the other, and whichever lands first
+silently decides the other. Settle that before either one moves.
 
 ## Scoreboard discipline
 

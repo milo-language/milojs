@@ -27,10 +27,24 @@
 # comment in each .js). Compare within a pair to attribute cost to a mechanism;
 # `noop` is the startup floor and is subtracted from every other measurement.
 #
-# Usage: bench/run.sh <path-to-milojs-binary>
+# --json <path> also writes a machine-readable report, the same shape and the same
+# provenance rules as the conformance sweeps in docs/conformance: the milojs
+# revision it was measured at, whether the tree was dirty, and the peer's exact
+# version. Without that file the ratios are a number someone typed into a commit
+# message, and every gate in this repo exists because one of those went stale.
+#
+# Usage: bench/run.sh <path-to-milojs-binary> [--json <path>]
 
 set -eu
-ENGINE="${1:?usage: run.sh <path-to-milojs-binary>}"
+ENGINE="${1:?usage: run.sh <path-to-milojs-binary> [--json <path>]}"
+shift
+JSON=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json) JSON="${2:?--json needs a path}"; shift 2 ;;
+    *) echo "run.sh: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
 DIR="$(dirname "$0")"
 REPS=3
 # How much net bun time is enough to be signal rather than spawn jitter.
@@ -97,6 +111,7 @@ printf '%s\n' '------------------------------------------------'
 
 floor_milo=0
 floor_bun=0
+ROWS=""
 for b in $BENCHES; do
   f="$DIR/$b.js"
   m=$(best_ms "$ENGINE" "$f")
@@ -115,4 +130,62 @@ for b in $BENCHES; do
 
   ratio=$(perl -e "printf '%.1f', $am/$an")
   printf '%-12s %10s %10s %10s\n' "$b" "$am" "$an" "${ratio}x"
+  ROWS="$ROWS$b $am $an $ratio
+"
 done
+
+# An `[ ... ] && exit 0` here would be the AND-list footgun under `set -e`: when
+# JSON *is* set the test fails, and whether that kills the script is shell-
+# dependent. An explicit if is not.
+if [ -z "$JSON" ]; then
+  exit 0
+fi
+export ENGINE REPS floor_milo floor_bun
+
+# --- the machine-readable half ---
+#
+# Provenance follows scripts/quickjs-sweep.ts exactly, including its carve-out:
+# docs/conformance is where the reports land, so a tree whose only modification
+# is a report already written is not "dirty" for the purpose of the next one.
+REV=$(git -C "$DIR/.." rev-parse HEAD 2>/dev/null || echo "")
+DIRTY=$(git -C "$DIR/.." status --porcelain 2>/dev/null \
+  | grep -v 'docs/conformance' | grep -c . || true)
+if [ "$DIRTY" -gt 0 ]; then DIRTY=true; else DIRTY=false; fi
+PEER_VERSION=$(bun --version 2>/dev/null || echo unknown)
+export REV DIRTY PEER_VERSION
+
+printf '%s' "$ROWS" | perl -e '
+  use strict; use warnings;
+  my (%b, @ratios);
+  while (my $l = <STDIN>) {
+    my ($n, $ms, $peer, $r) = split " ", $l;
+    next unless defined $r;
+    $b{$n} = { milojsMs => $ms + 0, peerMs => $peer + 0, ratio => $r + 0 };
+    push @ratios, [$r + 0, $n];
+  }
+  @ratios = sort { $a->[0] <=> $b->[0] } @ratios;
+  my $median = @ratios ? $ratios[int(@ratios / 2)][0] : 0;
+  my $worst  = @ratios ? $ratios[-1] : [0, ""];
+  my $best   = @ratios ? $ratios[0]  : [0, ""];
+  my $rev = $ENV{REV} eq "" ? "null" : "\"$ENV{REV}\"";
+  print "{\n";
+  print "  \"schemaVersion\": 1,\n  \"suite\": \"bench\",\n";
+  print "  \"_comment\": \"Best-of-3 wall time per bench, milojs against the peer on the same work, startup floor subtracted. The RATIO is the measurement; absolute ms move with the machine. Written by bench/run.sh --json; ceilings enforced by tools/check-bench-budget.mjs.\",\n";
+  print "  \"milojs\": { \"revision\": $rev, \"dirty\": $ENV{DIRTY} },\n";
+  print "  \"engine\": \"$ENV{ENGINE}\",\n";
+  print "  \"peer\": { \"name\": \"bun\", \"version\": \"$ENV{PEER_VERSION}\" },\n";
+  print "  \"reps\": $ENV{REPS},\n";
+  print "  \"floorMs\": { \"milojs\": $ENV{floor_milo}, \"peer\": $ENV{floor_bun} },\n";
+  print "  \"benches\": {\n";
+  my @k = sort keys %b;
+  for my $i (0 .. $#k) {
+    my $n = $k[$i];
+    printf "    \"%s\": { \"milojsMs\": %s, \"peerMs\": %s, \"ratio\": %s }%s\n",
+      $n, $b{$n}{milojsMs}, $b{$n}{peerMs}, $b{$n}{ratio}, ($i == $#k ? "" : ",");
+  }
+  print "  },\n";
+  printf "  \"totals\": { \"benches\": %d, \"medianRatio\": %s, \"worstRatio\": %s, \"worstBench\": \"%s\", \"bestRatio\": %s, \"bestBench\": \"%s\" }\n",
+    scalar(@ratios), $median, $worst->[0], $worst->[1], $best->[0], $best->[1];
+  print "}\n";
+' > "$JSON"
+echo "wrote $JSON"

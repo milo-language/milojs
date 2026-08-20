@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: milojs-async-suspension
 purpose: plan of record for making await suspend in milojs — requirements, design, per-requirement status, and test plan
-key-files: src/engine/eval.milo, src/engine/runtime.milo, std/runtime.milo, tests/milo/AwaitPark.milo
+key-files: src/engine/eval.milo, src/engine/runtime.milo, std/runtime.milo, tests/milo/AwaitPark.milo, src/milojs.milo, src/milojs-engine.milo
 update-when: a requirement is implemented, dropped, or revised, or the suspension mechanism changes
 last-verified: 2026-07-21
 -->
