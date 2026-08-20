@@ -197,11 +197,28 @@ const sweepDate = (() => {
 
 const areaByName = new Map((report?.areas ?? []).map((a) => [a.area, a]));
 
+// Exports whose EXISTENCE is a platform fact, excluded from both sides of the
+// diff because neither side can answer for them portably.
+//
+// The snapshot fixed half of this already (see the comment on SNAPSHOT: a live
+// node probe made the table depend on the machine, "a gate that cannot be
+// satisfied rather than a gate that caught something"). The milojs side is still
+// a live probe, so the same hazard returns for any name node itself gates on the
+// platform: fs.lchmod exists only where O_SYMLINK does, which is darwin and not
+// linux, so a table generated on a mac can never match a --check run in CI.
+//
+// Registered, not silently dropped: each entry names why it is not comparable.
+const PLATFORM_GATED = {
+  // node: `lchmod: constants.O_SYMLINK !== undefined ? lchmod : undefined`
+  fs: ["lchmod", "lchmodSync"],
+};
+
 const rows = [];
 for (const m of MODULES) {
   const n = nodeSide[m], j = miloSide[m];
-  const wanted = new Set(n.ok ? n.names : []);
-  const have = new Set(j.ok ? j.names : []);
+  const skip = new Set(PLATFORM_GATED[m] ?? []);
+  const wanted = new Set((n.ok ? n.names : []).filter((k) => !skip.has(k)));
+  const have = new Set((j.ok ? j.names : []).filter((k) => !skip.has(k)));
   const missing = [...wanted].filter((k) => !have.has(k));
   const covered = wanted.size === 0 ? 0 : wanted.size - missing.length;
   const area = areaByName.get(AREA_ALIAS[m] ?? m);

@@ -38,7 +38,7 @@ Reference surface: node v25.3.0. Sweep at `582d44b0`.
 | 🔴 | `events` | 1/4 25% | 3/4 75% | 🟢 | 10/17 59% | `EventEmitterAsyncResource`, `captureRejections`, `getMaxListeners`, `init`, `kMaxEventTargetListeners`, `kMaxEventTargetListenersWarned` +1 more |
 | 🔴 | `child_process` | 24/98 24% (+2 skipped) | 59/97 61% (+3 skipped) | 🟡 | 8/9 89% | `_forkChild` |
 | 🔴 | `http` | 85/371 23% (+6 skipped) | 158/377 42% | 🟢 | 12/20 60% | `CloseEvent`, `MessageEvent`, `WebSocket`, `_connectionListener`, `maxHeaderSize`, `setMaxIdleHTTPParsers` +2 more |
-| 🔴 | `fs` | 50/219 23% (+8 skipped) | 124/219 57% (+8 skipped) | 🟢 | 80/104 77% | `Dir`, `FileReadStream`, `FileWriteStream`, `ReadStream`, `Utf8Stream`, `WriteStream` +18 more |
+| 🔴 | `fs` | 50/219 23% (+8 skipped) | 124/219 57% (+8 skipped) | 🟢 | 78/102 76% | `Dir`, `FileReadStream`, `FileWriteStream`, `ReadStream`, `Utf8Stream`, `WriteStream` +18 more |
 | 🔴 | `net` | 29/133 22% (+3 skipped) | 71/136 52% | 🟢 | 13/17 76% | `BlockList`, `SocketAddress`, `_createServerHandle`, `_normalizeArgs` |
 | 🔴 | `diagnostics_channel` | 13/45 29% (+19 skipped) | 12/64 19% | 🟡 | 6/6 100% | none |
 | 🔴 | `readline` | 3/15 20% | 12/15 80% | 🟢 | 8/8 100% | none |
@@ -67,7 +67,7 @@ Reference surface: node v25.3.0. Sweep at `582d44b0`.
 | 🔴 | `trace_events` **(does not load)** | no cases | no cases | 🟢 | 0/2 0% | `createTracing`, `getEnabledCategories` |
 | 🔴 | `wasi` **(does not load)** | no cases | no cases | 🟡 | 0/1 0% | `WASI` |
 
-Across all 43 modules: **474/1948 node cases pass (24%)**, 🟢 0, 🟡 0, 🟠 12, 🔴 26, ⚪ 5. Surface: 468/1056 exports present (44%).
+Across all 43 modules: **474/1948 node cases pass (24%)**, 🟢 0, 🟡 0, 🟠 12, 🔴 26, ⚪ 5. Surface: 466/1054 exports present (44%).
 
 Whole suite, every selected case counted: **581/3373 (17%)**, against bun 1.3.10 at **1377/3373 (41%)**. This is the number to quote. The per-module column above is scored against what RAN, which forgives whatever an engine declines: milojs skips 936 cases and bun skips 145, so the two ran-only rates are not comparable to each other.
 

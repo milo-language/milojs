@@ -3,7 +3,7 @@ system: status
 purpose: current conformance numbers, product gate state, and what is next
 key-files: docs/conformance/node-compat.json, docs/node-compat.md, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, scripts/node-compat-sweep.ts
 update-when: a sweep is rerun or a product gate changes state
-last-verified: 2026-08-19
+last-verified: 2026-08-19 (node-compat re-measured at HEAD and unmoved at 581/3373; the export diff now registers fs.lchmod/lchmodSync as platform-gated, so the surface count moved 468/1056 -> 466/1054 without any export being lost)
 -->
 
 # milojs status
