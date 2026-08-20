@@ -1,0 +1,14 @@
+{
+  "_comment": "Per-suite ceilings for defects that are NOT ordinary failures. A crash, a hang and a file the parser cannot read are each a different thing from 'the runtime returned the wrong answer', and averaged into a four-digit fail count all three are invisible. tools/check-defect-budget.mjs enforces these against the committed report.",
+  "_directions": "crashes is exact (it must match, in both directions — they are rare and individually known). timeouts and parseFailures are ceilings: they may drop without ceremony, but never rise.",
+  "node-compat": {
+    "crashes": 2,
+    "timeouts": 163,
+    "parseFailures": 5,
+    "known": [
+      "crash: test-signal-args.js sends itself SIGINT; milojs has no process.on('SIGINT'), so the default action kills it",
+      "crash: test-signal-handler.js, same with SIGHUP",
+      "timeouts: sampled cases sat past 45s against a 10s limit, so these are hangs, not slowness"
+    ]
+  }
+}

@@ -157,10 +157,10 @@ teeth "check-ast-refs" src/engine/eval.milo \
     "perl -pi -e 's/scopeDefine\(st, iterScope, bindName\.clone\(\), eagerBound\)/scopeDefine(st, iterScope, name.clone(), eagerBound)/' src/engine/eval.milo" \
     "node tools/check-ast-refs.mjs"
 
-# --- crash budget: one more case dying on a signal ---
-teeth "check-crash-budget" docs/conformance/node-compat.json \
+# --- defect budget: one more case dying on a signal ---
+teeth "check-defect-budget" docs/conformance/node-compat.json \
     "perl -pi -e 's/\"crashes\": 2/\"crashes\": 3/' docs/conformance/node-compat.json" \
-    "node tools/check-crash-budget.mjs"
+    "node tools/check-defect-budget.mjs"
 
 # --- sweeps, second defect: a skipped test scored as a pass ---
 # Same corpus caveat as the quickjs case above: without node's test suite the
