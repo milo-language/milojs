@@ -365,7 +365,13 @@ function runOne(f: string, index: number): Promise<Row> {
         finish({ file: f, ok: true, why: "", skipped: false, skipWhy: "" });
         return;
       }
-      const why = whyFrom(stderr) || (signal ? `signal ${signal}` : `exit ${code}`);
+      // A signal death is a CRASH, and it is reported ahead of anything the case
+      // managed to print on its way down. Ordered the other way — stderr first,
+      // signal only as a fallback — every crash that had written a line first was
+      // filed under that line: the fails file showed reasons like "11 |
+      // ReflectApply," and the crash count read zero while the machine was
+      // producing twenty crash reports an hour.
+      const why = signal ? `crash(${signal})` : (whyFrom(stderr) || `exit ${code}`);
       finish({ file: f, ok: false, why, skipped: false, skipWhy: "" });
     });
   });
@@ -518,6 +524,16 @@ if (verbose) {
   console.log("\nfailing:");
   rows.filter((r) => !r.ok).forEach((r) => console.log(`  ${r.file}  ${r.why}`));
 }
+// Counted and PRINTED separately from the failure total. A crash is not one
+// more failing case: it is the runtime dying on input a user could write, and
+// it stayed invisible for as long as it was averaged into a four-digit fail
+// count.
+const crashes = rows.filter((r) => r.why.startsWith("crash(")).length;
+if (crashes > 0) {
+  console.log(`\n!! ${crashes} case(s) killed the runtime with a signal:`);
+  rows.filter((r) => r.why.startsWith("crash(")).slice(0, 12)
+    .forEach((r) => console.log(`  ${r.why}  ${r.file}`));
+}
 console.log(`\nnode-compat-sweep: ${pass}/${rows.length} of all selected (${pctAll}%)  ·  ${pass}/${ran} of those that ran (${pct}%), ${skipped} skipped`);
 console.log(`  ${tilde(RUNTIME)} ${RUNTIME_VERSION} · ${selected.length} selected from ${files.length} runnable (${excluded} node-internal tests excluded)`);
 console.log(`  quote the all-selected number when comparing runtimes: a skip leaves the ran-only denominator, so it forgives whatever an engine cannot attempt`);
@@ -535,7 +551,7 @@ const report = {
   runtime: tilde(RUNTIME),
   runtimeVersion: RUNTIME_VERSION,
   selection: { directory: subDir || null, sample: sampleN, seed: "0x5eed17", available: files.length, excludedNodeInternal: excluded },
-  totals: { pass, fail, skipped, ran, total: rows.length },
+  totals: { pass, fail, skipped, ran, total: rows.length, crashes },
   areas: areaRows,
 };
 writeFileSync(jsonPath, JSON.stringify(report, null, 2) + "\n");

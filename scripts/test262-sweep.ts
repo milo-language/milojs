@@ -178,7 +178,16 @@ function runOne(file: string): { res: Res; why: string } {
   try {
     out = execFileSync(ENGINE, [casePath], { encoding: "utf-8", timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] });
   } catch (e: any) {
-    out = (e.stdout ?? "") + (e.stderr ?? "") || `crash(${e.signal ?? e.status})`;
+    // A signal death is a CRASH and is returned as one immediately, ahead of
+    // whatever the case printed on its way down. Ordered the other way — output
+    // first, signal only when the output was empty — a segfault that had managed
+    // one line of stderr was filed under that line, and worse: `exitCode !== 0`
+    // then reads as "the case threw", which is the PASS condition for a negative
+    // test. Crashing scored points.
+    // e.killed distinguishes the sweep's own timeout kill from the engine dying.
+    if (e.signal && !e.killed) { crashes++; return { res: "fail", why: `crash(${e.signal})` }; }
+    if (e.killed) return { res: "fail", why: `timeout(${e.signal ?? "?"})` };
+    out = (e.stdout ?? "") + (e.stderr ?? "") || `exit(${e.status})`;
     exitCode = typeof e.status === "number" ? e.status : 1;
   }
   // "Did the case throw?" has to be answered the same way for EVERY engine, or a
@@ -224,6 +233,10 @@ function isParseFailure(why: string): boolean {
 }
 
 let pass = 0, fail = 0, skip = 0, parseFail = 0;
+// Counted apart from `fail`: a crash is the engine dying on input a user could
+// write, not one more case scoring zero, and averaging it into a four-digit
+// failure count is how it stayed invisible.
+let crashes = 0;
 const areaTotals = new Map<string, { p: number; f: number }>();
 const buckets = new Map<string, string[]>();
 const allFails: { file: string; why: string }[] = [];
@@ -241,6 +254,7 @@ for (const file of files) {
 }
 
 const scored = pass + fail;
+if (crashes > 0) console.log(`\n!! ${crashes} case(s) killed the engine with a signal`);
 console.log(`\ntest262-sweep: ${pass}/${scored} pass (${((pass / scored) * 100).toFixed(1)}%), ${skip} skipped (module/atomics), of ${files.length} sampled${subDir ? " in " + subDir : " across the whole suite"}`);
 console.log(`engine: ${ENGINE}  (default tests run sloppy-only; onlyStrict honored)`);
 if (parseFail > 0) {
@@ -277,7 +291,7 @@ if (jsonPath) {
       limit: Number.isFinite(limit) ? limit : null,
       seed: sampleN ? "0x2f6e2b1" : null,
     },
-    totals: { pass, fail, parseFail, skip, scored, selected: files.length },
+    totals: { pass, fail, parseFail, skip, scored, selected: files.length, crashes },
     areas: [...areaTotals.entries()]
       .map(([area, t]) => ({ area, pass: t.p, fail: t.f, total: t.p + t.f }))
       .sort((a, b) => b.total - a.total || a.area.localeCompare(b.area)),

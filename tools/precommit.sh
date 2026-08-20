@@ -80,6 +80,15 @@ if command -v node >/dev/null 2>&1 && command -v bun >/dev/null 2>&1 && ! node t
     status=1
 fi
 
+# A crash was invisible in all three sweeps for the same reason: they classified
+# a dead child by its OUTPUT and only fell back to the signal when the output was
+# empty. Twenty crash reports in an afternoon moved no conformance number. This
+# drives each sweep against a stub engine that segfaults, over a corpus it
+# synthesizes, so it needs no test suite checked out. Needs bun.
+if command -v node >/dev/null 2>&1 && command -v bun >/dev/null 2>&1 && ! node tools/check-crash-visibility.mjs; then
+    status=1
+fi
+
 # src/engine/unicase.milo is generated from node's ICU and says "do not edit by hand",
 # which was a request until this ran. 0.1s.
 if command -v node >/dev/null 2>&1 && ! node tools/gen-unicase.mjs --check; then

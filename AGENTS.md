@@ -395,6 +395,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/check-gaps.mjs` | re-probes every "known engine limit" in `docs/status.md`; fails when one has been fixed and the bullet is still there |
 | `tools/check-sweeps.mjs` | points each conformance sweep at a missing binary; fails if one scores instead of refusing |
 | `tools/vm-differential.sh` | runs generated programs through the compiled path and the tree-walking evaluator and requires identical output; starts with `fuzz-gen.py --matrix`, the operator x operand cross product |
+| `tools/check-crash-visibility.mjs` | drives each sweep against a stub engine that segfaults; fails unless the report calls it a crash and counts it |
 | `tools/check-gate-teeth.sh` | introduces each gate's own violation and requires it to fail; needs a clean tree, so it runs in CI rather than the hook |
 | `tools/check-docs-exec.mjs` | runs the `<!-- exec -->`-tagged examples in the docs and diffs them against the output the docs claim. Needs built binaries; part of `dev.sh`. |
 | `tools/check-docs.mjs` | doc-meta present, key-files real, AGENTS tables complete, and a staleness ratchet against each doc's key-files |

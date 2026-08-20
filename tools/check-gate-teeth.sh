@@ -134,6 +134,13 @@ else
     skipped=$((skipped + 1))
 fi
 
+# --- sweeps, third defect: a crash classified by what it printed ---
+# No corpus caveat here: check-crash-visibility synthesizes its own, so this
+# probe means the same thing on CI as it does locally.
+teeth "check-crash-visibility" scripts/node-compat-sweep.ts \
+    "perl -pi -e 's/const why = signal \?/const why = false ?/' scripts/node-compat-sweep.ts" \
+    "node tools/check-crash-visibility.mjs"
+
 # --- sweeps, second defect: a skipped test scored as a pass ---
 # Same corpus caveat as the quickjs case above: without node's test suite the
 # skip probe inside check-sweeps does not run, so removing the detection would

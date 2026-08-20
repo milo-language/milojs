@@ -152,6 +152,9 @@ function isParseFailure(out: string): boolean {
 }
 
 let pass = 0, fail = 0, parseFail = 0;
+// Counted apart from `fail`: a crash is the engine dying on input a user could
+// write, not one more case scoring zero.
+let crashes = 0;
 const buckets = new Map<string, string[]>();
 
 for (const file of files) {
@@ -169,9 +172,19 @@ for (const file of files) {
     } catch (e: any) {
       // an uncaught JS exception exits 1, which lands here — for a negative
       // test that IS the pass condition when the type matches
-      out = (e.stdout ?? "") + (e.stderr ?? "") || `timeout/crash (${e.signal ?? e.status})`;
-      if (want && new RegExp(`^Uncaught .*${want}`, "m").test(out)) ok = true;
-      else if (want) out = `expected uncaught ${want}, got ${out.trim()}`;
+      //
+      // A signal death is a CRASH and short-circuits that: it is classified
+      // before the output is looked at. Ordered the other way, a segfault that
+      // had printed one line went into the bucket for that line, and a segfault
+      // during a NEGATIVE test could even satisfy the "did it throw" condition.
+      // e.killed separates the sweep's own timeout kill from the engine dying.
+      if (e.signal && !e.killed) { crashes++; out = `crash(${e.signal})`; ok = false; }
+      else if (e.killed) { out = `timeout(${e.signal ?? "?"})`; ok = false; }
+      else {
+        out = (e.stdout ?? "") + (e.stderr ?? "") || `exit(${e.status})`;
+        if (want && new RegExp(`^Uncaught .*${want}`, "m").test(out)) ok = true;
+        else if (want) out = `expected uncaught ${want}, got ${out.trim()}`;
+      }
     }
     if (ok) pass++;
     else {
@@ -184,6 +197,7 @@ for (const file of files) {
 }
 
 const total = pass + fail + parseFail;
+if (crashes > 0) console.log(`\n!! ${crashes} case(s) killed the engine with a signal`);
 console.log(`quickjs-sweep: ${pass}/${total} cases pass (${((pass / total) * 100).toFixed(1)}%) across ${files.length} files`);
 if (parseFail > 0) {
   const ran = pass + fail;
@@ -208,7 +222,7 @@ if (jsonPath) {
     milojs: selfRevision(),
     engine: tilde(ENGINE),
     selection: { filter, skippedFiles: [...SKIP_FILES].sort() },
-    totals: { pass, fail, parseFail, total, ran: pass + fail, files: files.length },
+    totals: { pass, fail, parseFail, total, ran: pass + fail, files: files.length, crashes },
     failureBuckets: ranked.map(([reason, cases]) => ({ reason, count: cases.length, cases })),
   };
   mkdirSync(jsonPath.replace(/\/[^/]+$/, ""), { recursive: true });
