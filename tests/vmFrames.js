@@ -20,15 +20,24 @@ function setH() { h = 42; return 0; }
 function readAfter() { setH(); return h; }
 console.log("reseed:", readAfter());
 
-// ordinary recursion, and deeper than one native frame per JS frame allows.
-// The depth stops at 1000 because this fixture has to answer the same under
-// MILOJS_NO_BYTECODE=1, where the tree walker runs out of native stack at ~1800
-// (the compiled path reaches 10000, which is the depth COUNTER, and
-// tests/deepRecursion.js is where that ceiling is asserted).
+// ordinary recursion, deep enough that a callee returning into its caller is
+// exercised many times over.
+//
+// The depth has to answer the same under MILOJS_NO_BYTECODE=1, where the tree
+// walker recurses natively — and how deep THAT gets is a property of the
+// machine, not of the engine: callGuardTripped trips on stackHeadroom(), so the
+// limit moves with the stack size and the frame size. 1000 cleared a mac and
+// not a CI runner, which is a fixture that cannot pass rather than a bug it
+// caught. 200 is chosen to clear the SMALLEST stack in CI with room to spare.
+//
+// No exact depth belongs here anyway. How deep recursion can go is asserted in
+// tests/deepRecursion.js, which does it the way this class of thing has to be
+// done: as a property that holds on any stack size ("past 1000 frames: true"),
+// never as a number.
 function fact(n) { if (n < 2) { return 1; } return n * fact(n - 1); }
 console.log("fact:", fact(10));
 function count(n) { if (n === 0) { return 0; } return 1 + count(n - 1); }
-console.log("deep:", count(1000));
+console.log("deep:", count(200));
 
 // a throw from a compiled callee keeps the writes it made before throwing, and
 // does NOT resurrect the caller's pre-call snapshot of the same name

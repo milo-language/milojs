@@ -3,7 +3,7 @@ system: conformance-reports
 purpose: reproducible procedure and format for the checked-in test262, QuickJS and Node sweep evidence
 key-files: scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, scripts/node-compat-sweep.ts, docs/status.md
 update-when: report flags, schema, corpus policy, or score publication policy changes
-last-verified: 2026-08-19 (re-read after gen-node-compat learned to print what differs on a stale table; the documented commands and publication rule are unchanged)
+last-verified: 2026-08-19 (re-read after the sweep report began stamping its own commit date, so the generated table no longer depends on git history depth; the documented commands and the publication rule are unchanged)
 -->
 
 # conformance reports
