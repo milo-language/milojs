@@ -124,6 +124,15 @@ jobs:
       - name: generated sources match their generators
         run: node tools/gen-unicase.mjs --check
 
+      # lib/os-constants.js is harvested from node per platform, and this job is
+      # the LINUX half of that: it re-derives errno, signals, fs and OpenSSL from
+      # the node it just installed and fails if the committed linux table drifted.
+      # The hook does the darwin half. Neither can verify the other's, which is
+      # the whole reason both tables are committed rather than one being assumed
+      # portable -- EAGAIN is 35 on darwin and 11 here.
+      - name: the linux constant table still matches node
+        run: node tools/gen-os-constants.mjs --check
+
       # src/engine/uniprops.txt (RegExp \p{...}) is generated from the same ICU, but its
       # property SPELLINGS are harvested from the test262 corpus, which CI does
       # not check out. Verifying the stamp is the half that needs no corpus: it

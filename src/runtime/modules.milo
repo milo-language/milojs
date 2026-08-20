@@ -162,7 +162,13 @@ fn builtinSource(name: &string): string {
         return @embedFile("../../lib/stream.js")
     }
     if name == "constants" {
-        return @embedFile("../../lib/os.js")
+        return @embedFile("../../lib/constants.js")
+    }
+    // The generated per-platform POSIX/OpenSSL tables. Internal: node has no
+    // such module, and os/fs/crypto/constants all read their tables from it so
+    // there is ONE harvested copy rather than four transcribed ones.
+    if name == "_osconstants" {
+        return @embedFile("../../lib/os-constants.js")
     }
     if name == "console" {
         return @embedFile("../../lib/console.js")

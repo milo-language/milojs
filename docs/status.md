@@ -61,7 +61,7 @@ semantics. QuickJS parse gaps: <!--fact:qjs-parsefail-->0<!--/fact-->.
 
 **[docs/node-compat.md](node-compat.md)**: generated, one row per module,
 banded on that module's node test pass rate, with the export diff beside it as
-the worklist. <!--fact:node-modules-shimmed-->52<!--/fact--> modules shimmed. That
+the worklist. <!--fact:node-modules-shimmed-->54<!--/fact--> modules shimmed. That
 file is the table and nothing else; the whole-suite totals and the peer
 comparison are in the evidence table at the top of this page, which gen-facts.mjs
 keeps in step with the reports.
@@ -71,7 +71,7 @@ keeps in step with the reports.
 | set | count |
 |---|---:|
 | engine (`tests/*.js`) | <!--fact:fixtures-engine-->269<!--/fact--> |
-| runtime (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->62<!--/fact--> |
+| runtime (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->63<!--/fact--> |
 | Milo invariants | <!--fact:fixtures-milo-->3<!--/fact--> + <!--fact:fixtures-milo-errors-->8<!--/fact--> |
 | node-oracle exemptions | <!--fact:fixtures-node-exempt-->7<!--/fact--> |
 
@@ -80,7 +80,7 @@ conformance percentages.
 
 ## Size
 
-<!--fact:loc-milo-->48.1k<!--/fact--> lines of Milo, <!--fact:loc-js-->17.2k<!--/fact--> of JavaScript, <!--fact:loc-total-->65.3k<!--/fact--> total. No V8,
+<!--fact:loc-milo-->48.1k<!--/fact--> lines of Milo, <!--fact:loc-js-->18.2k<!--/fact--> of JavaScript, <!--fact:loc-total-->66.3k<!--/fact--> total. No V8,
 JavaScriptCore, or C JavaScript engine underneath. Layering: <!--fact:layering-exempt-edges-->4<!--/fact--> registered
 engine to runtime edges, <!--fact:layering-host-globals-->0<!--/fact--> host natives in the engine bootstrap.
 Node-API entry points: <!--fact:napi-entry-points-->84<!--/fact-->, ten of them stubs.

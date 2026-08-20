@@ -119,6 +119,12 @@ fi
 
 # src/engine/unicase.milo is generated from node's ICU and says "do not edit by hand",
 # which was a request until this ran. 0.1s.
+# The POSIX/OpenSSL constant tables, against the node on THIS machine. Catches
+# the darwin half drifting; CI runs the same check on linux for the other half.
+if command -v node >/dev/null 2>&1 && ! node tools/gen-os-constants.mjs --check; then
+    status=1
+fi
+
 if command -v node >/dev/null 2>&1 && ! node tools/gen-unicase.mjs --check; then
     status=1
 fi

@@ -205,6 +205,11 @@ teeth "check-ci-covers-hook" .github/workflows/ci.yml \
     "perl -0pi -e 's/\n *node tools\\/check-defect-budget\\.mjs//' .github/workflows/ci.yml" \
     "node tools/check-ci-covers-hook.mjs"
 
+# --- the harvested constant tables: a value edited by hand must not survive.
+teeth "gen-os-constants --check" docs/conformance/os-constants.json \
+    "perl -0pi -e 's/\"EAGAIN\": \\d+/\"EAGAIN\": 4242/' docs/conformance/os-constants.json" \
+    "node tools/gen-os-constants.mjs --check"
+
 # --- the node-compat table: every cell is derived from the sweep report, so a
 # hand edit to the report must make the committed doc go stale.
 # Needs a runtime because gen-node-compat probes one for the export diff; without

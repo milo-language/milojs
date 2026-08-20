@@ -173,9 +173,26 @@ const areaByName = new Map((report?.areas ?? []).map((a) => [a.area, a]));
 // linux, so a table generated on a mac can never match a --check run in CI.
 //
 // Registered, not silently dropped: each entry names why it is not comparable.
+// Names whose PRESENCE depends on the platform, excluded from both sides of the
+// diff. Without this the generated table differs between a darwin run and a
+// linux one, so the doc can only be in step with one of them and CI's --check
+// fails on whichever it is not.
 const PLATFORM_GATED = {
   // node: `lchmod: constants.O_SYMLINK !== undefined ? lchmod : undefined`
   fs: ["lchmod", "lchmodSync"],
+  // node:constants IS the platform difference: O_SYMLINK and SIGINFO are darwin,
+  // O_DIRECT / O_NOATIME / RTLD_DEEPBIND / SIGPOLL / SIGPWR / SIGSTKFLT are
+  // linux. Derived from the harvested tables rather than typed, so a node
+  // upgrade that adds a platform-only constant does not need this list edited.
+  constants: (() => {
+    const f = join(ROOT, "docs/conformance/os-constants.json");
+    if (!existsSync(f)) return [];
+    const p = JSON.parse(readFileSync(f, "utf-8")).platforms ?? {};
+    const sets = Object.values(p).map((t) => new Set(Object.keys(t.legacy ?? {})));
+    if (sets.length < 2) return [];
+    const all = new Set(sets.flatMap((s) => [...s]));
+    return [...all].filter((k) => !sets.every((s) => s.has(k))).sort();
+  })(),
 };
 
 const rows = [];
