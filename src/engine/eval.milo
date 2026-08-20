@@ -16491,6 +16491,14 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             return Flow.Normal
         }
         Stmt.ForOf(name, objExpr, body, isForAwait, bindKind) => {
+            // COPY the binding name out of the AST before running anything. The
+            // loop body can `require` (or otherwise parse) new source, which
+            // appends to the global program store; the append can move the
+            // storage this `name` still points into, and the reference then reads
+            // whatever is there now. Observed as a binding whose name silently
+            // became the empty string, so the loop variable stopped resolving
+            // ("ReferenceError: n is not defined") after ~50 modules had loaded.
+            let bindName = name.clone()
             let ov = evalExpr(prog, objExpr, st, scope)
             // the snapshot's element handles are only kept alive by the source
             // object, so it must stay rooted for the whole loop. `holder` keeps
@@ -16624,12 +16632,12 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                                 bound = awaitValue(prog, cloneValue(bound), st)
                             }
                             if bindKind >= 2 {
-                                scopeDefine(st, iterScope, name.clone(), bound)
+                                scopeDefine(st, iterScope, bindName.clone(), bound)
                                 if bindKind == 3 {
-                                    registerUsing(prog, st, iterScope, name)
+                                    registerUsing(prog, st, iterScope, bindName)
                                 }
                             } else {
-                                scopeAssign(st, scope, name, bound)
+                                scopeAssign(st, scope, bindName, bound)
                             }
                             let flow = execStmt(prog, body, st, iterScope)
                             // `for (using x of it)` disposes at the END of each
@@ -16776,12 +16784,12 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                     eagerBound = awaitValue(prog, cloneValue(eagerBound), st)
                 }
                 if bindKind >= 2 {
-                    scopeDefine(st, iterScope, name.clone(), eagerBound)
+                    scopeDefine(st, iterScope, bindName.clone(), eagerBound)
                     if bindKind == 3 {
-                        registerUsing(prog, st, iterScope, name)
+                        registerUsing(prog, st, iterScope, bindName)
                     }
                 } else {
-                    scopeAssign(st, scope, name, eagerBound)
+                    scopeAssign(st, scope, bindName, eagerBound)
                 }
                 let flow = execStmt(prog, body, st, iterScope)
                 runDisposals(prog, st, iterScope)
@@ -16824,6 +16832,10 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             return Flow.Normal
         }
         Stmt.ForIn(name, objExpr, body, bindKind) => {
+            // Copied before the body runs, for the reason spelled out in ForOf:
+            // a body that parses new source can move the storage this name points
+            // into, and the binding then gets whatever is there now.
+            let bindName = name.clone()
             let ov = evalExpr(prog, objExpr, st, scope)
             var keys: Vec<string> = Vec.new()
             if let JSValue.Obj(o) = ov {
@@ -16897,9 +16909,9 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 // binding in the enclosing scope, which is what makes the variable
                 // still hold the last key after the loop.
                 if bindKind == 2 {
-                    scopeDefine(st, iterScope, name.clone(), JSValue.Str(keys[i].clone()))
+                    scopeDefine(st, iterScope, bindName.clone(), JSValue.Str(keys[i].clone()))
                 } else {
-                    scopeAssign(st, scope, name, JSValue.Str(keys[i].clone()))
+                    scopeAssign(st, scope, bindName, JSValue.Str(keys[i].clone()))
                 }
                 let flow = execStmt(prog, body, st, iterScope)
                 runDisposals(prog, st, iterScope)
