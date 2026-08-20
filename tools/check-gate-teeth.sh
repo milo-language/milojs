@@ -141,6 +141,17 @@ teeth "check-crash-visibility" scripts/node-compat-sweep.ts \
     "perl -pi -e 's/const why = signal \?/const why = false ?/' scripts/node-compat-sweep.ts" \
     "node tools/check-crash-visibility.mjs"
 
+# --- exit codes: the parser's error flag dropped on the floor again ---
+# Needs the runtime binary, which the probe rebuilds through tools/dev.sh.
+if [ -x .dev/mj-runtime ]; then
+    teeth "check-exit-codes" src/milojs.milo \
+        "perl -0pi -e 's/    if gInterp\.parseFailed \{\n        return 1\n    \}\n//' src/milojs.milo && tools/dev.sh --rebuild zzz >/dev/null 2>&1" \
+        "node tools/check-exit-codes.mjs"
+else
+    echo "check-gate-teeth: no .dev/mj-runtime, check-exit-codes not probed" >&2
+    skipped=$((skipped + 1))
+fi
+
 # --- ast refs: a guarded binding name goes back to the raw AST reference ---
 teeth "check-ast-refs" src/engine/eval.milo \
     "perl -pi -e 's/scopeDefine\(st, iterScope, bindName\.clone\(\), eagerBound\)/scopeDefine(st, iterScope, name.clone(), eagerBound)/' src/engine/eval.milo" \

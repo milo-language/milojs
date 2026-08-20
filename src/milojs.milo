@@ -367,6 +367,12 @@ fn main(): i32 {
         hoistBlock(gProg, gInterp.modBlocks[preludeIdx], gInterp, 0)
         execBlock(gProg, gInterp.modBlocks[preludeIdx], gInterp, 0)
     }
+    // Node runs NOTHING when the source will not parse, and exits 1. Running the
+    // partial block the parser managed to build would execute half a program and
+    // then report success.
+    if gInterp.parseFailed {
+        return 1
+    }
     let interpTask = Task.spawnWithStack(move(): void => {
         // this task runs the event loop, so it never parks on an await
         gInterp.mainTask = schedulerCurrent()
@@ -392,6 +398,22 @@ fn main(): i32 {
     if gInterp.throwing {
         eprint("Uncaught " + describeThrown(gInterp, gInterp.thrownValue))
         return 1
+    }
+    // A rejection nothing handled is fatal in node, and was already being printed
+    // here — only the status said otherwise.
+    if gInterp.hadUnhandledRejection {
+        return 1
+    }
+    // `process.exitCode = N` sets the status of an OTHERWISE clean exit. Programs
+    // use it to fail without cutting the event loop short the way process.exit()
+    // does, so ignoring it turned a deliberate failure into a success.
+    if let Option.Some(pv) = scopeTryLookup(gInterp, 0, "process") {
+        if let JSValue.Obj(ph) = pv {
+            let ec = getMember(gInterp, ph, "exitCode")
+            if let JSValue.Number(n) = ec {
+                return n as i32
+            }
+        }
     }
     return 0
 }

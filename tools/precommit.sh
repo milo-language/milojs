@@ -102,6 +102,13 @@ if command -v node >/dev/null 2>&1 && ! node tools/check-ast-refs.mjs; then
     status=1
 fi
 
+# The exit status, differential against node. The sweep scores a case by its exit
+# code, so a runtime that exits 0 after failing to parse gets credited for files
+# it never ran. Needs the runtime binary and node.
+if command -v node >/dev/null 2>&1 && [ -x .dev/mj-runtime ] && ! node tools/check-exit-codes.mjs; then
+    status=1
+fi
+
 # src/engine/unicase.milo is generated from node's ICU and says "do not edit by hand",
 # which was a request until this ran. 0.1s.
 if command -v node >/dev/null 2>&1 && ! node tools/gen-unicase.mjs --check; then

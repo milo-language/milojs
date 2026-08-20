@@ -396,6 +396,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/check-sweeps.mjs` | points each conformance sweep at a missing binary; fails if one scores instead of refusing |
 | `tools/vm-differential.sh` | runs generated programs through the compiled path and the tree-walking evaluator and requires identical output; starts with `fuzz-gen.py --matrix`, the operator x operand cross product |
 | `tools/check-crash-visibility.mjs` | drives each sweep against a stub engine that segfaults; fails unless the report calls it a crash and counts it |
+| `tools/check-exit-codes.mjs` | exit status for 9 program shapes, differential against node; a wrong 0 is a case the sweep scores as a pass |
 | `tools/check-ast-refs.mjs` | finds AST strings used after the interpreter re-enters (a require can move the store); baseline may only shrink |
 | `tools/check-crash-budget.mjs` | ratchets the per-suite count of cases that kill the runtime with a signal; only allowed to go down |
 | `tools/check-gate-teeth.sh` | introduces each gate's own violation and requires it to fail; needs a clean tree, so it runs in CI rather than the hook |

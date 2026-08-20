@@ -13481,6 +13481,7 @@ fn reportUnhandledRejections(st: &mut Interp) {
         if isPromise(st, p) && st.objects[p].promiseState == 2 {
             let v = cloneValue(st.objExtras[st.objects[p].extra].promiseValue)
             eprint("Unhandled promise rejection: " + describeThrownValue(st, v))
+            st.hadUnhandledRejection = true
         }
         i = i + 1
     }

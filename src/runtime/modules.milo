@@ -764,6 +764,9 @@ fn loadGraphFrom(entryKey: string, prog: &mut Prog, st: &mut Interp): i64 {
                 toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: bStrict
             }
             let btop = parseProgram(bp, prog)
+            if bp.errored {
+                st.parseFailed = true
+            }
             st.modPaths.push(path.clone())
             st.modBlocks.push(btop)
             st.modStrict.push(bStrict)
@@ -810,6 +813,9 @@ fn loadGraphFrom(entryKey: string, prog: &mut Prog, st: &mut Interp): i64 {
                         toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: fStrict
                     }
                     let top = parseProgram(p, prog)
+                    if p.errored {
+                        st.parseFailed = true
+                    }
                     st.modPaths.push(path.clone())
                     st.modBlocks.push(top)
                     st.modStrict.push(fStrict)
