@@ -1,0 +1,6 @@
+--- callback arguments
+nextTick: 1 two
+setImmediate: 42 setTimeout: 7
+--- write errors
+sync  cb true error true
+async cb true error true

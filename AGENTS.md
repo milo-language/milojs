@@ -154,6 +154,30 @@ Neither of us was wrong about the code. We were wrong about what was still
 running. Before believing a number that moved without a code change, check
 `uptime` and look for strays.
 
+## A green suite is not evidence that a runtime change helped
+
+`tools/dev.sh` passing means the fixtures still pass. It does not mean the node
+corpus agrees. A Readable pull implementation landed here on a green suite and
+cost 10 cases — it generated without backpressure, which no fixture covered,
+and two cases went to 1.7 GB. A 500-case `--sample` A/B could not see it either:
+15% of the corpus cannot resolve a 10-case delta.
+
+So for any change to the runtime or the engine, A/B the WHOLE corpus before
+landing, keeping both binaries at fixed paths:
+
+```sh
+cp .dev/mj-runtime /tmp/cand              # after building the change
+git stash && tools/dev.sh --rebuild zzz && cp .dev/mj-runtime /tmp/base && git stash pop
+for b in base cand; do
+  MILOJS_RUNTIME=/tmp/$b tools/guard.sh bun scripts/node-compat-sweep.ts \
+    --json /tmp/$b.json --fails /tmp/$b.jsonl
+done
+```
+
+Compare `totals.pass` and diff the two `.jsonl` files by FILE, not by reason:
+reasons carry ports, timestamps and memory figures that differ every run, so 33
+of them "changed" in a run where nothing actually moved.
+
 ## The fork bomb that took the machine down
 
 ```sh
