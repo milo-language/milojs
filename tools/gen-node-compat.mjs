@@ -426,6 +426,19 @@ if (check) {
   const current = existsSync(OUT) ? readFileSync(OUT, "utf-8") : "";
   if (current !== text) {
     console.error("gen-node-compat: docs/node-compat.md is stale — run `node tools/gen-node-compat.mjs`");
+    // Say WHAT differs. "Stale" alone costs a push-and-wait round trip per
+    // guess when the difference only appears on another platform, which is
+    // exactly when this gate is hardest to satisfy and most worth reading.
+    const a = current.split("\n"), b = text.split("\n");
+    let shown = 0;
+    for (let i = 0; i < Math.max(a.length, b.length) && shown < 5; i++) {
+      if (a[i] !== b[i]) {
+        console.error(`  line ${i + 1}:`);
+        console.error(`    committed: ${a[i] ?? "(absent)"}`);
+        console.error(`    generated: ${b[i] ?? "(absent)"}`);
+        shown++;
+      }
+    }
     process.exit(1);
   }
   console.log(`gen-node-compat: ${rows.length} modules checked, table matches the tree`);
