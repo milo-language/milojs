@@ -538,6 +538,11 @@ if (verbose) {
 // count.
 const crashes = rows.filter((r) => r.why.startsWith("crash(")).length;
 const parseFailures = rows.filter((r) => r.why.startsWith("parse: ")).length;
+// A timeout here is a HANG, not slowness: sampled cases sat past 45s with the
+// per-case limit at 10s. Counted apart from `fail` for the same reason crashes
+// are — a runtime that never returns is a different defect from one that returns
+// the wrong answer, and averaged in it is invisible.
+const timeouts = rows.filter((r) => r.why === "timeout").length;
 if (parseFailures > 0) {
   console.log(`\n${parseFailures} case(s) never RAN: the parser could not read the source.`);
   console.log("  A parse gap is one missing syntax feature taking a whole file with it, not N separate bugs.");
@@ -564,7 +569,7 @@ const report = {
   runtime: tilde(RUNTIME),
   runtimeVersion: RUNTIME_VERSION,
   selection: { directory: subDir || null, sample: sampleN, seed: "0x5eed17", available: files.length, excludedNodeInternal: excluded },
-  totals: { pass, fail, skipped, ran, total: rows.length, crashes, parseFailures },
+  totals: { pass, fail, skipped, ran, total: rows.length, crashes, parseFailures, timeouts },
   areas: areaRows,
 };
 writeFileSync(jsonPath, JSON.stringify(report, null, 2) + "\n");
