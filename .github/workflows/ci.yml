@@ -124,14 +124,8 @@ jobs:
       - name: generated sources match their generators
         run: node tools/gen-unicase.mjs --check
 
-      # lib/os-constants.js is harvested from node per platform, and this job is
-      # the LINUX half of that: it re-derives errno, signals, fs and OpenSSL from
-      # the node it just installed and fails if the committed linux table drifted.
-      # The hook does the darwin half. Neither can verify the other's, which is
-      # the whole reason both tables are committed rather than one being assumed
-      # portable -- EAGAIN is 35 on darwin and 11 here.
-      - name: the linux constant table still matches node
-        run: node tools/gen-os-constants.mjs --check
+      # lib/os-constants.js is gated by the `constants` job below, once per
+      # release target, because this job only ever sees linux-x64.
 
       # src/engine/uniprops.txt (RegExp \p{...}) is generated from the same ICU, but its
       # property SPELLINGS are harvested from the test262 corpus, which CI does
@@ -289,6 +283,63 @@ jobs:
       # reach the network.
       - name: package suites
         run: MILOJS_RUNTIME_BIN=/tmp/milojs ./tools/check-packages.sh
+
+  # lib/os-constants.js is harvested from node, and the numbers are per
+  # platform AND per arch: EAGAIN is 35 on darwin and 11 on linux, and on linux
+  # O_DIRECT is 0o40000 on x86_64 but 0o200000 on aarch64. A table harvested in
+  # an arm64 container, filed under "linux", shipped aarch64's O_* flags to
+  # every x86_64 user until this job existed.
+  #
+  # So the gate runs once per RELEASE TARGET, on a runner that really is that
+  # target: nothing here can verify another target's table, which is the whole
+  # reason all three are committed rather than one being assumed portable.
+  constants:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: ubuntu-22.04-arm
+            target: linux-arm64
+          - os: macos-latest
+            target: darwin-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned for the same reason the test job pins it: node IS the oracle, and
+      # a runner image bumping its default would rewrite these tables silently.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '25.3.0'
+
+      # Without this, a runner image whose arch changed would quietly point two
+      # matrix entries at the same table and report full coverage for a target
+      # nothing checked -- the exact failure mode that shipped the arm64 numbers.
+      - name: this runner really is ${{ matrix.target }}
+        run: |
+          T="$(node -p 'process.platform + "-" + process.arch')"
+          if [ "$T" != "${{ matrix.target }}" ]; then
+            echo "runner is $T, matrix entry claims ${{ matrix.target }}"
+            exit 1
+          fi
+
+      - name: the ${{ matrix.target }} constant table still matches node
+        run: node tools/gen-os-constants.mjs --check
+
+      # A failure on a target the developer cannot boot is only actionable if it
+      # hands back the real table, so re-harvesting is `gh run download` plus
+      # `node tools/gen-os-constants.mjs --merge <file>`.
+      - name: harvest this target for re-merge
+        if: failure()
+        run: node tools/gen-os-constants.mjs --emit > os-constants-${{ matrix.target }}.json
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: os-constants-${{ matrix.target }}
+          path: os-constants-${{ matrix.target }}.json
 
   # The embedding story (build-lib -> libmilojs.a/.h -> compile & run the C
   # example) is the one path users hit on both platforms, so it gets its own
