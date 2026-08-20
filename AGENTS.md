@@ -460,6 +460,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/gen-facts.mjs` | compiles the numbers prose quotes (line counts, fixture counts, entry points) into `<!--fact:...-->` spans. `--check` gates, `--list` prints them all. |
 | `tools/gen-node-compat.mjs` | writes `docs/node-compat.md`: the sweep's per-area pass rate per module (which is what the colour bands), joined with an export diff against a committed snapshot of what node exports (which is the worklist). `--check` gates; `--refresh` re-records the snapshot. |
 | `tools/fuzz.sh` | crash fuzzer over the memory-managed core: random allocating programs under `MILOJS_GC_THRESHOLD=1` (see the growth note above: that is a mild setting, not every-allocation), compared to node on the SHAPE of the outcome (crash/hang, over-accept, over-reject) and never on output text. `tools/fuzz.sh [first] [last]`; flagged seeds are saved to `/tmp/fuzz-seed-<n>.js`. Not in CI: it is a sweep, not a gate. |
+| `tools/check-ci-covers-hook.mjs` | requires every gate `tools/precommit.sh` runs to appear in `.github/workflows/ci.yml`; the hook is opt-in and CI is not |
 | `tools/precommit.sh` | every cheap gate below, in one command. See "Wiring the hook". |
 
 Build more of these. If you find yourself running the same multi-step incantation

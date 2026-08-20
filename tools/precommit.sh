@@ -137,6 +137,12 @@ if command -v node >/dev/null 2>&1 && ! node tools/check-docs.mjs; then
     status=1
 fi
 
+# The hook is opt-in and CI is not, so a gate that runs only here is a gate a
+# fresh clone can push past. This is what keeps that from happening quietly.
+if command -v node >/dev/null 2>&1 && ! node tools/check-ci-covers-hook.mjs; then
+    status=1
+fi
+
 # The README's SHAPE: allowed sections, in order, each within a prose budget.
 # Explanations accrete there faster than anywhere else — every measurement wants
 # a paragraph justifying itself — and the four things a reader came for get

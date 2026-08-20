@@ -145,6 +145,34 @@ jobs:
       - name: prose facts match the tree
         run: node tools/gen-facts.mjs --check
 
+      # ...and this is what stops the next gate from being hook-only. The hook
+      # is opt-in; CI is not.
+      - name: every hook gate also runs here
+        run: node tools/check-ci-covers-hook.mjs
+
+      # Seven gates lived only in the pre-commit hook, which is a local file
+      # nobody's clone has by default. That is how docs/conformance/node-compat.json
+      # sat with 164 hangs against a 162 ceiling from f11041c to HEAD while every
+      # CI run was green: the ratchet existed, ran nowhere CI could see, and the
+      # commit that broke it was made with --no-verify. These need no binaries
+      # and no corpus, only the committed reports, so they run before the build.
+      - name: defect ratchets hold
+        run: |
+          node tools/check-defect-budget.mjs
+          node tools/check-bench-budget.mjs
+
+      - name: generated builtin list and AST-reference baseline hold
+        run: |
+          node tools/gen-builtins.mjs --check
+          node tools/check-ast-refs.mjs
+
+      # Both need bun (already on this runner) and neither needs a corpus: the
+      # corpus-dependent half of each prints its own skip line.
+      - name: sweeps refuse to score without a binary, and can see a crash
+        run: |
+          node tools/check-sweeps.mjs
+          node tools/check-crash-visibility.mjs
+
       # The other half of the differential contract. tests/run.sh proves milojs
       # matches the .expected files; this proves the .expected files are what
       # node actually prints. Without it "node is the oracle" is honor-system,
@@ -178,6 +206,12 @@ jobs:
       # with the source.
       - name: js fixtures
         run: MILOJS_ENGINE_BIN=/tmp/milojs-engine MILOJS_RUNTIME_BIN=/tmp/milojs ./tests/run.sh
+
+      # The other two hook-only gates, which do need the binaries above.
+      - name: documented limits are still real, exit codes still match node
+        run: |
+          node tools/check-gaps.mjs --engine /tmp/milojs-engine
+          MILOJS_RUNTIME=/tmp/milojs node tools/check-exit-codes.mjs
 
       - name: Node compatibility table is derived, not typed
         run: MILOJS_RUNTIME=/tmp/milojs node tools/gen-node-compat.mjs --check

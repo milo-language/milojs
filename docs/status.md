@@ -3,7 +3,7 @@ system: status
 purpose: current conformance numbers, product gate state, and what is next
 key-files: docs/conformance/node-compat.json, docs/node-compat.md, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, scripts/node-compat-sweep.ts
 update-when: a sweep is rerun or a product gate changes state
-last-verified: 2026-08-19 (re-read after the sweep report began stamping its own commit date, so the generated table no longer depends on git history depth; the documented commands and the publication rule are unchanged)
+last-verified: 2026-08-20 (node-compat.md is the table alone now, so the whole-suite totals and the peer comparison are cited here rather than there)
 -->
 
 # milojs status

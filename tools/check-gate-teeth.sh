@@ -198,6 +198,13 @@ teeth "check-ast-refs" src/engine/eval.milo \
     "perl -pi -e 's/scopeDefine\(st, iterScope, bindName\.clone\(\), eagerBound\)/scopeDefine(st, iterScope, name.clone(), eagerBound)/' src/engine/eval.milo" \
     "node tools/check-ast-refs.mjs"
 
+# --- a gate that runs only in the hook: drop a CI step and the coverage check
+# must notice. Mutating the WORKFLOW rather than the hook on purpose, since
+# that is the direction the coverage actually rots in.
+teeth "check-ci-covers-hook" .github/workflows/ci.yml \
+    "perl -0pi -e 's/\n *node tools\\/check-defect-budget\\.mjs//' .github/workflows/ci.yml" \
+    "node tools/check-ci-covers-hook.mjs"
+
 # --- the node-compat table: every cell is derived from the sweep report, so a
 # hand edit to the report must make the committed doc go stale.
 # Needs a runtime because gen-node-compat probes one for the export diff; without
