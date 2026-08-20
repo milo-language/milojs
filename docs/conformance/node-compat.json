@@ -6,10 +6,11 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "f13cef810516aca28182e02fed226653e5692e62",
+    "revision": "3a39c5a08ee6eab8f6e524e6a79a715d2dd76dc4",
     "dirty": false
   },
   "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
+  "runtimeVersion": "milojs 0.1.0 (dev c1e7bea)",
   "selection": {
     "directory": null,
     "sample": null,
@@ -18,24 +19,25 @@
     "excludedNodeInternal": 606
   },
   "totals": {
-    "pass": 790,
-    "fail": 1647,
+    "pass": 808,
+    "fail": 1629,
     "skipped": 936,
     "ran": 2437,
-    "total": 3373
+    "total": 3373,
+    "crashes": 2
   },
   "areas": [
     {
       "area": "http",
-      "pass": 81,
-      "fail": 290,
+      "pass": 86,
+      "fail": 285,
       "skipped": 6,
       "total": 377
     },
     {
       "area": "fs",
-      "pass": 78,
-      "fail": 141,
+      "pass": 87,
+      "fail": 132,
       "skipped": 8,
       "total": 227
     },
@@ -159,13 +161,6 @@
       "total": 48
     },
     {
-      "area": "domain",
-      "pass": 26,
-      "fail": 20,
-      "skipped": 2,
-      "total": 48
-    },
-    {
       "area": "module",
       "pass": 4,
       "fail": 20,
@@ -185,6 +180,13 @@
       "fail": 19,
       "skipped": 0,
       "total": 19
+    },
+    {
+      "area": "domain",
+      "pass": 28,
+      "fail": 18,
+      "skipped": 2,
+      "total": 48
     },
     {
       "area": "event",
@@ -444,13 +446,6 @@
       "fail": 2,
       "skipped": 1,
       "total": 3
-    },
-    {
-      "area": "outgoing",
-      "pass": 0,
-      "fail": 2,
-      "skipped": 0,
-      "total": 2
     },
     {
       "area": "querystring",
@@ -1144,6 +1139,13 @@
       "fail": 0,
       "skipped": 1,
       "total": 1
+    },
+    {
+      "area": "outgoing",
+      "pass": 2,
+      "fail": 0,
+      "skipped": 0,
+      "total": 2
     },
     {
       "area": "performanceobserver",

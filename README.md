@@ -26,7 +26,7 @@ A JavaScript engine and runtime written in the [Milo](https://github.com/milo-la
 
 | suite | score | evidence |
 |---|---|---|
-| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) | <!--fact:node-pct-all-->23.4%<!--/fact--> (<!--fact:node-pass-->790<!--/fact-->/<!--fact:node-total-->3373<!--/fact-->) | [report](docs/conformance/node-compat.json) · [sweep](scripts/node-compat-sweep.ts) |
+| [Node `test/parallel`](https://github.com/nodejs/node/tree/main/test/parallel) | <!--fact:node-pct-all-->24.0%<!--/fact--> (<!--fact:node-pass-->808<!--/fact-->/<!--fact:node-total-->3373<!--/fact-->) | [report](docs/conformance/node-compat.json) · [sweep](scripts/node-compat-sweep.ts) |
 | same corpus, same sweep: <!--fact:node-peer-name-->bun 1.3.10<!--/fact--> | <!--fact:node-peer-pct-all-->40.8%<!--/fact--> (<!--fact:node-peer-pass-->1377<!--/fact-->/<!--fact:node-peer-total-->3373<!--/fact-->) | [report](docs/conformance/node-compat-peer.json) |
 
 Every selected case counts, the <!--fact:node-skipped-->936<!--/fact--> that call `common.skip()` included: drop

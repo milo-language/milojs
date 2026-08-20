@@ -89,6 +89,12 @@ if command -v node >/dev/null 2>&1 && command -v bun >/dev/null 2>&1 && ! node t
     status=1
 fi
 
+# ...and this is the other half: a sweep that CAN see a crash is only useful if
+# the count is held down. Reads the committed report, so it costs nothing.
+if command -v node >/dev/null 2>&1 && ! node tools/check-crash-budget.mjs; then
+    status=1
+fi
+
 # src/engine/unicase.milo is generated from node's ICU and says "do not edit by hand",
 # which was a request until this ran. 0.1s.
 if command -v node >/dev/null 2>&1 && ! node tools/gen-unicase.mjs --check; then

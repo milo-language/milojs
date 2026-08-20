@@ -141,6 +141,11 @@ teeth "check-crash-visibility" scripts/node-compat-sweep.ts \
     "perl -pi -e 's/const why = signal \?/const why = false ?/' scripts/node-compat-sweep.ts" \
     "node tools/check-crash-visibility.mjs"
 
+# --- crash budget: one more case dying on a signal ---
+teeth "check-crash-budget" docs/conformance/node-compat.json \
+    "perl -pi -e 's/\"crashes\": 2/\"crashes\": 3/' docs/conformance/node-compat.json" \
+    "node tools/check-crash-budget.mjs"
+
 # --- sweeps, second defect: a skipped test scored as a pass ---
 # Same corpus caveat as the quickjs case above: without node's test suite the
 # skip probe inside check-sweeps does not run, so removing the detection would

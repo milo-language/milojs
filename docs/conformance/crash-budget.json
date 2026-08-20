@@ -1,0 +1,10 @@
+{
+  "_comment": "Cases that kill the runtime with a signal, per suite, as of the last canonical sweep. A crash is not one more failing case: it is the runtime dying on input a user could write, so this number is ratcheted separately from the pass rate and is only allowed to go DOWN. tools/check-crash-budget.mjs enforces it.",
+  "node-compat": {
+    "budget": 2,
+    "known": [
+      "test-signal-args.js: sends itself SIGINT; milojs has no process.on('SIGINT'), so the default action kills it",
+      "test-signal-handler.js: same, with SIGHUP"
+    ]
+  }
+}
