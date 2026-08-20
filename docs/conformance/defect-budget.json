@@ -3,7 +3,7 @@
   "_directions": "crashes is exact (it must match, in both directions — they are rare and individually known). timeouts and parseFailures are ceilings: they may drop without ceremony, but never rise.",
   "node-compat": {
     "crashes": 2,
-    "timeouts": 163,
+    "timeouts": 162,
     "parseFailures": 5,
     "known": [
       "crash: test-signal-args.js sends itself SIGINT; milojs has no process.on('SIGINT'), so the default action kills it",

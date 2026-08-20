@@ -6,11 +6,11 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "021c0061781f2bd539b1cbefb70c617ddbaa9ff2",
+    "revision": "a182044c7b8f765f18845976e1c5d26835136281",
     "dirty": false
   },
   "runtime": "~/git/milo-language/milojs/.dev/mj-runtime",
-  "runtimeVersion": "milojs 0.1.0 (dev dc5beb6)",
+  "runtimeVersion": "milojs 0.1.0 (dev 72ae740)",
   "selection": {
     "directory": null,
     "sample": null,
@@ -19,14 +19,14 @@
     "excludedNodeInternal": 606
   },
   "totals": {
-    "pass": 571,
-    "fail": 1866,
+    "pass": 581,
+    "fail": 1856,
     "skipped": 936,
     "ran": 2437,
     "total": 3373,
     "crashes": 2,
     "parseFailures": 5,
-    "timeouts": 163
+    "timeouts": 162
   },
   "areas": [
     {
@@ -52,8 +52,8 @@
     },
     {
       "area": "stream",
-      "pass": 50,
-      "fail": 114,
+      "pass": 55,
+      "fail": 109,
       "skipped": 1,
       "total": 165
     },
@@ -205,18 +205,18 @@
       "total": 25
     },
     {
-      "area": "stream2",
-      "pass": 8,
-      "fail": 18,
-      "skipped": 0,
-      "total": 26
-    },
-    {
       "area": "fastutf8stream",
       "pass": 0,
       "fail": 14,
       "skipped": 0,
       "total": 14
+    },
+    {
+      "area": "stream2",
+      "pass": 12,
+      "fail": 14,
+      "skipped": 0,
+      "total": 26
     },
     {
       "area": "util",
@@ -317,18 +317,18 @@
       "total": 9
     },
     {
-      "area": "stdout",
-      "pass": 0,
-      "fail": 7,
-      "skipped": 0,
-      "total": 7
-    },
-    {
       "area": "os",
       "pass": 0,
       "fail": 6,
       "skipped": 0,
       "total": 6
+    },
+    {
+      "area": "stdout",
+      "pass": 1,
+      "fail": 6,
+      "skipped": 0,
+      "total": 7
     },
     {
       "area": "file",

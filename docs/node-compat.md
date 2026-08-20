@@ -3,7 +3,7 @@ system: node-compat
 purpose: per-module Node compatibility, derived from an export diff against node and from the test sweep
 key-files: tools/gen-node-compat.mjs, docs/conformance/node-compat.json, lib/
 update-when: generated; run `node tools/gen-node-compat.mjs`, never edit by hand
-last-verified: 2026-08-19 (generated from the node-compat sweep at 021c0061)
+last-verified: 2026-08-19 (generated from the node-compat sweep at a182044c)
 -->
 
 # Node module compatibility
@@ -40,7 +40,7 @@ Read the two cells against each other only through their skip counts. Where milo
 skipped and the peer did not, milojs's denominator is smaller and its rate is
 flattered; the whole-suite line under the table is the comparable form.
 
-Reference surface: node v25.3.0. Sweep at `021c0061`.
+Reference surface: node v25.3.0. Sweep at `a182044c`.
 
 | | module | tests | bun 1.3.10 | exports | missing exports |
 |---|---|---|---|---|---|
@@ -53,7 +53,7 @@ Reference surface: node v25.3.0. Sweep at `021c0061`.
 | 🟠 | `dgram` | 22/60 37% (+4 skipped) | 47/63 75% (+1 skipped) | 2/2 100% | none |
 | 🟠 | `perf_hooks` | 4/12 33% | 1/12 8% | 11/13 85% | `Performance`, `PerformanceResourceTiming` |
 | 🟠 | `async_hooks` | 15/43 35% (+2 skipped) | 17/45 38% | 5/7 71% | `asyncWrapProviders`, `executionAsyncResource` |
-| 🟠 | `stream` | 50/164 30% (+1 skipped) | 103/165 62% | 8/23 35% | `_isArrayBufferView`, `_isUint8Array`, `_uint8ArrayToBuffer`, `addAbortSignal`, `compose`, `destroy` +9 more |
+| 🟠 | `stream` | 55/164 34% (+1 skipped) | 103/165 62% | 8/23 35% | `_isArrayBufferView`, `_isUint8Array`, `_uint8ArrayToBuffer`, `addAbortSignal`, `compose`, `destroy` +9 more |
 | 🟠 | `domain` | 14/46 30% (+2 skipped) | 2/48 4% | 5/5 100% | none |
 | 🔴 | `url` | 4/14 29% | 2/14 14% | 8/14 57% | `URLPattern`, `domainToASCII`, `domainToUnicode`, `fileURLToPathBuffer`, `resolveObject`, `urlToHttpOptions` |
 | 🔴 | `events` | 1/4 25% | 3/4 75% | 10/17 59% | `EventEmitterAsyncResource`, `captureRejections`, `getMaxListeners`, `init`, `kMaxEventTargetListeners`, `kMaxEventTargetListenersWarned` +1 more |
@@ -88,8 +88,8 @@ Reference surface: node v25.3.0. Sweep at `021c0061`.
 | 🔴 | `trace_events` **(does not load)** | no cases | no cases | 0/2 0% | `createTracing`, `getEnabledCategories` |
 | 🔴 | `wasi` **(does not load)** | no cases | no cases | 0/1 0% | `WASI` |
 
-Across all 43 modules: **470/1948 node cases pass (24%)**, 🟢 0, 🟡 0, 🟠 12, 🔴 26, ⚪ 5. Surface: 466/1056 exports present (44%).
+Across all 43 modules: **475/1948 node cases pass (24%)**, 🟢 0, 🟡 0, 🟠 12, 🔴 26, ⚪ 5. Surface: 466/1056 exports present (44%).
 
-Whole suite, every selected case counted: **571/3373 (17%)**, against bun 1.3.10 at **1377/3373 (41%)**. This is the number to quote. The per-module column above is scored against what RAN, which forgives whatever an engine declines: milojs skips 936 cases and bun skips 145, so the two ran-only rates are not comparable to each other.
+Whole suite, every selected case counted: **581/3373 (17%)**, against bun 1.3.10 at **1377/3373 (41%)**. This is the number to quote. The per-module column above is scored against what RAN, which forgives whatever an engine declines: milojs skips 936 cases and bun skips 145, so the two ran-only rates are not comparable to each other.
 
 Modules that do not load at all: `http2`, `inspector`, `trace_events`, `wasi`.
