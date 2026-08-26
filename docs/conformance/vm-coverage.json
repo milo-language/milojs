@@ -6,23 +6,23 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "2e39d5b0a85ad402f741787a3559a4918c35eb82",
-    "dirty": true
+    "revision": "1d147181ac29b1208265413a5f1bf5947a3f9f4d",
+    "dirty": false
   },
   "totals": {
     "files": 3981,
     "audited": 3978,
     "parseFail": 3,
     "functionBodies": 26108,
-    "compiledBodies": 3620,
-    "pct": 13.9,
+    "compiledBodies": 14003,
+    "pct": 53.6,
     "loops": 501,
-    "compiledLoops": 24
+    "compiledLoops": 243
   },
   "blockers": [
     {
-      "construct": "call-callee:Member",
-      "bodiesBlocked": 15609
+      "construct": "call-arg-capture",
+      "bodiesBlocked": 3611
     },
     {
       "construct": "suspension-body",
@@ -30,118 +30,134 @@
     },
     {
       "construct": "expr:New",
-      "bodiesBlocked": 1018
+      "bodiesBlocked": 1166
     },
     {
       "construct": "expr:BoolLit",
-      "bodiesBlocked": 549
+      "bodiesBlocked": 914
     },
     {
       "construct": "expr:FuncExpr",
-      "bodiesBlocked": 369
+      "bodiesBlocked": 472
     },
     {
       "construct": "stmt:Throw",
-      "bodiesBlocked": 364
+      "bodiesBlocked": 410
     },
     {
       "construct": "expr:ArrLit",
-      "bodiesBlocked": 312
+      "bodiesBlocked": 409
     },
     {
       "construct": "call-magic",
-      "bodiesBlocked": 290
+      "bodiesBlocked": 305
     },
     {
       "construct": "expr:ToStrHole",
-      "bodiesBlocked": 239
+      "bodiesBlocked": 304
     },
     {
       "construct": "un-op:!",
-      "bodiesBlocked": 197
-    },
-    {
-      "construct": "expr:NullLit",
-      "bodiesBlocked": 178
+      "bodiesBlocked": 266
     },
     {
       "construct": "expr:Index",
-      "bodiesBlocked": 166
+      "bodiesBlocked": 257
     },
     {
       "construct": "expr:UndefLit",
-      "bodiesBlocked": 156
+      "bodiesBlocked": 225
+    },
+    {
+      "construct": "expr:NullLit",
+      "bodiesBlocked": 218
     },
     {
       "construct": "bin-op:&&",
-      "bodiesBlocked": 114
+      "bodiesBlocked": 130
     },
     {
       "construct": "call-callee:Index",
-      "bodiesBlocked": 102
+      "bodiesBlocked": 115
     },
     {
       "construct": "expr:Cond",
-      "bodiesBlocked": 97
-    },
-    {
-      "construct": "setmember-computed",
-      "bodiesBlocked": 78
-    },
-    {
-      "construct": "stmt:ForOf",
-      "bodiesBlocked": 73
-    },
-    {
-      "construct": "bin-op:instanceof",
-      "bodiesBlocked": 62
-    },
-    {
-      "construct": "stmt:FuncDecl",
-      "bodiesBlocked": 58
+      "bodiesBlocked": 112
     },
     {
       "construct": "stmt:For",
-      "bodiesBlocked": 55
+      "bodiesBlocked": 107
+    },
+    {
+      "construct": "stmt:ForOf",
+      "bodiesBlocked": 102
+    },
+    {
+      "construct": "setmember-computed",
+      "bodiesBlocked": 90
+    },
+    {
+      "construct": "stmt:FuncDecl",
+      "bodiesBlocked": 88
+    },
+    {
+      "construct": "bin-op:instanceof",
+      "bodiesBlocked": 74
     },
     {
       "construct": "stmt:Try",
-      "bodiesBlocked": 50
+      "bodiesBlocked": 56
+    },
+    {
+      "construct": "compound-target",
+      "bodiesBlocked": 43
+    },
+    {
+      "construct": "expr:Spread",
+      "bodiesBlocked": 39
     },
     {
       "construct": "stmt:UsingDecl",
       "bodiesBlocked": 37
     },
     {
-      "construct": "expr:Spread",
-      "bodiesBlocked": 32
+      "construct": "bin-op:||",
+      "bodiesBlocked": 34
     },
     {
       "construct": "objlit-computed-key",
-      "bodiesBlocked": 32
-    },
-    {
-      "construct": "bin-op:||",
-      "bodiesBlocked": 29
-    },
-    {
-      "construct": "compound-target",
-      "bodiesBlocked": 29
+      "bodiesBlocked": 34
     },
     {
       "construct": "expr:BigIntLit",
       "bodiesBlocked": 29
     },
     {
-      "construct": "call-callee:Call",
-      "bodiesBlocked": 23
+      "construct": "stmt:Switch",
+      "bodiesBlocked": 28
     },
     {
-      "construct": "stmt:Switch",
-      "bodiesBlocked": 16
+      "construct": "call-callee:Call",
+      "bodiesBlocked": 27
+    },
+    {
+      "construct": "update-target",
+      "bodiesBlocked": 21
+    },
+    {
+      "construct": "expr:RegexLit",
+      "bodiesBlocked": 20
     },
     {
       "construct": "un-op:typeof",
+      "bodiesBlocked": 15
+    },
+    {
+      "construct": "duplicate-binding",
+      "bodiesBlocked": 12
+    },
+    {
+      "construct": "un-op:await",
       "bodiesBlocked": 12
     },
     {
@@ -149,11 +165,7 @@
       "bodiesBlocked": 12
     },
     {
-      "construct": "update-target",
-      "bodiesBlocked": 12
-    },
-    {
-      "construct": "un-op:await",
+      "construct": "call-callee:FuncExpr",
       "bodiesBlocked": 11
     },
     {
@@ -161,36 +173,44 @@
       "bodiesBlocked": 10
     },
     {
-      "construct": "call-callee:FuncExpr",
+      "construct": "bin-op:**",
       "bodiesBlocked": 9
+    },
+    {
+      "construct": "stmt:ForIn",
+      "bodiesBlocked": 9
+    },
+    {
+      "construct": "expr:LogicalAssign",
+      "bodiesBlocked": 8
     },
     {
       "construct": "stmt:ClassDecl",
       "bodiesBlocked": 8
     },
     {
-      "construct": "stmt:ForIn",
+      "construct": "un-op:delete",
       "bodiesBlocked": 8
     },
     {
-      "construct": "bin-op:**",
-      "bodiesBlocked": 7
-    },
-    {
-      "construct": "expr:RegexLit",
+      "construct": "expr:OptChainRoot",
       "bodiesBlocked": 6
     },
     {
-      "construct": "un-op:delete",
-      "bodiesBlocked": 6
-    },
-    {
-      "construct": "expr:LogicalAssign",
-      "bodiesBlocked": 5
+      "construct": "call-super",
+      "bodiesBlocked": 4
     },
     {
       "construct": "bin-op:in",
       "bodiesBlocked": 3
+    },
+    {
+      "construct": "un-op:+",
+      "bodiesBlocked": 3
+    },
+    {
+      "construct": "bin-op:&",
+      "bodiesBlocked": 2
     },
     {
       "construct": "bin-op:>>",
@@ -201,19 +221,11 @@
       "bodiesBlocked": 2
     },
     {
-      "construct": "expr:OptChainRoot",
-      "bodiesBlocked": 2
-    },
-    {
-      "construct": "un-op:+",
+      "construct": "stmt:Continue",
       "bodiesBlocked": 2
     },
     {
       "construct": "bin-op:??",
-      "bodiesBlocked": 1
-    },
-    {
-      "construct": "bin-op:&",
       "bodiesBlocked": 1
     },
     {
@@ -229,19 +241,11 @@
       "bodiesBlocked": 1
     },
     {
-      "construct": "duplicate-binding",
-      "bodiesBlocked": 1
-    },
-    {
       "construct": "expr:ClassExpr",
       "bodiesBlocked": 1
     },
     {
       "construct": "expr:DestructAssign",
-      "bodiesBlocked": 1
-    },
-    {
-      "construct": "stmt:Continue",
       "bodiesBlocked": 1
     },
     {
