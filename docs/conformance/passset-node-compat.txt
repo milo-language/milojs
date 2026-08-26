@@ -110,6 +110,7 @@ test-cluster-worker-handle-close.js
 test-cluster-worker-init.js
 test-cluster-worker-isconnected.js
 test-cluster-worker-isdead.js
+test-console-assign-undefined.js
 test-console-async-write-error.js
 test-console-diagnostics-channels.js
 test-console-issue-43095.js
@@ -221,7 +222,6 @@ test-fs-read-stream-autoClose.js
 test-fs-read-stream-double-close.js
 test-fs-read-stream-err.js
 test-fs-read-stream-resume.js
-test-fs-readdir-stack-overflow.js
 test-fs-readdir-types-symlinks.js
 test-fs-readfile-zero-byte-liar.js
 test-fs-readlink-type-check.js
@@ -304,6 +304,7 @@ test-http-outgoing-message-inheritance.js
 test-http-outgoing-message-write-callback.js
 test-http-outgoing-settimeout.js
 test-http-parser-free.js
+test-http-parser-multiple-execute.js
 test-http-pause-no-dump.js
 test-http-perf_hooks.js
 test-http-request-arguments.js
@@ -416,6 +417,7 @@ test-process-next-tick.js
 test-process-release.js
 test-process-warning.js
 test-promise-hook-exceptions.js
+test-promise-unhandled-default.js
 test-promise-unhandled-issue-43655.js
 test-querystring-maxKeys-non-finite.js
 test-querystring-multichar-separator.js
@@ -558,6 +560,7 @@ test-url-parse-format.js
 test-utf8-scripts.js
 test-util-primordial-monkeypatching.js
 test-util-types-exists.js
+test-v8-deserialize-buffer.js
 test-v8-global-setter.js
 test-vm-access-process-env.js
 test-vm-create-context-circular-reference.js

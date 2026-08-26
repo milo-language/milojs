@@ -6,12 +6,12 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "e7aab7e2e74806ff24ee9d16ba8dd786f87d4d6a",
+    "revision": "2b6a8ab2c5b696d2dc12ff33c2f76cb56863fb69",
     "date": "2026-08-26",
     "dirty": false
   },
   "runtime": "/private/tmp/claude-501/-Users-csmith-git-milo/b084bf48-8451-4d8d-8903-07625a71b786/scratchpad/mjs-sweep/.dev/mj-runtime",
-  "runtimeVersion": "milojs 0.1.0 (dev e7aab7e)",
+  "runtimeVersion": "milojs 0.1.0 (dev 2b6a8ab)",
   "selection": {
     "directory": null,
     "sample": null,
@@ -20,8 +20,8 @@
     "excludedNodeInternal": 606
   },
   "totals": {
-    "pass": 581,
-    "fail": 1856,
+    "pass": 584,
+    "fail": 1853,
     "skipped": 936,
     "ran": 2437,
     "total": 3373,
@@ -140,6 +140,7 @@
     "test-cluster-worker-init.js",
     "test-cluster-worker-isconnected.js",
     "test-cluster-worker-isdead.js",
+    "test-console-assign-undefined.js",
     "test-console-async-write-error.js",
     "test-console-diagnostics-channels.js",
     "test-console-issue-43095.js",
@@ -251,7 +252,6 @@
     "test-fs-read-stream-double-close.js",
     "test-fs-read-stream-err.js",
     "test-fs-read-stream-resume.js",
-    "test-fs-readdir-stack-overflow.js",
     "test-fs-readdir-types-symlinks.js",
     "test-fs-readfile-zero-byte-liar.js",
     "test-fs-readlink-type-check.js",
@@ -334,6 +334,7 @@
     "test-http-outgoing-message-write-callback.js",
     "test-http-outgoing-settimeout.js",
     "test-http-parser-free.js",
+    "test-http-parser-multiple-execute.js",
     "test-http-pause-no-dump.js",
     "test-http-perf_hooks.js",
     "test-http-request-arguments.js",
@@ -446,6 +447,7 @@
     "test-process-release.js",
     "test-process-warning.js",
     "test-promise-hook-exceptions.js",
+    "test-promise-unhandled-default.js",
     "test-promise-unhandled-issue-43655.js",
     "test-querystring-maxKeys-non-finite.js",
     "test-querystring-multichar-separator.js",
@@ -588,6 +590,7 @@
     "test-utf8-scripts.js",
     "test-util-primordial-monkeypatching.js",
     "test-util-types-exists.js",
+    "test-v8-deserialize-buffer.js",
     "test-v8-global-setter.js",
     "test-vm-access-process-env.js",
     "test-vm-create-context-circular-reference.js",
@@ -616,15 +619,15 @@
   "areas": [
     {
       "area": "http",
-      "pass": 85,
-      "fail": 286,
+      "pass": 86,
+      "fail": 285,
       "skipped": 6,
       "total": 377
     },
     {
       "area": "fs",
-      "pass": 50,
-      "fail": 169,
+      "pass": 49,
+      "fail": 170,
       "skipped": 8,
       "total": 227
     },
@@ -811,25 +814,11 @@
       "total": 17
     },
     {
-      "area": "v8",
-      "pass": 1,
-      "fail": 13,
-      "skipped": 4,
-      "total": 18
-    },
-    {
       "area": "cli",
       "pass": 1,
       "fail": 12,
       "skipped": 1,
       "total": 14
-    },
-    {
-      "area": "console",
-      "pass": 9,
-      "fail": 12,
-      "skipped": 0,
-      "total": 21
     },
     {
       "area": "readline",
@@ -839,11 +828,25 @@
       "total": 15
     },
     {
+      "area": "v8",
+      "pass": 2,
+      "fail": 12,
+      "skipped": 4,
+      "total": 18
+    },
+    {
       "area": "assert",
       "pass": 2,
       "fail": 11,
       "skipped": 0,
       "total": 13
+    },
+    {
+      "area": "console",
+      "pass": 10,
+      "fail": 11,
+      "skipped": 0,
+      "total": 21
     },
     {
       "area": "require",
@@ -867,13 +870,6 @@
       "total": 10
     },
     {
-      "area": "promise",
-      "pass": 2,
-      "fail": 9,
-      "skipped": 0,
-      "total": 11
-    },
-    {
       "area": "stdin",
       "pass": 2,
       "fail": 9,
@@ -886,6 +882,13 @@
       "fail": 8,
       "skipped": 0,
       "total": 12
+    },
+    {
+      "area": "promise",
+      "pass": 3,
+      "fail": 8,
+      "skipped": 0,
+      "total": 11
     },
     {
       "area": "path",
