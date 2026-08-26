@@ -156,6 +156,9 @@ let pass = 0, fail = 0, parseFail = 0;
 // write, not one more case scoring zero.
 let crashes = 0;
 const buckets = new Map<string, string[]>();
+// Per-case pass list for the conformance ratchet, same identity the failure
+// buckets use (file:caseName).
+const passes: string[] = [];
 
 for (const file of files) {
   for (const c of casesFor(file)) {
@@ -186,7 +189,7 @@ for (const file of files) {
         else if (want) out = `expected uncaught ${want}, got ${out.trim()}`;
       }
     }
-    if (ok) pass++;
+    if (ok) { pass++; passes.push(`${file}:${c.name}`); }
     else {
       if (isParseFailure(out)) parseFail++;
       else fail++;
@@ -223,6 +226,7 @@ if (jsonPath) {
     engine: tilde(ENGINE),
     selection: { filter, skippedFiles: [...SKIP_FILES].sort() },
     totals: { pass, fail, parseFail, total, ran: pass + fail, files: files.length, crashes },
+    passes: passes.sort(),
     failureBuckets: ranked.map(([reason, cases]) => ({ reason, count: cases.length, cases })),
   };
   mkdirSync(jsonPath.replace(/\/[^/]+$/, ""), { recursive: true });

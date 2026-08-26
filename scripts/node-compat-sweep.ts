@@ -644,6 +644,9 @@ const report = {
   runtimeVersion: RUNTIME_VERSION,
   selection: { directory: subDir || null, sample: sampleN, seed: "0x5eed17", available: files.length, excludedNodeInternal: excluded },
   totals: { pass, fail, skipped, ran, total: rows.length, crashes, parseFailures, timeouts, hangs },
+  // Per-case pass list for the conformance ratchet (relative file path, the same
+  // identity the fails jsonl uses).
+  passes: rows.filter((r) => r.ok && !r.skipped).map((r) => r.file).sort(),
   areas: areaRows,
 };
 writeFileSync(jsonPath, JSON.stringify(report, null, 2) + "\n");

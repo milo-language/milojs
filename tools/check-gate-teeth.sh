@@ -232,6 +232,16 @@ teeth "check-defect-budget" docs/conformance/node-compat.json \
     "perl -pi -e 's/\"crashes\": 2/\"crashes\": 3/' docs/conformance/node-compat.json" \
     "node tools/check-defect-budget.mjs"
 
+# --- conformance ratchet: a previously passing case drops out of the report ---
+teeth "check-conformance-ratchet (lost case)" docs/conformance/quickjs.json \
+    "python3 -c \"import json;p='docs/conformance/quickjs.json';d=json.load(open(p));d['passes']=d['passes'][1:];open(p,'w').write(json.dumps(d,indent=2)+'\\n')\"" \
+    "node tools/check-conformance-ratchet.mjs"
+
+# --- conformance ratchet: pass sets from a different corpus are incommensurable ---
+teeth "check-conformance-ratchet (pin mismatch)" docs/conformance/passset-quickjs.txt \
+    "perl -pi -e 's/^# corpus .*/# corpus 0000000/' docs/conformance/passset-quickjs.txt" \
+    "node tools/check-conformance-ratchet.mjs"
+
 # --- sweeps, second defect: a skipped test scored as a pass ---
 # Same corpus caveat as the quickjs case above: without node's test suite the
 # skip probe inside check-sweeps does not run, so removing the detection would

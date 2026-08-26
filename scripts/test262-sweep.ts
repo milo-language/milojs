@@ -246,6 +246,11 @@ let crashes = 0;
 const areaTotals = new Map<string, { p: number; f: number }>();
 const buckets = new Map<string, string[]>();
 const allFails: { file: string; why: string }[] = [];
+// Per-case pass list, committed in the report: the conformance ratchet
+// (tools/check-conformance-ratchet.mjs) compares its high-water pass set against
+// this, so "previously passing case now fails" is detectable per case, not just
+// as an aggregate that a +5/-5 swap would hide.
+const passes: string[] = [];
 const areaOf = (f: string) => { const rel = f.slice(root.length + 1); const parts = rel.split("/"); return subDir ? parts[0]! : parts.slice(0, 2).join("/"); };
 
 let done = 0;
@@ -254,7 +259,7 @@ for (const file of files) {
   if (res === "skip") { skip++; continue; }
   const a = areaOf(file);
   const t = areaTotals.get(a) ?? areaTotals.set(a, { p: 0, f: 0 }).get(a)!;
-  if (res === "pass") { pass++; t.p++; }
+  if (res === "pass") { pass++; t.p++; passes.push(file.slice(root.length + 1)); }
   else { fail++; t.f++; if (isParseFailure(why)) parseFail++; const b = bucket(why); (buckets.get(b) ?? buckets.set(b, []).get(b)!).push(file.slice(root.length + 1)); allFails.push({ file: file.slice(root.length + 1), why }); }
   if (++done % 500 === 0) process.stderr.write(`  ${done}/${files.length}\r`);
 }
@@ -299,6 +304,7 @@ if (jsonPath) {
       seed: sampleN ? "0x2f6e2b1" : null,
     },
     totals: { pass, fail, parseFail, skip, scored, selected: files.length, crashes },
+    passes: passes.sort(),
     areas: [...areaTotals.entries()]
       .map(([area, t]) => ({ area, pass: t.p, fail: t.f, total: t.p + t.f }))
       .sort((a, b) => b.total - a.total || a.area.localeCompare(b.area)),

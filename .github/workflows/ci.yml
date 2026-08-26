@@ -173,6 +173,7 @@ jobs:
         run: |
           node tools/check-defect-budget.mjs
           node tools/check-bench-budget.mjs
+          node tools/check-conformance-ratchet.mjs
 
       - name: generated builtin list and AST-reference baseline hold
         run: |
