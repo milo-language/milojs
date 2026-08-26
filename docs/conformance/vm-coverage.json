@@ -6,7 +6,7 @@
     "revision": "fd2dfa632a68d4921904ddca5c1337bc099e995a"
   },
   "milojs": {
-    "revision": "6ef4f01b70e8701c5edb86e0a297618970a5ecd0",
+    "revision": "659f000bd8f63143c17e5d69e540149ca688dce5",
     "dirty": false
   },
   "totals": {
@@ -14,43 +14,39 @@
     "audited": 3978,
     "parseFail": 3,
     "functionBodies": 26108,
-    "compiledBodies": 15231,
-    "pct": 58.3,
+    "compiledBodies": 18799,
+    "pct": 72,
     "loops": 501,
     "compiledLoops": 257
   },
   "blockers": [
-    {
-      "construct": "call-arg-capture",
-      "bodiesBlocked": 3857
-    },
     {
       "construct": "suspension-body",
       "bodiesBlocked": 2474
     },
     {
       "construct": "expr:New",
-      "bodiesBlocked": 1208
+      "bodiesBlocked": 1232
     },
     {
       "construct": "expr:FuncExpr",
-      "bodiesBlocked": 509
+      "bodiesBlocked": 551
     },
     {
       "construct": "expr:ArrLit",
-      "bodiesBlocked": 457
+      "bodiesBlocked": 525
     },
     {
       "construct": "stmt:Throw",
-      "bodiesBlocked": 433
+      "bodiesBlocked": 435
     },
     {
       "construct": "expr:Index",
-      "bodiesBlocked": 377
+      "bodiesBlocked": 397
     },
     {
       "construct": "expr:ToStrHole",
-      "bodiesBlocked": 333
+      "bodiesBlocked": 359
     },
     {
       "construct": "call-magic",
@@ -58,31 +54,35 @@
     },
     {
       "construct": "stmt:For",
-      "bodiesBlocked": 117
-    },
-    {
-      "construct": "call-callee:Index",
-      "bodiesBlocked": 115
+      "bodiesBlocked": 122
     },
     {
       "construct": "expr:Cond",
-      "bodiesBlocked": 115
+      "bodiesBlocked": 118
+    },
+    {
+      "construct": "call-callee:Index",
+      "bodiesBlocked": 117
     },
     {
       "construct": "stmt:ForOf",
-      "bodiesBlocked": 107
+      "bodiesBlocked": 116
     },
     {
       "construct": "stmt:FuncDecl",
-      "bodiesBlocked": 101
+      "bodiesBlocked": 115
     },
     {
       "construct": "setmember-computed",
-      "bodiesBlocked": 97
+      "bodiesBlocked": 102
     },
     {
       "construct": "stmt:Try",
-      "bodiesBlocked": 70
+      "bodiesBlocked": 71
+    },
+    {
+      "construct": "call-arg-capture",
+      "bodiesBlocked": 48
     },
     {
       "construct": "compound-target",
@@ -90,11 +90,11 @@
     },
     {
       "construct": "expr:Spread",
-      "bodiesBlocked": 39
+      "bodiesBlocked": 42
     },
     {
       "construct": "expr:RegexLit",
-      "bodiesBlocked": 38
+      "bodiesBlocked": 39
     },
     {
       "construct": "stmt:UsingDecl",
@@ -105,6 +105,10 @@
       "bodiesBlocked": 36
     },
     {
+      "construct": "call-callee:Call",
+      "bodiesBlocked": 34
+    },
+    {
       "construct": "stmt:Switch",
       "bodiesBlocked": 32
     },
@@ -113,20 +117,16 @@
       "bodiesBlocked": 31
     },
     {
-      "construct": "call-callee:Call",
-      "bodiesBlocked": 28
-    },
-    {
       "construct": "update-target",
       "bodiesBlocked": 21
     },
     {
       "construct": "call-callee:FuncExpr",
-      "bodiesBlocked": 15
+      "bodiesBlocked": 18
     },
     {
       "construct": "duplicate-binding",
-      "bodiesBlocked": 12
+      "bodiesBlocked": 17
     },
     {
       "construct": "expr:OptChainRoot",
@@ -141,11 +141,11 @@
       "bodiesBlocked": 12
     },
     {
-      "construct": "objlit-accessor",
-      "bodiesBlocked": 10
+      "construct": "un-op:delete",
+      "bodiesBlocked": 11
     },
     {
-      "construct": "un-op:delete",
+      "construct": "objlit-accessor",
       "bodiesBlocked": 10
     },
     {
@@ -157,12 +157,12 @@
       "bodiesBlocked": 8
     },
     {
-      "construct": "stmt:ClassDecl",
+      "construct": "stmt:Break",
       "bodiesBlocked": 8
     },
     {
-      "construct": "stmt:Break",
-      "bodiesBlocked": 7
+      "construct": "stmt:ClassDecl",
+      "bodiesBlocked": 8
     },
     {
       "construct": "call-super",
