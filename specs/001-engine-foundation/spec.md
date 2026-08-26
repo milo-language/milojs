@@ -8,6 +8,14 @@
 
 **Input**: User description: "set up speckit for milojs and specify that we want a robust foundational design that scales and can get us to a solid js runtime and engine"
 
+## Clarifications
+
+### Session 2026-08-25
+
+- Q: Which conformance number should SC-003 treat as the headline target for this foundation phase? → A: Both, staged: test262 sample ≥85% and node corpus ≥30% (baseline in the spec's first draft was stale; real numbers are test262 sample 80.4%, QuickJS 69.8%, node corpus 17.2% vs peer bun 40.8%).
+- Q: When choosing what to build next, should priority be driven by the conformance numbers or by what a target class of real applications needs? → A: Hybrid: conformance ranking is the default worklist; blockers for the target app class (Node/Express server workloads) jump the queue.
+- Q: Is engine performance work (bytecode VM, closing the 410x median gap vs the peer runtime) in scope for this foundation phase? → A: Out of scope: this phase records the decision criteria and lands the scaling benchmarks that would prove a faster execution strategy; the strategy itself gets its own spec. Absolute-speed ceilings still gate regressions.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Real applications run correctly (Priority: P1)
@@ -60,8 +68,9 @@ per-area delta and fails automatically on any regression.
 2. **Given** a conformance sweep, **When** it completes, **Then** results are reported per
    feature area with pass/fail/out-of-scope counts, comparable across runs.
 3. **Given** a contributor choosing what to work on, **When** they consult the sweep
-   report, **Then** failing areas are ranked by how many tests (and which real-program
-   patterns) each area blocks.
+   report, **Then** failing areas are ranked by how many tests each area blocks, and a
+   failure that blocks the target application class (Node/Express server workloads)
+   outranks its sweep-count position.
 
 ---
 
@@ -196,12 +205,14 @@ scripts, round-trips values, and shuts down leak-free, with no host-binding code
 
 - **SC-001**: 100% of fixture-corpus programs produce byte-identical output to the
   reference runtime, continuously, with every divergence registered and argued.
-- **SC-002**: At least one real-world application (thousands of lines, multiple host
-  capabilities) runs end to end with correct behavior, and stays running (regression-
-  gated) as the foundation evolves.
-- **SC-003**: Standard conformance suite results are monotonically non-decreasing across
-  the mainline history; language-area conformance reaches at least 60% and whole-suite at
-  least 45% within this foundation's horizon (from ~42% / ~30% today).
+- **SC-002**: At least one real-world application from the target class (a Node/Express-
+  style server workload: thousands of lines, multiple host capabilities) runs end to end
+  with correct behavior, and stays running (regression-gated) as the foundation evolves.
+- **SC-003**: Conformance results are monotonically non-decreasing across the mainline
+  history (per-case ratchet, all suites). Staged targets for this phase: engine suite
+  (test262 deterministic sample) reaches at least 85% (from 80.4% today), and runtime
+  suite (node corpus, all-selected denominator) reaches at least 30% (from 17.2% today,
+  peer bun at 40.8%).
 - **SC-004**: Doubling workload size on any baseline benchmark changes cost by its
   recorded complexity bound (within noise tolerance); no benchmark exhibits an unexplained
   superlinear cliff.
@@ -225,9 +236,13 @@ scripts, round-trips values, and shuts down leak-free, with no host-binding code
   scope as an engine/runtime boundary concern.
 - The current execution strategy (tree-walking interpretation) is an acceptable foundation;
   this spec requires that faster strategies remain *reachable* (documented decisions,
-  layering, benchmarks that would prove the win), not that one be built now.
+  layering, benchmarks that would prove the win), not that one be built now. Closing the
+  absolute performance gap to peer runtimes is explicitly out of scope for this phase;
+  regression ceilings and complexity bounds are the performance requirement.
 - Conformance targets in SC-003 are staged goals for this foundation phase, not the
   end-state bar for the project; the ratchet, not the target, is the permanent mechanism.
+  Quoted numbers carry their denominators: the test262 figure is a seeded 1500-case
+  sample, and the node figure counts every selected case including skips.
 - "Scales" covers program size, run duration, and codebase growth (contributor
   throughput); multi-machine or multi-tenant scaling is out of scope.
 - Existing project gates (oracle verification, layering check, guarded execution) are the

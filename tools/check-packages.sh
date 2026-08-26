@@ -47,7 +47,7 @@ if [ ! -d "$CACHE/node_modules" ]; then
 fi
 
 suites=0; ran=0; nodeok=0; milook=0; full=0
-skipped_node=0
+skipped_node=0; faildetail=""
 detail="${MILOJS_PKG_DETAIL:-0}"
 
 for dir in "$CACHE"/node_modules/*/; do
@@ -74,8 +74,11 @@ for dir in "$CACHE"/node_modules/*/; do
   nodeok=$((nodeok + n)); milook=$((milook + m))
   if [ "$n" = "$m" ] && [ "$bad" = 0 ]; then
     full=$((full + 1))
-  elif [ "$detail" = 1 ]; then
-    printf '  %-34s %s/%s ok, %s failed\n' "$pkg" "$m" "$n" "$bad"
+  else
+    line="$(printf '  %-34s %s/%s ok, %s failed' "$pkg" "$m" "$n" "$bad")"
+    faildetail="${faildetail}${line}
+"
+    [ "$detail" = 1 ] && printf '%s\n' "$line"
   fi
 done
 
@@ -96,6 +99,11 @@ if [ -f "$BASELINE" ]; then
   read -r b_assert b_full < "$BASELINE"
   if [ "$milook" -lt "$b_assert" ] || [ "$full" -lt "$b_full" ]; then
     echo "FAIL: regressed against $BASELINE ($b_assert assertions, $b_full complete suites)" >&2
+    # A regression seen only in CI was undiagnosable from the summary scalar
+    # (2026-08-26: linux dropped 1445->1433 with an identical corpus and no code
+    # change); name the suites so the log carries the worklist.
+    echo "per-suite incompleteness at time of failure:" >&2
+    printf '%s' "$faildetail" >&2
     exit 1
   fi
 fi
