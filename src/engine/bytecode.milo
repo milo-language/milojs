@@ -1345,6 +1345,13 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
     var pc: i64 = 0
     var done = false
     var flushedOnThrow = false
+    // True when an OUTER slot has been stored since the last flush. Any op that
+    // can run user code (a getter, valueOf, a proxy trap — always a user
+    // Function, so funcCallTicks moves) must publish dirty outer slots first
+    // and re-read them after: a getter that read a stale outer variable is the
+    // bug that forced this (tests: the flush-gap probe), and it predated every
+    // opcode that ships tonight.
+    var dirty = false
     // Whether a CALLEE left the exception pending, which decides whether this
     // frame's slots are flushed on the way out (see the throw handler). Written
     // by every Op.Call, and only a call can leave a stale value, so it does not
@@ -1385,6 +1392,9 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                 Op.Store => {
                     sp = sp - 1
                     st.vmStack[base + a] = cloneValue(st.vmStack[sp])
+                    if ch.slotOuter[a] {
+                        dirty = true
+                    }
                     pc = pc + 1
                 }
                 Op.Add => {
@@ -1394,9 +1404,17 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         st.vmStack[sp - 1] = JSValue.Number(v)
                     } else {
                         st.vmSp = sp + 1
+                        if dirty {
+                            vmFlushOuter(st, ch, base, curScope)
+                            dirty = false
+                        }
+                        let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
                         st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Add), x, y, st)
+                        if st.funcCallTicks != t0 {
+                            vmSeedOuter(st, ch, base, curScope)
+                        }
                         st.vmSp = sp
                     }
                     pc = pc + 1
@@ -1408,9 +1426,17 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         st.vmStack[sp - 1] = JSValue.Number(v)
                     } else {
                         st.vmSp = sp + 1
+                        if dirty {
+                            vmFlushOuter(st, ch, base, curScope)
+                            dirty = false
+                        }
+                        let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
                         st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Sub), x, y, st)
+                        if st.funcCallTicks != t0 {
+                            vmSeedOuter(st, ch, base, curScope)
+                        }
                         st.vmSp = sp
                     }
                     pc = pc + 1
@@ -1422,9 +1448,17 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         st.vmStack[sp - 1] = JSValue.Number(v)
                     } else {
                         st.vmSp = sp + 1
+                        if dirty {
+                            vmFlushOuter(st, ch, base, curScope)
+                            dirty = false
+                        }
+                        let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
                         st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Mul), x, y, st)
+                        if st.funcCallTicks != t0 {
+                            vmSeedOuter(st, ch, base, curScope)
+                        }
                         st.vmSp = sp
                     }
                     pc = pc + 1
@@ -1436,9 +1470,17 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         st.vmStack[sp - 1] = JSValue.Number(v)
                     } else {
                         st.vmSp = sp + 1
+                        if dirty {
+                            vmFlushOuter(st, ch, base, curScope)
+                            dirty = false
+                        }
+                        let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
                         st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Div), x, y, st)
+                        if st.funcCallTicks != t0 {
+                            vmSeedOuter(st, ch, base, curScope)
+                        }
                         st.vmSp = sp
                     }
                     pc = pc + 1
@@ -1450,9 +1492,17 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         st.vmStack[sp - 1] = JSValue.Number(v)
                     } else {
                         st.vmSp = sp + 1
+                        if dirty {
+                            vmFlushOuter(st, ch, base, curScope)
+                            dirty = false
+                        }
+                        let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
                         st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Mod), x, y, st)
+                        if st.funcCallTicks != t0 {
+                            vmSeedOuter(st, ch, base, curScope)
+                        }
                         st.vmSp = sp
                     }
                     pc = pc + 1
@@ -1463,6 +1513,11 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         st.vmStack[sp - 1] = JSValue.Number(v)
                     } else {
                         st.vmSp = sp
+                        if dirty {
+                            vmFlushOuter(st, ch, base, curScope)
+                            dirty = false
+                        }
+                        let tn0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         // toNumArg, not toNumProg: unary minus on a Symbol is a
                         // TypeError, and toNumProg answers NaN because loose equality
@@ -1470,6 +1525,9 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         // evaluator's own `-` arm has this guard; the compiled path
                         // bypassed it and `-Symbol()` quietly produced NaN.
                         let n = toNumArg(prog, x, st)
+                        if st.funcCallTicks != tn0 {
+                            vmSeedOuter(st, ch, base, curScope)
+                        }
                         st.vmStack[sp - 1] = JSValue.Number(-n)
                     }
                     pc = pc + 1
@@ -1481,9 +1539,17 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         st.vmStack[sp - 1] = boolVal(r)
                     } else {
                         st.vmSp = sp + 1
+                        if dirty {
+                            vmFlushOuter(st, ch, base, curScope)
+                            dirty = false
+                        }
+                        let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
                         st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Lt), x, y, st)
+                        if st.funcCallTicks != t0 {
+                            vmSeedOuter(st, ch, base, curScope)
+                        }
                         st.vmSp = sp
                     }
                     pc = pc + 1
@@ -1495,9 +1561,17 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         st.vmStack[sp - 1] = boolVal(r)
                     } else {
                         st.vmSp = sp + 1
+                        if dirty {
+                            vmFlushOuter(st, ch, base, curScope)
+                            dirty = false
+                        }
+                        let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
                         st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Gt), x, y, st)
+                        if st.funcCallTicks != t0 {
+                            vmSeedOuter(st, ch, base, curScope)
+                        }
                         st.vmSp = sp
                     }
                     pc = pc + 1
@@ -1509,9 +1583,17 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         st.vmStack[sp - 1] = boolVal(r)
                     } else {
                         st.vmSp = sp + 1
+                        if dirty {
+                            vmFlushOuter(st, ch, base, curScope)
+                            dirty = false
+                        }
+                        let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
                         st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Le), x, y, st)
+                        if st.funcCallTicks != t0 {
+                            vmSeedOuter(st, ch, base, curScope)
+                        }
                         st.vmSp = sp
                     }
                     pc = pc + 1
@@ -1523,9 +1605,17 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         st.vmStack[sp - 1] = boolVal(r)
                     } else {
                         st.vmSp = sp + 1
+                        if dirty {
+                            vmFlushOuter(st, ch, base, curScope)
+                            dirty = false
+                        }
+                        let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
                         st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Ge), x, y, st)
+                        if st.funcCallTicks != t0 {
+                            vmSeedOuter(st, ch, base, curScope)
+                        }
                         st.vmSp = sp
                     }
                     pc = pc + 1
@@ -1537,9 +1627,17 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         st.vmStack[sp - 1] = boolVal(r)
                     } else {
                         st.vmSp = sp + 1
+                        if dirty {
+                            vmFlushOuter(st, ch, base, curScope)
+                            dirty = false
+                        }
+                        let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
                         st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Eq), x, y, st)
+                        if st.funcCallTicks != t0 {
+                            vmSeedOuter(st, ch, base, curScope)
+                        }
                         st.vmSp = sp
                     }
                     pc = pc + 1
@@ -1551,9 +1649,17 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         st.vmStack[sp - 1] = boolVal(r)
                     } else {
                         st.vmSp = sp + 1
+                        if dirty {
+                            vmFlushOuter(st, ch, base, curScope)
+                            dirty = false
+                        }
+                        let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
                         st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Ne), x, y, st)
+                        if st.funcCallTicks != t0 {
+                            vmSeedOuter(st, ch, base, curScope)
+                        }
                         st.vmSp = sp
                     }
                     pc = pc + 1
@@ -1571,16 +1677,32 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                 }
                 Op.GetMem => {
                     st.vmSp = sp
+                    if dirty {
+                        vmFlushOuter(st, ch, base, curScope)
+                        dirty = false
+                    }
+                    let tg0 = st.funcCallTicks
                     let recv = cloneValue(st.vmStack[sp - 1])
                     st.vmStack[sp - 1] = memberOfValue(prog, recv, ch.strs[a], st)
+                    if st.funcCallTicks != tg0 {
+                        vmSeedOuter(st, ch, base, curScope)
+                    }
                     pc = pc + 1
                 }
                 Op.SetMem => {
                     sp = sp - 1
                     st.vmSp = sp + 1
+                    if dirty {
+                        vmFlushOuter(st, ch, base, curScope)
+                        dirty = false
+                    }
+                    let ts0 = st.funcCallTicks
                     let v = cloneValue(st.vmStack[sp])
                     let ov = cloneValue(st.vmStack[sp - 1])
                     st.vmStack[sp - 1] = setMemberOfValue(prog, ov, ch.strs[a].clone(), v, st)
+                    if st.funcCallTicks != ts0 {
+                        vmSeedOuter(st, ch, base, curScope)
+                    }
                     pc = pc + 1
                 }
                 Op.NewObj => {
@@ -1625,6 +1747,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     // Whatever this frame is holding in its slots has to be in the
                     // scope chain before the callee resolves a single free name.
                     vmFlushOuter(st, ch, base, curScope)
+                    dirty = false
                     var handled = false
                     if let JSValue.Func(fIdx, envIdx) = calleeVal {
                         let cid2 = bodyChunkOf(prog, fIdx)
@@ -1712,16 +1835,32 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     // ToPrimitive can re-enter user code and allocate; the
                     // operand stays rooted at sp-1 until the result replaces it.
                     st.vmSp = sp
+                    if dirty {
+                        vmFlushOuter(st, ch, base, curScope)
+                        dirty = false
+                    }
+                    let tu0 = st.funcCallTicks
                     let x = cloneValue(st.vmStack[sp - 1])
                     st.vmStack[sp - 1] = evalUnValue(prog, ch.strs[a], x, st)
+                    if st.funcCallTicks != tu0 {
+                        vmSeedOuter(st, ch, base, curScope)
+                    }
                     pc = pc + 1
                 }
                 Op.BinSlow => {
                     sp = sp - 1
                     st.vmSp = sp + 1
+                    if dirty {
+                        vmFlushOuter(st, ch, base, curScope)
+                        dirty = false
+                    }
+                    let tb0 = st.funcCallTicks
                     let x = cloneValue(st.vmStack[sp - 1])
                     let y = cloneValue(st.vmStack[sp])
                     st.vmStack[sp - 1] = evalBinValues(prog, ch.strs[a], x, y, st)
+                    if st.funcCallTicks != tb0 {
+                        vmSeedOuter(st, ch, base, curScope)
+                    }
                     st.vmSp = sp
                     pc = pc + 1
                 }
@@ -1774,6 +1913,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     // the enclosing (even global) scope. No closure can capture
                     // the child: a body containing a FuncExpr never compiles.
                     vmFlushOuter(st, ch, base, curScope)
+                    dirty = false
                     // The child scope exists only to hold declared locals for
                     // the walker; a chunk with none skips the allocation, which
                     // is most method-heavy code (params and captures are outer).

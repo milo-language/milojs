@@ -10855,6 +10855,8 @@ pub fn callGuardTripped(st: &mut Interp): bool {
 }
 
 fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
+    // See funcCallTicks in runtime.milo: the VM watches this to know user code ran.
+    st.funcCallTicks = st.funcCallTicks + 1
     // R1: an async call runs its body on its own activation and returns at that
     // body's first await. Cleared immediately so a nested async call spawns.
     let alreadyOnActivation = st.suppressAsyncSpawn

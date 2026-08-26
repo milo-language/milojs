@@ -1,9 +1,9 @@
 <!-- doc-meta
 system: backlog
 purpose: the open list. What is broken or missing, why it is not trivial, and what to do next
-key-files: src/engine/eval.milo, src/engine/builtins.milo, src/engine/parser.milo, src/engine/methods.milo, src/engine/runtime.milo, src/engine/driver.milo, src/engine/bytecode.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, lib/http.js, bench/run.sh, bench/arith.js
+key-files: src/engine/eval.milo, bench/ab.sh, src/engine/builtins.milo, src/engine/parser.milo, src/engine/methods.milo, src/engine/runtime.milo, src/engine/driver.milo, src/engine/bytecode.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, lib/http.js, bench/run.sh, bench/arith.js
 update-when: an item lands (delete it), or a sweep/probe finds a new gap (add it)
-last-verified: 2026-08-26 (re-verified after the literals-and-operators batch: prim/unslow/binslow/short-circuit opcodes, with in/instanceof/loose-eq coercion moved into evalBinValues as their single home. Previous note: re-verified after Op.CallMember: method calls in compiled bodies route through callMember with AST-evaluated arguments, capturing arguments are rejected (call-arg-capture) pending scope-backed locals; no entry here changes. Previous note: re-verified after the raw-f64 lane landed in bytecode.milo and its dispatch in eval.milo; no entry here describes the boxed-only VM. Previous note: re-verified after the vm stats witness landed in bytecode.milo: rejection sites now carry reason tags, which does not change any entry here; the coverage residue ranking lives in docs/conformance/vm-coverage.json. Previous note: re-verified for the sweeps emitting per-case pass lists; entries unaffected. Previous note: interpStackBytes added to driver.milo, and the darwin deep-recursion entry below records the half it could not fix; other entries re-checked unchanged. Previous note: re-checked against the evalUnArm change: the unary operator is now decided into a UnOp before the operand is evaluated, which fixes a dangling AST borrow and changes no behaviour this doc describes)
+last-verified: 2026-08-26 (flush-gap soundness fix recorded: entry added for its bench cost; the capture-reject entry direction is unchanged. Previous note: re-verified after the literals-and-operators batch: prim/unslow/binslow/short-circuit opcodes, with in/instanceof/loose-eq coercion moved into evalBinValues as their single home. Previous note: re-verified after Op.CallMember: method calls in compiled bodies route through callMember with AST-evaluated arguments, capturing arguments are rejected (call-arg-capture) pending scope-backed locals; no entry here changes. Previous note: re-verified after the raw-f64 lane landed in bytecode.milo and its dispatch in eval.milo; no entry here describes the boxed-only VM. Previous note: re-verified after the vm stats witness landed in bytecode.milo: rejection sites now carry reason tags, which does not change any entry here; the coverage residue ranking lives in docs/conformance/vm-coverage.json. Previous note: re-verified for the sweeps emitting per-case pass lists; entries unaffected. Previous note: interpStackBytes added to driver.milo, and the darwin deep-recursion entry below records the half it could not fix; other entries re-checked unchanged. Previous note: re-checked against the evalUnArm change: the unary operator is now decided into a UnOp before the operand is evaluated, which fixes a dangling AST borrow and changes no behaviour this doc describes)
 -->
 
 # milojs backlog
@@ -41,6 +41,18 @@ intuition: the 1500-case sample is too thin to rank causes.
    ShadowRealm (48) are host features, and `built-ins/Iterator`'s remainder is
    mostly stage-2 proposals (`zip`, `zipKeyed`, `concat`, `chunks`, `windows`)
    that node does not have either.
+
+## Engine: the outer-slot flush guard costs ~5-11% on property benches
+
+The stale-outer-slot soundness fix (2026-08-26: a getter read/wrote outer names
+invisibly to a compiled chunk) flushes dirty outer slots before any slow op that
+can run user code and re-seeds when `funcCallTicks` moved. In a hot loop that
+stores an outer accumulator and reads properties each iteration, that is a
+scope-chain walk per iteration: propFew +11.5%, propMany +5.2% on bench/ab.sh.
+Recovery candidates, in order: an accessor-presence bit per object (skip the
+flush when the receiver's chain provably has no user code to run), per-slot
+dirty tracking, or scope-slot caching for the flush target. The fixture is
+`tests/vmOuterSlotFlush.js`; the matrix's fgOuter cases pin both directions.
 
 ## Engine: deep recursion on darwin dies ~2.3k frames early
 

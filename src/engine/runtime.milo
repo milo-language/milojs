@@ -843,6 +843,11 @@ pub struct Interp {
     // everything at or above it is dead and must not be marked.
     vmStack: Vec<JSValue>,
     vmSp: i64,
+    // Monotonic count of USER-function bodies entered. Only a JS function can
+    // read or write the scope chain (a native cannot close over scopes), so the
+    // VM's slow ops compare this before/after a shared-core call to learn
+    // whether user code ran and its outer slots must re-read the world.
+    funcCallTicks: i64,
     // Values retained by the public embedding ABI. A live slot is an explicit
     // root until the C host releases its handle or destroys the context.
     hostRoots: Vec<JSValue>,
@@ -1084,7 +1089,7 @@ pub struct Interp {
 // that main() overwrites with makeInterp().
 pub var gInterp: Interp = Interp {
     scopes: Vec.new(), freeList: Vec.new(), active: Vec.new(),
-    nonCtorFns: Vec.new(), strict: false, objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: Arena { id: 0, data: Vec.new(), gens: Vec.new(), freeList: Vec.new(), live: 0 }, funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), vmStack: Vec.new(), vmSp: 0, hostRoots: Vec.new(), hostRootLive: Vec.new(),
+    nonCtorFns: Vec.new(), strict: false, objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: Arena { id: 0, data: Vec.new(), gens: Vec.new(), freeList: Vec.new(), live: 0 }, funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), vmStack: Vec.new(), vmSp: 0, funcCallTicks: 0, hostRoots: Vec.new(), hostRootLive: Vec.new(),
     modPaths: Vec.new(), modBlocks: Vec.new(), modStrict: Vec.new(), modExports: Vec.new(), modState: Vec.new(), modDirStack: Vec.new(), modPathStack: Vec.new(), fnFileStack: Vec.new(),
     throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 10000,

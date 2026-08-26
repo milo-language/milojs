@@ -109,6 +109,16 @@ if MATRIX:
     for a in AWKWARD:
         print("console.log(%d, u(function(x){ var t = 2; return [x].concat([t]).length + String(x ? t : x).length; }, %s));" % (n, a))
         n += 1
+    # Outer-slot flush/seed: a getter or valueOf that reads AND writes an outer
+    # variable the compiled body also stores. Both directions of the stale-slot
+    # class (chunk write invisible to user code, user write invisible to chunk).
+    print("var fgOuter = 0;")
+    print("var fgObj = { get p() { fgOuter = fgOuter + 100; return fgOuter; }, valueOf: function() { fgOuter = fgOuter + 1000; return 1; } };")
+    # no locals: a declaration would reject the body and the case would never
+    # run compiled (which is how the first version of these was toothless)
+    for i in range(4):
+        print("console.log(%d, u(function(x){ fgOuter = %d; return x.p + ':' + fgOuter + ':' + (x < 5) + ':' + fgOuter; }, fgObj));" % (n, i))
+        n += 1
     for op in BINOPS:
         for a in AWKWARD:
             print("console.log(%d, b2(function(x, y){ return x %s y; }, %s, 2));" % (n, op, a))
