@@ -3,7 +3,7 @@ system: decisions
 purpose: standing architectural decisions, each with its rationale and the measurement that would justify reopening it
 key-files: src/engine/bytecode.milo, bench/ab.sh, src/engine/value.milo, src/engine/runtime.milo, src/engine/eval.milo, src/engine/driver.milo, src/milojs.milo, src/milojs-engine.milo
 update-when: a decision is made, revisited, or its reopening measurement fires
-last-verified: 2026-08-26 (re-verified after Op.CallMember: the execution-strategy entry already describes the shared-core rule the opcode follows; lane and rooting entries unchanged)
+last-verified: 2026-08-26 (re-verified for the ops batch: the shared-core rule now also covers in/instanceof/loose-eq, which strengthens the execution-strategy entry rather than changing it. Previous note: re-verified after Op.CallMember: the execution-strategy entry already describes the shared-core rule the opcode follows; lane and rooting entries unchanged)
 -->
 
 # Standing decisions

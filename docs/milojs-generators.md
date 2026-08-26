@@ -3,7 +3,7 @@ system: milojs-generators
 purpose: how generators work in milojs (status), plus the pre-implementation design kept as historical rationale
 key-files: src/engine/eval.milo, src/engine/parser.milo, src/engine/ast.milo
 update-when: generator behaviour changes, or a claim in the historical half is found to have rotted
-last-verified: 2026-08-26 (re-verified after op.callmember: generator bodies still never compile (suspension-body), and a generator method called via callmember takes the walker path it always took. Previous note: re-verified after the raw-f64 lane in the evaluator dispatch path: generator bodies are rejected by the chunk compiler (suspension-body), so no generator path runs on the lane. Previous note: re-checked against the evalUnArm change: the unary operator is now decided into a UnOp before the operand is evaluated, which fixes a dangling AST borrow and changes no behaviour this doc describes)
+last-verified: 2026-08-26 (re-verified for the ops batch: suspension bodies still never compile. Previous note: re-verified after op.callmember: generator bodies still never compile (suspension-body), and a generator method called via callmember takes the walker path it always took. Previous note: re-verified after the raw-f64 lane in the evaluator dispatch path: generator bodies are rejected by the chunk compiler (suspension-body), so no generator path runs on the lane. Previous note: re-checked against the evalUnArm change: the unary operator is now decided into a UnOp before the operand is evaluated, which fixes a dangling AST borrow and changes no behaviour this doc describes)
 -->
 
 # milojs: generators (design of record)
