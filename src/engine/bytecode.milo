@@ -100,6 +100,12 @@ enum Op {
     Call,
     // Push a non-numeric primitive: 0 undefined, 1 null, 2 false, 3 true.
     Prim,
+    // Mode B locals: read/write the name strs[a] in the frame's body scope,
+    // where declared locals live so a CallMember argument can close over them.
+    // Plain scopes only (a chunk with `with` never compiles), so neither op can
+    // run user code.
+    LoadName,
+    StoreName,
     // A unary operator on the value on top, by its JS spelling in strs[a],
     // through the evaluator's own evalUnValue: one implementation of coercion
     // order for both paths. The Neg fast path keeps its dedicated opcode.
@@ -157,6 +163,10 @@ pub struct Chunk {
     // Any slot the chunk itself declares (not seeded from the enclosing scope).
     // Op.CallMember only builds its child scope when this is set.
     hasDeclared: bool,
+    // Mode B (see Comp.viaScope): the frame builds a body scope at entry and
+    // defines these names Undefined in it; declared locals live there.
+    viaScope: bool,
+    scopeNames: Vec<string>,
     // Every op is numeric (comparisons only ever feeding the very next Jmpf), so
     // the chunk can run on the raw-f64 lane in runChunkNumeric when its outer
     // seeds are all numbers. See numericOnly() for the exact rule.
@@ -176,6 +186,15 @@ struct Comp {
     allowRet: bool,
     // True once any op defers argument expressions to the walker (CallMember).
     hasAstArgs: bool,
+    // Mode B: the chunk's DECLARED locals live in a real scope the frame builds
+    // at entry (LoadName/StoreName), not in slots. This is what lets a
+    // CallMember argument close over them: the closure captures the live scope,
+    // where the child-scope snapshot gave the socket-callback pattern a dead
+    // `s`. Entered only on a pass-2 recompile after pass 1 rejected with
+    // call-arg-capture; loops never take it (a per-iteration `let` binding
+    // cannot share one scope).
+    viaScope: bool,
+    scopeNames: Vec<string>,
     // First construct that rejected the chunk. The FIRST one, not the last: a
     // rejected walk keeps visiting children with ok already false, and their
     // reasons are noise. This is what MILOJS_VM_STATS aggregates, so the residue
@@ -234,6 +253,17 @@ fn slotOf(c: &mut Comp, name: &string, declared: bool): i64 {
     c.slotNames.push(name.clone())
     c.slotOuter.push(!declared)
     return c.slotNames.len() - 1
+}
+
+fn scopeNameIndex(c: &Comp, name: &string): i64 {
+    var i: i64 = 0
+    while i < c.scopeNames.len() {
+        if c.scopeNames[i] == name {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
 }
 
 // A DECLARATION of a name that already has a slot. Slots are per NAME and a
@@ -406,8 +436,13 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
             emitOp(c, Op.Prim, 0)
         }
         Expr.Ident(name) => {
-            let s = slotOf(c, name, false)
-            emitOp(c, Op.Load, s)
+            if c.viaScope && scopeNameIndex(c, name) >= 0 {
+                let ks = strSlot(c, name)
+                emitOp(c, Op.LoadName, ks)
+            } else {
+                let s = slotOf(c, name, false)
+                emitOp(c, Op.Load, s)
+            }
         }
         Expr.Member(objIdx, name) => {
             compExpr(prog, c, objIdx)
@@ -523,7 +558,7 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                     // pattern `const s = x.connect(() => s.setTimeout(...))`
                     // read a dead snapshot. Scope-backed declared locals are the
                     // fix that admits these; until then they stay on the walker.
-                    if callMayCapture(prog, calleeId, argsIdx) {
+                    if !c.viaScope && callMayCapture(prog, calleeId, argsIdx) {
                         reject(c, "call-arg-capture")
                         return
                     }
@@ -603,13 +638,36 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
         }
         Expr.Assign(name, rhs) => {
             compExpr(prog, c, rhs)
-            let s = slotOf(c, name, false)
-            emitOp(c, Op.Store, s)
-            emitOp(c, Op.Load, s)
+            if c.viaScope && scopeNameIndex(c, name) >= 0 {
+                let ks = strSlot(c, name)
+                emitOp(c, Op.StoreName, ks)
+                emitOp(c, Op.LoadName, ks)
+            } else {
+                let s = slotOf(c, name, false)
+                emitOp(c, Op.Store, s)
+                emitOp(c, Op.Load, s)
+            }
         }
         Expr.CompoundAssign(target, op, rhs) => {
             match prog.exprs[target.index] {
                 Expr.Ident(name) => {
+                    if c.viaScope && scopeNameIndex(c, name) >= 0 {
+                        let ks = strSlot(c, name)
+                        emitOp(c, Op.LoadName, ks)
+                        compExpr(prog, c, rhs)
+                        let o2 = binOpFor(op)
+                        match o2 {
+                            Op.Halt => {
+                                reject(c, "bin-op:" + op.clone())
+                            }
+                            _ => {
+                                emitOp(c, o2, 0)
+                                emitOp(c, Op.StoreName, ks)
+                                emitOp(c, Op.LoadName, ks)
+                            }
+                        }
+                        return
+                    }
                     let s = slotOf(c, name, false)
                     emitOp(c, Op.Load, s)
                     compExpr(prog, c, rhs)
@@ -633,6 +691,32 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
         Expr.Update(target, isInc, isPrefix) => {
             match prog.exprs[target.index] {
                 Expr.Ident(name) => {
+                    if c.viaScope && scopeNameIndex(c, name) >= 0 {
+                        let ks = strSlot(c, name)
+                        let one2 = constSlot(c, 1.0)
+                        if isPrefix {
+                            emitOp(c, Op.LoadName, ks)
+                            emitOp(c, Op.Const, one2)
+                            if isInc {
+                                emitOp(c, Op.Add, 0)
+                            } else {
+                                emitOp(c, Op.Sub, 0)
+                            }
+                            emitOp(c, Op.StoreName, ks)
+                            emitOp(c, Op.LoadName, ks)
+                        } else {
+                            emitOp(c, Op.LoadName, ks)
+                            emitOp(c, Op.LoadName, ks)
+                            emitOp(c, Op.Const, one2)
+                            if isInc {
+                                emitOp(c, Op.Add, 0)
+                            } else {
+                                emitOp(c, Op.Sub, 0)
+                            }
+                            emitOp(c, Op.StoreName, ks)
+                        }
+                        return
+                    }
                     let s = slotOf(c, name, false)
                     let one = constSlot(c, 1.0)
                     if isPrefix {
@@ -696,9 +780,29 @@ fn compStmt(prog: &Prog, c: &mut Comp, id: StmtId) {
                     reject(c, "var-decl")
                     return
                 }
-                compExpr(prog, c, prog.declLists[listIdx.index][i].init)
-                let s = declareSlot(c, prog.declLists[listIdx.index][i].name)
-                emitOp(c, Op.Store, s)
+                if c.viaScope {
+                    // dup checks against both stores, matching declareSlot
+                    if scopeNameIndex(c, prog.declLists[listIdx.index][i].name) >= 0 {
+                        reject(c, "duplicate-binding")
+                        return
+                    }
+                    var sn: i64 = 0
+                    while sn < c.slotNames.len() {
+                        if c.slotNames[sn] == prog.declLists[listIdx.index][i].name {
+                            reject(c, "duplicate-binding")
+                            return
+                        }
+                        sn = sn + 1
+                    }
+                    compExpr(prog, c, prog.declLists[listIdx.index][i].init)
+                    c.scopeNames.push(prog.declLists[listIdx.index][i].name.clone())
+                    let ks = strSlot(c, prog.declLists[listIdx.index][i].name)
+                    emitOp(c, Op.StoreName, ks)
+                } else {
+                    compExpr(prog, c, prog.declLists[listIdx.index][i].init)
+                    let s = declareSlot(c, prog.declLists[listIdx.index][i].name)
+                    emitOp(c, Op.Store, s)
+                }
                 i = i + 1
             }
         }
@@ -761,6 +865,9 @@ fn operandNeed(c: &Comp): i64 {
                 need = need + 1
             }
             Op.Prim => {
+                need = need + 1
+            }
+            Op.LoadName => {
                 need = need + 1
             }
             Op.Dup => {
@@ -879,7 +986,7 @@ pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
             var c = Comp {
                 ops: Vec.new(), args: Vec.new(), consts: Vec.new(), strs: Vec.new(),
                 slotNames: Vec.new(), slotOuter: Vec.new(), ok: true, allowRet: false,
-                why: "", hasAstArgs: false,
+                why: "", hasAstArgs: false, viaScope: false, scopeNames: Vec.new(),
             }
             if let Option.Some(s) = init {
                 compStmt(prog, c, s)
@@ -930,6 +1037,7 @@ pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
                 slotNames: c.slotNames, slotOuter: c.slotOuter,
                 slotWritten: written, need: need, usesArguments: usesArgs,
                 numericOnly: numOnly, hasDeclared: anyDecl,
+                viaScope: false, scopeNames: Vec.new(),
             })
         }
         _ => {
@@ -1320,6 +1428,21 @@ pub fn runChunkNumeric(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Opti
     return Option.Some(ret)
 }
 
+// Build a mode-B frame's body scope: a real scope under `parent` holding every
+// declared local, defined Undefined before the first StoreName runs. Pushed
+// active so a collect mid-frame keeps it; the popActive pairs live at the
+// frame-exit sites, keyed off the chunk's viaScope flag.
+fn vmEnterBodyScope(st: &mut Interp, cid: i64, parent: i64): i64 {
+    let bs = newScope(st, parent)
+    pushActive(st, bs)
+    var i: i64 = 0
+    while i < gChunks[cid].scopeNames.len() {
+        scopeDefine(st, bs, gChunks[cid].scopeNames[i].clone(), JSValue.Undefined)
+        i = i + 1
+    }
+    return bs
+}
+
 // Run a compiled chunk, and every compiled chunk it calls, in ONE dispatch loop.
 // Answers None when the chunk cannot run and the caller must fall back to the
 // tree walker; that decision is made before any side effect. Otherwise answers
@@ -1334,6 +1457,9 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
     if !vmSeedFrame(st, cid, base, curScope) {
         st.vmSp = base0
         return Option.None
+    }
+    if ch.viaScope {
+        curScope = vmEnterBodyScope(st, cid, curScope)
     }
 
     var frames: Vec<VmFrame> = Vec.new()
@@ -1776,6 +1902,10 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                                 // so every live value in every frame stays below vmSp
                                 // and stays marked.
                                 if vmSeedFrame(st, cid2, sp, callScope) {
+                                    var enterScope = callScope
+                                    if gChunks[cid2].viaScope {
+                                        enterScope = vmEnterBodyScope(st, cid2, callScope)
+                                    }
                                     st.fnFileStack.push(prog.funcs[fIdx].file.clone())
                                     frames.push(VmFrame {
                                         pc: pc + 1, base: base, resSlot: calleeSlot,
@@ -1786,7 +1916,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                                     st.strict = prog.funcs[fIdx].isStrict
                                     base = sp
                                     sp = base + gChunks[cid2].slotNames.len()
-                                    curScope = callScope
+                                    curScope = enterScope
                                     pc = 0
                                     pendingCid = cid2
                                     signal = SIG_ENTER
@@ -1829,6 +1959,23 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         vmSet(st, sp, JSValue.Undefined)
                     }
                     sp = sp + 1
+                    pc = pc + 1
+                }
+                Op.LoadName => {
+                    match scopeTryLookup(st, curScope, ch.strs[a]) {
+                        Option.Some(v) => {
+                            vmSet(st, sp, v)
+                        }
+                        Option.None => {
+                            vmSet(st, sp, JSValue.Undefined)
+                        }
+                    }
+                    sp = sp + 1
+                    pc = pc + 1
+                }
+                Op.StoreName => {
+                    sp = sp - 1
+                    scopeAssign(st, curScope, ch.strs[a], cloneValue(st.vmStack[sp]))
                     pc = pc + 1
                 }
                 Op.UnSlow => {
@@ -1985,6 +2132,10 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
             }
             flushedOnThrow = true
             while frames.len() > 0 {
+                if ch.viaScope {
+                    // the frame's own body scope sits above its activation
+                    popActive(st)
+                }
                 popActive(st)
                 st.callDepth = st.callDepth - 1
                 let _f = st.fnFileStack.pop()
@@ -1994,6 +2145,8 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                 base = fr.base
                 curScope = fr.scope
             }
+            // the top frame's body scope, when it has one, pops at the shared
+            // exit below
             retVal = JSValue.Undefined
             done = true
             signal = 0
@@ -2006,6 +2159,9 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                 // activation, and resume the caller with the result in the slot
                 // the callee value occupied.
                 vmFlushOuter(st, ch, base, curScope)
+                if ch.viaScope {
+                    popActive(st)
+                }
                 popActive(st)
                 st.callDepth = st.callDepth - 1
                 let _f = st.fnFileStack.pop()
@@ -2026,6 +2182,9 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
 
     if !flushedOnThrow {
         vmFlushOuter(st, ch, base, curScope)
+    }
+    if ch.viaScope {
+        popActive(st)
     }
     // Drop the whole frame in one move: everything at or above vmSp is dead and
     // collect stops marking there.
@@ -2122,10 +2281,47 @@ pub fn compileBody(prog: &Prog, fIdx: i64): Option<Chunk> {
         }
         return Option.None
     }
+    // Pass 1 keeps locals in slots; only an argument that can capture needs
+    // them scope-backed, so pass 2 pays the LoadName/StoreName cost only for
+    // bodies that actually contain one. Stats count the FINAL outcome once.
+    match compileBodyMode(prog, fIdx, false) {
+        Option.Some(ch) => {
+            if gVmStats {
+                gStatBodiesOk = gStatBodiesOk + 1
+            }
+            return Option.Some(ch)
+        }
+        Option.None => {
+        }
+    }
+    if gLastCompileWhy == "call-arg-capture" {
+        match compileBodyMode(prog, fIdx, true) {
+            Option.Some(ch) => {
+                if gVmStats {
+                    gStatBodiesOk = gStatBodiesOk + 1
+                }
+                return Option.Some(ch)
+            }
+            Option.None => {
+            }
+        }
+    }
+    if gVmStats {
+        gStatBodiesNo = gStatBodiesNo + 1
+        statReject(gLastCompileWhy)
+    }
+    return Option.None
+}
+
+// Why the last compileBodyMode answered None. Single-threaded compilation, so a
+// global beats widening the return type.
+var gLastCompileWhy: string = ""
+
+fn compileBodyMode(prog: &Prog, fIdx: i64, viaScope: bool): Option<Chunk> {
     var c = Comp {
         ops: Vec.new(), args: Vec.new(), consts: Vec.new(), strs: Vec.new(),
         slotNames: Vec.new(), slotOuter: Vec.new(), ok: true, allowRet: true,
-        why: "", hasAstArgs: false,
+        why: "", hasAstArgs: false, viaScope: viaScope, scopeNames: Vec.new(),
     }
     let body = prog.funcs[fIdx].body
     var i: i64 = 0
@@ -2135,14 +2331,8 @@ pub fn compileBody(prog: &Prog, fIdx: i64): Option<Chunk> {
     }
     emitOp(c, Op.Halt, 0)
     if !c.ok {
-        if gVmStats {
-            gStatBodiesNo = gStatBodiesNo + 1
-            statReject(c.why)
-        }
+        gLastCompileWhy = c.why
         return Option.None
-    }
-    if gVmStats {
-        gStatBodiesOk = gStatBodiesOk + 1
     }
     let need = operandNeed(c)
     let written = writtenSlots(c)
@@ -2161,6 +2351,7 @@ pub fn compileBody(prog: &Prog, fIdx: i64): Option<Chunk> {
         slotNames: c.slotNames, slotOuter: c.slotOuter,
         slotWritten: written, need: need, usesArguments: usesArgs,
         numericOnly: numOnly, hasDeclared: anyDecl,
+        viaScope: c.viaScope, scopeNames: c.scopeNames,
     })
 }
 
