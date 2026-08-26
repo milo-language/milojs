@@ -14850,7 +14850,7 @@ pub fn isCallableIn(st: &Interp, v: &JSValue): bool {
 // adapter throws instead — a loud, bounded failure beats a wedged process.
 pub let ARRAY_LIKE_MAX: i64 = 1 << 24
 
-fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {
+pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {
     // A SYMBOL-keyed member resolves through the ordinary property machinery and
     // is then called with the receiver, rather than being routed by the built-in
     // kind dispatch below -- that dispatch is keyed on ordinary method names and

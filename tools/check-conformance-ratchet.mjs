@@ -16,9 +16,8 @@
 import { readFileSync, existsSync } from "fs";
 
 const DIR = "docs/conformance";
-// Suites the ratchet covers. node is added when its sweep report carries `passes`
-// and its pass set is seeded — extend this list in that commit, never silently.
-const SUITES = ["test262", "quickjs"];
+// Suites the ratchet covers.
+const SUITES = ["test262", "quickjs", "node-compat"];
 
 let bad = 0;
 const complain = (msg) => { console.error(msg); bad = 1; };

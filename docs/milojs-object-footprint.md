@@ -3,7 +3,7 @@ system: milojs-object-footprint
 purpose: measured per-object memory cost in milojs, and the JSObjExtra side table that shrank it
 key-files: src/engine/runtime.milo, src/engine/eval.milo
 update-when: JSObj gains or loses fields, or the side-table split lands
-last-verified: 2026-08-19 (re-checked against the evalUnArm change: the unary operator is now decided into a UnOp before the operand is evaluated, which fixes a dangling AST borrow and changes no behaviour this doc describes)
+last-verified: 2026-08-26 (re-verified after the raw-f64 lane: the lane holds only f64s and flushes boxed Numbers through scopeAssign, so JSObj layout and the side table are untouched. Previous note: re-checked against the evalUnArm change: the unary operator is now decided into a UnOp before the operand is evaluated, which fixes a dangling AST borrow and changes no behaviour this doc describes)
 -->
 
 # milojs: object footprint

@@ -155,6 +155,14 @@ comparable number; whichever fires first wins. A call the VM keeps in its own
 frames spends no native stack at all, so there the counter is the only one of
 the two that can fire.
 
+### `callMember`
+
+```milo
+pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue
+```
+
+_Undocumented._
+
 ### `callNativeAsFunction`
 
 ```milo
