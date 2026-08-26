@@ -3,7 +3,7 @@ system: backlog
 purpose: the open list. What is broken or missing, why it is not trivial, and what to do next
 key-files: src/engine/eval.milo, bench/ab.sh, src/engine/builtins.milo, src/engine/parser.milo, src/engine/methods.milo, src/engine/runtime.milo, src/engine/driver.milo, src/engine/bytecode.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, lib/http.js, bench/run.sh, bench/arith.js
 update-when: an item lands (delete it), or a sweep/probe finds a new gap (add it)
-last-verified: 2026-08-26 (re-verified after mode B: capturing method-call args now compile with scope-backed declared locals, so the call-arg-capture entry direction in the flush note is resolved; the flush-cost entry stands. Previous note: flush-gap soundness fix recorded: entry added for its bench cost; the capture-reject entry direction is unchanged. Previous note: re-verified after the literals-and-operators batch: prim/unslow/binslow/short-circuit opcodes, with in/instanceof/loose-eq coercion moved into evalBinValues as their single home. Previous note: re-verified after Op.CallMember: method calls in compiled bodies route through callMember with AST-evaluated arguments, capturing arguments are rejected (call-arg-capture) pending scope-backed locals; no entry here changes. Previous note: re-verified after the raw-f64 lane landed in bytecode.milo and its dispatch in eval.milo; no entry here describes the boxed-only VM. Previous note: re-verified after the vm stats witness landed in bytecode.milo: rejection sites now carry reason tags, which does not change any entry here; the coverage residue ranking lives in docs/conformance/vm-coverage.json. Previous note: re-verified for the sweeps emitting per-case pass lists; entries unaffected. Previous note: interpStackBytes added to driver.milo, and the darwin deep-recursion entry below records the half it could not fix; other entries re-checked unchanged. Previous note: re-checked against the evalUnArm change: the unary operator is now decided into a UnOp before the operand is evaluated, which fixes a dangling AST borrow and changes no behaviour this doc describes)
+last-verified: 2026-08-26 (darwin-cliff entry extended with the load-sensitive readdir case and the claim-commit record correction. Previous note: re-verified after mode B: capturing method-call args now compile with scope-backed declared locals, so the call-arg-capture entry direction in the flush note is resolved; the flush-cost entry stands. Previous note: flush-gap soundness fix recorded: entry added for its bench cost; the capture-reject entry direction is unchanged. Previous note: re-verified after the literals-and-operators batch: prim/unslow/binslow/short-circuit opcodes, with in/instanceof/loose-eq coercion moved into evalBinValues as their single home. Previous note: re-verified after Op.CallMember: method calls in compiled bodies route through callMember with AST-evaluated arguments, capturing arguments are rejected (call-arg-capture) pending scope-backed locals; no entry here changes. Previous note: re-verified after the raw-f64 lane landed in bytecode.milo and its dispatch in eval.milo; no entry here describes the boxed-only VM. Previous note: re-verified after the vm stats witness landed in bytecode.milo: rejection sites now carry reason tags, which does not change any entry here; the coverage residue ranking lives in docs/conformance/vm-coverage.json. Previous note: re-verified for the sweeps emitting per-case pass lists; entries unaffected. Previous note: interpStackBytes added to driver.milo, and the darwin deep-recursion entry below records the half it could not fix; other entries re-checked unchanged. Previous note: re-checked against the evalUnArm change: the unary operator is now decided into a UnOp before the operand is evaluated, which fixes a dangling AST borrow and changes no behaviour this doc describes)
 -->
 
 # milojs backlog
@@ -64,7 +64,15 @@ mapping: a do-nothing context on a 128 MB stack peaks at 135 MB RSS (20-line C
 repro, 2026-08-26), so a big stack costs its full size in dirty pages on every
 milojs process. Consequence: recursion that needs more than ~2.3k tree-walker
 frames (~7 KB each) raises RangeError on darwin where linux and node keep going;
-es-get-iterator's last 10 assertions are the measured case.
+es-get-iterator's last 10 assertions are the measured case, and
+node's test-fs-readdir-stack-overflow is the load-sensitive one: it passes
+standalone (catchable RangeError at the guard) but under a full parallel sweep
+on darwin it fell off the pass set once (2026-08-26, claimed-sweep commit) —
+the pass set now excludes it conservatively; re-claim it when a quiet sweep
+shows it stable, or when the milo context-switch fix lifts darwin to the same
+frame-cap determinism linux has. That commit's message also misnames its wins:
+the actual four were console-assign-undefined, http-parser-multiple-execute,
+promise-unhandled-default, v8-deserialize-buffer.
 
 Fix lives in milo, not here: replace the system ucontext on darwin with the
 scheduler's own context switch (the windows arm already has its own), then
