@@ -46,7 +46,7 @@ from "./engine/runtime" import {
 }
 from "./engine/driver" import {
     makeInterp, bootInterp
-}
+, interpStackBytes}
 from "./engine/strutil" import {
     strSlice
 }
@@ -391,9 +391,8 @@ fn main(): i32 {
             exit(0)
         }
     }
-    // Same 16 MB the engine uses, and for the same reason: the recursion ceiling
-    // is native stack, not a frame count. See the note in milojs-engine.milo.
-    , 16777216)
+    // Sized per-OS, same as the engine entry: see interpStackBytes in driver.milo.
+    , interpStackBytes())
     interpTask.join()
     if gInterp.throwing {
         eprint("Uncaught " + describeThrown(gInterp, gInterp.thrownValue))

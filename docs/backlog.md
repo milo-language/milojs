@@ -3,7 +3,7 @@ system: backlog
 purpose: the open list. What is broken or missing, why it is not trivial, and what to do next
 key-files: src/engine/eval.milo, src/engine/builtins.milo, src/engine/parser.milo, src/engine/methods.milo, src/engine/runtime.milo, src/engine/driver.milo, src/engine/bytecode.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, lib/http.js, bench/run.sh, bench/arith.js
 update-when: an item lands (delete it), or a sweep/probe finds a new gap (add it)
-last-verified: 2026-08-19 (re-checked against the evalUnArm change: the unary operator is now decided into a UnOp before the operand is evaluated, which fixes a dangling AST borrow and changes no behaviour this doc describes)
+last-verified: 2026-08-26 (interpStackBytes added to driver.milo, and the darwin deep-recursion entry below records the half it could not fix; other entries re-checked unchanged. Previous note: re-checked against the evalUnArm change: the unary operator is now decided into a UnOp before the operand is evaluated, which fixes a dangling AST borrow and changes no behaviour this doc describes)
 -->
 
 # milojs backlog
@@ -41,6 +41,24 @@ intuition: the 1500-case sample is too thin to rank causes.
    ShadowRealm (48) are host features, and `built-ins/Iterator`'s remainder is
    mostly stage-2 proposals (`zip`, `zipKeyed`, `concat`, `chunks`, `windows`)
    that node does not have either.
+
+## Engine: deep recursion on darwin dies ~2.3k frames early
+
+The interpreter task stack is sized per-OS (`interpStackBytes` in
+`src/engine/driver.milo`): 128 MB on linux, where glibc faults stack pages
+lazily, so the 10k `callDepthLimit` backstop is what bounds recursion on every
+path. darwin keeps 16 MB, because Apple's `makecontext` writes through the whole
+mapping: a do-nothing context on a 128 MB stack peaks at 135 MB RSS (20-line C
+repro, 2026-08-26), so a big stack costs its full size in dirty pages on every
+milojs process. Consequence: recursion that needs more than ~2.3k tree-walker
+frames (~7 KB each) raises RangeError on darwin where linux and node keep going;
+es-get-iterator's last 10 assertions are the measured case.
+
+Fix lives in milo, not here: replace the system ucontext on darwin with the
+scheduler's own context switch (the windows arm already has its own), then
+delete the darwin branch of `interpStackBytes`. The alternative that does not
+need milo — shrinking the ~7 KB per-frame cost — is the same work the bytecode
+VM stage already owns.
 
 ## Engine: an abrupt completion from a Map iterator HANGS
 

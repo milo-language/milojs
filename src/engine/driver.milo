@@ -163,3 +163,25 @@ fn runSource(src: &string, st: &mut Interp): i32 {
     }
     return 0
 }
+
+// Native stack for the task the interpreter runs on. A JS frame costs ~7 KB of
+// tree-walker native stack, so the stack size decides where deep recursion dies:
+// below the 10k callDepthLimit backstop it is the byte-measured headroom guard
+// that fires, and that cutoff moves with every compiler's frame-size noise and
+// differs per arch (x86_64 frames run ~8% fatter than arm64, which is exactly
+// the historical darwin/linux gap in the package-suite numbers). 128 MB puts the
+// frame-count backstop first on every path (~10k frames * ~7 KB, with margin),
+// so recursion depth is exact and identical across platforms.
+//
+// darwin cannot have that yet: Apple's makecontext writes through the whole
+// mapping (a 20-line C repro peaks at 135 MB for a do-nothing context on a
+// 128 MB stack), so a big stack costs its full size in dirty pages per process.
+// glibc faults lazily (same repro: 1 MB). Until milo's scheduler replaces the
+// system ucontext on darwin, darwin keeps the 16 MB compromise: ~2.3k usable
+// frames, enough for the corpus tests short of the backstop.
+pub fn interpStackBytes(): i64 {
+    if @targetOs() == "darwin" {
+        return 16777216
+    }
+    return 134217728
+}
