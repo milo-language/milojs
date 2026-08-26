@@ -76,3 +76,13 @@ pub fn tryRunFor(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): bool
 
 Run this `for` through the compiled path, or answer false to say the tree
 walker still has to run it. Compilation happens once per statement.
+
+### `vmStatsReport`
+
+```milo
+pub fn vmStatsReport(): string
+```
+
+One line per reason, most-blocking first. The counts are per compilation UNIT
+(one per function body or loop statement), so the top line is the construct
+whose support unlocks the most units in the program that just ran.

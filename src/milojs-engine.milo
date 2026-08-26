@@ -43,7 +43,7 @@ from "std/args" import {
     args
 }
 from "./engine/bytecode" import {
-    gVmDisabled
+    gVmDisabled, gVmStats, vmStatsReport
 }
 from "./engine/version" import {
     versionText
@@ -128,6 +128,9 @@ fn main(): i32 {
             // evaluator it stands in for.
             if let Option.Some(_b) = Env.get("MILOJS_NO_BYTECODE") {
                 gVmDisabled = true
+            }
+            if let Option.Some(_vs) = Env.get("MILOJS_VM_STATS") {
+                gVmStats = true
             }
             gInterp = makeInterp(gcStats, gcThreshold, gcGrowth)
             bootInterp(gInterp)
@@ -235,6 +238,10 @@ fn main(): i32 {
             // darwin cannot yet.
             , interpStackBytes())
             interpTask.join()
+            // Stderr, so stdout stays byte-identical to node either way.
+            if gVmStats {
+                eprint(vmStatsReport())
+            }
             if gInterp.throwing {
                 eprint("Uncaught " + describeThrown(gInterp, gInterp.thrownValue))
                 return 1

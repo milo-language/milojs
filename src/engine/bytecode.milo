@@ -143,6 +143,18 @@ struct Comp {
     // A `return` compiles only for a whole function body. compileFor leaves this
     // false, so a loop containing one is rejected rather than silently losing it.
     allowRet: bool,
+    // First construct that rejected the chunk. The FIRST one, not the last: a
+    // rejected walk keeps visiting children with ok already false, and their
+    // reasons are noise. This is what MILOJS_VM_STATS aggregates, so the residue
+    // of uncompilable real code is a ranked list instead of a guess.
+    why: string,
+}
+
+fn reject(c: &mut Comp, why: string) {
+    if c.ok {
+        c.why = why
+    }
+    c.ok = false
 }
 
 fn emitOp(c: &mut Comp, op: Op, a: i64): i64 {
@@ -199,7 +211,7 @@ fn declareSlot(c: &mut Comp, name: &string): i64 {
     var i: i64 = 0
     while i < c.slotNames.len() {
         if c.slotNames[i] == name {
-            c.ok = false
+            reject(c, "duplicate-binding")
             return i
         }
         i = i + 1
@@ -264,6 +276,74 @@ fn binOpFor(op: &string): Op {
     return Op.Halt
 }
 
+// The variant name of an expression, for MILOJS_VM_STATS reject tags. Naming
+// every arm keeps the residue ranking honest: a bucket called "other" cannot be
+// worked off.
+fn exprKindName(prog: &Prog, id: ExprId): string {
+    match prog.exprs[id.index] {
+        Expr.Num(_a) => { return "Num" }
+        Expr.StrLit(_a) => { return "StrLit" }
+        Expr.BigIntLit(_a) => { return "BigIntLit" }
+        Expr.BoolLit(_a) => { return "BoolLit" }
+        Expr.NullLit => { return "NullLit" }
+        Expr.UndefLit => { return "UndefLit" }
+        Expr.Ident(_a) => { return "Ident" }
+        Expr.Bin(_a, _b, _c) => { return "Bin" }
+        Expr.Un(_a, _b) => { return "Un" }
+        Expr.Assign(_a, _b) => { return "Assign" }
+        Expr.Call(_a, _b) => { return "Call" }
+        Expr.ImportCall(_a) => { return "ImportCall" }
+        Expr.Member(_a, _b) => { return "Member" }
+        Expr.FuncExpr(_a) => { return "FuncExpr" }
+        Expr.ToStrHole(_a) => { return "ToStrHole" }
+        Expr.ObjLit(_a) => { return "ObjLit" }
+        Expr.Index(_a, _b) => { return "Index" }
+        Expr.SetMember(_a, _b, _c) => { return "SetMember" }
+        Expr.ArrLit(_a) => { return "ArrLit" }
+        Expr.TemplateStrings(_a, _b) => { return "TemplateStrings" }
+        Expr.New(_a, _b) => { return "New" }
+        Expr.Update(_a, _b, _c) => { return "Update" }
+        Expr.CompoundAssign(_a, _b, _c) => { return "CompoundAssign" }
+        Expr.LogicalAssign(_a, _b, _c) => { return "LogicalAssign" }
+        Expr.DestructAssign(_a, _b) => { return "DestructAssign" }
+        Expr.Cond(_a, _b, _c) => { return "Cond" }
+        Expr.Spread(_a) => { return "Spread" }
+        Expr.Comma(_a, _b) => { return "Comma" }
+        Expr.RegexLit(_a, _b) => { return "RegexLit" }
+        Expr.OptMember(_a, _b) => { return "OptMember" }
+        Expr.ClassExpr(_a) => { return "ClassExpr" }
+        Expr.OptIndex(_a, _b) => { return "OptIndex" }
+        Expr.OptChainRoot(_a) => { return "OptChainRoot" }
+        Expr.OptCall(_a, _b) => { return "OptCall" }
+    }
+}
+
+fn stmtKindName(prog: &Prog, id: StmtId): string {
+    match prog.stmts[id.index] {
+        Stmt.ExprStmt(_a) => { return "ExprStmt" }
+        Stmt.If(_a, _b, _c) => { return "If" }
+        Stmt.While(_a, _b) => { return "While" }
+        Stmt.Ret(_a) => { return "Ret" }
+        Stmt.Block(_a) => { return "Block" }
+        Stmt.FuncDecl(_a) => { return "FuncDecl" }
+        Stmt.Empty => { return "Empty" }
+        Stmt.For(_a, _b, _c, _d) => { return "For" }
+        Stmt.Throw(_a) => { return "Throw" }
+        Stmt.MultiDecl(_a) => { return "MultiDecl" }
+        Stmt.UsingDecl(_a) => { return "UsingDecl" }
+        Stmt.ForIn(_a, _b, _c, _d) => { return "ForIn" }
+        Stmt.ForOf(_a, _b, _c, _d, _e) => { return "ForOf" }
+        Stmt.Break(_a) => { return "Break" }
+        Stmt.Continue(_a) => { return "Continue" }
+        Stmt.Labeled(_a, _b) => { return "Labeled" }
+        Stmt.ClassDecl(_a) => { return "ClassDecl" }
+        Stmt.DoWhile(_a, _b) => { return "DoWhile" }
+        Stmt.Switch(_a, _b) => { return "Switch" }
+        Stmt.Try(_a, _b, _c, _d) => { return "Try" }
+        Stmt.With(_a, _b) => { return "With" }
+    }
+}
+
 // Compile one expression, leaving its value on the stack. Sets c.ok false for
 // anything outside the subset; callers keep walking but the result is discarded.
 fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
@@ -295,11 +375,11 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
             var i: i64 = 0
             while i < prog.objLits[litIdx.index].len() {
                 if prog.objLits[litIdx.index][i].kind > 0 {
-                    c.ok = false
+                    reject(c, "objlit-accessor")
                     return
                 }
                 if let Option.Some(_ke) = prog.objLits[litIdx.index][i].keyExpr {
-                    c.ok = false
+                    reject(c, "objlit-computed-key")
                     return
                 }
                 i = i + 1
@@ -327,7 +407,7 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                     emitOp(c, Op.SetMem, k)
                 }
                 _ => {
-                    c.ok = false
+                    reject(c, "setmember-computed")
                 }
             }
         }
@@ -347,13 +427,13 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                     // against the running module, and threads `this` explicitly
                     // through a desugared `super(...)`.
                     if name == "eval" || name == "require" || isSuperName(name) {
-                        c.ok = false
+                        reject(c, "call-magic")
                         return
                     }
                     let argc = prog.argLists[argsIdx.index].len()
                     // The arg word packs the count into 8 bits (see below).
                     if argc > 255 {
-                        c.ok = false
+                        reject(c, "call-argc")
                         return
                     }
                     let cs = slotOf(c, name, false)
@@ -374,7 +454,7 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                     emitOp(c, Op.Call, argc + ns * 256)
                 }
                 _ => {
-                    c.ok = false
+                    reject(c, "call-callee:" + exprKindName(prog, calleeId))
                 }
             }
         }
@@ -382,7 +462,7 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
             let o = binOpFor(op)
             match o {
                 Op.Halt => {
-                    c.ok = false
+                    reject(c, "bin-op:" + op.clone())
                 }
                 _ => {
                     compExpr(prog, c, a)
@@ -396,7 +476,7 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                 compExpr(prog, c, a)
                 emitOp(c, Op.Neg, 0)
             } else {
-                c.ok = false
+                reject(c, "un-op:" + op.clone())
             }
         }
         Expr.Assign(name, rhs) => {
@@ -414,7 +494,7 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                     let o = binOpFor(op)
                     match o {
                         Op.Halt => {
-                            c.ok = false
+                            reject(c, "bin-op:" + op.clone())
                         }
                         _ => {
                             emitOp(c, o, 0)
@@ -424,7 +504,7 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                     }
                 }
                 _ => {
-                    c.ok = false
+                    reject(c, "compound-target")
                 }
             }
         }
@@ -456,12 +536,12 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                     }
                 }
                 _ => {
-                    c.ok = false
+                    reject(c, "update-target")
                 }
             }
         }
         _ => {
-            c.ok = false
+            reject(c, "expr:" + exprKindName(prog, id))
         }
     }
 }
@@ -491,7 +571,7 @@ fn compStmt(prog: &Prog, c: &mut Comp, id: StmtId) {
                 // slot that is never written back would lose it. Rejected rather
                 // than handled: the subset does not need it.
                 if prog.declLists[listIdx.index][i].isVar {
-                    c.ok = false
+                    reject(c, "var-decl")
                     return
                 }
                 compExpr(prog, c, prog.declLists[listIdx.index][i].init)
@@ -518,7 +598,7 @@ fn compStmt(prog: &Prog, c: &mut Comp, id: StmtId) {
         }
         Stmt.Ret(e) => {
             if !c.allowRet {
-                c.ok = false
+                reject(c, "return-in-loop")
                 return
             }
             compExpr(prog, c, e)
@@ -533,7 +613,7 @@ fn compStmt(prog: &Prog, c: &mut Comp, id: StmtId) {
             c.args[jf] = c.ops.len()
         }
         _ => {
-            c.ok = false
+            reject(c, "stmt:" + stmtKindName(prog, id))
         }
     }
 }
@@ -601,6 +681,63 @@ fn namesArguments(c: &Comp): bool {
     return false
 }
 
+// MILOJS_VM_STATS=1 aggregation. Set by the entry points beside gVmDisabled;
+// costs nothing when off because compilation runs once per statement/function
+// anyway. Parallel name/count Vecs rather than a HashMap: iteration order feeds
+// a report that must be stable, and the map's order is random.
+pub var gVmStats: bool = false
+var gStatBodiesOk: i64 = 0
+var gStatBodiesNo: i64 = 0
+var gStatLoopsOk: i64 = 0
+var gStatLoopsNo: i64 = 0
+var gStatWhy: Vec<string> = Vec.new()
+var gStatWhyN: Vec<i64> = Vec.new()
+
+fn statReject(why: &string) {
+    var i: i64 = 0
+    while i < gStatWhy.len() {
+        if gStatWhy[i] == why {
+            gStatWhyN[i] = gStatWhyN[i] + 1
+            return
+        }
+        i = i + 1
+    }
+    gStatWhy.push(why.clone())
+    gStatWhyN.push(1)
+}
+
+// One line per reason, most-blocking first. The counts are per compilation UNIT
+// (one per function body or loop statement), so the top line is the construct
+// whose support unlocks the most units in the program that just ran.
+pub fn vmStatsReport(): string {
+    var out = "vm-stats: bodies " + gStatBodiesOk.toString() + " compiled / "
+        + gStatBodiesNo.toString() + " rejected; loops " + gStatLoopsOk.toString()
+        + " compiled / " + gStatLoopsNo.toString() + " rejected\n"
+    // Selection sort into a copy: n is the number of distinct reasons, tens at most.
+    var names: Vec<string> = Vec.new()
+    var counts: Vec<i64> = Vec.new()
+    var i: i64 = 0
+    while i < gStatWhy.len() {
+        names.push(gStatWhy[i].clone())
+        counts.push(gStatWhyN[i])
+        i = i + 1
+    }
+    while names.len() > 0 {
+        var best: i64 = 0
+        var j: i64 = 1
+        while j < counts.len() {
+            if counts[j] > counts[best] {
+                best = j
+            }
+            j = j + 1
+        }
+        out = out + "  " + counts[best].toString() + "  " + names[best] + "\n"
+        let _n = names.remove(best)
+        let _c = counts.remove(best)
+    }
+    return out
+}
+
 // Compile a `for` statement, or answer None when any part of it falls outside
 // the subset.
 pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
@@ -609,6 +746,7 @@ pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
             var c = Comp {
                 ops: Vec.new(), args: Vec.new(), consts: Vec.new(), strs: Vec.new(),
                 slotNames: Vec.new(), slotOuter: Vec.new(), ok: true, allowRet: false,
+                why: "",
             }
             if let Option.Some(s) = init {
                 compStmt(prog, c, s)
@@ -633,7 +771,14 @@ pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
             c.args[jf] = c.ops.len()
             emitOp(c, Op.Halt, 0)
             if !c.ok {
+                if gVmStats {
+                    gStatLoopsNo = gStatLoopsNo + 1
+                    statReject(c.why)
+                }
                 return Option.None
+            }
+            if gVmStats {
+                gStatLoopsOk = gStatLoopsOk + 1
             }
             let need = operandNeed(c)
             let written = writtenSlots(c)
@@ -1300,14 +1445,25 @@ var gBodyIdx: Vec<i64> = Vec.new()
 // parameters and is a statement the caller runs, not part of the body.
 pub fn compileBody(prog: &Prog, fIdx: i64): Option<Chunk> {
     if prog.funcs[fIdx].isGenerator || prog.funcs[fIdx].isAsync {
+        if gVmStats {
+            gStatBodiesNo = gStatBodiesNo + 1
+            let w = "suspension-body"
+            statReject(w)
+        }
         return Option.None
     }
     if let Option.Some(_p) = prog.funcs[fIdx].paramPrelude {
+        if gVmStats {
+            gStatBodiesNo = gStatBodiesNo + 1
+            let w = "param-prelude"
+            statReject(w)
+        }
         return Option.None
     }
     var c = Comp {
         ops: Vec.new(), args: Vec.new(), consts: Vec.new(), strs: Vec.new(),
         slotNames: Vec.new(), slotOuter: Vec.new(), ok: true, allowRet: true,
+        why: "",
     }
     let body = prog.funcs[fIdx].body
     var i: i64 = 0
@@ -1317,7 +1473,14 @@ pub fn compileBody(prog: &Prog, fIdx: i64): Option<Chunk> {
     }
     emitOp(c, Op.Halt, 0)
     if !c.ok {
+        if gVmStats {
+            gStatBodiesNo = gStatBodiesNo + 1
+            statReject(c.why)
+        }
         return Option.None
+    }
+    if gVmStats {
+        gStatBodiesOk = gStatBodiesOk + 1
     }
     let need = operandNeed(c)
     let written = writtenSlots(c)

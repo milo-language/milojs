@@ -80,7 +80,7 @@ already good at." That is wrong, and it contradicted §Critical path & honesty s
 down, which correctly says full ES2020 is a decade. A compiler is a batch transformation whose
 input language we define; an engine implements a spec we do not control, with observable
 evaluation order, live object identity, and thirty years of accreted edge cases. The evidence is
-in this tree: <!--fact:loc-milo-->48.1k<!--/fact--> lines of Milo, one 17.7k-line evaluator, and
+in this tree: <!--fact:loc-milo-->48.3k<!--/fact--> lines of Milo, one 17.7k-line evaluator, and
 a test262 score in the seventies on a sample. "Parsing + dispatch" is the sentence that produced
 a 3,100-line `callBuiltin`. Size the work off `docs/status.md`, not off this heading.
 

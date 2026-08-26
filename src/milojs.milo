@@ -54,7 +54,7 @@ from "std/process" import {
     exePath
 }
 from "./engine/bytecode" import {
-    gVmDisabled
+    gVmDisabled, gVmStats, vmStatsReport
 }
 from "./runtime/host" import {
     installHostGlobals
@@ -290,6 +290,9 @@ fn main(): i32 {
     if let Option.Some(_nb) = Env.get("MILOJS_NO_BYTECODE") {
         gVmDisabled = true
     }
+    if let Option.Some(_vs) = Env.get("MILOJS_VM_STATS") {
+        gVmStats = true
+    }
     // Headroom multiple over the live set between collections (see collect).
     var gcGrowth: i64 = 2
     // 0 is allowed: see the note in src/milojs-engine.milo. It is the only
@@ -394,6 +397,12 @@ fn main(): i32 {
     // Sized per-OS, same as the engine entry: see interpStackBytes in driver.milo.
     , interpStackBytes())
     interpTask.join()
+    // Stats go to stderr so stdout stays byte-identical to node. A program that
+    // leaves through exit() skips this line; the witness is for programs that
+    // run to completion, which is what the coverage probes do.
+    if gVmStats {
+        eprint(vmStatsReport())
+    }
     if gInterp.throwing {
         eprint("Uncaught " + describeThrown(gInterp, gInterp.thrownValue))
         return 1
