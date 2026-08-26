@@ -8360,10 +8360,43 @@ pub fn setMemberOfValue(prog: &Prog, ov: JSValue, key: string, v: JSValue, st: &
 // ToPrimitive ordering is exactly the kind that drifts and is then wrong in one
 // place only.
 pub fn evalBinValues(prog: &Prog, op: &string, va: JSValue, vb: JSValue, st: &mut Interp): JSValue {
+    // `in` and `instanceof` first: they are object-protocol operators (proxy
+    // has-trap, prototype walk), not coercing arithmetic, and they used to live
+    // ONLY in the AST-level arms — the compiled path routed them here and got
+    // evalBin's numeric fallback, so `"a" in proxy` skipped the has trap. The
+    // AST arms call the same two helpers; this is now the single value-level home.
+    if op == "in" {
+        return evalInOperator(prog, toStr(va), vb, st)
+    }
+    if op == "instanceof" {
+        return JSValue.Bool(instanceOf(st, va, vb))
+    }
     // a BigInt operand takes a dedicated path: arbitrary-precision math,
     // its own mixing rules (BigInt + Number throws), and value equality
     if isBigIntVal(va) || isBigIntVal(vb) {
         return evalBigIntBin(op, va, vb, st)
+    }
+    // `==`/`!=` between an object and a coercible primitive converts the OBJECT
+    // side (the rule that makes `new String("a") == "a"` true). This block was
+    // only in evalBinArm, which is exactly the drift the split-out comment
+    // below warns about: the compiled path answered false where the walker
+    // coerced or threw.
+    if (op == "==" || op == "!=") && (objHandle(va) >= 0) != (objHandle(vb) >= 0) && isEqCoercible(va) && isEqCoercible(vb) {
+        pushTemp(st, cloneValue(va))
+        pushTemp(st, cloneValue(vb))
+        var eqa = cloneValue(va)
+        var eqb = cloneValue(vb)
+        if objHandle(va) >= 0 {
+            eqa = toPrimitiveDefault(prog, va, st)
+        } else {
+            eqb = toPrimitiveDefault(prog, vb, st)
+        }
+        popTemp(st)
+        popTemp(st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        return evalBin(op, eqa, eqb)
     }
     // arithmetic/relational operators on an object operand need
     // interp-aware ToPrimitive (a Date valueOf's to its ms, arrays join,
@@ -8531,51 +8564,12 @@ fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): 
                 }
             }
         }
+        // evalExpr can re-enter the parser (require, Function) and move the
+        // AST arena; `op` borrows into it, so the delegation below must read a
+        // copy taken before the re-entry — this is the evalUnArm:op entry in
+        // tools/ast-ref-allow.txt's history, not a hypothetical.
+        let opCopy = op.clone()
         let va = evalExpr(prog, a, st, scope)
-        // The numeric unary operators coerce, and ToNumber of a SYMBOL throws.
-        // `typeof` and `void` do not convert and are handled above/below.
-        if isSymbolValue(va) && (code == UnOp.Neg || code == UnOp.Plus || code == UnOp.BitNot) {
-            st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a number")
-            return JSValue.Undefined
-        }
-        if code == UnOp.Neg {
-            // BigInt negation stays a BigInt; unary + on a BigInt throws in JS
-            if isBigIntVal(va) {
-                return JSValue.BigInt(bnNeg(bigStrOf(va)))
-            }
-            // negate, don't subtract from zero: 0.0 - 0.0 is +0, so `-0`
-            // lost its sign and Object.is(0, -0) came out true
-            //
-            // ToNumber of an OBJECT runs ToPrimitive first, which can call
-            // valueOf/toString/@@toPrimitive. `toNum` cannot (it has no Prog to
-            // re-enter user code with) and answers NaN, so `-[1]` was NaN where
-            // it should be -1. The compiled Op.Neg got this right and the
-            // evaluator did not, which is how the two disagreed.
-            if objHandle(va) >= 0 {
-                return JSValue.Number(-toNum(toPrimitiveNumber(prog, va, st)))
-            }
-            return JSValue.Number(-toNum(va))
-        }
-        if code == UnOp.BitNot && isBigIntVal(va) {
-            // ~x on a BigInt is -(x+1); exact and cheap without full bitwise
-            return JSValue.BigInt(bnSub(bnNeg(bigStrOf(va)), "1"))
-        }
-        if code == UnOp.TypeOf {
-            // a bind() result is an object internally but a function to JS
-            let th = objHandle(va)
-            if th >= 0 && (st.objects[th].isBound || st.objects[th].isFunctionLike) {
-                return JSValue.Str("function")
-            }
-            // symbols are unique strings internally; typeof still says symbol
-            if isSymbolValue(va) {
-                return JSValue.Str("symbol")
-            }
-            return JSValue.Str(typeofStr(va))
-        }
-        if code == UnOp.Void {
-            return JSValue.Undefined
-        }
         if code == UnOp.Await {
             return awaitValue(prog, va, st)
         }
@@ -8767,6 +8761,59 @@ fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): 
                 popTemp(st)
             }
             return last
+        }
+        return evalUnValue(prog, opCopy, va, st)
+}
+
+// The unary operators on an already-evaluated VALUE: everything evalUnArm does
+// after its operand is in hand, minus the suspension/delete/typeof-ident cases
+// the caller owns. The compiled path (Op.UnSlow) calls this directly, so both
+// paths share one implementation of coercion order.
+pub fn evalUnValue(prog: &Prog, op: &string, va: JSValue, st: &mut Interp): JSValue {
+        let code = unOpOf(op)
+        // The numeric unary operators coerce, and ToNumber of a SYMBOL throws.
+        // `typeof` and `void` do not convert.
+        if isSymbolValue(va) && (code == UnOp.Neg || code == UnOp.Plus || code == UnOp.BitNot) {
+            st.throwing = true
+            st.thrownValue = makeError(st, "TypeError", "Cannot convert a Symbol value to a number")
+            return JSValue.Undefined
+        }
+        if code == UnOp.Neg {
+            // BigInt negation stays a BigInt; unary + on a BigInt throws in JS
+            if isBigIntVal(va) {
+                return JSValue.BigInt(bnNeg(bigStrOf(va)))
+            }
+            // negate, don't subtract from zero: 0.0 - 0.0 is +0, so `-0`
+            // lost its sign and Object.is(0, -0) came out true
+            //
+            // ToNumber of an OBJECT runs ToPrimitive first, which can call
+            // valueOf/toString/@@toPrimitive. `toNum` cannot (it has no Prog to
+            // re-enter user code with) and answers NaN, so `-[1]` was NaN where
+            // it should be -1. The compiled Op.Neg got this right and the
+            // evaluator did not, which is how the two disagreed.
+            if objHandle(va) >= 0 {
+                return JSValue.Number(-toNum(toPrimitiveNumber(prog, va, st)))
+            }
+            return JSValue.Number(-toNum(va))
+        }
+        if code == UnOp.BitNot && isBigIntVal(va) {
+            // ~x on a BigInt is -(x+1); exact and cheap without full bitwise
+            return JSValue.BigInt(bnSub(bnNeg(bigStrOf(va)), "1"))
+        }
+        if code == UnOp.TypeOf {
+            // a bind() result is an object internally but a function to JS
+            let th = objHandle(va)
+            if th >= 0 && (st.objects[th].isBound || st.objects[th].isFunctionLike) {
+                return JSValue.Str("function")
+            }
+            // symbols are unique strings internally; typeof still says symbol
+            if isSymbolValue(va) {
+                return JSValue.Str("symbol")
+            }
+            return JSValue.Str(typeofStr(va))
+        }
+        if code == UnOp.Void {
+            return JSValue.Undefined
         }
         if code == UnOp.Plus {
             // ToNumber of a BigInt is a TypeError -- unary plus is the one

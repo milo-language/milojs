@@ -302,6 +302,17 @@ String` answered false while `String.prototype` read fine. get-intrinsic walks
 depends on it (a large slice of npm) died on "base intrinsic for
 %String.prototype.indexOf% exists, but the property is not available".
 
+### `evalUnValue`
+
+```milo
+pub fn evalUnValue(prog: &Prog, op: &string, va: JSValue, st: &mut Interp): JSValue
+```
+
+The unary operators on an already-evaluated VALUE: everything evalUnArm does
+after its operand is in hand, minus the suspension/delete/typeof-ident cases
+the caller owns. The compiled path (Op.UnSlow) calls this directly, so both
+paths share one implementation of coercion order.
+
 ### `execBlock`
 
 ```milo

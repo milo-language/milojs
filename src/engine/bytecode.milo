@@ -56,7 +56,7 @@ from "./runtime" import {
 from "./eval" import {
     evalBinValues, toNumProg, toNumArg, memberOfValue, setMemberOfValue,
     bindActivationScope, callGuardTripped, callPlainValue, isPlainCallable,
-    throwNotAFunction, isSuperName, callMember, callMayCapture
+    throwNotAFunction, isSuperName, callMember, callMayCapture, evalUnValue
 }
 
 // An enum rather than integer opcodes so the dispatch `match` lowers to a jump
@@ -98,6 +98,21 @@ enum Op {
     // Call the value at [top - argc] with the argc values above it, replacing
     // all of them with the result. See the arg packing in compExpr.
     Call,
+    // Push a non-numeric primitive: 0 undefined, 1 null, 2 false, 3 true.
+    Prim,
+    // A unary operator on the value on top, by its JS spelling in strs[a],
+    // through the evaluator's own evalUnValue: one implementation of coercion
+    // order for both paths. The Neg fast path keeps its dedicated opcode.
+    UnSlow,
+    // A binary operator with no fast path (loose equality, bitwise, **,
+    // instanceof, in), by its JS spelling in strs[a], through evalBinValues.
+    BinSlow,
+    // Short-circuit jumps: peek at the top of the stack and jump (KEEPING the
+    // value, it is the expression's result) when it decides the answer;
+    // otherwise fall through, where a Pop discards it before the right side.
+    JmpFalsePeek,
+    JmpTruePeek,
+    JmpNotNullishPeek,
     // A method call `o.m(...)`: the receiver is on top of the stack and is
     // replaced by the result. The arg word packs the strs slot of the method
     // name (low 16 bits) and the AST ArgListId (the rest): the argument
@@ -377,6 +392,19 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
             let k = strSlot(c, v)
             emitOp(c, Op.Str, k)
         }
+        Expr.BoolLit(b) => {
+            if b {
+                emitOp(c, Op.Prim, 3)
+            } else {
+                emitOp(c, Op.Prim, 2)
+            }
+        }
+        Expr.NullLit => {
+            emitOp(c, Op.Prim, 1)
+        }
+        Expr.UndefLit => {
+            emitOp(c, Op.Prim, 0)
+        }
         Expr.Ident(name) => {
             let s = slotOf(c, name, false)
             emitOp(c, Op.Load, s)
@@ -514,10 +542,45 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
             }
         }
         Expr.Bin(op, a, b) => {
+            // Short-circuit forms first: their right side must not evaluate
+            // when the left decides, so they compile to peek-jumps, not to a
+            // value op.
+            if op == "&&" || op == "||" || op == "??" {
+                compExpr(prog, c, a)
+                var jop = Op.JmpFalsePeek
+                if op == "||" {
+                    jop = Op.JmpTruePeek
+                }
+                if op == "??" {
+                    jop = Op.JmpNotNullishPeek
+                }
+                let j = emitOp(c, jop, 0)
+                emitOp(c, Op.Pop, 0)
+                compExpr(prog, c, b)
+                c.args[j] = c.ops.len()
+                return
+            }
+            // `#x in o` never evaluates its left side: the private name is a
+            // brand check the walker resolves against the receiver's chain.
+            if op == "in" {
+                if let Expr.Ident(pn) = prog.exprs[a.index] {
+                    if pn.len() > 0 && pn[0] == '#' {
+                        reject(c, "private-in")
+                        return
+                    }
+                }
+            }
             let o = binOpFor(op)
             match o {
                 Op.Halt => {
-                    reject(c, "bin-op:" + op.clone())
+                    if op == "==" || op == "!=" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "**" || op == "instanceof" || op == "in" {
+                        compExpr(prog, c, a)
+                        compExpr(prog, c, b)
+                        let ks = strSlot(c, op)
+                        emitOp(c, Op.BinSlow, ks)
+                    } else {
+                        reject(c, "bin-op:" + op.clone())
+                    }
                 }
                 _ => {
                     compExpr(prog, c, a)
@@ -530,6 +593,10 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
             if op == "-" {
                 compExpr(prog, c, a)
                 emitOp(c, Op.Neg, 0)
+            } else if op == "!" || op == "~" || op == "+" || op == "typeof" || op == "void" {
+                compExpr(prog, c, a)
+                let ks = strSlot(c, op)
+                emitOp(c, Op.UnSlow, ks)
             } else {
                 reject(c, "un-op:" + op.clone())
             }
@@ -691,6 +758,9 @@ fn operandNeed(c: &Comp): i64 {
                 need = need + 1
             }
             Op.NewObj => {
+                need = need + 1
+            }
+            Op.Prim => {
                 need = need + 1
             }
             Op.Dup => {
@@ -1623,6 +1693,68 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                             throwNotAFunction(st, ch.strs[nameSlot])
                         }
                         pc = pc + 1
+                    }
+                }
+                Op.Prim => {
+                    if a == 3 {
+                        vmSet(st, sp, JSValue.Bool(true))
+                    } else if a == 2 {
+                        vmSet(st, sp, JSValue.Bool(false))
+                    } else if a == 1 {
+                        vmSet(st, sp, JSValue.Null)
+                    } else {
+                        vmSet(st, sp, JSValue.Undefined)
+                    }
+                    sp = sp + 1
+                    pc = pc + 1
+                }
+                Op.UnSlow => {
+                    // ToPrimitive can re-enter user code and allocate; the
+                    // operand stays rooted at sp-1 until the result replaces it.
+                    st.vmSp = sp
+                    let x = cloneValue(st.vmStack[sp - 1])
+                    st.vmStack[sp - 1] = evalUnValue(prog, ch.strs[a], x, st)
+                    pc = pc + 1
+                }
+                Op.BinSlow => {
+                    sp = sp - 1
+                    st.vmSp = sp + 1
+                    let x = cloneValue(st.vmStack[sp - 1])
+                    let y = cloneValue(st.vmStack[sp])
+                    st.vmStack[sp - 1] = evalBinValues(prog, ch.strs[a], x, y, st)
+                    st.vmSp = sp
+                    pc = pc + 1
+                }
+                Op.JmpFalsePeek => {
+                    if truthy(st.vmStack[sp - 1]) {
+                        pc = pc + 1
+                    } else {
+                        pc = a
+                    }
+                }
+                Op.JmpTruePeek => {
+                    if truthy(st.vmStack[sp - 1]) {
+                        pc = a
+                    } else {
+                        pc = pc + 1
+                    }
+                }
+                Op.JmpNotNullishPeek => {
+                    var nullish = false
+                    match st.vmStack[sp - 1] {
+                        JSValue.Null => {
+                            nullish = true
+                        }
+                        JSValue.Undefined => {
+                            nullish = true
+                        }
+                        _ => {
+                        }
+                    }
+                    if nullish {
+                        pc = pc + 1
+                    } else {
+                        pc = a
                     }
                 }
                 Op.CallMember => {
