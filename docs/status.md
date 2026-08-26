@@ -3,7 +3,7 @@ system: status
 purpose: current conformance numbers, product gate state, and what is next
 key-files: docs/conformance/node-compat.json, docs/node-compat.md, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, scripts/node-compat-sweep.ts
 update-when: a sweep is rerun or a product gate changes state
-last-verified: 2026-08-20 (node-compat re-measured with the confirm pass; node-compat.md is the table alone now, so the whole-suite totals and the peer comparison are cited here rather than there)
+last-verified: 2026-08-26 (re-verified for the per-case pass lists and the new pass-set ratchet; every published number reproduced identically on the reseeded corpus checkouts. Previous note: node-compat re-measured with the confirm pass; node-compat.md is the table alone now, so the whole-suite totals and the peer comparison are cited here rather than there)
 -->
 
 # milojs status

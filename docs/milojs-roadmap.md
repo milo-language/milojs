@@ -3,7 +3,7 @@ system: roadmap
 purpose: staged plan to grow milojs into a JavaScript engine AND runtime that stands on its own
 key-files: src/milojs.milo, src/milojs-engine.milo, src/libmilojs.milo, src/engine/bytecode.milo, src/engine/eval.milo, src/engine/builtins.milo, src/engine/regex.milo, scripts/test262-sweep.ts
 update-when: a stage lands (check the box, note the commit) or the acceptance target changes
-last-verified: 2026-08-26 (interpreter task stack is now sized per-OS in driver.milo; the 10k cap-bound recursion claim in Stage 4 now holds on linux too, which is what the change was for)
+last-verified: 2026-08-26 (re-verified for the sweeps emitting per-case pass lists; stage narratives unaffected. Previous note: interpreter task stack is now sized per-OS in driver.milo; the 10k cap-bound recursion claim in Stage 4 now holds on linux too, which is what the change was for)
 -->
 
 # milojs roadmap — a JavaScript engine written in Milo
