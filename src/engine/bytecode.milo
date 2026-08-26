@@ -44,19 +44,19 @@
 // safepoint: no interrupt, no deadline check.
 
 from "./ast" import {
-    Prog, Expr, Stmt, ExprId, StmtId, BlockId
+    Prog, Expr, Stmt, ExprId, StmtId, BlockId, ArgListId
 }
 from "./value" import {
     JSValue, cloneValue, truthy
 }
 from "./runtime" import {
     Interp, scopeTryLookup, scopeAssign, newObject, pushActive, popActive,
-    maybeGc
+    maybeGc, newScope, scopeDefine
 }
 from "./eval" import {
     evalBinValues, toNumProg, toNumArg, memberOfValue, setMemberOfValue,
     bindActivationScope, callGuardTripped, callPlainValue, isPlainCallable,
-    throwNotAFunction, isSuperName
+    throwNotAFunction, isSuperName, callMember, callMayCapture
 }
 
 // An enum rather than integer opcodes so the dispatch `match` lowers to a jump
@@ -98,6 +98,15 @@ enum Op {
     // Call the value at [top - argc] with the argc values above it, replacing
     // all of them with the result. See the arg packing in compExpr.
     Call,
+    // A method call `o.m(...)`: the receiver is on top of the stack and is
+    // replaced by the result. The arg word packs the strs slot of the method
+    // name (low 16 bits) and the AST ArgListId (the rest): the argument
+    // EXPRESSIONS are evaluated by the tree walker inside callMember, in this
+    // frame's scope, so the call takes exactly the walker's path — same
+    // per-receiver-kind dispatch, same evaluation order, one implementation.
+    // The compiled win is everything around the call, not the call itself; a
+    // VmFrame fast path for compiled JS methods can come later.
+    CallMember,
     // Leave the chunk with the value on top of the stack as the function's
     // result. Only a body chunk may contain one: a loop chunk that swallowed a
     // `return` would run the loop and then carry on past it.
@@ -130,6 +139,9 @@ pub struct Chunk {
     // Does the body name `arguments`? If not, the activation does not have to
     // build one. See bindActivationScope.
     usesArguments: bool,
+    // Any slot the chunk itself declares (not seeded from the enclosing scope).
+    // Op.CallMember only builds its child scope when this is set.
+    hasDeclared: bool,
     // Every op is numeric (comparisons only ever feeding the very next Jmpf), so
     // the chunk can run on the raw-f64 lane in runChunkNumeric when its outer
     // seeds are all numbers. See numericOnly() for the exact rule.
@@ -147,6 +159,8 @@ struct Comp {
     // A `return` compiles only for a whole function body. compileFor leaves this
     // false, so a loop containing one is rejected rather than silently losing it.
     allowRet: bool,
+    // True once any op defers argument expressions to the walker (CallMember).
+    hasAstArgs: bool,
     // First construct that rejected the chunk. The FIRST one, not the last: a
     // rejected walk keeps visiting children with ok already false, and their
     // reasons are noise. This is what MILOJS_VM_STATS aggregates, so the residue
@@ -457,6 +471,43 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                     let ns = strSlot(c, name)
                     emitOp(c, Op.Call, argc + ns * 256)
                 }
+                Expr.Member(objIdx, mname) => {
+                    // `super.m(...)` threads `this` through machinery only the
+                    // walker has; the desugared receiver is a super-name ident.
+                    var isSuperRecv = false
+                    match prog.exprs[objIdx.index] {
+                        Expr.Ident(oname) => {
+                            if isSuperName(oname) {
+                                isSuperRecv = true
+                            }
+                        }
+                        _ => {
+                        }
+                    }
+                    if isSuperRecv {
+                        reject(c, "call-super")
+                        return
+                    }
+                    // An argument that can CAPTURE (a function expression, or a
+                    // direct eval) would close over the ephemeral child scope
+                    // Op.CallMember builds for the walker, and the chunk's later
+                    // slot writes would never reach it: the socket-callback
+                    // pattern `const s = x.connect(() => s.setTimeout(...))`
+                    // read a dead snapshot. Scope-backed declared locals are the
+                    // fix that admits these; until then they stay on the walker.
+                    if callMayCapture(prog, calleeId, argsIdx) {
+                        reject(c, "call-arg-capture")
+                        return
+                    }
+                    let ms = strSlot(c, mname)
+                    if ms >= 65536 {
+                        reject(c, "call-method-strs")
+                        return
+                    }
+                    compExpr(prog, c, objIdx)
+                    c.hasAstArgs = true
+                    emitOp(c, Op.CallMember, argsIdx.index * 65536 + ms)
+                }
                 _ => {
                     reject(c, "call-callee:" + exprKindName(prog, calleeId))
                 }
@@ -675,6 +726,14 @@ fn writtenSlots(c: &Comp): Vec<bool> {
 }
 
 fn namesArguments(c: &Comp): bool {
+    // A CallMember's argument expressions are evaluated by the walker straight
+    // off the AST, so a name used only inside them never reaches the slot table.
+    // For every ordinary name the scope chain resolves it anyway; `arguments` is
+    // the one name whose EXISTENCE the activation decides up front, so any chunk
+    // that hands expressions back to the walker must ask for it conservatively.
+    if c.hasAstArgs {
+        return true
+    }
     var i: i64 = 0
     while i < c.slotNames.len() {
         if c.slotNames[i] == "arguments" {
@@ -750,7 +809,7 @@ pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
             var c = Comp {
                 ops: Vec.new(), args: Vec.new(), consts: Vec.new(), strs: Vec.new(),
                 slotNames: Vec.new(), slotOuter: Vec.new(), ok: true, allowRet: false,
-                why: "",
+                why: "", hasAstArgs: false,
             }
             if let Option.Some(s) = init {
                 compStmt(prog, c, s)
@@ -788,11 +847,19 @@ pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
             let written = writtenSlots(c)
             let usesArgs = namesArguments(c)
             let numOnly = numericOnly(c)
+            var anyDecl = false
+            var ad: i64 = 0
+            while ad < c.slotOuter.len() {
+                if !c.slotOuter[ad] {
+                    anyDecl = true
+                }
+                ad = ad + 1
+            }
             return Option.Some(Chunk {
                 ops: c.ops, args: c.args, consts: c.consts, strs: c.strs,
                 slotNames: c.slotNames, slotOuter: c.slotOuter,
                 slotWritten: written, need: need, usesArguments: usesArgs,
-                numericOnly: numOnly,
+                numericOnly: numOnly, hasDeclared: anyDecl,
             })
         }
         _ => {
@@ -1558,6 +1625,59 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         pc = pc + 1
                     }
                 }
+                Op.CallMember => {
+                    let ms = a % 65536
+                    let ali = a / 65536
+                    // Same publication discipline as Op.Call: the receiver sits
+                    // below sp, argument evaluation can allocate and collect.
+                    st.vmSp = sp
+                    maybeGc(st)
+                    let recv = cloneValue(st.vmStack[sp - 1])
+                    // The walker evaluates the argument expressions in this
+                    // frame's scope, so the frame's writes must be visible first:
+                    // outer names into the chain it already resolves, and the
+                    // chunk's DECLARED locals into a child scope made for the
+                    // call — they live only in slots, and defining them into
+                    // curScope itself would leak a loop chunk's block lets into
+                    // the enclosing (even global) scope. No closure can capture
+                    // the child: a body containing a FuncExpr never compiles.
+                    vmFlushOuter(st, ch, base, curScope)
+                    // The child scope exists only to hold declared locals for
+                    // the walker; a chunk with none skips the allocation, which
+                    // is most method-heavy code (params and captures are outer).
+                    var res = JSValue.Undefined
+                    if ch.hasDeclared {
+                        let callEnv = newScope(st, curScope)
+                        pushActive(st, callEnv)
+                        var dk: i64 = 0
+                        while dk < ch.slotNames.len() {
+                            if !ch.slotOuter[dk] {
+                                scopeDefine(st, callEnv, ch.slotNames[dk].clone(), cloneValue(st.vmStack[base + dk]))
+                            }
+                            dk = dk + 1
+                        }
+                        res = callMember(prog, recv, ch.strs[ms], ArgListId { index: ali }, st, callEnv)
+                        // An argument expression can assign any slot this frame
+                        // holds, declared (child scope) or outer (real chain):
+                        // both kinds re-read.
+                        var dr: i64 = 0
+                        while dr < ch.slotNames.len() {
+                            if !ch.slotOuter[dr] {
+                                if let Option.Some(v) = scopeTryLookup(st, callEnv, ch.slotNames[dr]) {
+                                    st.vmStack[base + dr] = v
+                                }
+                            }
+                            dr = dr + 1
+                        }
+                        popActive(st)
+                    } else {
+                        res = callMember(prog, recv, ch.strs[ms], ArgListId { index: ali }, st, curScope)
+                    }
+                    st.vmStack[sp - 1] = res
+                    vmSeedOuter(st, ch, base, curScope)
+                    threwInCallee = st.throwing
+                    pc = pc + 1
+                }
                 Op.Ret => {
                     sp = sp - 1
                     retVal = cloneValue(st.vmStack[sp])
@@ -1733,7 +1853,7 @@ pub fn compileBody(prog: &Prog, fIdx: i64): Option<Chunk> {
     var c = Comp {
         ops: Vec.new(), args: Vec.new(), consts: Vec.new(), strs: Vec.new(),
         slotNames: Vec.new(), slotOuter: Vec.new(), ok: true, allowRet: true,
-        why: "",
+        why: "", hasAstArgs: false,
     }
     let body = prog.funcs[fIdx].body
     var i: i64 = 0
@@ -1756,11 +1876,19 @@ pub fn compileBody(prog: &Prog, fIdx: i64): Option<Chunk> {
     let written = writtenSlots(c)
     let usesArgs = namesArguments(c)
     let numOnly = numericOnly(c)
+    var anyDecl = false
+    var ad: i64 = 0
+    while ad < c.slotOuter.len() {
+        if !c.slotOuter[ad] {
+            anyDecl = true
+        }
+        ad = ad + 1
+    }
     return Option.Some(Chunk {
         ops: c.ops, args: c.args, consts: c.consts, strs: c.strs,
         slotNames: c.slotNames, slotOuter: c.slotOuter,
         slotWritten: written, need: need, usesArguments: usesArgs,
-        numericOnly: numOnly,
+        numericOnly: numOnly, hasDeclared: anyDecl,
     })
 }
 

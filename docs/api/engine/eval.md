@@ -155,6 +155,14 @@ comparable number; whichever fires first wins. A call the VM keeps in its own
 frames spends no native stack at all, so there the counter is the only one of
 the two that can fire.
 
+### `callMayCapture`
+
+```milo
+pub fn callMayCapture(prog: &Prog, callee: ExprId, args: ArgListId): bool
+```
+
+_Undocumented._
+
 ### `callMember`
 
 ```milo

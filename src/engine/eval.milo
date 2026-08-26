@@ -17543,7 +17543,7 @@ fn argsMayCapture(prog: &Prog, args: ArgListId): bool {
     return false
 }
 
-fn callMayCapture(prog: &Prog, callee: ExprId, args: ArgListId): bool {
+pub fn callMayCapture(prog: &Prog, callee: ExprId, args: ArgListId): bool {
     // A call to a function defined elsewhere cannot capture THIS scope; it runs
     // in its own closure environment. Direct `eval` is the exception the spec
     // carves out: it evaluates in the caller's scope.

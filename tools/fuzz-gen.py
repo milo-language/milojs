@@ -24,6 +24,7 @@ def val(d=0):
         "(()=>%s)" % val(d+1),
     ])
 UNOPS = ["-", "+", "~", "!", "void "]
+METHODS = ["toString", "valueOf", "hasOwnProperty", "charAt", "slice", "join", "push", "concat"]
 BINOPS = ["+", "-", "*", "/", "%", "<", ">", "<=", "==", "===", "&", "|", "^", "<<", ">>", "**"]
 
 # Operands chosen to make a compiled fast path and the evaluator disagree if they
@@ -58,6 +59,11 @@ def fnop():
         "try { (function(x){ var t = 0; for (var i=0;i<3;i++) t = t %s x; return t; })(%s); } catch(e) {}"
             % (random.choice(BINOPS), a),
         "try { (function(x){ return x[%s]; })(%s); } catch(e) {}" % (b, a),
+        # Op.CallMember: a method call on an awkward receiver, and one whose
+        # argument reads a chunk-declared local (the walker evaluates the args
+        # off the AST, so declared-slot visibility is its own failure mode).
+        "try { (function(x){ return x.%s(1); })(%s); } catch(e) {}" % (random.choice(METHODS), a),
+        "try { (function(x){ var t = %s; return String(x) + [t].join(''); })(%s); } catch(e) {}" % (b, a),
     ])
 
 def stmt(d=0):
@@ -96,6 +102,13 @@ if MATRIX:
         for a in AWKWARD:
             print("console.log(%d, u(function(x){ return %s x; }, %s));" % (n, op, a))
             n += 1
+    for m in METHODS:
+        for a in AWKWARD:
+            print("console.log(%d, u(function(x){ return x.%s(1); }, %s));" % (n, m, a))
+            n += 1
+    for a in AWKWARD:
+        print("console.log(%d, u(function(x){ var t = 2; return [x].concat([t]).length + String(x ? t : x).length; }, %s));" % (n, a))
+        n += 1
     for op in BINOPS:
         for a in AWKWARD:
             print("console.log(%d, b2(function(x, y){ return x %s y; }, %s, 2));" % (n, op, a))
