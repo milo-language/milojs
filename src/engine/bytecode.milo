@@ -130,6 +130,10 @@ pub struct Chunk {
     // Does the body name `arguments`? If not, the activation does not have to
     // build one. See bindActivationScope.
     usesArguments: bool,
+    // Every op is numeric (comparisons only ever feeding the very next Jmpf), so
+    // the chunk can run on the raw-f64 lane in runChunkNumeric when its outer
+    // seeds are all numbers. See numericOnly() for the exact rule.
+    numericOnly: bool,
 }
 
 struct Comp {
@@ -783,10 +787,12 @@ pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
             let need = operandNeed(c)
             let written = writtenSlots(c)
             let usesArgs = namesArguments(c)
+            let numOnly = numericOnly(c)
             return Option.Some(Chunk {
                 ops: c.ops, args: c.args, consts: c.consts, strs: c.strs,
                 slotNames: c.slotNames, slotOuter: c.slotOuter,
                 slotWritten: written, need: need, usesArguments: usesArgs,
+                numericOnly: numOnly,
             })
         }
         _ => {
@@ -918,6 +924,263 @@ fn vmSeedFrame(st: &mut Interp, cid: i64, at: i64, scope: i64): bool {
     }
     st.vmSp = at + gChunks[cid].slotNames.len() + gChunks[cid].need
     return true
+}
+
+// Can this chunk run on the raw-f64 lane? Allowed: numeric constants, slot
+// moves, arithmetic, jumps, and comparisons that feed the IMMEDIATELY following
+// Jmpf (a comparison anywhere else produces a boolean the lane cannot hold: a
+// stored `x < y` must stay boxed). Anything touching strings, objects, calls or
+// the scope chain mid-run disqualifies. The lane exists because boxing is half
+// the dispatch win: the original experiment measured ~12x over the tree walker
+// unboxed and ~5x boxed on identical loops, and this keeps the 12x tier for the
+// loops that dominate real numeric work.
+fn numericOnly(c: &Comp): bool {
+    var i: i64 = 0
+    while i < c.ops.len() {
+        match c.ops[i] {
+            Op.Const => {}
+            Op.Load => {}
+            Op.Store => {}
+            Op.Add => {}
+            Op.Sub => {}
+            Op.Mul => {}
+            Op.Div => {}
+            Op.Mod => {}
+            Op.Neg => {}
+            Op.Jmp => {}
+            Op.Jmpf => {}
+            Op.Pop => {}
+            Op.Halt => {}
+            Op.Ret => {}
+            Op.Lt => {
+                if i + 1 >= c.ops.len() {
+                    return false
+                }
+                match c.ops[i + 1] { Op.Jmpf => {} _ => { return false } }
+            }
+            Op.Gt => {
+                if i + 1 >= c.ops.len() {
+                    return false
+                }
+                match c.ops[i + 1] { Op.Jmpf => {} _ => { return false } }
+            }
+            Op.Le => {
+                if i + 1 >= c.ops.len() {
+                    return false
+                }
+                match c.ops[i + 1] { Op.Jmpf => {} _ => { return false } }
+            }
+            Op.Ge => {
+                if i + 1 >= c.ops.len() {
+                    return false
+                }
+                match c.ops[i + 1] { Op.Jmpf => {} _ => { return false } }
+            }
+            Op.Eq => {
+                if i + 1 >= c.ops.len() {
+                    return false
+                }
+                match c.ops[i + 1] { Op.Jmpf => {} _ => { return false } }
+            }
+            Op.Ne => {
+                if i + 1 >= c.ops.len() {
+                    return false
+                }
+                match c.ops[i + 1] { Op.Jmpf => {} _ => { return false } }
+            }
+            _ => {
+                return false
+            }
+        }
+        i = i + 1
+    }
+    return true
+}
+
+// Numeric truthiness without a box: 0 and NaN are the falsy numbers.
+fn numTruthy(n: f64): bool {
+    return n != 0.0 && n == n
+}
+
+// The raw-f64 lane. Runs a numericOnly chunk entirely on an f64 stack: no JS
+// allocation, no GC interaction (the safepoint lives in Op.Call, which a
+// numericOnly chunk cannot contain), no boxing until the outer slots flush back.
+// Answers None when an outer seed is not a plain Number (a slot holding a
+// string, an object with valueOf, anything coercing) — the boxed path handles
+// those; this lane never coerces.
+pub fn runChunkNumeric(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSValue> {
+    let ch = gChunks[cid]
+    var stk: Vec<f64> = Vec.new()
+    var i: i64 = 0
+    while i < ch.slotNames.len() + ch.need {
+        stk.push(0.0)
+        i = i + 1
+    }
+    var k: i64 = 0
+    while k < ch.slotNames.len() {
+        if ch.slotOuter[k] {
+            match scopeTryLookup(st, scope, ch.slotNames[k]) {
+                Option.Some(v) => {
+                    match v {
+                        JSValue.Number(n) => {
+                            stk[k] = n
+                        }
+                        _ => {
+                            return Option.None
+                        }
+                    }
+                }
+                Option.None => {
+                    return Option.None
+                }
+            }
+        }
+        k = k + 1
+    }
+    var sp = ch.slotNames.len()
+    var pc: i64 = 0
+    var ret = JSValue.Undefined
+    var running = true
+    while running {
+        let a = ch.args[pc]
+        match ch.ops[pc] {
+            Op.Const => {
+                stk[sp] = ch.consts[a]
+                sp = sp + 1
+                pc = pc + 1
+            }
+            Op.Load => {
+                stk[sp] = stk[a]
+                sp = sp + 1
+                pc = pc + 1
+            }
+            Op.Store => {
+                sp = sp - 1
+                stk[a] = stk[sp]
+                pc = pc + 1
+            }
+            Op.Add => {
+                sp = sp - 1
+                stk[sp - 1] = stk[sp - 1] + stk[sp]
+                pc = pc + 1
+            }
+            Op.Sub => {
+                sp = sp - 1
+                stk[sp - 1] = stk[sp - 1] - stk[sp]
+                pc = pc + 1
+            }
+            Op.Mul => {
+                sp = sp - 1
+                stk[sp - 1] = stk[sp - 1] * stk[sp]
+                pc = pc + 1
+            }
+            Op.Div => {
+                sp = sp - 1
+                stk[sp - 1] = stk[sp - 1] / stk[sp]
+                pc = pc + 1
+            }
+            Op.Mod => {
+                sp = sp - 1
+                stk[sp - 1] = stk[sp - 1] % stk[sp]
+                pc = pc + 1
+            }
+            Op.Neg => {
+                stk[sp - 1] = -stk[sp - 1]
+                pc = pc + 1
+            }
+            Op.Lt => {
+                // Fused with the following Jmpf (numericOnly guarantees it).
+                sp = sp - 1
+                if stk[sp - 1] < stk[sp] {
+                    pc = pc + 2
+                } else {
+                    pc = ch.args[pc + 1]
+                }
+                sp = sp - 1
+            }
+            Op.Gt => {
+                sp = sp - 1
+                if stk[sp - 1] > stk[sp] {
+                    pc = pc + 2
+                } else {
+                    pc = ch.args[pc + 1]
+                }
+                sp = sp - 1
+            }
+            Op.Le => {
+                sp = sp - 1
+                if stk[sp - 1] <= stk[sp] {
+                    pc = pc + 2
+                } else {
+                    pc = ch.args[pc + 1]
+                }
+                sp = sp - 1
+            }
+            Op.Ge => {
+                sp = sp - 1
+                if stk[sp - 1] >= stk[sp] {
+                    pc = pc + 2
+                } else {
+                    pc = ch.args[pc + 1]
+                }
+                sp = sp - 1
+            }
+            Op.Eq => {
+                sp = sp - 1
+                if stk[sp - 1] == stk[sp] {
+                    pc = pc + 2
+                } else {
+                    pc = ch.args[pc + 1]
+                }
+                sp = sp - 1
+            }
+            Op.Ne => {
+                sp = sp - 1
+                if !(stk[sp - 1] == stk[sp]) {
+                    pc = pc + 2
+                } else {
+                    pc = ch.args[pc + 1]
+                }
+                sp = sp - 1
+            }
+            Op.Jmp => {
+                pc = a
+            }
+            Op.Jmpf => {
+                sp = sp - 1
+                if numTruthy(stk[sp]) {
+                    pc = pc + 1
+                } else {
+                    pc = a
+                }
+            }
+            Op.Pop => {
+                sp = sp - 1
+                pc = pc + 1
+            }
+            Op.Ret => {
+                sp = sp - 1
+                ret = JSValue.Number(stk[sp])
+                running = false
+            }
+            Op.Halt => {
+                running = false
+            }
+            _ => {
+                // numericOnly() excluded everything else; reaching here is a
+                // classifier bug, and running the boxed path is the safe answer.
+                return Option.None
+            }
+        }
+    }
+    var w: i64 = 0
+    while w < ch.slotNames.len() {
+        if ch.slotOuter[w] && ch.slotWritten[w] {
+            scopeAssign(st, scope, ch.slotNames[w], JSValue.Number(stk[w]))
+        }
+        w = w + 1
+    }
+    return Option.Some(ret)
 }
 
 // Run a compiled chunk, and every compiled chunk it calls, in ONE dispatch loop.
@@ -1423,6 +1686,13 @@ pub fn tryRunFor(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): bool {
     if slot < 0 {
         return false
     }
+    // The raw-f64 lane first: it answers None (before any side effect) when a
+    // seed is not a plain number, and the boxed path takes over.
+    if gChunks[slot - 1].numericOnly {
+        if let Option.Some(_n) = runChunkNumeric(prog, slot - 1, st, scope) {
+            return true
+        }
+    }
     if let Option.Some(_v) = runChunk(prog, slot - 1, st, scope) {
         return true
     }
@@ -1485,10 +1755,12 @@ pub fn compileBody(prog: &Prog, fIdx: i64): Option<Chunk> {
     let need = operandNeed(c)
     let written = writtenSlots(c)
     let usesArgs = namesArguments(c)
+    let numOnly = numericOnly(c)
     return Option.Some(Chunk {
         ops: c.ops, args: c.args, consts: c.consts, strs: c.strs,
         slotNames: c.slotNames, slotOuter: c.slotOuter,
         slotWritten: written, need: need, usesArguments: usesArgs,
+        numericOnly: numOnly,
     })
 }
 
@@ -1524,6 +1796,12 @@ pub fn bodyChunkOf(prog: &Prog, fIdx: i64): i64 {
         return -1
     }
     return slot - 1
+}
+
+// Is this chunk on the raw-f64 lane? For the call site in eval.milo, which
+// holds a chunk INDEX and cannot see the struct.
+pub fn chunkIsNumeric(cid: i64): bool {
+    return gChunks[cid].numericOnly
 }
 
 // Does this chunk name `arguments`? The activation an ordinary call builds can

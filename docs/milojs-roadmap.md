@@ -3,7 +3,7 @@ system: roadmap
 purpose: staged plan to grow milojs into a JavaScript engine AND runtime that stands on its own
 key-files: src/milojs.milo, src/milojs-engine.milo, src/libmilojs.milo, src/engine/bytecode.milo, src/engine/eval.milo, src/engine/builtins.milo, src/engine/regex.milo, scripts/test262-sweep.ts
 update-when: a stage lands (check the box, note the commit) or the acceptance target changes
-last-verified: 2026-08-26 (re-verified for the sweeps emitting per-case pass lists; stage narratives unaffected. Previous note: interpreter task stack is now sized per-OS in driver.milo; the 10k cap-bound recursion claim in Stage 4 now holds on linux too, which is what the change was for)
+last-verified: 2026-08-26 (stage 4 snapshot updated: value representation decided with its measurement, coverage baseline cited from the new committed report. Previous note: re-verified for the sweeps emitting per-case pass lists; stage narratives unaffected. Previous note: interpreter task stack is now sized per-OS in driver.milo; the 10k cap-bound recursion claim in Stage 4 now holds on linux too, which is what the change was for)
 -->
 
 # milojs roadmap — a JavaScript engine written in Milo
@@ -28,8 +28,11 @@ every GC safepoint. The remaining roadmap is:
 
 - **Stage 4:** supplement the tree walker with bytecode. Partly landed: a numeric,
   property-access, object-literal and CALL subset compiles and falls back for the rest.
-  Calls landed once the VM got its own frame stack; the value representation is the
-  remaining prize, and it is now the open question (see the stage section).
+  Calls landed once the VM got its own frame stack. The value representation is DECIDED
+  (2026-08-26, docs/decisions.md): boxed tagged enum with a raw-f64 lane for
+  proven-numeric chunks, measured at 2.2-2.6x on the loop benches. The remaining work is
+  coverage, ranked by docs/conformance/vm-coverage.json (baseline: 13.9% of corpus
+  function bodies compile; method calls block 60% of the residue).
 - **Stage 5:** complete host compatibility. Server HTTP and async fetch work;
   client `http.request`/`http.get`, TLS serving, child processes, generators,
   class fields/getters, computed `require`, and other package-facing edges do not.
@@ -80,7 +83,7 @@ already good at." That is wrong, and it contradicted §Critical path & honesty s
 down, which correctly says full ES2020 is a decade. A compiler is a batch transformation whose
 input language we define; an engine implements a spec we do not control, with observable
 evaluation order, live object identity, and thirty years of accreted edge cases. The evidence is
-in this tree: <!--fact:loc-milo-->48.3k<!--/fact--> lines of Milo, one 17.7k-line evaluator, and
+in this tree: <!--fact:loc-milo-->48.6k<!--/fact--> lines of Milo, one 17.7k-line evaluator, and
 a test262 score in the seventies on a sample. "Parsing + dispatch" is the sentence that produced
 a 3,100-line `callBuiltin`. Size the work off `docs/status.md`, not off this heading.
 

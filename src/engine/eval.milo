@@ -6,7 +6,7 @@ from "../runtime/host" import {
     doHttpFetch, buildChildCommand, readChildToCompletion, sqliteDbIdx, sqliteStmtIdx, parseDottedQuad, absolutePathOf
 }
 from "./bytecode" import {
-    tryRunFor, bodyChunkOf, chunkUsesArguments, runChunk
+    tryRunFor, bodyChunkOf, chunkUsesArguments, runChunk, runChunkNumeric, chunkIsNumeric
 }
 from "./methods" import {
     dateMethod, mapMethod, dataViewMethod, isDataViewMethodName, dataViewProto, arrayMethod, arrayMethodGeneric, isArrayMethod, arrayIterNext, typedArrayMethod, typedArrayOverride, typedArrayDataPtr, typedArrayFromBytes, bytesFromTypedArray, isTypedArrayMethodName, taIntegrityBlocked
@@ -10852,7 +10852,18 @@ fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
     // effect, so the tree walker can still run the body from the top.
     var flow = Flow.Normal
     var walked = true
-    if cid >= 0 {
+    if cid >= 0 && chunkIsNumeric(cid) {
+        // The raw-f64 lane: same None-before-side-effects contract as runChunk.
+        match runChunkNumeric(prog, cid, st, callScope) {
+            Option.Some(rv) => {
+                flow = Flow.Ret(rv)
+                walked = false
+            }
+            Option.None => {
+            }
+        }
+    }
+    if walked && cid >= 0 {
         match runChunk(prog, cid, st, callScope) {
             Option.Some(rv) => {
                 flow = Flow.Ret(rv)

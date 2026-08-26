@@ -12,6 +12,15 @@ This is also the single point MILOJS_NO_BYTECODE turns the VM off at: with no
 chunk index there is no frame for the evaluator to enter and none for the VM's
 own Op.Call to enter either.
 
+### `chunkIsNumeric`
+
+```milo
+pub fn chunkIsNumeric(cid: i64): bool
+```
+
+Is this chunk on the raw-f64 lane? For the call site in eval.milo, which
+holds a chunk INDEX and cannot see the struct.
+
 ### `chunkUsesArguments`
 
 ```milo
@@ -67,6 +76,19 @@ Answers None when the chunk cannot run and the caller must fall back to the
 tree walker; that decision is made before any side effect. Otherwise answers
 the value the body returned, or Undefined for a loop chunk and for a body that
 fell off its end.
+
+### `runChunkNumeric`
+
+```milo
+pub fn runChunkNumeric(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSValue>
+```
+
+The raw-f64 lane. Runs a numericOnly chunk entirely on an f64 stack: no JS
+allocation, no GC interaction (the safepoint lives in Op.Call, which a
+numericOnly chunk cannot contain), no boxing until the outer slots flush back.
+Answers None when an outer seed is not a plain Number (a slot holding a
+string, an object with valueOf, anything coercing) — the boxed path handles
+those; this lane never coerces.
 
 ### `tryRunFor`
 

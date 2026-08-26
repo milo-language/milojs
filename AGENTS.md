@@ -34,7 +34,7 @@ Two binaries, both written in [Milo](https://github.com/milo-language/milo):
 - `milojs` — a Node-compatible **runtime** on top of it: module loader, event
   loop, fs/http, Node-API addons. Like node/deno/bun.
 
-~<!--fact:loc-milo-->48.3k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
+~<!--fact:loc-milo-->48.6k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
 own bigint. No V8, no JSC, no C engine underneath.
 
 `src/` is split along that same line, and `tools/check-layering.sh` keeps it split:
@@ -103,6 +103,7 @@ opening several.
 | `docs/milojs-object-footprint.md` | JSObj layout, the JSObjExtra side table |
 | `docs/milojs-arena-safety.md` | typed/generational handles, frozen AST, GC safepoint typing |
 | `docs/milojs-quickjs-plan.md` | QuickJS as an architecture reference |
+| `docs/decisions.md` | standing architectural decisions with the measurement that would reopen each |
 | `docs/api/*.md` | generated symbol reference for this project |
 
 **Keep them current, and it is checked.** If you change behavior a doc describes,
