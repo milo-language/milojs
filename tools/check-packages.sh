@@ -90,11 +90,13 @@ echo "check-packages: $ran suites run ($skipped_node not runnable under node), $
 # with the engine, so the gate is "did it go DOWN", never "is it high enough".
 #
 # It must be the FLOOR ACROSS PLATFORMS, not whatever the last machine to run it
-# saw. The same corpus and engine score ~15 assertions lower on the linux runner
-# than on darwin (measured twice: 1369/1354 before the builtin-list fix, and
-# 1460/1445 after). Record a darwin figure here and CI fails on a delta that is
-# the platform, not a regression — which is how this gate spent its whole life
-# red without anyone reading it.
+# saw. The platforms agree today (1460 on darwin and on the linux runner,
+# 2026-08-26): the old ~15-assertion linux deficit was es-get-iterator dying on
+# a byte-measured stack cliff, and sizing the interpreter stack per-OS moved
+# linux onto the exact 10k frame cap (interpStackBytes in src/engine/driver.milo).
+# If the platforms split again, record the LOWER number and why, not a laptop
+# figure — recording darwin's is how this gate once spent its whole life red
+# without anyone reading it.
 if [ -f "$BASELINE" ]; then
   read -r b_assert b_full < "$BASELINE"
   if [ "$milook" -lt "$b_assert" ] || [ "$full" -lt "$b_full" ]; then
