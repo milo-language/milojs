@@ -43,7 +43,7 @@ from "std/args" import {
     args
 }
 from "./engine/bytecode" import {
-    gVmDisabled, gVmStats, vmStatsReport
+    gVmDisabled, gVmStats, vmStatsReport, compileBody, compileFor
 }
 from "./engine/version" import {
     versionText
@@ -58,7 +58,7 @@ from "./engine/lexer" import {
     lex
 }
 from "./engine/ast" import {
-    Prog, gProg, BlockId
+    Prog, gProg, BlockId, Stmt, StmtId
 }
 from "./runtime/modules" import {
     preloadGraph, dirOf, hasEsmSyntax, moduleIsStrict
@@ -82,7 +82,9 @@ fn main(): i32 {
 
     var parser = ArgParser.new("milojs-engine", "the milojs JavaScript engine — runs a raw .js file")
     parser.addPositional("file", "the .js file to run")
+    parser.addBool("vm-audit", "", "parse the file (and its require graph), attempt to compile every function body and loop, print the ranked residue, and exit without executing anything")
     let parsed = parser.parse()
+    let vmAudit = parsed.getBool("vm-audit")
     // parse() already exits on a missing required positional, so the None arm is
     // unreachable — the default keeps this a plain string rather than an unwrap panic.
     let path = parsed.getString("file") ?? ""
@@ -158,6 +160,10 @@ fn main(): i32 {
                 eprint("milojs-engine: prelude failed: " + describeThrown(gInterp, gInterp.thrownValue))
                 return 1
             }
+            // Everything parsed past these marks is the user program and its
+            // require graph; the preludes before them stay out of the audit.
+            let auditFuncsFrom = gProg.funcs.len()
+            let auditStmtsFrom = gProg.stmts.len()
             // A file with ESM imports has to run as a module: its desugared
             // require() calls need the whole graph pre-loaded. A plain script is
             // parsed straight into the shared Prog and left in global scope.
@@ -173,7 +179,13 @@ fn main(): i32 {
                 // first or every require fails with "module was not pre-loaded".
                 // preloadGraph walks require() edges from the entry; the entry's
                 // own parse here is what actually executes.
-                let _ = preloadGraph(path.clone(), gProg, gInterp)
+                // In audit mode the require graph is not loaded: preload parses
+                // the entry a second time (doubling every body in the count) and
+                // would fold shared helpers like a corpus's common/ into every
+                // file's number. The audit is of THIS file's code.
+                if !vmAudit {
+                    let _ = preloadGraph(path.clone(), gProg, gInterp)
+                }
                 // require() resolves against the CURRENT module's directory, and
                 // preload resolved against the entry's. Without pushing it the two
                 // disagree for anything but a bare builtin: preload registers
@@ -198,6 +210,32 @@ fn main(): i32 {
                     eprint("milojs-engine: cannot load '" + path + "'")
                     return 1
                 }
+            }
+            // Audit mode: the corpus coverage number comes from the compiler
+            // itself, not from a reimplementation of its admission rules — the
+            // duplicate would drift, and the drift would be invisible. Nothing
+            // executes: compile is side-effect-free apart from the stats.
+            if vmAudit {
+                gVmStats = true
+                var fi = auditFuncsFrom
+                while fi < gProg.funcs.len() {
+                    let _b = compileBody(gProg, fi)
+                    fi = fi + 1
+                }
+                var si = auditStmtsFrom
+                while si < gProg.stmts.len() {
+                    match gProg.stmts[si] {
+                        Stmt.For(_a, _b, _c, _d) => {
+                            let _l = compileFor(gProg, StmtId { index: si })
+                        }
+                        _ => {
+                        }
+                    }
+                    si = si + 1
+                }
+                print("vm-audit: " + path)
+                print(vmStatsReport())
+                return 0
             }
             // Run the program on a green task rather than the process main
             // thread. A generator body IS a task that its next() caller parks

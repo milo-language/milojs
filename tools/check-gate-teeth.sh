@@ -242,6 +242,11 @@ teeth "check-conformance-ratchet (pin mismatch)" docs/conformance/passset-quickj
     "perl -pi -e 's/^# corpus .*/# corpus 0000000/' docs/conformance/passset-quickjs.txt" \
     "node tools/check-conformance-ratchet.mjs"
 
+# --- vm coverage: the committed report claims less than the floor ---
+teeth "check-vm-coverage (regression)" docs/conformance/vm-coverage.json \
+    "python3 -c \"import json;p='docs/conformance/vm-coverage.json';d=json.load(open(p));d['totals']['pct']=0.1;open(p,'w').write(json.dumps(d,indent=2)+'\\n')\"" \
+    "node tools/check-vm-coverage.mjs"
+
 # --- sweeps, second defect: a skipped test scored as a pass ---
 # Same corpus caveat as the quickjs case above: without node's test suite the
 # skip probe inside check-sweeps does not run, so removing the detection would

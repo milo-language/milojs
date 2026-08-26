@@ -463,6 +463,8 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/check-defect-budget.mjs` | ratchets per-suite crashes, hangs and unparsable files; crashes exact, the other two ceilings |
 | `tools/check-conformance-ratchet.mjs` | per-case pass-set ratchet: every case in `docs/conformance/passset-<suite>.txt` must still pass in that suite's committed report; corpus/seed pin mismatch is an error, lost cases fail by name |
 | `tools/gen-passset.mjs` | seeds or rewrites a suite's pass set from its committed report; run it in the same commit as the sweep that earned the new passes |
+| `tools/vm-coverage.mjs` | runs `milojs-engine --vm-audit` over the node corpus and writes `docs/conformance/vm-coverage.json`: what fraction of real function bodies compile to bytecode, with the residue ranked by construct |
+| `tools/check-vm-coverage.mjs` | floor on the committed coverage pct (`docs/conformance/vm-coverage-floor.txt`); coverage may only ratchet up |
 | `tools/check-bench-budget.mjs` | per-bench ceilings on the milojs/peer time ratio from `docs/conformance/bench.json`. Fails on a regression, on a bench the budget does not cover (or covers and the report no longer measures), and on a bench that came in under half its ceiling so the ceiling stopped bounding anything. `--baseline` re-records at +15%. |
 | `tools/check-gate-teeth.sh` | introduces each gate's own violation and requires it to fail; needs a clean tree, so it runs in CI rather than the hook |
 | `tools/check-docs-exec.mjs` | runs the `<!-- exec -->`-tagged examples in the docs and diffs them against the output the docs claim. Needs built binaries; part of `dev.sh`. |
