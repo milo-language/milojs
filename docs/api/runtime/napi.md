@@ -22,7 +22,12 @@ _Undocumented._
 pub fn napi_add_finalizer(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _finalizeHint: i64, result: *u8): i32
 ```
 
-_Undocumented._
+napi_add_finalizer(env, js_object, native_object, cb, hint, result)
+
+Recorded, not scheduled. milojs's collector has no finalizer hook (the same
+limitation napi_wrap documents), so the callback is kept against the object
+rather than dropped silently: an addon that registers one and never sees it
+run leaks, and that is worth saying in one place instead of pretending.
 
 ### `napi_call_threadsafe_function`
 
@@ -30,7 +35,8 @@ _Undocumented._
 pub fn napi_call_threadsafe_function(func: i64, data: i64, _isBlocking: i32): i32
 ```
 
-_Undocumented._
+CALLED FROM A FOREIGN THREAD. Touch nothing but the pipe fd, which is read-only
+after setup.
 
 ### `napi_close_escapable_handle_scope`
 
@@ -134,7 +140,12 @@ _Undocumented._
 pub fn napi_create_external(_env: *u8, data: i64, _finalizeCb: i64, _finalizeHint: i64, result: *u8): i32
 ```
 
-_Undocumented._
+napi_create_external / napi_get_value_external
+
+An external wraps an opaque C pointer in a JS value the addon can hand back to
+itself later. There is no JS-visible shape: the pointer is kept on the object
+and only the addon can read it out. fsevents stores its event-stream handle
+this way.
 
 ### `napi_create_external_buffer`
 
@@ -150,7 +161,11 @@ _Undocumented._
 pub fn napi_create_function(_env: *u8, _utf8name: *u8, _length: i64, cb: i64, data: i64, result: *u8): i32
 ```
 
-_Undocumented._
+napi_create_function(env, utf8name, length, cb, data, result)
+
+The result is a milojs object carrying the callback's registry index. It reports
+as a function to typeof and is dispatched by callValue, so from JS it is
+indistinguishable from any other callable.
 
 ### `napi_create_int32`
 
@@ -190,7 +205,9 @@ _Undocumented._
 pub fn napi_create_reference(_env: *u8, value: i64, _initialRefcount: i32, result: *u8): i32
 ```
 
-_Undocumented._
+References keep a value alive across calls. There is no finalizer hook in the
+collector yet, so a reference is simply a handle that is never released — it
+over-retains rather than freeing something the addon still points at.
 
 ### `napi_create_string_latin1`
 
@@ -198,7 +215,8 @@ _Undocumented._
 pub fn napi_create_string_latin1(_env: *u8, str: *u8, length: i64, result: *u8): i32
 ```
 
-_Undocumented._
+latin1 is one byte per code point, so each byte is its own code point rather
+than a UTF-8 continuation. Decoding it as UTF-8 mangles anything over 0x7f.
 
 ### `napi_create_string_utf8`
 
@@ -238,7 +256,11 @@ _Undocumented._
 pub fn napi_define_class(_env: *u8, _utf8name: *u8, _length: i64, constructor: i64, data: i64, propertyCount: i64, properties: *u8, result: *u8): i32
 ```
 
-_Undocumented._
+napi_define_class(env, utf8name, length, constructor, data, property_count,
+                  properties, result)
+
+Produces a constructor object plus a prototype carrying the instance methods.
+`new Ctor()` links the instance's proto here, so method lookup finds them.
 
 ### `napi_define_properties`
 
@@ -246,7 +268,10 @@ _Undocumented._
 pub fn napi_define_properties(_env: *u8, object: i64, propertyCount: i64, properties: *u8): i32
 ```
 
-_Undocumented._
+napi_define_properties(env, object, count, descriptors)
+The same descriptor layout napi_define_class walks, applied to an existing
+object. Accessors are honoured: a getter-only descriptor must not become a
+data property, or an addon's computed field reads as a function.
 
 ### `napi_delete_async_work`
 
@@ -270,7 +295,9 @@ _Undocumented._
 pub fn napi_escape_handle(_env: *u8, _scope: i64, escapee: i64, result: *u8): i32
 ```
 
-_Undocumented._
+Escaping a value to the enclosing scope. With no per-scope storage the value
+already outlives the scope, so this hands back a fresh handle to the same
+value rather than moving anything.
 
 ### `napi_fatal_error`
 
@@ -326,7 +353,11 @@ _Undocumented._
 pub fn napi_get_cb_info(_env: *u8, cbinfo: i64, argc: *u8, argv: *u8, thisArg: *u8, data: *u8): i32
 ```
 
-_Undocumented._
+napi_get_cb_info(env, cbinfo, argc, argv, this_arg, data)
+
+`argc` is in/out: on entry the size of the addon's argv buffer, on exit the
+number of arguments actually copied. Real argument count is reported even when
+the buffer is smaller, which is how addons detect being under-called.
 
 ### `napi_get_element`
 
@@ -352,7 +383,11 @@ _Undocumented._
 pub fn napi_get_last_error_info(_env: *u8, result: *u8): i32
 ```
 
-_Undocumented._
+napi_get_last_error_info(env, const napi_extended_error_info** result)
+The struct is { const char* error_message; void* engine_reserved;
+                uint32_t engine_error_code; napi_status error_code; }
+A caller reads it after a failure to build a message, so the pointer must be
+to storage that outlives this call: it is a single reused static record.
 
 ### `napi_get_named_property`
 
@@ -376,7 +411,7 @@ _Undocumented._
 pub fn napi_get_property(_env: *u8, object: i64, key: i64, result: *u8): i32
 ```
 
-_Undocumented._
+napi_get_property(env, object, key, result) — key is a napi_value, not a C string
 
 ### `napi_get_property_names`
 
@@ -384,7 +419,10 @@ _Undocumented._
 pub fn napi_get_property_names(_env: *u8, object: i64, result: *u8): i32
 ```
 
-_Undocumented._
+napi_get_property_names(env, object, result) — own enumerable string keys, as an
+array. napi-rs's serde deserializer walks this to build a struct, so a stub that
+returns napi_ok without writing anything leaves it reading an uninitialized
+handle off its own stack.
 
 ### `napi_get_reference_value`
 
@@ -408,7 +446,10 @@ _Undocumented._
 pub fn napi_get_typedarray_info(_env: *u8, typedarray: i64, ttype: *u8, length: *u8, data: *u8, arraybuffer: *u8, byteOffset: *u8): i32
 ```
 
-_Undocumented._
+napi_get_typedarray_info(env, ta, type*, length*, data**, arraybuffer*, offset*)
+`length` is in ELEMENTS and `data` points at the view's first byte, not the
+buffer's: an addon that reads the buffer base for a subarray sees the wrong
+pixels.
 
 ### `napi_get_undefined`
 
@@ -488,7 +529,9 @@ _Undocumented._
 pub fn napi_get_value_string_utf8(_env: *u8, value: i64, buf: *u8, bufsize: i64, result: *u8): i32
 ```
 
-_Undocumented._
+napi_get_value_string_utf8(env, value, buf, bufsize, result)
+A NULL buf means "just tell me the length", which is how addons size their
+allocation before the real call.
 
 ### `napi_get_value_uint32`
 
@@ -536,7 +579,10 @@ _Undocumented._
 pub fn napi_is_buffer(_env: *u8, value: i64, result: *u8): i32
 ```
 
-_Undocumented._
+Every predicate MUST write its out-param. Returning napi_ok without doing so
+leaves the caller reading an uninitialized bool off its own stack — napi-rs then
+took a plain string for a Buffer and the whole deserialize failed with a bare
+InvalidArg and no reason string.
 
 ### `napi_is_exception_pending`
 
@@ -560,7 +606,10 @@ _Undocumented._
 pub fn napi_open_handle_scope(_env: *u8, result: *u8): i32
 ```
 
-_Undocumented._
+Handle scopes. Every handle this runtime hands out is already mirrored into
+the interpreter's foreign-host root set for its lifetime, so a scope has no
+storage to reclaim and these are bookkeeping. The scope handle is a counter so
+an addon that compares or nests them sees distinct values.
 
 ### `napi_queue_async_work`
 
@@ -632,7 +681,8 @@ _Undocumented._
 pub fn napi_throw(_env: *u8, error: i64): i32
 ```
 
-_Undocumented._
+Raise a JS exception. The addon returns to us immediately afterwards, and the
+pending throw is what callers observe.
 
 ### `napi_throw_error`
 
@@ -648,7 +698,8 @@ _Undocumented._
 pub fn napi_typeof(_env: *u8, value: i64, result: *u8): i32
 ```
 
-_Undocumented._
+napi_valuetype: undefined 0, null 1, boolean 2, number 3, string 4, symbol 5,
+object 6, function 7, external 8, bigint 9
 
 ### `napi_unref_threadsafe_function`
 
@@ -672,7 +723,10 @@ _Undocumented._
 pub fn napi_wrap(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _finalizeHint: i64, _result: *u8): i32
 ```
 
-_Undocumented._
+napi_wrap(env, js_object, native_object, finalize_cb, finalize_hint, result)
+
+The finalizer is accepted but never invoked yet: milojs's collector has no
+finalizer hook, so a wrapped native allocation outlives its JS object.
 
 ### `napiHandle`
 

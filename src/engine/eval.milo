@@ -4617,7 +4617,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Str("")
         }
         unsafe {
-            let p = sqlite3_errmsg(st.sqliteDbs[d]._handle)
+            let p = sqlite3_errmsg(st.sqliteDbs[d].handle())
             if p == 0 as *u8 {
                 return JSValue.Str("")
             }
@@ -4636,7 +4636,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if s < 0 {
             return JSValue.Number(0.0 - 1.0)
         }
-        return JSValue.Number(sqlite3_step(st.sqliteStmts[s]._handle) as f64)
+        return JSValue.Number(sqlite3_step(st.sqliteStmts[s].handle()) as f64)
     }
     if id == Builtin.SqliteColumnCount {
         if argVals.len() == 0 {
@@ -4657,7 +4657,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Str("")
         }
         unsafe {
-            let p = sqlite3_column_name(st.sqliteStmts[s]._handle, toNum(argVals[1]) as i32)
+            let p = sqlite3_column_name(st.sqliteStmts[s].handle(), toNum(argVals[1]) as i32)
             if p == 0 as *u8 {
                 return JSValue.Str("")
             }
@@ -4674,7 +4674,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         let col = toNum(argVals[1]) as i32
         // SQLITE_INTEGER 1, FLOAT 2, TEXT 3, BLOB 4, NULL 5
-        let ty = sqlite3_column_type(st.sqliteStmts[s]._handle, col)
+        let ty = sqlite3_column_type(st.sqliteStmts[s].handle(), col)
         if ty == 5 {
             return JSValue.Null
         }
@@ -4733,7 +4733,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                         Result.Err(_e) => { return JSValue.Bool(false) }
                     }
                 }
-                let rc = sqlite3_bind_double(st.sqliteStmts[s]._handle, idx, f)
+                let rc = sqlite3_bind_double(st.sqliteStmts[s].handle(), idx, f)
                 return JSValue.Bool(rc == 0)
             }
             _ => {
@@ -4753,7 +4753,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Str("")
         }
         unsafe {
-            let p = sqlite3_db_filename(st.sqliteDbs[d]._handle, "main")
+            let p = sqlite3_db_filename(st.sqliteDbs[d].handle(), "main")
             if p == 0 as *u8 {
                 return JSValue.Str("")
             }
@@ -4768,7 +4768,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if s < 0 {
             return JSValue.Number(0.0)
         }
-        return JSValue.Number(sqlite3_bind_parameter_index(st.sqliteStmts[s]._handle, toStr(argVals[1])) as f64)
+        return JSValue.Number(sqlite3_bind_parameter_index(st.sqliteStmts[s].handle(), toStr(argVals[1])) as f64)
     }
     if id == Builtin.SqliteReset {
         if argVals.len() == 0 {
@@ -4799,7 +4799,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if d < 0 {
             return JSValue.Number(0.0)
         }
-        return JSValue.Number(sqlite3_changes(st.sqliteDbs[d]._handle) as f64)
+        return JSValue.Number(sqlite3_changes(st.sqliteDbs[d].handle()) as f64)
     }
     if id == Builtin.SqliteLastInsertId {
         if argVals.len() == 0 {
@@ -12654,7 +12654,7 @@ fn spawnActivation(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSVal
         endActivation(gInterp)
     }
     , 8388608)
-    st.actTask.push(body._ptr)
+    st.actTask.push(body.raw())
     st.actCreator.push(caller)
     st.actNotified.push(false)
     st.actEnv.push(envIdx)
@@ -13084,7 +13084,7 @@ fn genResume(o: i64, args: Vec<JSValue>, mode: i64, st: &mut Interp): JSValue {
             }
         }
         , 8388608)
-        st.genTask[gi] = body._ptr
+        st.genTask[gi] = body.raw()
     }
     // Root the gen object across the park: its record vectors reference it, but
     // the caller may hold it only in a temp the save/restore does not cover.
