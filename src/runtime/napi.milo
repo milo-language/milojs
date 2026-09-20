@@ -136,10 +136,12 @@ pub fn napiValueOf(h: i64): JSValue {
 // Read a pointer-sized handle out of an out-param slot written by the addon.
 extern fn memcpy(_dst: *u8, _src: *u8, _n: i64): *u8
 
+// A direct store, not memcpy: an extern call counts as a possible park (a napi
+// callback can re-enter the interpreter), and the typed-array data path calls
+// this while holding a pointer into a global's buffer. The store cannot park.
 pub fn napiWriteHandle(p: *u8, h: i64) {
     unsafe {
-        var buf: [i64; 1] = [h; 1]
-        memcpy(p, buf as *u8, 8)
+        *(p as *i64) = h
     }
 }
 

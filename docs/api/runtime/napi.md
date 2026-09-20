@@ -845,4 +845,6 @@ burn a core for the whole duration of a query.
 pub fn napiWriteHandle(p: *u8, h: i64)
 ```
 
-_Undocumented._
+A direct store, not memcpy: an extern call counts as a possible park (a napi
+callback can re-enter the interpreter), and the typed-array data path calls
+this while holding a pointer into a global's buffer. The store cannot park.
