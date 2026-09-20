@@ -7,6 +7,6 @@ from "../../src/engine/ast" import {
 fn confuseDeclarationListAndExpression(): void {
     var prog = newProg()
     var declarations: Vec<DeclItem> = Vec.new()
-    let declarationsId = addDeclList(prog, declarations)
+    let declarationsId = addDeclList(&mut prog, declarations)
     let _ = getExpr(prog, declarationsId)
 }

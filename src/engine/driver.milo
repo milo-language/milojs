@@ -76,8 +76,8 @@ pub fn bootInterp(st: &mut Interp) {
     // extra==0, so reads of a rare field are valid before any private slot is
     // allocated. ensureExtra never returns 0, so this slot is never mutated.
     st.objExtras.push(defaultExtra())
-    newScope(st, -1)
-    setupGlobals(st)
+    newScope(&mut st, -1)
+    setupGlobals(&mut st)
 }
 
 // Evaluate one script into a persistent program and return its completion value.
@@ -91,14 +91,14 @@ pub fn evalSourceValue(src: &string, prog: &mut Prog, st: &mut Interp): JSValue 
     var p = PState { depth: 0, noIn: false,
         toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: "<embed>", errored: false, eofError: false, quiet: true, strict: false
     }
-    let top = parseProgram(p, prog)
+    let top = parseProgram(&mut p, &mut prog)
     if p.errored {
         st.throwing = true
-        st.thrownValue = makeError(st, "SyntaxError", "failed to parse script")
+        st.thrownValue = makeError(&mut st, "SyntaxError", "failed to parse script")
         return JSValue.Undefined
     }
 
-    hoistBlock(prog, top, st, 0)
+    hoistBlock(prog, top, &mut st, 0)
     var completion = JSValue.Undefined
     var i: i64 = 0
     let n = prog.blocks[top.index].len()
@@ -107,23 +107,23 @@ pub fn evalSourceValue(src: &string, prog: &mut Prog, st: &mut Interp): JSValue 
         if i == n - 1 {
             match getStmt(prog, stmtIdx) {
                 Stmt.ExprStmt(e) => {
-                    completion = evalExpr(prog, e, st, 0)
+                    completion = evalExpr(prog, e, &mut st, 0)
                 }
                 _ => {
-                    execStmt(prog, stmtIdx, st, 0)
+                    execStmt(prog, stmtIdx, &mut st, 0)
                 }
             }
         } else {
-            execStmt(prog, stmtIdx, st, 0)
+            execStmt(prog, stmtIdx, &mut st, 0)
         }
         i = i + 1
     }
     if !st.throwing {
         // Event-loop work can allocate and collect before the C host receives
         // the completion value. Keep it rooted across that drain.
-        pushTemp(st, cloneValue(completion))
-        runEventLoop(prog, st)
-        popTemp(st)
+        pushTemp(&mut st, cloneValue(completion))
+        runEventLoop(prog, &mut st)
+        popTemp(&mut st)
     }
     return completion
 }
@@ -136,7 +136,7 @@ fn runSource(src: &string, st: &mut Interp): i32 {
     var p = PState { depth: 0, noIn: false,
         toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: "<entry>", errored: false, eofError: false, quiet: false, strict: false
     }
-    let top = parseProgram(p, prog)
+    let top = parseProgram(&mut p, &mut prog)
     // A parse error used to print its message and then run the half-parsed
     // program anyway, exiting 0. node exits 1 on a SyntaxError and runs nothing;
     // a script whose syntax is broken reporting success is what a CI pipeline
@@ -146,19 +146,19 @@ fn runSource(src: &string, st: &mut Interp): i32 {
     }
     // top-level code has no FuncDef to carry its strictness, so seed it here
     st.strict = prog.progStrict
-    hoistBlock(prog, top, st, 0)
-    execBlock(prog, top, st, 0)
+    hoistBlock(prog, top, &mut st, 0)
+    execBlock(prog, top, &mut st, 0)
     // the script only schedules callbacks; without draining, every .then handler
     // and timer queued by it would be silently dropped
     if !st.throwing {
-        runEventLoop(prog, st)
+        runEventLoop(prog, &mut st)
     }
     if st.throwing {
         eprint("Uncaught " + describeThrown(st, st.thrownValue))
         return 1
     }
     if st.gcStats {
-        collect(st)
+        collect(&mut st)
         eprint("[gc] total runs " + i64ToStr(st.gcRuns) + ", arena slots " + i64ToStr(st.scopes.len()) + ", free " + i64ToStr(st.freeList.len()))
     }
     return 0

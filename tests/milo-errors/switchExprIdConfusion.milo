@@ -7,6 +7,6 @@ from "../../src/engine/ast" import {
 fn confuseSwitchAndExpression(): void {
     var prog = newProg()
     var cases: Vec<SwitchCase> = Vec.new()
-    let switchId = addSwitch(prog, cases)
+    let switchId = addSwitch(&mut prog, cases)
     let _ = getExpr(prog, switchId)
 }

@@ -26,18 +26,18 @@ from "../../src/engine/value" import {
 pub fn main(): i32 {
     var st = makeInterp(false, 1, 2)
     // creates global scope 0, which collect marks as a root
-    bootInterp(st)
+    bootInterp(&mut st)
 
     // an object reachable ONLY through the running execution's temp roots
-    let keep = newObject(st)
-    objSet(st, keep, "marker", JSValue.Str("survived"))
-    pushTemp(st, JSValue.Obj(keep))
+    let keep = newObject(&mut st)
+    objSet(&mut st, keep, "marker", JSValue.Str("survived"))
+    pushTemp(&mut st, JSValue.Obj(keep))
     st.callDepth = 7
     st.throwing = true
     st.thrownValue = JSValue.Str("pending-throw")
 
     // park it: state leaves the Interp and goes into the activation's context
-    let ctx = saveExecCtx(st)
+    let ctx = saveExecCtx(&mut st)
     st.suspended.push(ctx)
 
     if st.callDepth == 0 && !st.throwing {
@@ -47,16 +47,16 @@ pub fn main(): i32 {
     // run something else, collecting hard while the activation is parked
     var i: i64 = 0
     while i < 200 {
-        let junk = newObject(st)
-        objSet(st, junk, "n", JSValue.Number(i as f64))
+        let junk = newObject(&mut st)
+        objSet(&mut st, junk, "n", JSValue.Number(i as f64))
         i = i + 1
     }
-    collect(st)
-    collect(st)
+    collect(&mut st)
+    collect(&mut st)
 
     // resume
     let back = st.suspended.pop()!
-    restoreExecCtx(st, back)
+    restoreExecCtx(&mut st, back)
 
     if st.callDepth == 7 && st.throwing {
         print("resumed: state restored")

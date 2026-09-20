@@ -1138,7 +1138,7 @@ pub fn ensureExtra(st: &mut Interp, o: i64): i64 {
 // owns exactly one slot: never hand the same AccId to two properties, or
 // freeing one would strand the other on a recycled entry.
 fn allocAccessor(st: &mut Interp, getter: JSValue, setter: JSValue): Handle<Accessor> {
-    return arenaAlloc(st.accessors, Accessor { getter: getter, setter: setter })
+    return arenaAlloc(&mut st.accessors, Accessor { getter: getter, setter: setter })
 }
 
 // Release the slot a property held, if it was an accessor. Clearing the pair
@@ -1148,7 +1148,7 @@ fn freeAccessor(st: &mut Interp, acc: Option<Handle<Accessor>>) {
         Option.Some(h) => {
             // a stale handle returns false rather than recycling someone else's
             // live slot, so a double free is refused instead of aliasing
-            arenaFree(st.accessors, h)
+            arenaFree(&mut st.accessors, h)
         }
         Option.None => {
         }
@@ -1161,7 +1161,7 @@ fn freeObjAccessors(st: &mut Interp, obj: i64) {
     var i: i64 = 0
     while i < st.objects[obj].props.len() {
         let acc = st.objects[obj].props[i].acc
-        freeAccessor(st, acc)
+        freeAccessor(&mut st, acc)
         i = i + 1
     }
 }
@@ -1272,11 +1272,11 @@ pub fn isWrapperObj(st: &Interp, h: i64): bool {
 }
 
 pub fn newObject(st: &mut Interp): i64 {
-    return allocObj(st, false)
+    return allocObj(&mut st, false)
 }
 
 pub fn newArray(st: &mut Interp): i64 {
-    let o = allocObj(st, true)
+    let o = allocObj(&mut st, true)
     // Link the REAL prototype rather than relying on the name-whitelist dispatch
     // that used to fake it, so ordinary member lookup finds array methods and
     // a user's `Array.prototype.foo = …` is reachable like it is in a real engine.
@@ -1291,14 +1291,14 @@ pub fn newArray(st: &mut Interp): i64 {
 // Promises settle synchronously — there is no event loop, so `new Promise(cb)`
 // whose cb resolves later never settles and awaiting it yields undefined.
 pub fn newPromise(st: &mut Interp, state: i64, value: JSValue): i64 {
-    let o = allocObj(st, false)
+    let o = allocObj(&mut st, false)
     st.objects[o].promiseState = state
     if st.promiseProtoObj >= 0 {
         st.objects[o].proto = st.promiseProtoObj
     }
     // a promise always owns a private extra: its value + reactions live there,
     // and the GC/settle paths reach them through it whenever promiseState >= 0
-    let ex = ensureExtra(st, o)
+    let ex = ensureExtra(&mut st, o)
     st.objExtras[ex].promiseValue = value
     // born rejected with no handlers — an async body that threw builds its
     // result this way, bypassing settlePromise, so track it here or the
@@ -1437,7 +1437,7 @@ fn touchedBuiltinProto(st: &mut Interp, obj: i64) {
 }
 
 pub fn objSet(st: &mut Interp, obj: i64, key: string, value: JSValue) {
-    touchedBuiltinProto(st, obj)
+    touchedBuiltinProto(&mut st, obj)
     // private fields (#name, the only keys milojs stores with a leading '#') are
     // non-enumerable: they must not appear in JSON.stringify, Object.keys, for-in
     // or spread. Setting it here covers every enumeration site at once.
@@ -1452,7 +1452,7 @@ pub fn objSet(st: &mut Interp, obj: i64, key: string, value: JSValue) {
             // enumerable one, after which `for (k in [1,2])` yielded "join".
             let wasEnum = st.objects[obj].props[i].enumerable
             // overwriting an accessor with a data property drops its pair
-            freeAccessor(st, st.objects[obj].props[i].acc)
+            freeAccessor(&mut st, st.objects[obj].props[i].acc)
             st.objects[obj].props[i] = Prop {
                 key: key, value: value, acc: Option.None, writable: true, enumerable: wasEnum, configurable: true
             }
@@ -1515,14 +1515,14 @@ pub fn mapPut(st: &mut Interp, o: i64, key: JSValue, value: JSValue) {
 
 // Define (or replace) an accessor property.
 pub fn objDefineAccessor(st: &mut Interp, obj: i64, key: string, getter: JSValue, setter: JSValue) {
-    touchedBuiltinProto(st, obj)
+    touchedBuiltinProto(&mut st, obj)
     var i: i64 = 0
     let n = st.objects[obj].props.len()
     while i < n {
         if st.objects[obj].props[i].key == key {
             // redefining reuses nothing: the old pair (if any) is released first
-            freeAccessor(st, st.objects[obj].props[i].acc)
-            let id = allocAccessor(st, getter, setter)
+            freeAccessor(&mut st, st.objects[obj].props[i].acc)
+            let id = allocAccessor(&mut st, getter, setter)
             st.objects[obj].props[i] = Prop {
                 key: key, value: JSValue.Undefined, acc: Option.Some(id), writable: true, enumerable: true, configurable: true
             }
@@ -1530,7 +1530,7 @@ pub fn objDefineAccessor(st: &mut Interp, obj: i64, key: string, getter: JSValue
         }
         i = i + 1
     }
-    let id = allocAccessor(st, getter, setter)
+    let id = allocAccessor(&mut st, getter, setter)
     st.objects[obj].props.push(Prop {
         key: key, value: JSValue.Undefined, acc: Option.Some(id), writable: true, enumerable: true, configurable: true
     }
@@ -1610,7 +1610,7 @@ pub fn setArrayLength(st: &mut Interp, obj: i64, n: i64) {
         while p >= 0 {
             let keyIndex = asArrayIndex(st.objects[obj].props[p].key)
             if keyIndex >= target {
-                freeAccessor(st, st.objects[obj].props[p].acc)
+                freeAccessor(&mut st, st.objects[obj].props[p].acc)
                 st.objects[obj].props.remove(p)
             }
             p = p - 1
@@ -1627,14 +1627,14 @@ pub fn setArrayLength(st: &mut Interp, obj: i64, n: i64) {
 // true if the key was removed or was absent, false if it is a non-configurable
 // own property (which stays). `delete` evaluates to this bool.
 pub fn objDeleteKey(st: &mut Interp, obj: i64, key: &string): bool {
-    touchedBuiltinProto(st, obj)
+    touchedBuiltinProto(&mut st, obj)
     if st.objects[obj].isArray {
         let ai = asArrayIndex(key)
         if ai >= 0 && ai < st.objects[obj].elems.len() {
             // delete leaves length alone but the slot becomes a HOLE:
             // `ai in arr` and hasOwnProperty must say false from now on
             st.objects[obj].elems[ai] = JSValue.Undefined
-            arrMarkHole(st, obj, ai)
+            arrMarkHole(&mut st, obj, ai)
             return true
         }
     }
@@ -1650,7 +1650,7 @@ pub fn objDeleteKey(st: &mut Interp, obj: i64, key: &string): bool {
     var i: i64 = st.objects[obj].props.len() - 1
     while i >= 0 {
         if st.objects[obj].props[i].key == key {
-            freeAccessor(st, st.objects[obj].props[i].acc)
+            freeAccessor(&mut st, st.objects[obj].props[i].acc)
             st.objects[obj].props.remove(i)
         }
         i = i - 1
@@ -1933,11 +1933,11 @@ pub fn arrSet(st: &mut Interp, obj: i64, idx: i64, value: JSValue) {
     let oldLen = arrLen(st, obj)
     if idx < st.objects[obj].elems.len() {
         st.objects[obj].elems[idx] = value
-        arrClearHole(st, obj, idx)
+        arrClearHole(&mut st, obj, idx)
     } else if st.objects[obj].elems.len() == idx {
         st.objects[obj].elems.push(value)
     } else {
-        objSet(st, obj, i64ToStr(idx), value)
+        objSet(&mut st, obj, i64ToStr(idx), value)
     }
     if idx >= oldLen {
         st.objects[obj].logicalLen = idx + 1
@@ -2023,7 +2023,7 @@ fn resolverPropsSlot(promise: i64, isReject: bool): i64 {
 }
 
 fn newNativePropsObj(st: &mut Interp): i64 {
-    let o = newObject(st)
+    let o = newObject(&mut st)
     // A native IS callable, so its property bag must inherit Function.prototype
     // — that is what makes `String.constructor` resolve to Function and
     // `Object.getPrototypeOf(String)` answer Function.prototype.
@@ -2061,7 +2061,7 @@ pub fn getNativeProps(st: &mut Interp, n: &Native): i64 {
                 st.resolverProps.push(-1)
             }
             if st.resolverProps[k] < 0 {
-                st.resolverProps[k] = newNativePropsObj(st)
+                st.resolverProps[k] = newNativePropsObj(&mut st)
             }
             return st.resolverProps[k]
         }
@@ -2072,7 +2072,7 @@ pub fn getNativeProps(st: &mut Interp, n: &Native): i64 {
     if slot >= 0 {
         return st.nativeProps[slot]
     }
-    let o = newNativePropsObj(st)
+    let o = newNativePropsObj(&mut st)
     st.nativeKeys.push(cloneNative(n))
     st.nativeProps.push(o)
     return o
@@ -2086,7 +2086,7 @@ pub fn getFuncStatics(st: &mut Interp, fnIdx: i64, envIdx: i64): i64 {
             st.funcStatics.push(-1)
         }
         if st.funcStatics[fnIdx] < 0 {
-            let o = newObject(st)
+            let o = newObject(&mut st)
             st.funcStatics[fnIdx] = o
         }
         return st.funcStatics[fnIdx]
@@ -2099,7 +2099,7 @@ pub fn getFuncStatics(st: &mut Interp, fnIdx: i64, envIdx: i64): i64 {
         }
         k = k + 1
     }
-    let o = newObject(st)
+    let o = newObject(&mut st)
     st.scopes[envIdx].fnStatKeys.push(fnIdx)
     st.scopes[envIdx].fnStatVals.push(o)
     return o
@@ -2110,7 +2110,7 @@ pub fn getFuncProto(st: &mut Interp, fnIdx: i64): i64 {
         st.funcProtos.push(-1)
     }
     if st.funcProtos[fnIdx] < 0 {
-        let p = newObject(st)
+        let p = newObject(&mut st)
         st.funcProtos[fnIdx] = p
     }
     return st.funcProtos[fnIdx]
@@ -2141,7 +2141,7 @@ pub fn arrLen(st: &Interp, obj: i64): i64 {
 }
 
 pub fn arrPush(st: &mut Interp, obj: i64, value: JSValue) {
-    arrSet(st, obj, arrLen(st, obj), value)
+    arrSet(&mut st, obj, arrLen(st, obj), value)
 }
 
 pub fn newScope(st: &mut Interp, parent: i64): i64 {
@@ -2185,10 +2185,10 @@ pub fn popTemp(st: &mut Interp) {
 fn markValue(st: &mut Interp, v: &JSValue) {
     match v {
         JSValue.Func(_f, envIdx) => {
-            markScope(st, envIdx)
+            markScope(&mut st, envIdx)
         }
         JSValue.Obj(objIdx) => {
-            markObject(st, objIdx)
+            markObject(&mut st, objIdx)
         }
         JSValue.Native(n) => {
             // a resolve/reject function carries its promise handle, and must keep
@@ -2196,7 +2196,7 @@ fn markValue(st: &mut Interp, v: &JSValue) {
             // outlives the promise it settles
             match n {
                 Native.Resolver(promise, _isReject) => {
-                    markObject(st, promise)
+                    markObject(&mut st, promise)
                 }
                 _ => {
                 }
@@ -2277,13 +2277,13 @@ fn pushMarkTargets(v: &JSValue, objs: &mut Vec<i64>, scopes: &mut Vec<i64>) {
 // died on SIGBUS mid-collection, with no message and nothing the program could
 // catch. Depth the user controls has to live on the heap.
 fn markObject(st: &mut Interp, i: i64) {
-    drainMarks(st, i, -1)
+    drainMarks(&mut st, i, -1)
 }
 
 // Mark a scope live, then everything it can reach: its lexical parent and every
 // value bound in it (closures → their env, objects → their heap slot).
 fn markScope(st: &mut Interp, i: i64) {
-    drainMarks(st, -1, i)
+    drainMarks(&mut st, -1, i)
 }
 
 // Marks everything reachable from one seed handle. Objects drain before scopes
@@ -2301,10 +2301,10 @@ fn drainMarks(st: &mut Interp, seedObj: i64, seedScope: i64) {
     while objs.len() > 0 || scopes.len() > 0 {
         if objs.len() > 0 {
             let o = objs.pop()!
-            markObjectShallow(st, o, objs, scopes)
+            markObjectShallow(&mut st, o, &mut objs, &mut scopes)
         } else {
             let s = scopes.pop()!
-            markScopeShallow(st, s, objs, scopes)
+            markScopeShallow(&mut st, s, &mut objs, &mut scopes)
         }
     }
 }
@@ -2323,14 +2323,14 @@ fn markObjectShallow(st: &mut Interp, i: i64, objs: &mut Vec<i64>, scopes: &mut 
     var k: i64 = 0
     let n = st.objects[i].props.len()
     while k < n {
-        pushMarkTargets(st.objects[i].props[k].value, objs, scopes)
+        pushMarkTargets(st.objects[i].props[k].value, &mut objs, &mut scopes)
         // an accessor property keeps its getter/setter alive
         match st.objects[i].props[k].acc {
             Option.Some(h) => {
                 match arenaGet(st.accessors, h) {
                     Option.Some(pair) => {
-                        pushMarkTargets(pair.getter, objs, scopes)
-                        pushMarkTargets(pair.setter, objs, scopes)
+                        pushMarkTargets(pair.getter, &mut objs, &mut scopes)
+                        pushMarkTargets(pair.setter, &mut objs, &mut scopes)
                     }
                     Option.None => {
                     }
@@ -2344,16 +2344,16 @@ fn markObjectShallow(st: &mut Interp, i: i64, objs: &mut Vec<i64>, scopes: &mut 
     var e: i64 = 0
     let ne = st.objects[i].elems.len()
     while e < ne {
-        pushMarkTargets(st.objects[i].elems[e], objs, scopes)
+        pushMarkTargets(st.objects[i].elems[e], &mut objs, &mut scopes)
         e = e + 1
     }
     // a promise keeps its value and every pending reaction alive
     if st.objects[i].promiseState >= 0 {
-        pushMarkTargets(st.objExtras[st.objects[i].extra].promiseValue, objs, scopes)
+        pushMarkTargets(st.objExtras[st.objects[i].extra].promiseValue, &mut objs, &mut scopes)
         var r: i64 = 0
         while r < st.objExtras[st.objects[i].extra].reactions.len() {
-            pushMarkTargets(st.objExtras[st.objects[i].extra].reactions[r].onFulfilled, objs, scopes)
-            pushMarkTargets(st.objExtras[st.objects[i].extra].reactions[r].onRejected, objs, scopes)
+            pushMarkTargets(st.objExtras[st.objects[i].extra].reactions[r].onFulfilled, &mut objs, &mut scopes)
+            pushMarkTargets(st.objExtras[st.objects[i].extra].reactions[r].onRejected, &mut objs, &mut scopes)
             objs.push(st.objExtras[st.objects[i].extra].reactions[r].derived)
             r = r + 1
         }
@@ -2362,12 +2362,12 @@ fn markObjectShallow(st: &mut Interp, i: i64, objs: &mut Vec<i64>, scopes: &mut 
     if st.objects[i].isMap || st.objects[i].isSet {
         var mk: i64 = 0
         while mk < st.objExtras[st.objects[i].extra].mapKeys.len() {
-            pushMarkTargets(st.objExtras[st.objects[i].extra].mapKeys[mk], objs, scopes)
+            pushMarkTargets(st.objExtras[st.objects[i].extra].mapKeys[mk], &mut objs, &mut scopes)
             mk = mk + 1
         }
         var mv: i64 = 0
         while mv < st.objExtras[st.objects[i].extra].mapVals.len() {
-            pushMarkTargets(st.objExtras[st.objects[i].extra].mapVals[mv], objs, scopes)
+            pushMarkTargets(st.objExtras[st.objects[i].extra].mapVals[mv], &mut objs, &mut scopes)
             mv = mv + 1
         }
     }
@@ -2375,11 +2375,11 @@ fn markObjectShallow(st: &mut Interp, i: i64, objs: &mut Vec<i64>, scopes: &mut 
     // (payload in the side table; isBound never set without a private extra)
     if st.objects[i].isBound {
         let ex = st.objects[i].extra
-        pushMarkTargets(st.objExtras[ex].boundTarget, objs, scopes)
-        pushMarkTargets(st.objExtras[ex].boundThis, objs, scopes)
+        pushMarkTargets(st.objExtras[ex].boundTarget, &mut objs, &mut scopes)
+        pushMarkTargets(st.objExtras[ex].boundThis, &mut objs, &mut scopes)
         var b: i64 = 0
         while b < st.objExtras[ex].boundArgs.len() {
-            pushMarkTargets(st.objExtras[ex].boundArgs[b], objs, scopes)
+            pushMarkTargets(st.objExtras[ex].boundArgs[b], &mut objs, &mut scopes)
             b = b + 1
         }
     }
@@ -2389,8 +2389,8 @@ fn markObjectShallow(st: &mut Interp, i: i64, objs: &mut Vec<i64>, scopes: &mut 
     // client was constructed.
     if st.objects[i].isProxy {
         let ex = st.objects[i].extra
-        pushMarkTargets(st.objExtras[ex].proxyTarget, objs, scopes)
-        pushMarkTargets(st.objExtras[ex].proxyHandler, objs, scopes)
+        pushMarkTargets(st.objExtras[ex].proxyTarget, &mut objs, &mut scopes)
+        pushMarkTargets(st.objExtras[ex].proxyHandler, &mut objs, &mut scopes)
     }
     // a typed-array view keeps its backing ArrayBuffer alive
     if st.objExtras[st.objects[i].extra].taBuf >= 0 {
@@ -2425,7 +2425,7 @@ fn markScopeShallow(st: &mut Interp, i: i64, objs: &mut Vec<i64>, scopes: &mut V
     var k: i64 = 0
     let n = st.scopes[i].vars.len()
     while k < n {
-        pushMarkTargets(st.scopes[i].vars[k].value, objs, scopes)
+        pushMarkTargets(st.scopes[i].vars[k].value, &mut objs, &mut scopes)
         k = k + 1
     }
     // A `using` resource and its snapshotted dispose method are reachable ONLY
@@ -2435,8 +2435,8 @@ fn markScopeShallow(st: &mut Interp, i: i64, objs: &mut Vec<i64>, scopes: &mut V
     var dk: i64 = 0
     let dn = st.scopes[i].dispRecv.len()
     while dk < dn {
-        pushMarkTargets(st.scopes[i].dispRecv[dk], objs, scopes)
-        pushMarkTargets(st.scopes[i].dispFn[dk], objs, scopes)
+        pushMarkTargets(st.scopes[i].dispRecv[dk], &mut objs, &mut scopes)
+        pushMarkTargets(st.scopes[i].dispFn[dk], &mut objs, &mut scopes)
         dk = dk + 1
     }
     // this scope's per-instance function statics are roots for anything they hold
@@ -2467,35 +2467,35 @@ pub fn collect(st: &mut Interp) {
     }
     // roots: global scope 0 + the whole dynamic call/block stack. Objects are
     // marked transitively from the values bound in reachable scopes.
-    markScope(st, 0)
+    markScope(&mut st, 0)
     var a: i64 = 0
     while a < st.active.len() {
-        markScope(st, st.active[a])
+        markScope(&mut st, st.active[a])
         a = a + 1
     }
     var t: i64 = 0
     while t < st.tempRoots.len() {
         let tv = cloneValue(st.tempRoots[t])
-        markValue(st, tv)
+        markValue(&mut st, tv)
         t = t + 1
     }
     var vs: i64 = 0
     while vs < st.vmSp {
         let vv = cloneValue(st.vmStack[vs])
-        markValue(st, vv)
+        markValue(&mut st, vv)
         vs = vs + 1
     }
     var hr: i64 = 0
     while hr < st.hostRoots.len() {
         if st.hostRootLive[hr] {
             let hv = cloneValue(st.hostRoots[hr])
-            markValue(st, hv)
+            markValue(&mut st, hv)
         }
         hr = hr + 1
     }
     if st.throwing {
         let tv = cloneValue(st.thrownValue)
-        markValue(st, tv)
+        markValue(&mut st, tv)
     }
     // A suspended activation is not running, so its roots are not in st.active
     // or st.tempRoots — they were lifted into its saved context. Skipping them
@@ -2503,35 +2503,35 @@ pub fn collect(st: &mut Interp) {
     // surfaces as a use-after-free when it resumes.
     var av: i64 = 0
     while av < st.actEnv.len() {
-        markScope(st, st.actEnv[av])
+        markScope(&mut st, st.actEnv[av])
         var ag: i64 = 0
         while ag < st.actArgs[av].len() {
             let argv = cloneValue(st.actArgs[av][ag])
-            markValue(st, argv)
+            markValue(&mut st, argv)
             ag = ag + 1
         }
         let tv2 = cloneValue(st.actThis[av])
-        markValue(st, tv2)
+        markValue(&mut st, tv2)
         // the promise this activation will settle — see actPromise
-        markObject(st, st.actPromise[av])
+        markObject(&mut st, st.actPromise[av])
         av = av + 1
     }
     var sc: i64 = 0
     while sc < st.suspended.len() {
         var ai: i64 = 0
         while ai < st.suspended[sc].active.len() {
-            markScope(st, st.suspended[sc].active[ai])
+            markScope(&mut st, st.suspended[sc].active[ai])
             ai = ai + 1
         }
         var ti: i64 = 0
         while ti < st.suspended[sc].tempRoots.len() {
             let sv = cloneValue(st.suspended[sc].tempRoots[ti])
-            markValue(st, sv)
+            markValue(&mut st, sv)
             ti = ti + 1
         }
         if st.suspended[sc].throwing {
             let sv = cloneValue(st.suspended[sc].thrownValue)
-            markValue(st, sv)
+            markValue(&mut st, sv)
         }
         sc = sc + 1
     }
@@ -2540,7 +2540,7 @@ pub fn collect(st: &mut Interp) {
     // invariant: an entry here IS a liveness claim on the promise
     var awr: i64 = 0
     while awr < st.awaitPromise.len() {
-        markObject(st, st.awaitPromise[awr])
+        markObject(&mut st, st.awaitPromise[awr])
         awr = awr + 1
     }
     // A generator parked at a yield has its body-task execution in `suspended`
@@ -2551,43 +2551,43 @@ pub fn collect(st: &mut Interp) {
     // the driving frame, and dropping it mid-iteration would orphan its task.
     var gv: i64 = 0
     while gv < st.genObj.len() {
-        markObject(st, st.genObj[gv])
-        markScope(st, st.genEnv[gv])
-        markScope(st, st.genScope[gv])
+        markObject(&mut st, st.genObj[gv])
+        markScope(&mut st, st.genEnv[gv])
+        markScope(&mut st, st.genScope[gv])
         var ga: i64 = 0
         while ga < st.genArgs[gv].len() {
             let gav = cloneValue(st.genArgs[gv][ga])
-            markValue(st, gav)
+            markValue(&mut st, gav)
             ga = ga + 1
         }
         let gt = cloneValue(st.genThis[gv])
-        markValue(st, gt)
+        markValue(&mut st, gt)
         let gy = cloneValue(st.genYielded[gv])
-        markValue(st, gy)
+        markValue(&mut st, gy)
         let gs = cloneValue(st.genSent[gv])
-        markValue(st, gs)
+        markValue(&mut st, gs)
         let ge = cloneValue(st.genErr[gv])
-        markValue(st, ge)
+        markValue(&mut st, ge)
         gv = gv + 1
     }
     // cached module.exports are roots — a loaded module's exports outlive its scope
     var me: i64 = 0
     while me < st.modExports.len() {
         let mv = cloneValue(st.modExports[me])
-        markValue(st, mv)
+        markValue(&mut st, mv)
         me = me + 1
     }
     // %GeneratorPrototype% is a root in its own right. It is normally reachable
     // through some generator function's .prototype below, but it is created
     // BEFORE that link is made, and a collection in that window would sweep it.
     if st.genProtoObj >= 0 {
-        markObject(st, st.genProtoObj)
+        markObject(&mut st, st.genProtoObj)
     }
     // every function's .prototype object is a root (methods live on it)
     var fp: i64 = 0
     while fp < st.funcProtos.len() {
         if st.funcProtos[fp] >= 0 {
-            markObject(st, st.funcProtos[fp])
+            markObject(&mut st, st.funcProtos[fp])
         }
         fp = fp + 1
     }
@@ -2597,11 +2597,11 @@ pub fn collect(st: &mut Interp) {
     while tm < st.timers.len() {
         if st.timers[tm].active {
             let cb = cloneValue(st.timers[tm].cb)
-            markValue(st, cb)
+            markValue(&mut st, cb)
             var ta: i64 = 0
             while ta < st.timers[tm].args.len() {
                 let argVal = cloneValue(st.timers[tm].args[ta])
-                markValue(st, argVal)
+                markValue(&mut st, argVal)
                 ta = ta + 1
             }
         }
@@ -2611,52 +2611,52 @@ pub fn collect(st: &mut Interp) {
     while mt < st.microtasks.len() {
         let mcb = cloneValue(st.microtasks[mt].cb)
         let marg = cloneValue(st.microtasks[mt].arg)
-        markValue(st, mcb)
-        markValue(st, marg)
+        markValue(&mut st, mcb)
+        markValue(&mut st, marg)
         // the derived promise of a discarded `p.then(cb)` is referenced only by
         // this queued microtask once settlePromise has cleared p.reactions
         if st.microtasks[mt].derived >= 0 {
-            markObject(st, st.microtasks[mt].derived)
+            markObject(&mut st, st.microtasks[mt].derived)
         }
         mt = mt + 1
     }
     // constructor-side objects held only in Interp fields are roots: nothing in
     // the scope chain references them, since the globals bind the native itself
     if st.dateCtorProps >= 0 {
-        markObject(st, st.dateCtorProps)
+        markObject(&mut st, st.dateCtorProps)
     }
     if st.stringCtorProps >= 0 {
-        markObject(st, st.stringCtorProps)
+        markObject(&mut st, st.stringCtorProps)
     }
     if st.arrayCtorObj >= 0 {
-        markObject(st, st.arrayCtorObj)
+        markObject(&mut st, st.arrayCtorObj)
     }
     if st.promiseCtorObj >= 0 {
-        markObject(st, st.promiseCtorObj)
+        markObject(&mut st, st.promiseCtorObj)
     }
     // a listening server is reachable only from this registry
     var hs: i64 = 0
     var pf: i64 = 0
     while pf < st.fetches.len() {
-        markObject(st, st.fetches[pf].promise)
+        markObject(&mut st, st.fetches[pf].promise)
         pf = pf + 1
     }
     while hs < st.httpServers.len() {
-        markObject(st, st.httpServers[hs])
+        markObject(&mut st, st.httpServers[hs])
         hs = hs + 1
     }
     // native-constructor property bags are roots too
     var np: i64 = 0
     while np < st.nativeProps.len() {
         if st.nativeProps[np] >= 0 {
-            markObject(st, st.nativeProps[np])
+            markObject(&mut st, st.nativeProps[np])
         }
         np = np + 1
     }
     var rp: i64 = 0
     while rp < st.resolverProps.len() {
         if st.resolverProps[rp] >= 0 {
-            markObject(st, st.resolverProps[rp])
+            markObject(&mut st, st.resolverProps[rp])
         }
         rp = rp + 1
     }
@@ -2664,7 +2664,7 @@ pub fn collect(st: &mut Interp) {
     var fs: i64 = 0
     while fs < st.funcStatics.len() {
         if st.funcStatics[fs] >= 0 {
-            markObject(st, st.funcStatics[fs])
+            markObject(&mut st, st.funcStatics[fs])
         }
         fs = fs + 1
     }
@@ -2684,10 +2684,10 @@ pub fn collect(st: &mut Interp) {
     var os: i64 = 0
     while os < st.objects.len() {
         if !st.objects[os].free && !st.objects[os].mark {
-            releaseExtra(st, os)
+            releaseExtra(&mut st, os)
             // the object's accessor slots die with it, or the side table grows
             // without bound across a long-running server's request objects
-            freeObjAccessors(st, os)
+            freeObjAccessors(&mut st, os)
             st.objects[os].props = Vec.new()
             st.objects[os].elems = Vec.new()
             st.objects[os].free = true
@@ -2723,7 +2723,7 @@ pub fn collect(st: &mut Interp) {
 // frame allocates per call and never reaches a statement boundary of its own.
 pub fn maybeGc(st: &mut Interp) {
     if st.allocSinceGc >= st.gcThreshold {
-        collect(st)
+        collect(&mut st)
     }
 }
 
@@ -2878,7 +2878,7 @@ pub fn scopeAssign(st: &mut Interp, scope: i64, name: &string, value: JSValue) {
     var s = scope
     while s >= 0 {
         if st.scopes[s].withObj >= 0 && withHas(st, st.scopes[s].withObj, name) {
-            objSet(st, st.scopes[s].withObj, name.clone(), value)
+            objSet(&mut st, st.scopes[s].withObj, name.clone(), value)
             return
         }
         var i = st.scopes[s].vars.len() - 1
@@ -2896,7 +2896,7 @@ pub fn scopeAssign(st: &mut Interp, scope: i64, name: &string, value: JSValue) {
     // thing strict mode does and the reason a typo'd assignment is caught at all.
     if st.strict {
         st.throwing = true
-        st.thrownValue = makeError(st, "ReferenceError", name.clone() + " is not defined")
+        st.thrownValue = makeError(&mut st, "ReferenceError", name.clone() + " is not defined")
         return
     }
     st.scopes[0].vars.push(Binding {

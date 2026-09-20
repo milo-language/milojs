@@ -295,7 +295,7 @@ pub fn napi_create_object(_env: *u8, result: *u8): i32 {
     if (result as i64) == 0 {
         return NAPI_INVALID_ARG
     }
-    let o = newObject(gInterp)
+    let o = newObject(&mut gInterp)
     napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
     return NAPI_OK
 }
@@ -308,7 +308,7 @@ pub fn napi_create_array(_env: *u8, result: *u8): i32 {
     if (result as i64) == 0 {
         return NAPI_INVALID_ARG
     }
-    let o = newArray(gInterp)
+    let o = newArray(&mut gInterp)
     napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
     return NAPI_OK
 }
@@ -321,9 +321,9 @@ pub fn napi_create_array_with_length(_env: *u8, length: i64, result: *u8): i32 {
     if (result as i64) == 0 {
         return NAPI_INVALID_ARG
     }
-    let o = newArray(gInterp)
+    let o = newArray(&mut gInterp)
     if length > 0 {
-        setArrayLength(gInterp, o, length)
+        setArrayLength(&mut gInterp, o, length)
     }
     napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
     return NAPI_OK
@@ -335,7 +335,7 @@ pub fn napi_create_array_with_length(_env: *u8, length: i64, result: *u8): i32 {
 pub fn napi_set_named_property(_env: *u8, object: i64, utf8name: *u8, value: i64): i32 {
     match napiValueOf(object) {
         JSValue.Obj(o) => {
-            objSet(gInterp, o, napiReadStr(utf8name, -1), napiValueOf(value))
+            objSet(&mut gInterp, o, napiReadStr(utf8name, -1), napiValueOf(value))
             return NAPI_OK
         }
         _ => {
@@ -508,8 +508,8 @@ pub fn napi_create_function(_env: *u8, _utf8name: *u8, _length: i64, cb: i64, da
         fnPtr: cb, data: data
     }
     )
-    let o = newObject(gInterp)
-    let _en = ensureExtra(gInterp, o)
+    let o = newObject(&mut gInterp)
+    let _en = ensureExtra(&mut gInterp, o)
     gInterp.objExtras[gInterp.objects[o].extra].napiFn = gNapi.fns.len() - 1
     gInterp.objects[o].isFunctionLike = true
     napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
@@ -623,7 +623,7 @@ pub fn napiLoadAddon(path: &string): Result<JSValue, string> {
         if (sym as i64) == 0 {
             return Result.Err("not a node-api addon (no napi_register_module_v1): " + path.clone())
         }
-        let exportsObj = newObject(gInterp)
+        let exportsObj = newObject(&mut gInterp)
         let eh = napiHandle(JSValue.Obj(exportsObj))
         let reg = (sym as *u8) as extern (*u8, i64) => i64
         let rh = reg(0 as *u8, eh)
@@ -726,8 +726,8 @@ fn napiMakeFn(cb: i64, data: i64): i64 {
         fnPtr: cb, data: data
     }
     )
-    let o = newObject(gInterp)
-    let _en = ensureExtra(gInterp, o)
+    let o = newObject(&mut gInterp)
+    let _en = ensureExtra(&mut gInterp, o)
     gInterp.objExtras[gInterp.objects[o].extra].napiFn = gNapi.fns.len() - 1
     gInterp.objects[o].isFunctionLike = true
     return o
@@ -750,7 +750,7 @@ pub fn napi_define_class(_env: *u8, _utf8name: *u8, _length: i64, constructor: i
         return NAPI_INVALID_ARG
     }
     let ctor = napiMakeFn(constructor, data)
-    let proto = newObject(gInterp)
+    let proto = newObject(&mut gInterp)
     var i: i64 = 0
     unsafe {
         while i < propertyCount {
@@ -767,16 +767,16 @@ pub fn napi_define_class(_env: *u8, _utf8name: *u8, _length: i64, constructor: i
                 }
                 if method != 0 {
                     let m = napiMakeFn(method, napiLoadI64((base + 56) as *u8))
-                    objSet(gInterp, target, pname, JSValue.Obj(m))
+                    objSet(&mut gInterp, target, pname, JSValue.Obj(m))
                 } else {
                     let vh = napiLoadI64((base + NAPI_PD_VALUE) as *u8)
-                    objSet(gInterp, target, pname, napiValueOf(vh))
+                    objSet(&mut gInterp, target, pname, napiValueOf(vh))
                 }
             }
             i = i + 1
         }
     }
-    objSet(gInterp, ctor, "prototype", JSValue.Obj(proto))
+    objSet(&mut gInterp, ctor, "prototype", JSValue.Obj(proto))
     napiWriteHandle(result, napiHandle(JSValue.Obj(ctor)))
     return NAPI_OK
 }
@@ -789,7 +789,7 @@ pub fn napi_define_class(_env: *u8, _utf8name: *u8, _length: i64, constructor: i
 pub fn napi_wrap(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _finalizeHint: i64, _result: *u8): i32 {
     match napiValueOf(jsObject) {
         JSValue.Obj(o) => {
-            let _ew = ensureExtra(gInterp, o)
+            let _ew = ensureExtra(&mut gInterp, o)
             gInterp.objExtras[gInterp.objects[o].extra].napiWrap = nativeObject
             return NAPI_OK
         }
@@ -853,7 +853,7 @@ pub fn napi_set_element(_env: *u8, object: i64, index32: i32, value: i64): i32 {
     let index = index32 as i64
     match napiValueOf(object) {
         JSValue.Obj(o) => {
-            arrSet(gInterp, o, index, napiValueOf(value))
+            arrSet(&mut gInterp, o, index, napiValueOf(value))
             return NAPI_OK
         }
         _ => {
@@ -978,17 +978,17 @@ pub fn napi_get_global(_env: *u8, result: *u8): i32 {
         return NAPI_INVALID_ARG
     }
     // scope 0 is the global scope; addons use this to reach globalThis
-    let o = newObject(gInterp)
+    let o = newObject(&mut gInterp)
     gInterp.objects[o].isGlobal = true
     napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
     return NAPI_OK
 }
 
 fn napiMakeError(msgVal: JSValue): i64 {
-    let o = newObject(gInterp)
+    let o = newObject(&mut gInterp)
     gInterp.objects[o].isError = true
-    objSet(gInterp, o, "name", JSValue.Str("Error"))
-    objSet(gInterp, o, "message", JSValue.Str(toStr(msgVal)))
+    objSet(&mut gInterp, o, "name", JSValue.Str("Error"))
+    objSet(&mut gInterp, o, "message", JSValue.Str(toStr(msgVal)))
     return o
 }
 
@@ -1036,7 +1036,7 @@ pub fn napi_get_property_names(_env: *u8, object: i64, result: *u8): i32 {
     }
     match napiValueOf(object) {
         JSValue.Obj(o) => {
-            let arr = newArray(gInterp)
+            let arr = newArray(&mut gInterp)
             var i: i64 = 0
             while i < gInterp.objects[o].props.len() {
                 let k = gInterp.objects[o].props[i].key.clone()
@@ -1078,9 +1078,9 @@ fn napiNewBufferView(length: i64, source: *u8): i64 {
             }
         }
     }
-    let view = newObject(gInterp)
+    let view = newObject(&mut gInterp)
     gInterp.objects[view].proto = gInterp.arrayProtoObj
-    let ex = ensureExtra(gInterp, view)
+    let ex = ensureExtra(&mut gInterp, view)
     gInterp.objExtras[ex].nativeBufPtr = ptr as i64
     gInterp.objExtras[ex].nativeBufLen = length
     gInterp.objExtras[ex].nativeBufOwned = true
@@ -1090,7 +1090,7 @@ fn napiNewBufferView(length: i64, source: *u8): i64 {
 fn napiBufferPrototype(): i64 {
     match scopeLookup(gInterp, 0, "Buffer") {
         JSValue.Func(fnIdx, _env) => {
-            return getFuncProto(gInterp, fnIdx)
+            return getFuncProto(&mut gInterp, fnIdx)
         }
         _ => {
             return -1
@@ -1099,15 +1099,15 @@ fn napiBufferPrototype(): i64 {
 }
 
 fn napiWrapBufferView(view: i64): i64 {
-    let buf = newObject(gInterp)
+    let buf = newObject(&mut gInterp)
     let proto = napiBufferPrototype()
     if proto >= 0 {
         gInterp.objects[buf].proto = proto
     }
-    objSet(gInterp, buf, "bytes", JSValue.Obj(view))
-    objSet(gInterp, buf, "length", JSValue.Number(nativeBufferLen(gInterp, view) as f64))
-    objSet(gInterp, buf, "__isBuf", JSValue.Bool(true))
-    objSetNonEnumerable(gInterp, buf, "__isBuf")
+    objSet(&mut gInterp, buf, "bytes", JSValue.Obj(view))
+    objSet(&mut gInterp, buf, "length", JSValue.Number(nativeBufferLen(gInterp, view) as f64))
+    objSet(&mut gInterp, buf, "__isBuf", JSValue.Bool(true))
+    objSetNonEnumerable(&mut gInterp, buf, "__isBuf")
     return buf
 }
 
@@ -1129,10 +1129,10 @@ fn napiEnsureBufferView(buf: i64): i64 {
     }
     var i: i64 = 0
     while i < n {
-        let _ = nativeBufferSet(gInterp, view, i, toNum(gInterp.objects[bytes].elems[i]))
+        let _ = nativeBufferSet(&mut gInterp, view, i, toNum(gInterp.objects[bytes].elems[i]))
         i = i + 1
     }
-    objSet(gInterp, buf, "bytes", JSValue.Obj(view))
+    objSet(&mut gInterp, buf, "bytes", JSValue.Obj(view))
     return view
 }
 
@@ -1383,7 +1383,7 @@ pub fn napiTakePending(): Vec<NapiPending> {
 
 @externalLinkage
 pub fn napi_create_promise(_env: *u8, deferred: *u8, promise: *u8): i32 {
-    let p = newPromise(gInterp, 0, JSValue.Undefined)
+    let p = newPromise(&mut gInterp, 0, JSValue.Undefined)
     gNapi.liveDeferred = gNapi.liveDeferred + 1
     napiWriteHandle(deferred, napiHandle(JSValue.Obj(p)))
     napiWriteHandle(promise, napiHandle(JSValue.Obj(p)))
@@ -1701,11 +1701,11 @@ pub fn napi_create_type_error(_env: *u8, _code: i64, msg: i64, result: *u8): i32
     if (result as i64) == 0 {
         return NAPI_INVALID_ARG
     }
-    let o = newObject(gInterp)
+    let o = newObject(&mut gInterp)
     gInterp.objects[o].isError = true
-    objSet(gInterp, o, "name", JSValue.Str("TypeError"))
-    objSet(gInterp, o, "message", JSValue.Str(toStr(napiValueOf(msg))))
-    objSet(gInterp, o, "stack", JSValue.Str("TypeError: " + toStr(napiValueOf(msg))))
+    objSet(&mut gInterp, o, "name", JSValue.Str("TypeError"))
+    objSet(&mut gInterp, o, "message", JSValue.Str(toStr(napiValueOf(msg))))
+    objSet(&mut gInterp, o, "stack", JSValue.Str("TypeError: " + toStr(napiValueOf(msg))))
     napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
     return NAPI_OK
 }
@@ -1730,14 +1730,14 @@ pub fn napi_create_string_latin1(_env: *u8, str: *u8, length: i64, result: *u8):
                 if (b as i64) == 0 {
                     go = false
                 } else {
-                    encodeCodepoint(out, b as i32)
+                    encodeCodepoint(&mut out, b as i32)
                     i = i + 1
                 }
             }
         } else {
             var i: i64 = 0
             while i < length {
-                encodeCodepoint(out, _loadU8(((str as i64) + i) as *u8) as i32)
+                encodeCodepoint(&mut out, _loadU8(((str as i64) + i) as *u8) as i32)
                 i = i + 1
             }
         }
@@ -1912,11 +1912,11 @@ pub fn napi_define_properties(_env: *u8, object: i64, propertyCount: i64, proper
                             if setter != 0 {
                                 sfn = JSValue.Obj(napiMakeFn(setter, data))
                             }
-                            objDefineAccessor(gInterp, target, pname, g, sfn)
+                            objDefineAccessor(&mut gInterp, target, pname, g, sfn)
                         } else if method != 0 {
-                            objSet(gInterp, target, pname, JSValue.Obj(napiMakeFn(method, data)))
+                            objSet(&mut gInterp, target, pname, JSValue.Obj(napiMakeFn(method, data)))
                         } else {
-                            objSet(gInterp, target, pname, napiValueOf(napiLoadI64((base + NAPI_PD_VALUE) as *u8)))
+                            objSet(&mut gInterp, target, pname, napiValueOf(napiLoadI64((base + NAPI_PD_VALUE) as *u8)))
                         }
                     }
                     i = i + 1
@@ -1940,7 +1940,7 @@ pub fn napi_define_properties(_env: *u8, object: i64, propertyCount: i64, proper
 pub fn napi_add_finalizer(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _finalizeHint: i64, result: *u8): i32 {
     match napiValueOf(jsObject) {
         JSValue.Obj(o) => {
-            let _ea = ensureExtra(gInterp, o)
+            let _ea = ensureExtra(&mut gInterp, o)
             if gInterp.objExtras[gInterp.objects[o].extra].napiWrap == 0 {
                 gInterp.objExtras[gInterp.objects[o].extra].napiWrap = nativeObject
             }
@@ -2036,8 +2036,8 @@ pub fn napi_create_external(_env: *u8, data: i64, _finalizeCb: i64, _finalizeHin
     if (result as i64) == 0 {
         return NAPI_INVALID_ARG
     }
-    let o = newObject(gInterp)
-    let _ex = ensureExtra(gInterp, o)
+    let o = newObject(&mut gInterp)
+    let _ex = ensureExtra(&mut gInterp, o)
     gInterp.objExtras[gInterp.objects[o].extra].napiWrap = data
     gInterp.objExtras[gInterp.objects[o].extra].napiIsExternal = true
     napiWriteHandle(result, napiHandle(JSValue.Obj(o)))

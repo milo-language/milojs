@@ -40,11 +40,11 @@ pub var gDone: i64 = 0
 pub fn parkWith(depth: i64, label: string) {
     let me = schedulerCurrent()
     gInterp.callDepth = depth
-    let ctx = saveExecCtx(gInterp)
+    let ctx = saveExecCtx(&mut gInterp)
     gInterp.suspended.push(ctx)
     gInterp.suspendedTask.push(me)
     schedulerPark()
-    resumeExecCtx(gInterp, me)
+    resumeExecCtx(&mut gInterp, me)
     if gInterp.callDepth == depth {
         print(label + " resumed with its own state")
     } else {
@@ -55,7 +55,7 @@ pub fn parkWith(depth: i64, label: string) {
 
 pub fn driver(): void {
     gInterp = makeInterp(false, 1024, 2)
-    bootInterp(gInterp)
+    bootInterp(&mut gInterp)
     gInterp.mainTask = schedulerCurrent()
 
     let _a = Task.spawnWithStack(move(): void => {

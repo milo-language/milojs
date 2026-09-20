@@ -7,6 +7,6 @@ from "../../src/engine/ast" import {
 fn confuseBlockAndStatement(): void {
     var prog = newProg()
     var statements: Vec<StmtId> = Vec.new()
-    let blockId = addBlock(prog, statements)
+    let blockId = addBlock(&mut prog, statements)
     let _ = getStmt(prog, blockId)
 }

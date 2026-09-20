@@ -219,7 +219,7 @@ fn scanEscape(src: &string, i: i64, out: &mut string): i64 {
         let h1 = hexDigitVal(src[i + 2])
         let h2 = hexDigitVal(src[i + 3])
         if h1 >= 0 && h2 >= 0 {
-            encodeCodepoint(out, (h1 * 16 + h2) as i32)
+            encodeCodepoint(&mut out, (h1 * 16 + h2) as i32)
             return i + 4
         }
     }
@@ -240,7 +240,7 @@ fn scanEscape(src: &string, i: i64, out: &mut string): i64 {
                 j = j + 1
             }
             if ok && any && j < n && src[j] == '}' && cp <= 1114111 {
-                encodeCodepoint(out, cp as i32)
+                encodeCodepoint(&mut out, cp as i32)
                 return j + 1
             }
         } else {
@@ -249,11 +249,11 @@ fn scanEscape(src: &string, i: i64, out: &mut string): i64 {
                 if u >= 55296 && u <= 56319 && i + 7 < n && src[i + 6] == 92 as u8 && src[i + 7] == 'u' {
                     let lo = hex4At(src, i + 8)
                     if lo >= 56320 && lo <= 57343 {
-                        encodeCodepoint(out, (65536 + (u - 55296) * 1024 + (lo - 56320)) as i32)
+                        encodeCodepoint(&mut out, (65536 + (u - 55296) * 1024 + (lo - 56320)) as i32)
                         return i + 12
                     }
                 }
-                encodeCodepoint(out, u as i32)
+                encodeCodepoint(&mut out, u as i32)
                 return i + 6
             }
         }
@@ -319,7 +319,7 @@ fn scanIdentEscape(src: &string, start: i64, out: &mut string): i64 {
             k = k + 1
         }
     }
-    encodeCodepoint(out, cp as i32)
+    encodeCodepoint(&mut out, cp as i32)
     return i
 }
 
@@ -477,7 +477,7 @@ fn scanTmplChunk(src: &string, start: i64, toks: &mut Vec<Token>): ChunkResult {
             isHole = true
             break
         } else if c == 92 as u8 && i + 1 < n {
-            let after = scanEscape(src, i, buf)
+            let after = scanEscape(src, i, &mut buf)
             // raw keeps the escape exactly as written, so copy the same span the
             // cooked scan consumed rather than re-deciding where it ended
             var r = i
@@ -658,7 +658,7 @@ pub fn lex(src: &string): Vec<Token> {
             }
             i = i + 2
         } else if c == '/' && prevAllowsRegex(toks) {
-            i = scanRegexLit(src, i, toks)
+            i = scanRegexLit(src, i, &mut toks)
         } else if isDigitByte(c) || (c == '.' && i + 1 < n && isDigitByte(src[i + 1])) {
             var v: f64 = 0.0
             var txt = String.withCapacity(16)
@@ -821,7 +821,7 @@ pub fn lex(src: &string): Vec<Token> {
             i = i + 1
             var pmore = true
             while pmore && i < n {
-                let esc = scanIdentEscape(src, i, pname)
+                let esc = scanIdentEscape(src, i, &mut pname)
                 if esc >= 0 {
                     i = esc
                 } else if isIdentStart(src[i]) || isDigitByte(src[i]) {
@@ -839,7 +839,7 @@ pub fn lex(src: &string): Vec<Token> {
             var name = String.withCapacity(16)
             var nmore = true
             while nmore && i < n {
-                let esc = scanIdentEscape(src, i, name)
+                let esc = scanIdentEscape(src, i, &mut name)
                 if esc >= 0 {
                     i = esc
                 } else if isIdentStart(src[i]) || isDigitByte(src[i]) {
@@ -861,7 +861,7 @@ pub fn lex(src: &string): Vec<Token> {
             var s = String.withCapacity(16)
             while i < n && src[i] != quote {
                 if src[i] == 92 as u8 && i + 1 < n {
-                    i = scanEscape(src, i, s)
+                    i = scanEscape(src, i, &mut s)
                 } else {
                     s.push(src[i])
                     i = i + 1
@@ -874,143 +874,143 @@ pub fn lex(src: &string): Vec<Token> {
             )
         } else if c == 96 as u8 {
             // ` template literal
-            pushTok(toks, T_TEMPLATE_BEGIN)
-            let res = scanTmplChunk(src, i + 1, toks)
+            pushTok(&mut toks, T_TEMPLATE_BEGIN)
+            let res = scanTmplChunk(src, i + 1, &mut toks)
             i = res.pos
             if res.isHole {
                 tmplHoles.push(braceDepth)
             } else {
-                pushTok(toks, T_TEMPLATE_END)
+                pushTok(&mut toks, T_TEMPLATE_END)
             }
         } else if c == '.' && i + 2 < n && src[i + 1] == '.' && src[i + 2] == '.' {
             i = i + 3
-            pushTok(toks, T_SPREAD)
+            pushTok(&mut toks, T_SPREAD)
         } else if c == '{' {
             braceDepth = braceDepth + 1
             i = i + 1
-            pushTok(toks, T_LBRACE)
+            pushTok(&mut toks, T_LBRACE)
         } else if c == '}' {
             if tmplHoles.len() > 0 && braceDepth == tmplHoles[tmplHoles.len() - 1] {
                 // this } closes a ${ } hole — resume the template text after it
                 let _ = tmplHoles.pop()
-                let res = scanTmplChunk(src, i + 1, toks)
+                let res = scanTmplChunk(src, i + 1, &mut toks)
                 i = res.pos
                 if res.isHole {
                     tmplHoles.push(braceDepth)
                 } else {
-                    pushTok(toks, T_TEMPLATE_END)
+                    pushTok(&mut toks, T_TEMPLATE_END)
                 }
             } else {
                 braceDepth = braceDepth - 1
                 i = i + 1
-                pushTok(toks, T_RBRACE)
+                pushTok(&mut toks, T_RBRACE)
             }
         } else if c == '=' && i + 1 < n && src[i + 1] == '=' {
             i = i + 2
             if i < n && src[i] == '=' {
                 i = i + 1
-                pushTok(toks, T_STRICTEQ)
+                pushTok(&mut toks, T_STRICTEQ)
             } else {
-                pushTok(toks, T_EQEQ)
+                pushTok(&mut toks, T_EQEQ)
             }
         } else if c == '!' && i + 1 < n && src[i + 1] == '=' {
             i = i + 2
             if i < n && src[i] == '=' {
                 i = i + 1
-                pushTok(toks, T_STRICTNEQ)
+                pushTok(&mut toks, T_STRICTNEQ)
             } else {
-                pushTok(toks, T_NEQ)
+                pushTok(&mut toks, T_NEQ)
             }
         } else if c == '>' && i + 3 < n && src[i + 1] == '>' && src[i + 2] == '>' && src[i + 3] == '=' {
             i = i + 4
-            pushTok(toks, T_USHREQ)
+            pushTok(&mut toks, T_USHREQ)
         } else if c == '<' && i + 2 < n && src[i + 1] == '<' && src[i + 2] == '=' {
             i = i + 3
-            pushTok(toks, T_SHLEQ)
+            pushTok(&mut toks, T_SHLEQ)
         } else if c == '>' && i + 2 < n && src[i + 1] == '>' && src[i + 2] == '=' {
             i = i + 3
-            pushTok(toks, T_SHREQ)
+            pushTok(&mut toks, T_SHREQ)
         } else if c == '*' && i + 2 < n && src[i + 1] == '*' && src[i + 2] == '=' {
             i = i + 3
-            pushTok(toks, T_STARSTAREQ)
+            pushTok(&mut toks, T_STARSTAREQ)
         } else if c == '&' && i + 1 < n && src[i + 1] == '=' {
             i = i + 2
-            pushTok(toks, T_AMPEQ)
+            pushTok(&mut toks, T_AMPEQ)
         } else if c == '|' && i + 1 < n && src[i + 1] == '=' {
             i = i + 2
-            pushTok(toks, T_PIPEEQ)
+            pushTok(&mut toks, T_PIPEEQ)
         } else if c == '^' && i + 1 < n && src[i + 1] == '=' {
             i = i + 2
-            pushTok(toks, T_CARETEQ)
+            pushTok(&mut toks, T_CARETEQ)
         } else if c == '>' && i + 2 < n && src[i + 1] == '>' && src[i + 2] == '>' {
             i = i + 3
-            pushTok(toks, T_USHR)
+            pushTok(&mut toks, T_USHR)
         } else if c == '<' && i + 1 < n && src[i + 1] == '<' {
             i = i + 2
-            pushTok(toks, T_SHL)
+            pushTok(&mut toks, T_SHL)
         } else if c == '>' && i + 1 < n && src[i + 1] == '>' {
             i = i + 2
-            pushTok(toks, T_SHR)
+            pushTok(&mut toks, T_SHR)
         } else if c == '*' && i + 1 < n && src[i + 1] == '*' {
             i = i + 2
-            pushTok(toks, T_STARSTAR)
+            pushTok(&mut toks, T_STARSTAR)
         } else if c == '<' && i + 1 < n && src[i + 1] == '=' {
             i = i + 2
-            pushTok(toks, T_LE)
+            pushTok(&mut toks, T_LE)
         } else if c == '>' && i + 1 < n && src[i + 1] == '=' {
             i = i + 2
-            pushTok(toks, T_GE)
+            pushTok(&mut toks, T_GE)
         } else if c == '&' && i + 1 < n && src[i + 1] == '&' {
             if i + 2 < n && src[i + 2] == '=' {
                 i = i + 3
-                pushTok(toks, T_ANDANDEQ)
+                pushTok(&mut toks, T_ANDANDEQ)
             } else {
                 i = i + 2
-                pushTok(toks, T_ANDAND)
+                pushTok(&mut toks, T_ANDAND)
             }
         } else if c == '|' && i + 1 < n && src[i + 1] == '|' {
             if i + 2 < n && src[i + 2] == '=' {
                 i = i + 3
-                pushTok(toks, T_OROREQ)
+                pushTok(&mut toks, T_OROREQ)
             } else {
                 i = i + 2
-                pushTok(toks, T_OROR)
+                pushTok(&mut toks, T_OROR)
             }
         } else if c == '?' && i + 1 < n && src[i + 1] == '.' && !(i + 2 < n && isDigitByte(src[i + 2])) {
             i = i + 2
-            pushTok(toks, T_OPTCHAIN)
+            pushTok(&mut toks, T_OPTCHAIN)
         } else if c == '?' && i + 1 < n && src[i + 1] == '?' {
             if i + 2 < n && src[i + 2] == '=' {
                 i = i + 3
-                pushTok(toks, T_NULLISHEQ)
+                pushTok(&mut toks, T_NULLISHEQ)
             } else {
                 i = i + 2
-                pushTok(toks, T_NULLISH)
+                pushTok(&mut toks, T_NULLISH)
             }
         } else if c == '=' && i + 1 < n && src[i + 1] == '>' {
             i = i + 2
-            pushTok(toks, T_ARROW)
+            pushTok(&mut toks, T_ARROW)
         } else if c == '+' && i + 1 < n && src[i + 1] == '+' {
             i = i + 2
-            pushTok(toks, T_INC)
+            pushTok(&mut toks, T_INC)
         } else if c == '-' && i + 1 < n && src[i + 1] == '-' {
             i = i + 2
-            pushTok(toks, T_DEC)
+            pushTok(&mut toks, T_DEC)
         } else if c == '+' && i + 1 < n && src[i + 1] == '=' {
             i = i + 2
-            pushTok(toks, T_PLUSEQ)
+            pushTok(&mut toks, T_PLUSEQ)
         } else if c == '-' && i + 1 < n && src[i + 1] == '=' {
             i = i + 2
-            pushTok(toks, T_MINUSEQ)
+            pushTok(&mut toks, T_MINUSEQ)
         } else if c == '*' && i + 1 < n && src[i + 1] == '=' {
             i = i + 2
-            pushTok(toks, T_STAREQ)
+            pushTok(&mut toks, T_STAREQ)
         } else if c == '/' && i + 1 < n && src[i + 1] == '=' {
             i = i + 2
-            pushTok(toks, T_SLASHEQ)
+            pushTok(&mut toks, T_SLASHEQ)
         } else if c == '%' && i + 1 < n && src[i + 1] == '=' {
             i = i + 2
-            pushTok(toks, T_PERCENTEQ)
+            pushTok(&mut toks, T_PERCENTEQ)
         } else {
             var k: i32 = -1
             if c == '+' {
@@ -1063,7 +1063,7 @@ pub fn lex(src: &string): Vec<Token> {
                 k = T_TILDE
             }
             if k >= 0 {
-                pushTok(toks, k)
+                pushTok(&mut toks, k)
             }
             // unknown chars are skipped
             i = i + 1
@@ -1074,7 +1074,7 @@ pub fn lex(src: &string): Vec<Token> {
     if nlPending && toks.len() > markFrom {
         toks[markFrom].nlBefore = true
     }
-    pushTok(toks, T_EOF)
+    pushTok(&mut toks, T_EOF)
     var tailK = stampFrom
     while tailK < toks.len() {
         toks[tailK].at = stampAt

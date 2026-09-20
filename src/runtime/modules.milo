@@ -742,7 +742,7 @@ pub fn preloadGraph(entryPath: string, prog: &mut Prog, st: &mut Interp): i64 {
     // directory keyed the whole graph absolutely while every require looked it
     // up relatively. `milojs /path/to/app/main.js` run from inside that app
     // therefore failed on every node_modules require — the common invocation.
-    return loadGraphFrom(relativizeToCwd(entryPath.clone()), prog, st)
+    return loadGraphFrom(relativizeToCwd(entryPath.clone()), &mut prog, &mut st)
 }
 
 // Register a module and everything its LITERAL requires reach, and answer its
@@ -759,7 +759,7 @@ fn loadGraphFrom(entryKey: string, prog: &mut Prog, st: &mut Interp): i64 {
             // already registered
         } else if isBuiltinPath(path) {
             let src = builtinSource(builtinNameOf(path))
-            registerSource(prog, path.clone(), src.clone())
+            registerSource(&mut prog, path.clone(), src.clone())
             let toks = lex(src)
             // computed before `toks` is moved into the PState below
             let bStrict = moduleIsStrict(toks, path)
@@ -769,7 +769,7 @@ fn loadGraphFrom(entryKey: string, prog: &mut Prog, st: &mut Interp): i64 {
             var bp = PState { depth: 0, noIn: false,
                 toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: bStrict
             }
-            let btop = parseProgram(bp, prog)
+            let btop = parseProgram(&mut bp, &mut prog)
             if bp.errored {
                 st.parseFailed = true
             }
@@ -810,7 +810,7 @@ fn loadGraphFrom(entryKey: string, prog: &mut Prog, st: &mut Interp): i64 {
                     }
                     // keep the text: Function.prototype.toString slices a
                     // function's verbatim source back out of it
-                    registerSource(prog, path.clone(), text.clone())
+                    registerSource(&mut prog, path.clone(), text.clone())
                     let toks = lex(text)
                     // computed before `toks` is moved into the PState below
                     let fStrict = moduleIsStrict(toks, path)
@@ -818,7 +818,7 @@ fn loadGraphFrom(entryKey: string, prog: &mut Prog, st: &mut Interp): i64 {
                     var p = PState { depth: 0, noIn: false,
                         toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: fStrict
                     }
-                    let top = parseProgram(p, prog)
+                    let top = parseProgram(&mut p, &mut prog)
                     if p.errored {
                         st.parseFailed = true
                     }
@@ -862,5 +862,5 @@ fn loadGraphFrom(entryKey: string, prog: &mut Prog, st: &mut Interp): i64 {
 // loop over a list of names and require each one, and every such probe reported
 // the module missing however plainly it was there.
 pub fn loadModuleLazily(path: string, st: &mut Interp): i64 {
-    return loadGraphFrom(path, gProg, st)
+    return loadGraphFrom(path, &mut gProg, &mut st)
 }

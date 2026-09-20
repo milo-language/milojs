@@ -19,7 +19,7 @@ from "./eval" import {
 // A bound method that first checks its receiver really is of `brand`. See
 // JSObjExtra.boundBrand for why the buffer family needs this and Array does not.
 fn makeBrandedMethod(st: &mut Interp, name: string, brand: i64): JSValue {
-    let v = makeBoundMethod(st, JSValue.Undefined, name)
+    let v = makeBoundMethod(&mut st, JSValue.Undefined, name)
     let h = objHandle(v)
     st.objExtras[st.objects[h].extra].boundBrand = brand
     return v
@@ -38,15 +38,15 @@ fn makeBrandedMethod(st: &mut Interp, name: string, brand: i64): JSValue {
 // BigInt.prototype and Date.prototype are ORDINARY objects by contrast, and
 // node throws for their branded methods called on themselves.
 fn boxProtoItself(st: &mut Interp, proto: i64, v: JSValue) {
-    let _ = ensureExtra(st, proto)
+    let _ = ensureExtra(&mut st, proto)
     st.objExtras[st.objects[proto].extra].boxed = v
 }
 
 fn brandProtoMethods(st: &mut Interp, proto: i64, brand: i64, names: &Vec<string>) {
     var i: i64 = 0
     while i < names.len() {
-        objSet(st, proto, names[i].clone(), makeBrandedMethod(st, names[i].clone(), brand))
-        objSetNonEnumerable(st, proto, names[i])
+        objSet(&mut st, proto, names[i].clone(), makeBrandedMethod(&mut st, names[i].clone(), brand))
+        objSetNonEnumerable(&mut st, proto, names[i])
         i = i + 1
     }
 }
@@ -115,13 +115,13 @@ fn typedArrayMethodNames(): Vec<string> {
 // the call site's receiver wins, which is what makes the generic
 // `TypedArray.prototype.map.call(ta, fn)` idiom resolve.
 fn setupTypedArrayProtos(st: &mut Interp) {
-    let taProto = newObject(st)
+    let taProto = newObject(&mut st)
     st.objects[taProto].proto = st.objectProtoObj
     let names = typedArrayMethodNames()
     var i: i64 = 0
     while i < names.len() {
-        objSet(st, taProto, names[i].clone(), makeBrandedMethod(st, names[i].clone(), 1))
-        objSetNonEnumerable(st, taProto, names[i])
+        objSet(&mut st, taProto, names[i].clone(), makeBrandedMethod(&mut st, names[i].clone(), 1))
+        objSetNonEnumerable(&mut st, taProto, names[i])
         i = i + 1
     }
     // length/byteLength/byteOffset/buffer are ACCESSORS on %TypedArray%.prototype,
@@ -139,37 +139,37 @@ fn setupTypedArrayProtos(st: &mut Interp) {
     taGet.push("__taBuffer")
     var ai: i64 = 0
     while ai < taAcc.len() {
-        let g = makeBrandedMethod(st, taGet[ai].clone(), 1)
-        objDefineAccessor(st, taProto, taAcc[ai].clone(), g, JSValue.Undefined)
-        objSetNonEnumerable(st, taProto, taAcc[ai])
+        let g = makeBrandedMethod(&mut st, taGet[ai].clone(), 1)
+        objDefineAccessor(&mut st, taProto, taAcc[ai].clone(), g, JSValue.Undefined)
+        objSetNonEnumerable(&mut st, taProto, taAcc[ai])
         ai = ai + 1
     }
-    let taCtor = newObject(st)
+    let taCtor = newObject(&mut st)
     st.objects[taCtor].isFunctionLike = true
-    objSet(st, taCtor, "prototype", JSValue.Obj(taProto))
-    objSetNonEnumerable(st, taCtor, "prototype")
-    objSet(st, taCtor, "name", JSValue.Str("TypedArray"))
-    objSetNonEnumerable(st, taCtor, "name")
-    objSet(st, taProto, "constructor", JSValue.Obj(taCtor))
-    objSetNonEnumerable(st, taProto, "constructor")
+    objSet(&mut st, taCtor, "prototype", JSValue.Obj(taProto))
+    objSetNonEnumerable(&mut st, taCtor, "prototype")
+    objSet(&mut st, taCtor, "name", JSValue.Str("TypedArray"))
+    objSetNonEnumerable(&mut st, taCtor, "name")
+    objSet(&mut st, taProto, "constructor", JSValue.Obj(taCtor))
+    objSetNonEnumerable(&mut st, taProto, "constructor")
 
     var tk: i64 = 0
     while tk <= TA_MAX {
-        let sub = newObject(st)
+        let sub = newObject(&mut st)
         st.objects[sub].proto = taProto
-        objSet(st, sub, "constructor", JSValue.Native(Native.TypedArrayCtor(tk)))
-        objSetNonEnumerable(st, sub, "constructor")
+        objSet(&mut st, sub, "constructor", JSValue.Native(Native.TypedArrayCtor(tk)))
+        objSetNonEnumerable(&mut st, sub, "constructor")
         // BYTES_PER_ELEMENT is { writable: false, enumerable: false,
         // configurable: false } on both the constructor and its prototype;
         // objSet left it writable and configurable, so every test262 case that
         // verifies the descriptor failed regardless of the value.
-        objSetFrozenOwn(st, sub, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64), false)
-        let bag = getNativeProps(st, Native.TypedArrayCtor(tk))
-        objDefineProtoAttr(st, bag, "prototype", JSValue.Obj(sub))
-        objSetFrozenOwn(st, bag, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64), false)
-        objSetBuiltinAttr(st, bag, "name", JSValue.Str(taName(tk)))
+        objSetFrozenOwn(&mut st, sub, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64), false)
+        let bag = getNativeProps(&mut st, Native.TypedArrayCtor(tk))
+        objDefineProtoAttr(&mut st, bag, "prototype", JSValue.Obj(sub))
+        objSetFrozenOwn(&mut st, bag, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64), false)
+        objSetBuiltinAttr(&mut st, bag, "name", JSValue.Str(taName(tk)))
         // the constructor's own length: (buffer, byteOffset, length)
-        objSetBuiltinAttr(st, bag, "length", JSValue.Number(3.0))
+        objSetBuiltinAttr(&mut st, bag, "length", JSValue.Number(3.0))
         // this is what makes Object.getPrototypeOf(Int8Array) === %TypedArray%:
         // getPrototypeOf reads the proto of the native's property bag
         st.objects[bag].proto = taCtor
@@ -182,7 +182,7 @@ fn setupTypedArrayProtos(st: &mut Interp) {
 // resizable-buffer section with `if (ArrayBuffer.prototype.resize)` — reading a
 // property of undefined, which threw before any test in the tree ran.
 fn setupBufferProtos(st: &mut Interp) {
-    let abProto = newObject(st)
+    let abProto = newObject(&mut st)
     st.objects[abProto].proto = st.objectProtoObj
     var abNames: Vec<string> = Vec.new()
     abNames.push("slice")
@@ -190,8 +190,8 @@ fn setupBufferProtos(st: &mut Interp) {
     abNames.push("transfer")
     var i: i64 = 0
     while i < abNames.len() {
-        objSet(st, abProto, abNames[i].clone(), makeBrandedMethod(st, abNames[i].clone(), 2))
-        objSetNonEnumerable(st, abProto, abNames[i])
+        objSet(&mut st, abProto, abNames[i].clone(), makeBrandedMethod(&mut st, abNames[i].clone(), 2))
+        objSetNonEnumerable(&mut st, abProto, abNames[i])
         i = i + 1
     }
     // byteLength is an ACCESSOR on ArrayBuffer.prototype, not a data property on
@@ -200,17 +200,17 @@ fn setupBufferProtos(st: &mut Interp) {
     // deep-equal then wrapped a plain array in `new Uint8Array(a)` and recursed
     // on it for ever. That is what made deep-equal, and so tape's deepEqual,
     // unusable — a missing getter, three packages away.
-    let abLenGetter = makeBrandedMethod(st, "__abByteLength", 2)
-    objDefineAccessor(st, abProto, "byteLength", abLenGetter, JSValue.Undefined)
-    objSetNonEnumerable(st, abProto, "byteLength")
-    objSet(st, abProto, "constructor", JSValue.Native(Native.Fn(Builtin.ArrayBuffer)))
-    objSetNonEnumerable(st, abProto, "constructor")
-    let abBag = getNativeProps(st, Native.Fn(Builtin.ArrayBuffer))
-    objSet(st, abBag, "isView", JSValue.Native(Native.Fn(Builtin.ArrayBufferIsView)))
-    objSetNonEnumerable(st, abBag, "isView")
-    objDefineProtoAttr(st, abBag, "prototype", JSValue.Obj(abProto))
+    let abLenGetter = makeBrandedMethod(&mut st, "__abByteLength", 2)
+    objDefineAccessor(&mut st, abProto, "byteLength", abLenGetter, JSValue.Undefined)
+    objSetNonEnumerable(&mut st, abProto, "byteLength")
+    objSet(&mut st, abProto, "constructor", JSValue.Native(Native.Fn(Builtin.ArrayBuffer)))
+    objSetNonEnumerable(&mut st, abProto, "constructor")
+    let abBag = getNativeProps(&mut st, Native.Fn(Builtin.ArrayBuffer))
+    objSet(&mut st, abBag, "isView", JSValue.Native(Native.Fn(Builtin.ArrayBufferIsView)))
+    objSetNonEnumerable(&mut st, abBag, "isView")
+    objDefineProtoAttr(&mut st, abBag, "prototype", JSValue.Obj(abProto))
 
-    let dvProto = newObject(st)
+    let dvProto = newObject(&mut st)
     st.objects[dvProto].proto = st.objectProtoObj
     var dvNames: Vec<string> = Vec.new()
     dvNames.push("getInt8")
@@ -231,8 +231,8 @@ fn setupBufferProtos(st: &mut Interp) {
     dvNames.push("setFloat64")
     var d: i64 = 0
     while d < dvNames.len() {
-        objSet(st, dvProto, dvNames[d].clone(), makeBrandedMethod(st, dvNames[d].clone(), 3))
-        objSetNonEnumerable(st, dvProto, dvNames[d])
+        objSet(&mut st, dvProto, dvNames[d].clone(), makeBrandedMethod(&mut st, dvNames[d].clone(), 3))
+        objSetNonEnumerable(&mut st, dvProto, dvNames[d])
         d = d + 1
     }
     // buffer/byteLength/byteOffset are accessors here too, and reading one off
@@ -247,15 +247,15 @@ fn setupBufferProtos(st: &mut Interp) {
     dvGet.push("__dvByteOffset")
     var dq: i64 = 0
     while dq < dvAcc.len() {
-        let dg = makeBrandedMethod(st, dvGet[dq].clone(), 3)
-        objDefineAccessor(st, dvProto, dvAcc[dq].clone(), dg, JSValue.Undefined)
-        objSetNonEnumerable(st, dvProto, dvAcc[dq])
+        let dg = makeBrandedMethod(&mut st, dvGet[dq].clone(), 3)
+        objDefineAccessor(&mut st, dvProto, dvAcc[dq].clone(), dg, JSValue.Undefined)
+        objSetNonEnumerable(&mut st, dvProto, dvAcc[dq])
         dq = dq + 1
     }
-    objSet(st, dvProto, "constructor", JSValue.Native(Native.Fn(Builtin.DataView)))
-    objSetNonEnumerable(st, dvProto, "constructor")
-    let dvBag = getNativeProps(st, Native.Fn(Builtin.DataView))
-    objDefineProtoAttr(st, dvBag, "prototype", JSValue.Obj(dvProto))
+    objSet(&mut st, dvProto, "constructor", JSValue.Native(Native.Fn(Builtin.DataView)))
+    objSetNonEnumerable(&mut st, dvProto, "constructor")
+    let dvBag = getNativeProps(&mut st, Native.Fn(Builtin.DataView))
+    objDefineProtoAttr(&mut st, dvBag, "prototype", JSValue.Obj(dvProto))
 }
 
 // Build a prototype object for a native constructor: the named methods as
@@ -269,7 +269,7 @@ fn setupBufferProtos(st: &mut Interp) {
 // from the prototype (every test262 property-descriptor case, and the common
 // `Map.prototype.get.call(m, k)` idiom) failed before doing anything.
 fn buildNativeProto(st: &mut Interp, nativeId: Builtin, names: &Vec<string>): i64 {
-    let proto = newObject(st)
+    let proto = newObject(&mut st)
     st.objects[proto].proto = st.objectProtoObj
     // the receiver is Undefined for a prototype method, so the brand cannot be
     // read off it; the constructor id names it instead
@@ -293,18 +293,18 @@ fn buildNativeProto(st: &mut Interp, nativeId: Builtin, names: &Vec<string>): i6
     }
     var i: i64 = 0
     while i < names.len() {
-        let m = makeBoundMethodOn(st, JSValue.Undefined, names[i].clone(), host.clone())
+        let m = makeBoundMethodOn(&mut st, JSValue.Undefined, names[i].clone(), host.clone())
         if brand != 0 {
             st.objExtras[st.objects[objHandle(m)].extra].boundBrand = brand
         }
-        objSet(st, proto, names[i].clone(), m)
-        objSetNonEnumerable(st, proto, names[i])
+        objSet(&mut st, proto, names[i].clone(), m)
+        objSetNonEnumerable(&mut st, proto, names[i])
         i = i + 1
     }
-    objSet(st, proto, "constructor", JSValue.Native(Native.Fn(nativeId)))
-    objSetNonEnumerable(st, proto, "constructor")
-    let bag = getNativeProps(st, Native.Fn(nativeId))
-    objDefineProtoAttr(st, bag, "prototype", JSValue.Obj(proto))
+    objSet(&mut st, proto, "constructor", JSValue.Native(Native.Fn(nativeId)))
+    objSetNonEnumerable(&mut st, proto, "constructor")
+    let bag = getNativeProps(&mut st, Native.Fn(nativeId))
+    objDefineProtoAttr(&mut st, bag, "prototype", JSValue.Obj(proto))
     return proto
 }
 
@@ -313,11 +313,11 @@ fn setupRemainingProtos(st: &mut Interp) {
     bigNames.push("toString")
     bigNames.push("valueOf")
     bigNames.push("toLocaleString")
-    let gp = buildNativeProto(st, Builtin.BigInt, bigNames)
+    let gp = buildNativeProto(&mut st, Builtin.BigInt, bigNames)
     var vt: Vec<string> = Vec.new()
     vt.push("valueOf")
     vt.push("toString")
-    brandProtoMethods(st, gp, BRAND_BIGINT, vt)
+    brandProtoMethods(&mut st, gp, BRAND_BIGINT, vt)
 
     // Number / Boolean / BigInt / Symbol: primitives, so nothing links these as
     // an instance proto — they exist so the prototype itself is reachable.
@@ -328,34 +328,34 @@ fn setupRemainingProtos(st: &mut Interp) {
     numNames.push("toPrecision")
     numNames.push("toExponential")
     numNames.push("toLocaleString")
-    let np = buildNativeProto(st, Builtin.Number, numNames)
+    let np = buildNativeProto(&mut st, Builtin.Number, numNames)
     var numBrand: Vec<string> = Vec.new()
     numBrand.push("valueOf")
     numBrand.push("toString")
     numBrand.push("toFixed")
     numBrand.push("toPrecision")
     numBrand.push("toExponential")
-    brandProtoMethods(st, np, BRAND_NUMBER, numBrand)
-    boxProtoItself(st, np, JSValue.Number(0.0))
+    brandProtoMethods(&mut st, np, BRAND_NUMBER, numBrand)
+    boxProtoItself(&mut st, np, JSValue.Number(0.0))
 
     var boolNames: Vec<string> = Vec.new()
     boolNames.push("toString")
     boolNames.push("valueOf")
-    let bp = buildNativeProto(st, Builtin.Boolean, boolNames)
+    let bp = buildNativeProto(&mut st, Builtin.Boolean, boolNames)
     var boolBrand: Vec<string> = Vec.new()
     boolBrand.push("valueOf")
     boolBrand.push("toString")
-    brandProtoMethods(st, bp, BRAND_BOOLEAN, boolBrand)
-    boxProtoItself(st, bp, JSValue.Bool(false))
+    brandProtoMethods(&mut st, bp, BRAND_BOOLEAN, boolBrand)
+    boxProtoItself(&mut st, bp, JSValue.Bool(false))
 
     var symNames: Vec<string> = Vec.new()
     symNames.push("toString")
     symNames.push("valueOf")
-    let sp = buildNativeProto(st, Builtin.Symbol, symNames)
+    let sp = buildNativeProto(&mut st, Builtin.Symbol, symNames)
     var symBrand: Vec<string> = Vec.new()
     symBrand.push("valueOf")
     symBrand.push("toString")
-    brandProtoMethods(st, sp, BRAND_SYMBOL, symBrand)
+    brandProtoMethods(&mut st, sp, BRAND_SYMBOL, symBrand)
 
     // Map and Set share one method list here because they share a dispatcher;
     // only the names each actually answers are listed per side.
@@ -369,14 +369,14 @@ fn setupRemainingProtos(st: &mut Interp) {
     mapNames.push("keys")
     mapNames.push("values")
     mapNames.push("entries")
-    st.mapProtoObj = buildNativeProto(st, Builtin.Map, mapNames)
+    st.mapProtoObj = buildNativeProto(&mut st, Builtin.Map, mapNames)
     // size is an accessor on Map.prototype/Set.prototype, and was answered by an
     // ad-hoc read on the instance instead — so the prototype carried no
     // descriptor for it and `Map.prototype.size` off a non-Map read as
     // undefined rather than throwing.
-    let mapSizeGetter = makeBrandedMethod(st, "__mapSize", BRAND_MAP)
-    objDefineAccessor(st, st.mapProtoObj, "size", mapSizeGetter, JSValue.Undefined)
-    objSetNonEnumerable(st, st.mapProtoObj, "size")
+    let mapSizeGetter = makeBrandedMethod(&mut st, "__mapSize", BRAND_MAP)
+    objDefineAccessor(&mut st, st.mapProtoObj, "size", mapSizeGetter, JSValue.Undefined)
+    objSetNonEnumerable(&mut st, st.mapProtoObj, "size")
 
     var setNames: Vec<string> = Vec.new()
     setNames.push("add")
@@ -394,33 +394,33 @@ fn setupRemainingProtos(st: &mut Interp) {
     setNames.push("isSubsetOf")
     setNames.push("isSupersetOf")
     setNames.push("isDisjointFrom")
-    st.setProtoObj = buildNativeProto(st, Builtin.Set, setNames)
-    let setSizeGetter = makeBrandedMethod(st, "__setSize", BRAND_SET)
-    objDefineAccessor(st, st.setProtoObj, "size", setSizeGetter, JSValue.Undefined)
-    objSetNonEnumerable(st, st.setProtoObj, "size")
+    st.setProtoObj = buildNativeProto(&mut st, Builtin.Set, setNames)
+    let setSizeGetter = makeBrandedMethod(&mut st, "__setSize", BRAND_SET)
+    objDefineAccessor(&mut st, st.setProtoObj, "size", setSizeGetter, JSValue.Undefined)
+    objSetNonEnumerable(&mut st, st.setProtoObj, "size")
 
     var promNames: Vec<string> = Vec.new()
     promNames.push("then")
     promNames.push("catch")
     promNames.push("finally")
-    st.promiseProtoObj = buildNativeProto(st, Builtin.Promise, promNames)
+    st.promiseProtoObj = buildNativeProto(&mut st, Builtin.Promise, promNames)
     // Symbol.species is an accessor returning `this` on every constructor that
     // derives new objects from an existing one. ArraySpeciesCreate and friends
     // read it, and test262 checks the descriptor directly; it was absent
     // everywhere, so the read answered undefined.
     var speciesBags: Vec<i64> = Vec.new()
-    speciesBags.push(getNativeProps(st, Native.Fn(Builtin.ArrayBuffer)))
-    speciesBags.push(getNativeProps(st, Native.Fn(Builtin.Map)))
-    speciesBags.push(getNativeProps(st, Native.Fn(Builtin.Set)))
-    speciesBags.push(getNativeProps(st, Native.Fn(Builtin.RegExp)))
+    speciesBags.push(getNativeProps(&mut st, Native.Fn(Builtin.ArrayBuffer)))
+    speciesBags.push(getNativeProps(&mut st, Native.Fn(Builtin.Map)))
+    speciesBags.push(getNativeProps(&mut st, Native.Fn(Builtin.Set)))
+    speciesBags.push(getNativeProps(&mut st, Native.Fn(Builtin.RegExp)))
     if st.promiseCtorObj >= 0 {
         speciesBags.push(st.promiseCtorObj)
     }
     var sb: i64 = 0
     while sb < speciesBags.len() {
-        let sg = makeBoundMethod(st, JSValue.Undefined, "__speciesSelf")
-        objDefineAccessor(st, speciesBags[sb], symSpeciesKey(), sg, JSValue.Undefined)
-        objSetNonEnumerable(st, speciesBags[sb], symSpeciesKey())
+        let sg = makeBoundMethod(&mut st, JSValue.Undefined, "__speciesSelf")
+        objDefineAccessor(&mut st, speciesBags[sb], symSpeciesKey(), sg, JSValue.Undefined)
+        objSetNonEnumerable(&mut st, speciesBags[sb], symSpeciesKey())
         sb = sb + 1
     }
     // Promise's global binding is a plain OBJECT, not a JSValue.Native, so the
@@ -428,14 +428,14 @@ fn setupRemainingProtos(st: &mut Interp) {
     // on the constructor object too. This runs after setupGlobals built that
     // object, which is why the link is made here rather than there.
     if st.promiseCtorObj >= 0 {
-        objDefineProtoAttr(st, st.promiseCtorObj, "prototype", JSValue.Obj(st.promiseProtoObj))
-        objSet(st, st.promiseProtoObj, "constructor", JSValue.Obj(st.promiseCtorObj))
-        objSetNonEnumerable(st, st.promiseProtoObj, "constructor")
+        objDefineProtoAttr(&mut st, st.promiseCtorObj, "prototype", JSValue.Obj(st.promiseProtoObj))
+        objSet(&mut st, st.promiseProtoObj, "constructor", JSValue.Obj(st.promiseCtorObj))
+        objSetNonEnumerable(&mut st, st.promiseProtoObj, "constructor")
     }
 }
 
 fn setupRegexProto(st: &mut Interp) {
-    let rp = newObject(st)
+    let rp = newObject(&mut st)
     st.objects[rp].proto = st.objectProtoObj
     var names: Vec<string> = Vec.new()
     names.push("exec")
@@ -456,7 +456,7 @@ fn setupRegexProto(st: &mut Interp) {
         // requires rather than a call that quietly answers undefined. The RegExp
         // prototype is built here rather than through buildNativeProto, so it did
         // not pick up the brand the Map and Set prototypes get.
-        let rm = makeBoundMethod(st, JSValue.Undefined, names[i].clone())
+        let rm = makeBoundMethod(&mut st, JSValue.Undefined, names[i].clone())
         // toString is the exception: it is GENERIC, reading `source` and `flags`
         // off whatever object it is given, so `RegExp.prototype.toString.call({
         // source: "x", flags: "y" })` is "/x/y" and not a TypeError. Branding it
@@ -470,8 +470,8 @@ fn setupRegexProto(st: &mut Interp) {
         if installAs == "__regexpToString" {
             installAs = "toString"
         }
-        objSet(st, rp, installAs.clone(), rm)
-        objSetNonEnumerable(st, rp, installAs)
+        objSet(&mut st, rp, installAs.clone(), rm)
+        objSetNonEnumerable(&mut st, rp, installAs)
         i = i + 1
     }
     // The flag family is an ACCESSOR on the prototype in the spec, while this
@@ -492,55 +492,55 @@ fn setupRegexProto(st: &mut Interp) {
     flagNames.push("hasIndices")
     var f: i64 = 0
     while f < flagNames.len() {
-        let getter = makeBoundMethod(st, JSValue.Undefined, "__reGet_" + flagNames[f].clone())
+        let getter = makeBoundMethod(&mut st, JSValue.Undefined, "__reGet_" + flagNames[f].clone())
         st.objExtras[st.objects[objHandle(getter)].extra].boundBrand = BRAND_REGEXP
-        objDefineAccessor(st, rp, flagNames[f].clone(), getter, JSValue.Undefined)
-        objSetNonEnumerable(st, rp, flagNames[f])
+        objDefineAccessor(&mut st, rp, flagNames[f].clone(), getter, JSValue.Undefined)
+        objSetNonEnumerable(&mut st, rp, flagNames[f])
         f = f + 1
     }
-    objSet(st, rp, "constructor", JSValue.Native(Native.Fn(Builtin.RegExp)))
-    objSetNonEnumerable(st, rp, "constructor")
-    let rbag = getNativeProps(st, Native.Fn(Builtin.RegExp))
-    objDefineProtoAttr(st, rbag, "prototype", JSValue.Obj(rp))
+    objSet(&mut st, rp, "constructor", JSValue.Native(Native.Fn(Builtin.RegExp)))
+    objSetNonEnumerable(&mut st, rp, "constructor")
+    let rbag = getNativeProps(&mut st, Native.Fn(Builtin.RegExp))
+    objDefineProtoAttr(&mut st, rbag, "prototype", JSValue.Obj(rp))
     st.regexProtoObj = rp
 }
 
 fn setupErrorProtos(st: &mut Interp) {
-    let errorProto = newObject(st)
-    objSet(st, errorProto, "name", JSValue.Str("Error"))
-    objSet(st, errorProto, "message", JSValue.Str(""))
-    objSet(st, errorProto, "constructor", JSValue.Native(Native.Fn(Builtin.Error)))
+    let errorProto = newObject(&mut st)
+    objSet(&mut st, errorProto, "name", JSValue.Str("Error"))
+    objSet(&mut st, errorProto, "message", JSValue.Str(""))
+    objSet(&mut st, errorProto, "constructor", JSValue.Native(Native.Fn(Builtin.Error)))
     // Under its own internal name, because Error.prototype.toString applies to
     // ANY object -- `Error.prototype.toString.call({})` is "Error", not the
     // object type tag. Installed as plain "toString" it was indistinguishable
     // from Object.prototype.toString once the receiver was not an Error.
-    objSet(st, errorProto, "toString", makeBoundMethod(st, JSValue.Undefined, "__errorToString"))
+    objSet(&mut st, errorProto, "toString", makeBoundMethod(&mut st, JSValue.Undefined, "__errorToString"))
     for ep in ["name", "message", "constructor", "toString"] {
-        objSetNonEnumerable(st, errorProto, ep)
+        objSetNonEnumerable(&mut st, errorProto, ep)
     }
-    let errBag = getNativeProps(st, Native.Fn(Builtin.Error))
-    objSet(st, errBag, "prototype", JSValue.Obj(errorProto))
+    let errBag = getNativeProps(&mut st, Native.Fn(Builtin.Error))
+    objSet(&mut st, errBag, "prototype", JSValue.Obj(errorProto))
     st.objects[errorProto].proto = st.objectProtoObj
 
-    setupOneErrorProto(st, Builtin.TypeError, errorProto)
-    setupOneErrorProto(st, Builtin.RangeError, errorProto)
-    setupOneErrorProto(st, Builtin.SyntaxError, errorProto)
-    setupOneErrorProto(st, Builtin.ReferenceError, errorProto)
-    setupOneErrorProto(st, Builtin.EvalError, errorProto)
-    setupOneErrorProto(st, Builtin.UriError, errorProto)
+    setupOneErrorProto(&mut st, Builtin.TypeError, errorProto)
+    setupOneErrorProto(&mut st, Builtin.RangeError, errorProto)
+    setupOneErrorProto(&mut st, Builtin.SyntaxError, errorProto)
+    setupOneErrorProto(&mut st, Builtin.ReferenceError, errorProto)
+    setupOneErrorProto(&mut st, Builtin.EvalError, errorProto)
+    setupOneErrorProto(&mut st, Builtin.UriError, errorProto)
 }
 
 fn setupOneErrorProto(st: &mut Interp, eid: Builtin, errorProto: i64) {
-    let sub = newObject(st)
-    objSet(st, sub, "name", JSValue.Str(nativeErrorName(eid)))
-    objSet(st, sub, "message", JSValue.Str(""))
-    objSet(st, sub, "constructor", JSValue.Native(Native.Fn(eid)))
+    let sub = newObject(&mut st)
+    objSet(&mut st, sub, "name", JSValue.Str(nativeErrorName(eid)))
+    objSet(&mut st, sub, "message", JSValue.Str(""))
+    objSet(&mut st, sub, "constructor", JSValue.Native(Native.Fn(eid)))
     for sp in ["name", "message", "constructor"] {
-        objSetNonEnumerable(st, sub, sp)
+        objSetNonEnumerable(&mut st, sub, sp)
     }
     st.objects[sub].proto = errorProto
-    let bag = getNativeProps(st, Native.Fn(eid))
-    objSet(st, bag, "prototype", JSValue.Obj(sub))
+    let bag = getNativeProps(&mut st, Native.Fn(eid))
+    objSet(&mut st, bag, "prototype", JSValue.Obj(sub))
 }
 
 // Give every native reachable as a method of `owner` its own `name`, derived
@@ -553,9 +553,9 @@ fn nameNativesOf(st: &mut Interp, owner: i64) {
         let key = st.objects[owner].props[i].key.clone()
         let v = cloneValue(st.objects[owner].props[i].value)
         if let JSValue.Native(nid) = v {
-            let bag = getNativeProps(st, nid)
-            objDefineBuiltinAttr(st, bag, "length", JSValue.Number(builtinStaticArity(key) as f64))
-            objDefineBuiltinAttr(st, bag, "name", JSValue.Str(key))
+            let bag = getNativeProps(&mut st, nid)
+            objDefineBuiltinAttr(&mut st, bag, "length", JSValue.Number(builtinStaticArity(key) as f64))
+            objDefineBuiltinAttr(&mut st, bag, "name", JSValue.Str(key))
         }
         i = i + 1
     }
@@ -566,67 +566,67 @@ pub // A global built-in constructor's own `name` and `length`. They are bound w
 // scopeDefine rather than hung off a namespace object, so nameNativesOf never
 // reaches them and `Date.length` / `Array.name` were undefined.
 fn nameGlobalCtor(st: &mut Interp, gname: string, nid: Builtin) {
-    let bag = getNativeProps(st, Native.Fn(nid))
-    objDefineBuiltinAttr(st, bag, "length", JSValue.Number(builtinCtorArity(gname) as f64))
-    objDefineBuiltinAttr(st, bag, "name", JSValue.Str(gname))
+    let bag = getNativeProps(&mut st, Native.Fn(nid))
+    objDefineBuiltinAttr(&mut st, bag, "length", JSValue.Number(builtinCtorArity(gname) as f64))
+    objDefineBuiltinAttr(&mut st, bag, "name", JSValue.Str(gname))
 }
 
 pub fn setupGlobals(st: &mut Interp) {
-    scopeDefine(st, 0, "Error", JSValue.Native(Native.Fn(Builtin.Error)))
-    nameGlobalCtor(st, "Error", Builtin.Error)
-    scopeDefine(st, 0, "TypeError", JSValue.Native(Native.Fn(Builtin.TypeError)))
-    nameGlobalCtor(st, "TypeError", Builtin.TypeError)
-    scopeDefine(st, 0, "RangeError", JSValue.Native(Native.Fn(Builtin.RangeError)))
-    nameGlobalCtor(st, "RangeError", Builtin.RangeError)
-    scopeDefine(st, 0, "SyntaxError", JSValue.Native(Native.Fn(Builtin.SyntaxError)))
-    nameGlobalCtor(st, "SyntaxError", Builtin.SyntaxError)
-    scopeDefine(st, 0, "ReferenceError", JSValue.Native(Native.Fn(Builtin.ReferenceError)))
-    nameGlobalCtor(st, "ReferenceError", Builtin.ReferenceError)
-    scopeDefine(st, 0, "EvalError", JSValue.Native(Native.Fn(Builtin.EvalError)))
-    nameGlobalCtor(st, "EvalError", Builtin.EvalError)
-    scopeDefine(st, 0, "URIError", JSValue.Native(Native.Fn(Builtin.UriError)))
-    nameGlobalCtor(st, "URIError", Builtin.UriError)
-    scopeDefine(st, 0, "eval", JSValue.Native(Native.Fn(Builtin.Eval)))
-    nameGlobalCtor(st, "eval", Builtin.Eval)
+    scopeDefine(&mut st, 0, "Error", JSValue.Native(Native.Fn(Builtin.Error)))
+    nameGlobalCtor(&mut st, "Error", Builtin.Error)
+    scopeDefine(&mut st, 0, "TypeError", JSValue.Native(Native.Fn(Builtin.TypeError)))
+    nameGlobalCtor(&mut st, "TypeError", Builtin.TypeError)
+    scopeDefine(&mut st, 0, "RangeError", JSValue.Native(Native.Fn(Builtin.RangeError)))
+    nameGlobalCtor(&mut st, "RangeError", Builtin.RangeError)
+    scopeDefine(&mut st, 0, "SyntaxError", JSValue.Native(Native.Fn(Builtin.SyntaxError)))
+    nameGlobalCtor(&mut st, "SyntaxError", Builtin.SyntaxError)
+    scopeDefine(&mut st, 0, "ReferenceError", JSValue.Native(Native.Fn(Builtin.ReferenceError)))
+    nameGlobalCtor(&mut st, "ReferenceError", Builtin.ReferenceError)
+    scopeDefine(&mut st, 0, "EvalError", JSValue.Native(Native.Fn(Builtin.EvalError)))
+    nameGlobalCtor(&mut st, "EvalError", Builtin.EvalError)
+    scopeDefine(&mut st, 0, "URIError", JSValue.Native(Native.Fn(Builtin.UriError)))
+    nameGlobalCtor(&mut st, "URIError", Builtin.UriError)
+    scopeDefine(&mut st, 0, "eval", JSValue.Native(Native.Fn(Builtin.Eval)))
+    nameGlobalCtor(&mut st, "eval", Builtin.Eval)
     // JSON is a plain object whose methods are native functions
-    let json = newObject(st)
-    objSet(st, json, "stringify", JSValue.Native(Native.Fn(Builtin.JsonStringify)))
-    objSet(st, json, "parse", JSValue.Native(Native.Fn(Builtin.JsonParse)))
-    nameNativesOf(st, json)
-    scopeDefine(st, 0, "JSON", JSValue.Obj(json))
+    let json = newObject(&mut st)
+    objSet(&mut st, json, "stringify", JSValue.Native(Native.Fn(Builtin.JsonStringify)))
+    objSet(&mut st, json, "parse", JSValue.Native(Native.Fn(Builtin.JsonParse)))
+    nameNativesOf(&mut st, json)
+    scopeDefine(&mut st, 0, "JSON", JSValue.Obj(json))
     // Math likewise: native-fn methods + numeric constants
-    let math = newObject(st)
-    objSet(st, math, "floor", JSValue.Native(Native.Fn(Builtin.MathFloor)))
-    objSet(st, math, "ceil", JSValue.Native(Native.Fn(Builtin.MathCeil)))
-    objSet(st, math, "round", JSValue.Native(Native.Fn(Builtin.MathRound)))
-    objSet(st, math, "trunc", JSValue.Native(Native.Fn(Builtin.MathTrunc)))
-    objSet(st, math, "abs", JSValue.Native(Native.Fn(Builtin.MathAbs)))
-    objSet(st, math, "sign", JSValue.Native(Native.Fn(Builtin.MathSign)))
-    objSet(st, math, "sqrt", JSValue.Native(Native.Fn(Builtin.MathSqrt)))
-    objSet(st, math, "pow", JSValue.Native(Native.Fn(Builtin.MathPow)))
-    objSet(st, math, "min", JSValue.Native(Native.Fn(Builtin.MathMin)))
-    objSet(st, math, "max", JSValue.Native(Native.Fn(Builtin.MathMax)))
-    objSet(st, math, "random", JSValue.Native(Native.Fn(Builtin.MathRandom)))
-    objSet(st, math, "exp", JSValue.Native(Native.Fn(Builtin.MathExp)))
-    objSet(st, math, "log", JSValue.Native(Native.Fn(Builtin.MathLog)))
-    objSet(st, math, "log2", JSValue.Native(Native.Fn(Builtin.MathLog2)))
-    objSet(st, math, "log10", JSValue.Native(Native.Fn(Builtin.MathLog10)))
-    objSet(st, math, "sin", JSValue.Native(Native.Fn(Builtin.MathSin)))
-    objSet(st, math, "cos", JSValue.Native(Native.Fn(Builtin.MathCos)))
-    objSet(st, math, "tan", JSValue.Native(Native.Fn(Builtin.MathTan)))
-    objSet(st, math, "asin", JSValue.Native(Native.Fn(Builtin.MathAsin)))
-    objSet(st, math, "acos", JSValue.Native(Native.Fn(Builtin.MathAcos)))
-    objSet(st, math, "atan", JSValue.Native(Native.Fn(Builtin.MathAtan)))
-    objSet(st, math, "atan2", JSValue.Native(Native.Fn(Builtin.MathAtan2)))
-    objSet(st, math, "LN2", JSValue.Number(0.6931471805599453))
-    objSet(st, math, "LN10", JSValue.Number(2.302585092994046))
-    objSet(st, math, "LOG2E", JSValue.Number(1.4426950408889634))
-    objSet(st, math, "LOG10E", JSValue.Number(0.4342944819032518))
-    objSet(st, math, "SQRT2", JSValue.Number(1.4142135623730951))
-    objSet(st, math, "SQRT1_2", JSValue.Number(0.7071067811865476))
-    objSet(st, math, "PI", JSValue.Number(3.141592653589793))
-    objSet(st, math, "E", JSValue.Number(2.718281828459045))
-    nameNativesOf(st, math)
+    let math = newObject(&mut st)
+    objSet(&mut st, math, "floor", JSValue.Native(Native.Fn(Builtin.MathFloor)))
+    objSet(&mut st, math, "ceil", JSValue.Native(Native.Fn(Builtin.MathCeil)))
+    objSet(&mut st, math, "round", JSValue.Native(Native.Fn(Builtin.MathRound)))
+    objSet(&mut st, math, "trunc", JSValue.Native(Native.Fn(Builtin.MathTrunc)))
+    objSet(&mut st, math, "abs", JSValue.Native(Native.Fn(Builtin.MathAbs)))
+    objSet(&mut st, math, "sign", JSValue.Native(Native.Fn(Builtin.MathSign)))
+    objSet(&mut st, math, "sqrt", JSValue.Native(Native.Fn(Builtin.MathSqrt)))
+    objSet(&mut st, math, "pow", JSValue.Native(Native.Fn(Builtin.MathPow)))
+    objSet(&mut st, math, "min", JSValue.Native(Native.Fn(Builtin.MathMin)))
+    objSet(&mut st, math, "max", JSValue.Native(Native.Fn(Builtin.MathMax)))
+    objSet(&mut st, math, "random", JSValue.Native(Native.Fn(Builtin.MathRandom)))
+    objSet(&mut st, math, "exp", JSValue.Native(Native.Fn(Builtin.MathExp)))
+    objSet(&mut st, math, "log", JSValue.Native(Native.Fn(Builtin.MathLog)))
+    objSet(&mut st, math, "log2", JSValue.Native(Native.Fn(Builtin.MathLog2)))
+    objSet(&mut st, math, "log10", JSValue.Native(Native.Fn(Builtin.MathLog10)))
+    objSet(&mut st, math, "sin", JSValue.Native(Native.Fn(Builtin.MathSin)))
+    objSet(&mut st, math, "cos", JSValue.Native(Native.Fn(Builtin.MathCos)))
+    objSet(&mut st, math, "tan", JSValue.Native(Native.Fn(Builtin.MathTan)))
+    objSet(&mut st, math, "asin", JSValue.Native(Native.Fn(Builtin.MathAsin)))
+    objSet(&mut st, math, "acos", JSValue.Native(Native.Fn(Builtin.MathAcos)))
+    objSet(&mut st, math, "atan", JSValue.Native(Native.Fn(Builtin.MathAtan)))
+    objSet(&mut st, math, "atan2", JSValue.Native(Native.Fn(Builtin.MathAtan2)))
+    objSet(&mut st, math, "LN2", JSValue.Number(0.6931471805599453))
+    objSet(&mut st, math, "LN10", JSValue.Number(2.302585092994046))
+    objSet(&mut st, math, "LOG2E", JSValue.Number(1.4426950408889634))
+    objSet(&mut st, math, "LOG10E", JSValue.Number(0.4342944819032518))
+    objSet(&mut st, math, "SQRT2", JSValue.Number(1.4142135623730951))
+    objSet(&mut st, math, "SQRT1_2", JSValue.Number(0.7071067811865476))
+    objSet(&mut st, math, "PI", JSValue.Number(3.141592653589793))
+    objSet(&mut st, math, "E", JSValue.Number(2.718281828459045))
+    nameNativesOf(&mut st, math)
     // every own property of Math is non-enumerable, and its CONSTANTS are also
     // non-writable and non-configurable. test262 has a prop-desc.js per member.
     var mki: i64 = 0
@@ -641,99 +641,99 @@ pub fn setupGlobals(st: &mut Interp) {
             st.objects[math].props[ci].configurable = false
         }
     }
-    scopeDefine(st, 0, "Math", JSValue.Obj(math))
-    scopeDefine(st, 0, "RegExp", JSValue.Native(Native.Fn(Builtin.RegExp)))
-    nameGlobalCtor(st, "RegExp", Builtin.RegExp)
-    let promiseCtor = newObject(st)
-    nameNativesOf(st, promiseCtor)
+    scopeDefine(&mut st, 0, "Math", JSValue.Obj(math))
+    scopeDefine(&mut st, 0, "RegExp", JSValue.Native(Native.Fn(Builtin.RegExp)))
+    nameGlobalCtor(&mut st, "RegExp", Builtin.RegExp)
+    let promiseCtor = newObject(&mut st)
+    nameNativesOf(&mut st, promiseCtor)
     // Array and Promise are constructor OBJECTS here, not Natives, so the
     // native naming pass never reached them and both lacked own `length` and
     // `name`. get-intrinsic resolves %Array.length% and reports "base intrinsic
     // exists, but the property is not available" without them, which is where
     // call-bound stops.
-    objDefineBuiltinAttr(st, promiseCtor, "length", JSValue.Number(1.0))
-    objDefineBuiltinAttr(st, promiseCtor, "name", JSValue.Str("Promise"))
+    objDefineBuiltinAttr(&mut st, promiseCtor, "length", JSValue.Number(1.0))
+    objDefineBuiltinAttr(&mut st, promiseCtor, "name", JSValue.Str("Promise"))
     // Marked like arrayCtor: without it `typeof Promise` answered "object" and
     // Promise did not report as a constructor.
     st.objects[promiseCtor].isFunctionLike = true
     st.promiseCtorObj = promiseCtor
-    objSet(st, promiseCtor, "resolve", JSValue.Native(Native.Fn(Builtin.PromiseResolve)))
-    objSet(st, promiseCtor, "reject", JSValue.Native(Native.Fn(Builtin.PromiseReject)))
-    scopeDefine(st, 0, "Promise", JSValue.Obj(promiseCtor))
+    objSet(&mut st, promiseCtor, "resolve", JSValue.Native(Native.Fn(Builtin.PromiseResolve)))
+    objSet(&mut st, promiseCtor, "reject", JSValue.Native(Native.Fn(Builtin.PromiseReject)))
+    scopeDefine(&mut st, 0, "Promise", JSValue.Obj(promiseCtor))
     // Object's statics live in the property bag that belongs to the native id,
     // so reading `Object.keys` as a value and calling `Object.keys(o)` both go
     // through the same place. A standalone object would only serve the call path.
-    let objectCtor = getNativeProps(st, Native.Fn(Builtin.ObjectCtor))
-    objSet(st, objectCtor, "defineProperty", JSValue.Native(Native.Fn(Builtin.ObjectDefineProperty)))
-    objSet(st, objectCtor, "keys", JSValue.Native(Native.Fn(Builtin.ObjectKeys)))
-    objSet(st, objectCtor, "assign", JSValue.Native(Native.Fn(Builtin.ObjectAssign)))
-    objSet(st, objectCtor, "values", JSValue.Native(Native.Fn(Builtin.ObjectValues)))
-    objSet(st, objectCtor, "entries", JSValue.Native(Native.Fn(Builtin.ObjectEntries)))
-    objSet(st, objectCtor, "freeze", JSValue.Native(Native.Fn(Builtin.ObjectFreeze)))
-    objSet(st, objectCtor, "isFrozen", JSValue.Native(Native.Fn(Builtin.ObjectIsFrozen)))
-    objSet(st, objectCtor, "preventExtensions", JSValue.Native(Native.Fn(Builtin.ObjectPreventExt)))
-    objSet(st, objectCtor, "isExtensible", JSValue.Native(Native.Fn(Builtin.ObjectIsExt)))
-    objSet(st, objectCtor, "seal", JSValue.Native(Native.Fn(Builtin.ObjectSeal)))
-    objSet(st, objectCtor, "isSealed", JSValue.Native(Native.Fn(Builtin.ObjectIsSealed)))
-    objSet(st, objectCtor, "create", JSValue.Native(Native.Fn(Builtin.ObjectCreate)))
-    objSet(st, objectCtor, "getPrototypeOf", JSValue.Native(Native.Fn(Builtin.ObjectGetProto)))
-    objSet(st, objectCtor, "setPrototypeOf", JSValue.Native(Native.Fn(Builtin.ObjectSetProto)))
-    objSet(st, objectCtor, "getOwnPropertyDescriptor", JSValue.Native(Native.Fn(Builtin.ObjectGetOwnPropDesc)))
-    objSet(st, objectCtor, "getOwnPropertyDescriptors", JSValue.Native(Native.Fn(Builtin.ObjectGetOwnPropDescs)))
-    objSet(st, objectCtor, "defineProperties", JSValue.Native(Native.Fn(Builtin.ObjectDefineProperties)))
-    objSet(st, objectCtor, "getOwnPropertyNames", JSValue.Native(Native.Fn(Builtin.ObjectGetOwnPropNames)))
-    objSet(st, objectCtor, "getOwnPropertySymbols", JSValue.Native(Native.Fn(Builtin.ObjectGetOwnPropSymbols)))
-    objSet(st, objectCtor, "is", JSValue.Native(Native.Fn(Builtin.ObjectIs)))
-    objSet(st, objectCtor, "hasOwn", JSValue.Native(Native.Fn(Builtin.ObjectHasOwn)))
-    let objectProto = newObject(st)
-    objSet(st, objectProto, "hasOwnProperty", makeBoundMethod(st, JSValue.Undefined, "hasOwnProperty"))
+    let objectCtor = getNativeProps(&mut st, Native.Fn(Builtin.ObjectCtor))
+    objSet(&mut st, objectCtor, "defineProperty", JSValue.Native(Native.Fn(Builtin.ObjectDefineProperty)))
+    objSet(&mut st, objectCtor, "keys", JSValue.Native(Native.Fn(Builtin.ObjectKeys)))
+    objSet(&mut st, objectCtor, "assign", JSValue.Native(Native.Fn(Builtin.ObjectAssign)))
+    objSet(&mut st, objectCtor, "values", JSValue.Native(Native.Fn(Builtin.ObjectValues)))
+    objSet(&mut st, objectCtor, "entries", JSValue.Native(Native.Fn(Builtin.ObjectEntries)))
+    objSet(&mut st, objectCtor, "freeze", JSValue.Native(Native.Fn(Builtin.ObjectFreeze)))
+    objSet(&mut st, objectCtor, "isFrozen", JSValue.Native(Native.Fn(Builtin.ObjectIsFrozen)))
+    objSet(&mut st, objectCtor, "preventExtensions", JSValue.Native(Native.Fn(Builtin.ObjectPreventExt)))
+    objSet(&mut st, objectCtor, "isExtensible", JSValue.Native(Native.Fn(Builtin.ObjectIsExt)))
+    objSet(&mut st, objectCtor, "seal", JSValue.Native(Native.Fn(Builtin.ObjectSeal)))
+    objSet(&mut st, objectCtor, "isSealed", JSValue.Native(Native.Fn(Builtin.ObjectIsSealed)))
+    objSet(&mut st, objectCtor, "create", JSValue.Native(Native.Fn(Builtin.ObjectCreate)))
+    objSet(&mut st, objectCtor, "getPrototypeOf", JSValue.Native(Native.Fn(Builtin.ObjectGetProto)))
+    objSet(&mut st, objectCtor, "setPrototypeOf", JSValue.Native(Native.Fn(Builtin.ObjectSetProto)))
+    objSet(&mut st, objectCtor, "getOwnPropertyDescriptor", JSValue.Native(Native.Fn(Builtin.ObjectGetOwnPropDesc)))
+    objSet(&mut st, objectCtor, "getOwnPropertyDescriptors", JSValue.Native(Native.Fn(Builtin.ObjectGetOwnPropDescs)))
+    objSet(&mut st, objectCtor, "defineProperties", JSValue.Native(Native.Fn(Builtin.ObjectDefineProperties)))
+    objSet(&mut st, objectCtor, "getOwnPropertyNames", JSValue.Native(Native.Fn(Builtin.ObjectGetOwnPropNames)))
+    objSet(&mut st, objectCtor, "getOwnPropertySymbols", JSValue.Native(Native.Fn(Builtin.ObjectGetOwnPropSymbols)))
+    objSet(&mut st, objectCtor, "is", JSValue.Native(Native.Fn(Builtin.ObjectIs)))
+    objSet(&mut st, objectCtor, "hasOwn", JSValue.Native(Native.Fn(Builtin.ObjectHasOwn)))
+    let objectProto = newObject(&mut st)
+    objSet(&mut st, objectProto, "hasOwnProperty", makeBoundMethod(&mut st, JSValue.Undefined, "hasOwnProperty"))
     // Object.prototype.toString.call(x) is the standard type-detection idiom
     // bound under a private name, not "toString": dispatching by the plain name
     // sent Object.prototype.toString.call(x) into x's OWN toString (a function
     // printed its source, a regex returned undefined), which broke the
     // `Object.prototype.toString.call(o).slice(8, -1)` type-tag idiom.
-    objSet(st, objectProto, "toString", makeBoundMethod(st, JSValue.Undefined, "@@objProtoToString"))
-    objSet(st, objectProto, "valueOf", makeBoundMethod(st, JSValue.Undefined, "valueOf"))
-    objSet(st, objectProto, "isPrototypeOf", makeBoundMethod(st, JSValue.Undefined, "isPrototypeOf"))
-    objSet(st, objectProto, "propertyIsEnumerable", makeBoundMethod(st, JSValue.Undefined, "propertyIsEnumerable"))
+    objSet(&mut st, objectProto, "toString", makeBoundMethod(&mut st, JSValue.Undefined, "@@objProtoToString"))
+    objSet(&mut st, objectProto, "valueOf", makeBoundMethod(&mut st, JSValue.Undefined, "valueOf"))
+    objSet(&mut st, objectProto, "isPrototypeOf", makeBoundMethod(&mut st, JSValue.Undefined, "isPrototypeOf"))
+    objSet(&mut st, objectProto, "propertyIsEnumerable", makeBoundMethod(&mut st, JSValue.Undefined, "propertyIsEnumerable"))
     // Object.prototype's own methods are non-enumerable. Nothing had it in a
     // for-in reachable chain before (a plain object is not linked to it here),
     // so the omission stayed invisible until String wrappers arrived and listed
     // hasOwnProperty/toString/valueOf/isPrototypeOf among a string's indices.
     for opm in ["hasOwnProperty", "toString", "valueOf", "isPrototypeOf", "propertyIsEnumerable"] {
-        objSetNonEnumerable(st, objectProto, opm)
+        objSetNonEnumerable(&mut st, objectProto, opm)
     }
-    objSet(st, objectCtor, "prototype", JSValue.Obj(objectProto))
+    objSet(&mut st, objectCtor, "prototype", JSValue.Obj(objectProto))
     st.objectProtoObj = objectProto
     // after objectProtoObj exists: Error.prototype chains to it
-    setupErrorProtos(st)
-    setupTypedArrayProtos(st)
-    setupBufferProtos(st)
-    setupRegexProto(st)
-    setupRemainingProtos(st)
+    setupErrorProtos(&mut st)
+    setupTypedArrayProtos(&mut st)
+    setupBufferProtos(&mut st)
+    setupRegexProto(&mut st)
+    setupRemainingProtos(&mut st)
     // Object is itself an object, so it carries the Object.prototype methods.
     // Code borrows them from the constructor — `Object.hasOwnProperty.call(o, k)`
     // is a common way to avoid a shadowed own property — and the native's bag
     // does not inherit, so they are installed explicitly.
-    objSet(st, objectCtor, "hasOwnProperty", makeBoundMethod(st, JSValue.Undefined, "hasOwnProperty"))
-    objSet(st, objectCtor, "isPrototypeOf", makeBoundMethod(st, JSValue.Undefined, "isPrototypeOf"))
-    objSet(st, objectCtor, "propertyIsEnumerable", makeBoundMethod(st, JSValue.Undefined, "propertyIsEnumerable"))
-    objSet(st, objectCtor, "toString", makeBoundMethod(st, JSValue.Undefined, "@@objProtoToString"))
-    objSet(st, objectCtor, "valueOf", makeBoundMethod(st, JSValue.Undefined, "valueOf"))
-    nameNativesOf(st, objectCtor)
-    scopeDefine(st, 0, "Object", JSValue.Native(Native.Fn(Builtin.ObjectCtor)))
-    nameGlobalCtor(st, "Object", Builtin.ObjectCtor)
-    scopeDefine(st, 0, "Number", JSValue.Native(Native.Fn(Builtin.Number)))
-    nameGlobalCtor(st, "Number", Builtin.Number)
-    scopeDefine(st, 0, "BigInt", JSValue.Native(Native.Fn(Builtin.BigInt)))
-    nameGlobalCtor(st, "BigInt", Builtin.BigInt)
-    let stringCtorObj = getNativeProps(st, Native.Fn(Builtin.String))
-    objSet(st, stringCtorObj, "fromCharCode", JSValue.Native(Native.Fn(Builtin.StringFromCharCode)))
-    objSet(st, stringCtorObj, "fromCodePoint", JSValue.Native(Native.Fn(Builtin.StringFromCodePoint)))
-    objSet(st, stringCtorObj, "raw", JSValue.Native(Native.Fn(Builtin.StringRaw)))
+    objSet(&mut st, objectCtor, "hasOwnProperty", makeBoundMethod(&mut st, JSValue.Undefined, "hasOwnProperty"))
+    objSet(&mut st, objectCtor, "isPrototypeOf", makeBoundMethod(&mut st, JSValue.Undefined, "isPrototypeOf"))
+    objSet(&mut st, objectCtor, "propertyIsEnumerable", makeBoundMethod(&mut st, JSValue.Undefined, "propertyIsEnumerable"))
+    objSet(&mut st, objectCtor, "toString", makeBoundMethod(&mut st, JSValue.Undefined, "@@objProtoToString"))
+    objSet(&mut st, objectCtor, "valueOf", makeBoundMethod(&mut st, JSValue.Undefined, "valueOf"))
+    nameNativesOf(&mut st, objectCtor)
+    scopeDefine(&mut st, 0, "Object", JSValue.Native(Native.Fn(Builtin.ObjectCtor)))
+    nameGlobalCtor(&mut st, "Object", Builtin.ObjectCtor)
+    scopeDefine(&mut st, 0, "Number", JSValue.Native(Native.Fn(Builtin.Number)))
+    nameGlobalCtor(&mut st, "Number", Builtin.Number)
+    scopeDefine(&mut st, 0, "BigInt", JSValue.Native(Native.Fn(Builtin.BigInt)))
+    nameGlobalCtor(&mut st, "BigInt", Builtin.BigInt)
+    let stringCtorObj = getNativeProps(&mut st, Native.Fn(Builtin.String))
+    objSet(&mut st, stringCtorObj, "fromCharCode", JSValue.Native(Native.Fn(Builtin.StringFromCharCode)))
+    objSet(&mut st, stringCtorObj, "fromCodePoint", JSValue.Native(Native.Fn(Builtin.StringFromCodePoint)))
+    objSet(&mut st, stringCtorObj, "raw", JSValue.Native(Native.Fn(Builtin.StringRaw)))
     // String.prototype methods as bound-method values, so
     // String.prototype.replace.call(str, ...) — the qs module's pattern — works
-    let stringProto = newObject(st)
+    let stringProto = newObject(&mut st)
     for sm in strProtoMethodNames() {
         // trimLeft/trimRight are the SAME function objects as trimStart/trimEnd,
         // not lookalikes: annexB defines them as aliases, so identity and .name
@@ -746,117 +746,117 @@ pub fn setupGlobals(st: &mut Interp) {
             mname = "trimEnd"
         }
         if mname == sm {
-            objSet(st, stringProto, sm.clone(), makeBrandedMethod(st, sm.clone(), BRAND_STRING_GENERIC))
+            objSet(&mut st, stringProto, sm.clone(), makeBrandedMethod(&mut st, sm.clone(), BRAND_STRING_GENERIC))
         } else {
-            objSet(st, stringProto, sm.clone(), getMember(st, stringProto, mname))
+            objSet(&mut st, stringProto, sm.clone(), getMember(st, stringProto, mname))
         }
-        objSetNonEnumerable(st, stringProto, sm)
+        objSetNonEnumerable(&mut st, stringProto, sm)
     }
     var strBrand: Vec<string> = Vec.new()
     strBrand.push("valueOf")
     strBrand.push("toString")
-    brandProtoMethods(st, stringProto, BRAND_STRING, strBrand)
-    boxProtoItself(st, stringProto, JSValue.Str(""))
-    objSetFrozenOwn(st, stringProto, "length", JSValue.Number(0.0), false)
-    objSet(st, stringProto, "constructor", JSValue.Native(Native.Fn(Builtin.String)))
-    objSetNonEnumerable(st, stringProto, "constructor")
+    brandProtoMethods(&mut st, stringProto, BRAND_STRING, strBrand)
+    boxProtoItself(&mut st, stringProto, JSValue.Str(""))
+    objSetFrozenOwn(&mut st, stringProto, "length", JSValue.Number(0.0), false)
+    objSet(&mut st, stringProto, "constructor", JSValue.Native(Native.Fn(Builtin.String)))
+    objSetNonEnumerable(&mut st, stringProto, "constructor")
     st.objects[stringProto].proto = objectProto
-    objSet(st, stringCtorObj, "prototype", JSValue.Obj(stringProto))
-    nameNativesOf(st, stringCtorObj)
+    objSet(&mut st, stringCtorObj, "prototype", JSValue.Obj(stringProto))
+    nameNativesOf(&mut st, stringCtorObj)
     st.stringCtorProps = stringCtorObj
     st.stringProtoObj = stringProto
     st.stringProtoPristine = true
-    scopeDefine(st, 0, "String", JSValue.Native(Native.Fn(Builtin.String)))
-    nameGlobalCtor(st, "String", Builtin.String)
-    scopeDefine(st, 0, "Boolean", JSValue.Native(Native.Fn(Builtin.Boolean)))
-    nameGlobalCtor(st, "Boolean", Builtin.Boolean)
-    scopeDefine(st, 0, "NaN", JSValue.Number(jsNan()))
-    scopeDefine(st, 0, "Infinity", JSValue.Number(jsInfinity()))
-    scopeDefine(st, 0, "isNaN", JSValue.Native(Native.Fn(Builtin.IsNan)))
-    scopeDefine(st, 0, "gc", JSValue.Native(Native.Fn(Builtin.Gc)))
-    scopeDefine(st, 0, "isFinite", JSValue.Native(Native.Fn(Builtin.IsFinite)))
-    scopeDefine(st, 0, "parseInt", JSValue.Native(Native.Fn(Builtin.ParseInt)))
-    scopeDefine(st, 0, "parseFloat", JSValue.Native(Native.Fn(Builtin.ParseFloat)))
+    scopeDefine(&mut st, 0, "String", JSValue.Native(Native.Fn(Builtin.String)))
+    nameGlobalCtor(&mut st, "String", Builtin.String)
+    scopeDefine(&mut st, 0, "Boolean", JSValue.Native(Native.Fn(Builtin.Boolean)))
+    nameGlobalCtor(&mut st, "Boolean", Builtin.Boolean)
+    scopeDefine(&mut st, 0, "NaN", JSValue.Number(jsNan()))
+    scopeDefine(&mut st, 0, "Infinity", JSValue.Number(jsInfinity()))
+    scopeDefine(&mut st, 0, "isNaN", JSValue.Native(Native.Fn(Builtin.IsNan)))
+    scopeDefine(&mut st, 0, "gc", JSValue.Native(Native.Fn(Builtin.Gc)))
+    scopeDefine(&mut st, 0, "isFinite", JSValue.Native(Native.Fn(Builtin.IsFinite)))
+    scopeDefine(&mut st, 0, "parseInt", JSValue.Native(Native.Fn(Builtin.ParseInt)))
+    scopeDefine(&mut st, 0, "parseFloat", JSValue.Native(Native.Fn(Builtin.ParseFloat)))
     // The shared iterator prototype. The prelude installs the helper methods
     // (map/filter/take/...) onto this one object; every iterator the engine
     // builds points its proto here, so helpers work on array iterators too.
-    let iterProto = newObject(st)
+    let iterProto = newObject(&mut st)
     // %IteratorPrototype% inherits from Object.prototype. The link was missing,
     // so the array-iterator chain was one shorter than node's and
     // getPrototypeOf three deep answered null. Invisible until Reflect started
     // rejecting a non-object argument, which is what a null third link is.
     st.objects[iterProto].proto = st.objectProtoObj
     st.iterProtoObj = iterProto
-    scopeDefine(st, 0, "__iteratorProto", JSValue.Obj(iterProto))
+    scopeDefine(&mut st, 0, "__iteratorProto", JSValue.Obj(iterProto))
     // globalThis: a real object whose properties ARE the global bindings
-    let globalObj = newObject(st)
+    let globalObj = newObject(&mut st)
     st.objects[globalObj].isGlobal = true
-    scopeDefine(st, 0, "globalThis", JSValue.Obj(globalObj))
-    scopeDefine(st, 0, "Symbol", JSValue.Native(Native.Fn(Builtin.Symbol)))
-    nameGlobalCtor(st, "Symbol", Builtin.Symbol)
-    let symbolCtorObj = getNativeProps(st, Native.Fn(Builtin.Symbol))
-    objSet(st, symbolCtorObj, "iterator", JSValue.Str(symIteratorKey()))
+    scopeDefine(&mut st, 0, "globalThis", JSValue.Obj(globalObj))
+    scopeDefine(&mut st, 0, "Symbol", JSValue.Native(Native.Fn(Builtin.Symbol)))
+    nameGlobalCtor(&mut st, "Symbol", Builtin.Symbol)
+    let symbolCtorObj = getNativeProps(&mut st, Native.Fn(Builtin.Symbol))
+    objSet(&mut st, symbolCtorObj, "iterator", JSValue.Str(symIteratorKey()))
     // other well-known symbols — interned keys like @@iterator, counter 0
-    objSet(st, symbolCtorObj, "asyncIterator", JSValue.Str("@@sym:Symbol.asyncIterator:0"))
-    objSet(st, symbolCtorObj, "toPrimitive", JSValue.Str(symToPrimitiveKey()))
-    objSet(st, symbolCtorObj, "toStringTag", JSValue.Str(symToStringTagKey()))
-    objSet(st, symbolCtorObj, "hasInstance", JSValue.Str("@@sym:Symbol.hasInstance:0"))
+    objSet(&mut st, symbolCtorObj, "asyncIterator", JSValue.Str("@@sym:Symbol.asyncIterator:0"))
+    objSet(&mut st, symbolCtorObj, "toPrimitive", JSValue.Str(symToPrimitiveKey()))
+    objSet(&mut st, symbolCtorObj, "toStringTag", JSValue.Str(symToStringTagKey()))
+    objSet(&mut st, symbolCtorObj, "hasInstance", JSValue.Str("@@sym:Symbol.hasInstance:0"))
     // the regex protocol symbols, which RegExp.prototype implements
-    objSet(st, symbolCtorObj, "match", JSValue.Str("@@sym:Symbol.match:0"))
-    objSet(st, symbolCtorObj, "matchAll", JSValue.Str("@@sym:Symbol.matchAll:0"))
-    objSet(st, symbolCtorObj, "replace", JSValue.Str("@@sym:Symbol.replace:0"))
-    objSet(st, symbolCtorObj, "search", JSValue.Str("@@sym:Symbol.search:0"))
-    objSet(st, symbolCtorObj, "split", JSValue.Str("@@sym:Symbol.split:0"))
-    objSet(st, symbolCtorObj, "species", JSValue.Str(symSpeciesKey()))
-    objSet(st, symbolCtorObj, "isConcatSpreadable", JSValue.Str(symConcatSpreadableKey()))
-    objSet(st, symbolCtorObj, "unscopables", JSValue.Str("@@sym:Symbol.unscopables:0"))
-    objSet(st, symbolCtorObj, "dispose", JSValue.Str("@@sym:Symbol.dispose:0"))
-    objSet(st, symbolCtorObj, "asyncDispose", JSValue.Str("@@sym:Symbol.asyncDispose:0"))
-    let dateCtorObj = getNativeProps(st, Native.Fn(Builtin.Date))
-    objSet(st, dateCtorObj, "now", JSValue.Native(Native.Fn(Builtin.DateNow)))
-    objSet(st, dateCtorObj, "UTC", JSValue.Native(Native.Fn(Builtin.DateUtc)))
-    objSet(st, dateCtorObj, "parse", JSValue.Native(Native.Fn(Builtin.DateParse)))
+    objSet(&mut st, symbolCtorObj, "match", JSValue.Str("@@sym:Symbol.match:0"))
+    objSet(&mut st, symbolCtorObj, "matchAll", JSValue.Str("@@sym:Symbol.matchAll:0"))
+    objSet(&mut st, symbolCtorObj, "replace", JSValue.Str("@@sym:Symbol.replace:0"))
+    objSet(&mut st, symbolCtorObj, "search", JSValue.Str("@@sym:Symbol.search:0"))
+    objSet(&mut st, symbolCtorObj, "split", JSValue.Str("@@sym:Symbol.split:0"))
+    objSet(&mut st, symbolCtorObj, "species", JSValue.Str(symSpeciesKey()))
+    objSet(&mut st, symbolCtorObj, "isConcatSpreadable", JSValue.Str(symConcatSpreadableKey()))
+    objSet(&mut st, symbolCtorObj, "unscopables", JSValue.Str("@@sym:Symbol.unscopables:0"))
+    objSet(&mut st, symbolCtorObj, "dispose", JSValue.Str("@@sym:Symbol.dispose:0"))
+    objSet(&mut st, symbolCtorObj, "asyncDispose", JSValue.Str("@@sym:Symbol.asyncDispose:0"))
+    let dateCtorObj = getNativeProps(&mut st, Native.Fn(Builtin.Date))
+    objSet(&mut st, dateCtorObj, "now", JSValue.Native(Native.Fn(Builtin.DateNow)))
+    objSet(&mut st, dateCtorObj, "UTC", JSValue.Native(Native.Fn(Builtin.DateUtc)))
+    objSet(&mut st, dateCtorObj, "parse", JSValue.Native(Native.Fn(Builtin.DateParse)))
     // Date.prototype methods as bound-method values, so
     // Date.prototype.toISOString.call(d) — qs's pattern — works
-    let dateProto = newObject(st)
+    let dateProto = newObject(&mut st)
     for dm in dateProtoMethodNames() {
-        objSet(st, dateProto, dm.clone(), makeBrandedMethod(st, dm.clone(), BRAND_DATE))
-        objSetNonEnumerable(st, dateProto, dm)
+        objSet(&mut st, dateProto, dm.clone(), makeBrandedMethod(&mut st, dm.clone(), BRAND_DATE))
+        objSetNonEnumerable(&mut st, dateProto, dm)
     }
     // Date.prototype[@@toPrimitive]: the one built-in that prefers "string" for a
     // default hint, which is why `date + ""` concatenates the text while
     // `date - 0` is numeric. Its absence made `d[Symbol.toPrimitive]("number")`
     // undefined -- code that calls it explicitly, and any polyfill checking for
     // it, saw a Date as having no primitive conversion at all.
-    objSet(st, dateProto, symToPrimitiveKey(), makeBrandedMethod(st, "__dateToPrimitive", BRAND_DATE))
-    objSetNonEnumerable(st, dateProto, symToPrimitiveKey())
-    objDefineProtoAttr(st, dateCtorObj, "prototype", JSValue.Obj(dateProto))
-    objSet(st, dateProto, "constructor", JSValue.Native(Native.Fn(Builtin.Date)))
-    objSetNonEnumerable(st, dateProto, "constructor")
+    objSet(&mut st, dateProto, symToPrimitiveKey(), makeBrandedMethod(&mut st, "__dateToPrimitive", BRAND_DATE))
+    objSetNonEnumerable(&mut st, dateProto, symToPrimitiveKey())
+    objDefineProtoAttr(&mut st, dateCtorObj, "prototype", JSValue.Obj(dateProto))
+    objSet(&mut st, dateProto, "constructor", JSValue.Native(Native.Fn(Builtin.Date)))
+    objSetNonEnumerable(&mut st, dateProto, "constructor")
     st.objects[dateProto].proto = st.objectProtoObj
-    nameNativesOf(st, dateCtorObj)
+    nameNativesOf(&mut st, dateCtorObj)
     // after nameNativesOf, which would otherwise overwrite it: Date.parse is the
     // one static whose name collides across namespaces (JSON.parse is 2), and
     // builtinStaticArity is keyed by name alone
-    objDefineBuiltinAttr(st, getNativeProps(st, Native.Fn(Builtin.DateParse)), "length", JSValue.Number(1.0))
+    objDefineBuiltinAttr(&mut st, getNativeProps(&mut st, Native.Fn(Builtin.DateParse)), "length", JSValue.Number(1.0))
     st.dateProtoObj = dateProto
     st.dateCtorProps = dateCtorObj
-    scopeDefine(st, 0, "Date", JSValue.Native(Native.Fn(Builtin.Date)))
-    nameGlobalCtor(st, "Date", Builtin.Date)
+    scopeDefine(&mut st, 0, "Date", JSValue.Native(Native.Fn(Builtin.Date)))
+    nameGlobalCtor(&mut st, "Date", Builtin.Date)
     // Function.prototype.{call,apply,bind} are bound-method values: invoking
     // .call on them re-targets to whatever function is passed as the receiver,
     // which is how Function.prototype.apply.call(fn, ...) resolves
-    let functionProto = newObject(st)
+    let functionProto = newObject(&mut st)
     // All three require a callable `this`: `Function.prototype.bind.call({})` is
     // a TypeError, not a bind of nothing. toString below already said so; these
     // three did not, so they answered undefined for a receiver they could not
     // possibly bind.
-    objSet(st, functionProto, "call", makeBrandedMethod(st, "call", BRAND_CALLABLE))
-    objSet(st, functionProto, "apply", makeBrandedMethod(st, "apply", BRAND_CALLABLE))
-    objSet(st, functionProto, "bind", makeBrandedMethod(st, "bind", BRAND_CALLABLE))
+    objSet(&mut st, functionProto, "call", makeBrandedMethod(&mut st, "call", BRAND_CALLABLE))
+    objSet(&mut st, functionProto, "apply", makeBrandedMethod(&mut st, "apply", BRAND_CALLABLE))
+    objSet(&mut st, functionProto, "bind", makeBrandedMethod(&mut st, "bind", BRAND_CALLABLE))
     // lodash and friends compare functions by source text via
     // Function.prototype.toString.call(fn)
-    objSet(st, functionProto, "toString", makeBrandedMethod(st, "toString", BRAND_CALLABLE))
+    objSet(&mut st, functionProto, "toString", makeBrandedMethod(&mut st, "toString", BRAND_CALLABLE))
     st.objects[functionProto].isFunctionLike = true
     // Function is a Native rather than a plain object so that CALLING it reaches
     // callNativeProg; as an object it was only ever a namespace holding
@@ -865,56 +865,56 @@ pub fn setupGlobals(st: &mut Interp) {
     // Function.prototype is itself a function of no arguments and no name, and
     // it owns both properties: `delete f.name` has to fall through to the empty
     // string here rather than to undefined
-    objDefineBuiltinAttr(st, functionProto, "name", JSValue.Str(""))
-    objDefineBuiltinAttr(st, functionProto, "length", JSValue.Number(0.0))
+    objDefineBuiltinAttr(&mut st, functionProto, "name", JSValue.Str(""))
+    objDefineBuiltinAttr(&mut st, functionProto, "length", JSValue.Number(0.0))
     st.functionProtoObj = functionProto
-    let functionCtorBag = getNativeProps(st, Native.Fn(Builtin.FunctionCtor))
-    objDefineProtoAttr(st, functionCtorBag, "prototype", JSValue.Obj(functionProto))
-    objSet(st, functionProto, "constructor", JSValue.Native(Native.Fn(Builtin.FunctionCtor)))
-    objSetNonEnumerable(st, functionProto, "constructor")
-    scopeDefine(st, 0, "Function", JSValue.Native(Native.Fn(Builtin.FunctionCtor)))
-    nameGlobalCtor(st, "Function", Builtin.FunctionCtor)
-    scopeDefine(st, 0, "setTimeout", JSValue.Native(Native.Fn(Builtin.SetTimeout)))
-    scopeDefine(st, 0, "setInterval", JSValue.Native(Native.Fn(Builtin.SetInterval)))
-    scopeDefine(st, 0, "clearTimeout", JSValue.Native(Native.Fn(Builtin.ClearTimer)))
-    scopeDefine(st, 0, "clearInterval", JSValue.Native(Native.Fn(Builtin.ClearTimer)))
-    scopeDefine(st, 0, "clearImmediate", JSValue.Native(Native.Fn(Builtin.ClearTimer)))
-    scopeDefine(st, 0, "setImmediate", JSValue.Native(Native.Fn(Builtin.SetImmediate)))
-    scopeDefine(st, 0, "queueMicrotask", JSValue.Native(Native.Fn(Builtin.QueueMicrotaskJs)))
+    let functionCtorBag = getNativeProps(&mut st, Native.Fn(Builtin.FunctionCtor))
+    objDefineProtoAttr(&mut st, functionCtorBag, "prototype", JSValue.Obj(functionProto))
+    objSet(&mut st, functionProto, "constructor", JSValue.Native(Native.Fn(Builtin.FunctionCtor)))
+    objSetNonEnumerable(&mut st, functionProto, "constructor")
+    scopeDefine(&mut st, 0, "Function", JSValue.Native(Native.Fn(Builtin.FunctionCtor)))
+    nameGlobalCtor(&mut st, "Function", Builtin.FunctionCtor)
+    scopeDefine(&mut st, 0, "setTimeout", JSValue.Native(Native.Fn(Builtin.SetTimeout)))
+    scopeDefine(&mut st, 0, "setInterval", JSValue.Native(Native.Fn(Builtin.SetInterval)))
+    scopeDefine(&mut st, 0, "clearTimeout", JSValue.Native(Native.Fn(Builtin.ClearTimer)))
+    scopeDefine(&mut st, 0, "clearInterval", JSValue.Native(Native.Fn(Builtin.ClearTimer)))
+    scopeDefine(&mut st, 0, "clearImmediate", JSValue.Native(Native.Fn(Builtin.ClearTimer)))
+    scopeDefine(&mut st, 0, "setImmediate", JSValue.Native(Native.Fn(Builtin.SetImmediate)))
+    scopeDefine(&mut st, 0, "queueMicrotask", JSValue.Native(Native.Fn(Builtin.QueueMicrotaskJs)))
     // not a JS global in node; lib/util.js reads it off globalThis so util.inspect
     // and console.log render identically
-    scopeDefine(st, 0, "__inspect", JSValue.Native(Native.Fn(Builtin.Inspect)))
-    scopeDefine(st, 0, "__isConstructor", JSValue.Native(Native.Fn(Builtin.IsConstructor)))
-    scopeDefine(st, 0, "__markNotConstructor", JSValue.Native(Native.Fn(Builtin.MarkNotCtor)))
+    scopeDefine(&mut st, 0, "__inspect", JSValue.Native(Native.Fn(Builtin.Inspect)))
+    scopeDefine(&mut st, 0, "__isConstructor", JSValue.Native(Native.Fn(Builtin.IsConstructor)))
+    scopeDefine(&mut st, 0, "__markNotConstructor", JSValue.Native(Native.Fn(Builtin.MarkNotCtor)))
     // The raw "wrap a value in a resolved promise" primitive, exposed under its
     // own name so the prelude can build the public Promise.resolve on top of it.
     // Capturing `Promise.resolve` from JS does not work: reading a method off a
     // native constructor yields a late-bound dispatcher that looks the name up
     // again at call time, so a wrapper calling the captured value re-entered
     // itself forever.
-    scopeDefine(st, 0, "__promiseResolveValue", JSValue.Native(Native.Fn(Builtin.PromiseResolve)))
-    scopeDefine(st, 0, "encodeURIComponent", JSValue.Native(Native.Fn(Builtin.EncodeUriComponent)))
-    scopeDefine(st, 0, "decodeURIComponent", JSValue.Native(Native.Fn(Builtin.DecodeUriComponent)))
-    scopeDefine(st, 0, "encodeURI", JSValue.Native(Native.Fn(Builtin.EncodeUri)))
-    scopeDefine(st, 0, "decodeURI", JSValue.Native(Native.Fn(Builtin.DecodeUri)))
-    scopeDefine(st, 0, "ArrayBuffer", JSValue.Native(Native.Fn(Builtin.ArrayBuffer)))
-    nameGlobalCtor(st, "ArrayBuffer", Builtin.ArrayBuffer)
-    scopeDefine(st, 0, "DataView", JSValue.Native(Native.Fn(Builtin.DataView)))
-    nameGlobalCtor(st, "DataView", Builtin.DataView)
+    scopeDefine(&mut st, 0, "__promiseResolveValue", JSValue.Native(Native.Fn(Builtin.PromiseResolve)))
+    scopeDefine(&mut st, 0, "encodeURIComponent", JSValue.Native(Native.Fn(Builtin.EncodeUriComponent)))
+    scopeDefine(&mut st, 0, "decodeURIComponent", JSValue.Native(Native.Fn(Builtin.DecodeUriComponent)))
+    scopeDefine(&mut st, 0, "encodeURI", JSValue.Native(Native.Fn(Builtin.EncodeUri)))
+    scopeDefine(&mut st, 0, "decodeURI", JSValue.Native(Native.Fn(Builtin.DecodeUri)))
+    scopeDefine(&mut st, 0, "ArrayBuffer", JSValue.Native(Native.Fn(Builtin.ArrayBuffer)))
+    nameGlobalCtor(&mut st, "ArrayBuffer", Builtin.ArrayBuffer)
+    scopeDefine(&mut st, 0, "DataView", JSValue.Native(Native.Fn(Builtin.DataView)))
+    nameGlobalCtor(&mut st, "DataView", Builtin.DataView)
     var tk: i64 = 0
     while tk <= TA_MAX {
-        scopeDefine(st, 0, taName(tk), JSValue.Native(Native.TypedArrayCtor(tk)))
+        scopeDefine(&mut st, 0, taName(tk), JSValue.Native(Native.TypedArrayCtor(tk)))
         tk = tk + 1
     }
-    scopeDefine(st, 0, "Map", JSValue.Native(Native.Fn(Builtin.Map)))
-    nameGlobalCtor(st, "Map", Builtin.Map)
-    scopeDefine(st, 0, "WeakMap", JSValue.Native(Native.Fn(Builtin.Map)))
-    scopeDefine(st, 0, "Set", JSValue.Native(Native.Fn(Builtin.Set)))
-    nameGlobalCtor(st, "Set", Builtin.Set)
-    scopeDefine(st, 0, "WeakSet", JSValue.Native(Native.Fn(Builtin.Set)))
+    scopeDefine(&mut st, 0, "Map", JSValue.Native(Native.Fn(Builtin.Map)))
+    nameGlobalCtor(&mut st, "Map", Builtin.Map)
+    scopeDefine(&mut st, 0, "WeakMap", JSValue.Native(Native.Fn(Builtin.Map)))
+    scopeDefine(&mut st, 0, "Set", JSValue.Native(Native.Fn(Builtin.Set)))
+    nameGlobalCtor(&mut st, "Set", Builtin.Set)
+    scopeDefine(&mut st, 0, "WeakSet", JSValue.Native(Native.Fn(Builtin.Set)))
     // Array.prototype.<m> as a bound-method value, so the ES5 idiom
     // Array.prototype.slice.call(arguments) resolves
-    let arrayProto = newObject(st)
+    let arrayProto = newObject(&mut st)
     // Every whitelisted method, not a hand-picked few: each is generic in ES, so
     // Array.prototype.<m>.call(arrayLike) has to resolve for all of them. The
     // bound `this` is left unset so the call site's receiver wins (see
@@ -924,8 +924,8 @@ pub fn setupGlobals(st: &mut Interp) {
     var apm: i64 = 0
     let apNames = arrayMethodNames()
     while apm < apNames.len() {
-        objSet(st, arrayProto, apNames[apm].clone(), makeBoundMethod(st, JSValue.Undefined, apNames[apm].clone()))
-        objSetNonEnumerable(st, arrayProto, apNames[apm])
+        objSet(&mut st, arrayProto, apNames[apm].clone(), makeBoundMethod(&mut st, JSValue.Undefined, apNames[apm].clone()))
+        objSetNonEnumerable(&mut st, arrayProto, apNames[apm])
         apm = apm + 1
     }
     // Array.prototype[Symbol.iterator] IS Array.prototype.values, as a real
@@ -933,57 +933,57 @@ pub fn setupGlobals(st: &mut Interp) {
     // meant `delete Array.prototype[Symbol.iterator]` had no effect at all and
     // the two were not the same function, which test262 checks directly and
     // which every iteration test that removes the method depends on.
-    objSet(st, arrayProto, symIteratorKey(), objGet(st, arrayProto, "values"))
-    objSetNonEnumerable(st, arrayProto, symIteratorKey())
-    let arrayCtor = newObject(st)
+    objSet(&mut st, arrayProto, symIteratorKey(), objGet(st, arrayProto, "values"))
+    objSetNonEnumerable(&mut st, arrayProto, symIteratorKey())
+    let arrayCtor = newObject(&mut st)
     st.objects[arrayCtor].isFunctionLike = true
-    objSet(st, arrayCtor, "prototype", JSValue.Obj(arrayProto))
-    objSet(st, arrayCtor, "name", JSValue.Str("Array"))
-    nameNativesOf(st, arrayCtor)
-    objDefineBuiltinAttr(st, arrayCtor, "length", JSValue.Number(1.0))
-    objDefineBuiltinAttr(st, arrayCtor, "name", JSValue.Str("Array"))
+    objSet(&mut st, arrayCtor, "prototype", JSValue.Obj(arrayProto))
+    objSet(&mut st, arrayCtor, "name", JSValue.Str("Array"))
+    nameNativesOf(&mut st, arrayCtor)
+    objDefineBuiltinAttr(&mut st, arrayCtor, "length", JSValue.Number(1.0))
+    objDefineBuiltinAttr(&mut st, arrayCtor, "name", JSValue.Str("Array"))
     st.arrayCtorObj = arrayCtor
     st.arrayProtoObj = arrayProto
     // Array's species accessor goes on here rather than with the others: the
     // constructor object does not exist yet when that block runs.
-    let arrSpecies = makeBoundMethod(st, JSValue.Undefined, "__speciesSelf")
-    objDefineAccessor(st, arrayCtor, symSpeciesKey(), arrSpecies, JSValue.Undefined)
-    objSetNonEnumerable(st, arrayCtor, symSpeciesKey())
+    let arrSpecies = makeBoundMethod(&mut st, JSValue.Undefined, "__speciesSelf")
+    objDefineAccessor(&mut st, arrayCtor, symSpeciesKey(), arrSpecies, JSValue.Undefined)
+    objSetNonEnumerable(&mut st, arrayCtor, symSpeciesKey())
     // Set only now that setup has finished writing the methods in, so the setup
     // writes themselves do not count as a user touch.
     st.arrayProtoPristine = true
-    objSet(st, arrayCtor, "isArray", JSValue.Native(Native.Fn(Builtin.ArrayIsArray)))
-    objSet(st, arrayCtor, "from", JSValue.Native(Native.Fn(Builtin.ArrayFrom)))
-    scopeDefine(st, 0, "Array", JSValue.Obj(arrayCtor))
-    scopeDefine(st, 0, "__callFrames", JSValue.Native(Native.Fn(Builtin.CallFrames)))
-    scopeDefine(st, 0, "__byteLength", JSValue.Native(Native.Fn(Builtin.ByteLength)))
-    let consoleObj = newObject(st)
-    objSet(st, consoleObj, "log", JSValue.Native(Native.Fn(Builtin.ConsoleLog)))
-    objSet(st, consoleObj, "info", JSValue.Native(Native.Fn(Builtin.ConsoleLog)))
-    objSet(st, consoleObj, "debug", JSValue.Native(Native.Fn(Builtin.ConsoleLog)))
-    objSet(st, consoleObj, "trace", JSValue.Native(Native.Fn(Builtin.ConsoleLog)))
-    objSet(st, consoleObj, "dir", JSValue.Native(Native.Fn(Builtin.ConsoleLog)))
-    objSet(st, consoleObj, "warn", JSValue.Native(Native.Fn(Builtin.ConsoleError)))
-    objSet(st, consoleObj, "error", JSValue.Native(Native.Fn(Builtin.ConsoleError)))
-    scopeDefine(st, 0, "console", JSValue.Obj(consoleObj))
-    scopeDefine(st, 0, "Proxy", JSValue.Native(Native.Fn(Builtin.Proxy)))
-    nameGlobalCtor(st, "Proxy", Builtin.Proxy)
-    let proxyBag = getNativeProps(st, Native.Fn(Builtin.Proxy))
+    objSet(&mut st, arrayCtor, "isArray", JSValue.Native(Native.Fn(Builtin.ArrayIsArray)))
+    objSet(&mut st, arrayCtor, "from", JSValue.Native(Native.Fn(Builtin.ArrayFrom)))
+    scopeDefine(&mut st, 0, "Array", JSValue.Obj(arrayCtor))
+    scopeDefine(&mut st, 0, "__callFrames", JSValue.Native(Native.Fn(Builtin.CallFrames)))
+    scopeDefine(&mut st, 0, "__byteLength", JSValue.Native(Native.Fn(Builtin.ByteLength)))
+    let consoleObj = newObject(&mut st)
+    objSet(&mut st, consoleObj, "log", JSValue.Native(Native.Fn(Builtin.ConsoleLog)))
+    objSet(&mut st, consoleObj, "info", JSValue.Native(Native.Fn(Builtin.ConsoleLog)))
+    objSet(&mut st, consoleObj, "debug", JSValue.Native(Native.Fn(Builtin.ConsoleLog)))
+    objSet(&mut st, consoleObj, "trace", JSValue.Native(Native.Fn(Builtin.ConsoleLog)))
+    objSet(&mut st, consoleObj, "dir", JSValue.Native(Native.Fn(Builtin.ConsoleLog)))
+    objSet(&mut st, consoleObj, "warn", JSValue.Native(Native.Fn(Builtin.ConsoleError)))
+    objSet(&mut st, consoleObj, "error", JSValue.Native(Native.Fn(Builtin.ConsoleError)))
+    scopeDefine(&mut st, 0, "console", JSValue.Obj(consoleObj))
+    scopeDefine(&mut st, 0, "Proxy", JSValue.Native(Native.Fn(Builtin.Proxy)))
+    nameGlobalCtor(&mut st, "Proxy", Builtin.Proxy)
+    let proxyBag = getNativeProps(&mut st, Native.Fn(Builtin.Proxy))
     // Proxy.revocable is writable, unlike the `length`/`name` that
     // objDefineBuiltinAttr installs, so its attributes are set by hand
-    objSet(st, proxyBag, "revocable", JSValue.Native(Native.Fn(Builtin.ProxyRevocable)))
-    objSetNonEnumerable(st, proxyBag, "revocable")
-    let revocableBag = getNativeProps(st, Native.Fn(Builtin.ProxyRevocable))
-    objDefineBuiltinAttr(st, revocableBag, "length", JSValue.Number(2.0))
-    objDefineBuiltinAttr(st, revocableBag, "name", JSValue.Str("revocable"))
-    scopeDefine(st, 0, "__reflectDefineProperty", JSValue.Native(Native.Fn(Builtin.ReflectDefineProp)))
-    scopeDefine(st, 0, "__reflectSet", JSValue.Native(Native.Fn(Builtin.ReflectSet)))
-    scopeDefine(st, 0, "__reflectGet", JSValue.Native(Native.Fn(Builtin.ReflectGet)))
-    scopeDefine(st, 0, "__reflectSetPrototypeOf", JSValue.Native(Native.Fn(Builtin.ReflectSetProto)))
-    scopeDefine(st, 0, "__reflectDelete", JSValue.Native(Native.Fn(Builtin.ReflectDelete)))
-    scopeDefine(st, 0, "__reflectPreventExtensions", JSValue.Native(Native.Fn(Builtin.ReflectPreventExt)))
-    scopeDefine(st, 0, "__construct", JSValue.Native(Native.Fn(Builtin.ReflectConstruct)))
-    scopeDefine(st, 0, "__reflectOwnKeys", JSValue.Native(Native.Fn(Builtin.ReflectOwnKeys)))
+    objSet(&mut st, proxyBag, "revocable", JSValue.Native(Native.Fn(Builtin.ProxyRevocable)))
+    objSetNonEnumerable(&mut st, proxyBag, "revocable")
+    let revocableBag = getNativeProps(&mut st, Native.Fn(Builtin.ProxyRevocable))
+    objDefineBuiltinAttr(&mut st, revocableBag, "length", JSValue.Number(2.0))
+    objDefineBuiltinAttr(&mut st, revocableBag, "name", JSValue.Str("revocable"))
+    scopeDefine(&mut st, 0, "__reflectDefineProperty", JSValue.Native(Native.Fn(Builtin.ReflectDefineProp)))
+    scopeDefine(&mut st, 0, "__reflectSet", JSValue.Native(Native.Fn(Builtin.ReflectSet)))
+    scopeDefine(&mut st, 0, "__reflectGet", JSValue.Native(Native.Fn(Builtin.ReflectGet)))
+    scopeDefine(&mut st, 0, "__reflectSetPrototypeOf", JSValue.Native(Native.Fn(Builtin.ReflectSetProto)))
+    scopeDefine(&mut st, 0, "__reflectDelete", JSValue.Native(Native.Fn(Builtin.ReflectDelete)))
+    scopeDefine(&mut st, 0, "__reflectPreventExtensions", JSValue.Native(Native.Fn(Builtin.ReflectPreventExt)))
+    scopeDefine(&mut st, 0, "__construct", JSValue.Native(Native.Fn(Builtin.ReflectConstruct)))
+    scopeDefine(&mut st, 0, "__reflectOwnKeys", JSValue.Native(Native.Fn(Builtin.ReflectOwnKeys)))
 }
 
 pub fn symSpeciesKey(): string {

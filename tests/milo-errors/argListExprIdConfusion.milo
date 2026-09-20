@@ -7,6 +7,6 @@ from "../../src/engine/ast" import {
 fn confuseArgumentListAndExpression(): void {
     var prog = newProg()
     var arguments: Vec<ExprId> = Vec.new()
-    let argsId = addArgList(prog, arguments)
+    let argsId = addArgList(&mut prog, arguments)
     let _ = getExpr(prog, argsId)
 }

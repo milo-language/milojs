@@ -7,6 +7,6 @@ from "../../src/engine/ast" import {
 fn confuseObjectLiteralAndExpression(): void {
     var prog = newProg()
     var properties: Vec<PropInit> = Vec.new()
-    let literalId = addObjLit(prog, properties)
+    let literalId = addObjLit(&mut prog, properties)
     let _ = getExpr(prog, literalId)
 }

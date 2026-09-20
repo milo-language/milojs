@@ -7,6 +7,6 @@ from "../../src/engine/ast" import {
 fn confuseArrayLiteralAndExpression(): void {
     var prog = newProg()
     var elements: Vec<Option<ExprId>> = Vec.new()
-    let literalId = addArrLit(prog, elements)
+    let literalId = addArrLit(&mut prog, elements)
     let _ = getExpr(prog, literalId)
 }

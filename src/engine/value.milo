@@ -826,8 +826,8 @@ pub fn numToRadix(n: f64, radix: i64): string {
         var guard: i64 = 0
         while guard < 1200 {
             guard = guard + 1
-            let digit = limbsMulSmall(r, radix)
-            if limbsMulSmall(m, radix) > 0 {
+            let digit = limbsMulSmall(&mut r, radix)
+            if limbsMulSmall(&mut m, radix) > 0 {
                 mBig = true
             }
             fracDigits.push(digit)

@@ -135,7 +135,7 @@ fn main(): i32 {
                 gVmStats = true
             }
             gInterp = makeInterp(gcStats, gcThreshold, gcGrowth)
-            bootInterp(gInterp)
+            bootInterp(&mut gInterp)
             // The prelude and the program must share one Prog: a JSValue.Func
             // carries an index into prog.funcs, so a function parsed into a
             // different Prog would index the wrong table when called. Work on
@@ -144,17 +144,17 @@ fn main(): i32 {
             // through gProg, and a local would leave it empty.
             // spec builtins that are written in JS rather than as natives; run in
             // global scope so its declarations become globals
-            let preludeIdx = preloadGraph("builtin:engine-prelude", gProg, gInterp)
+            let preludeIdx = preloadGraph("builtin:engine-prelude", &mut gProg, &mut gInterp)
             if preludeIdx >= 0 {
-                hoistBlock(gProg, gInterp.modBlocks[preludeIdx], gInterp, 0)
-                execBlock(gProg, gInterp.modBlocks[preludeIdx], gInterp, 0)
+                hoistBlock(gProg, gInterp.modBlocks[preludeIdx], &mut gInterp, 0)
+                execBlock(gProg, gInterp.modBlocks[preludeIdx], &mut gInterp, 0)
             }
             // Temporal, in its own file because it is large and self-contained;
             // same global scope, loaded after the prelude it depends on
-            let temporalIdx = preloadGraph("builtin:temporal", gProg, gInterp)
+            let temporalIdx = preloadGraph("builtin:temporal", &mut gProg, &mut gInterp)
             if temporalIdx >= 0 {
-                hoistBlock(gProg, gInterp.modBlocks[temporalIdx], gInterp, 0)
-                execBlock(gProg, gInterp.modBlocks[temporalIdx], gInterp, 0)
+                hoistBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, 0)
+                execBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, 0)
             }
             if gInterp.throwing {
                 eprint("milojs-engine: prelude failed: " + describeThrown(gInterp, gInterp.thrownValue))
@@ -184,7 +184,7 @@ fn main(): i32 {
                 // would fold shared helpers like a corpus's common/ into every
                 // file's number. The audit is of THIS file's code.
                 if !vmAudit {
-                    let _ = preloadGraph(path.clone(), gProg, gInterp)
+                    let _ = preloadGraph(path.clone(), &mut gProg, &mut gInterp)
                 }
                 // require() resolves against the CURRENT module's directory, and
                 // preload resolved against the entry's. Without pushing it the two
@@ -198,14 +198,14 @@ fn main(): i32 {
                 var p = PState { depth: 0, noIn: false,
                     toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: path.clone(), errored: false, eofError: false, quiet: false, strict: entryStrict
                 }
-                topBlock = parseProgram(p, gProg)
+                topBlock = parseProgram(&mut p, &mut gProg)
                 // see runSource in driver.milo: a syntax error must not run, and
                 // must not exit 0
                 if p.errored {
                     return 1
                 }
             } else {
-                entryIdx = preloadGraph(path.clone(), gProg, gInterp)
+                entryIdx = preloadGraph(path.clone(), &mut gProg, &mut gInterp)
                 if entryIdx < 0 {
                     eprint("milojs-engine: cannot load '" + path + "'")
                     return 1
@@ -250,13 +250,13 @@ fn main(): i32 {
                 if topBlock.index >= 0 {
                     // top-level code has no FuncDef to carry its strictness
                     gInterp.strict = gProg.progStrict
-                    hoistBlock(gProg, topBlock, gInterp, 0)
-                    execBlock(gProg, topBlock, gInterp, 0)
+                    hoistBlock(gProg, topBlock, &mut gInterp, 0)
+                    execBlock(gProg, topBlock, &mut gInterp, 0)
                 } else {
-                    runModule(gProg, entryIdx, gInterp)
+                    runModule(gProg, entryIdx, &mut gInterp)
                 }
                 if !gInterp.throwing {
-                    runEventLoop(gProg, gInterp)
+                    runEventLoop(gProg, &mut gInterp)
                 }
                 // A generator consumed only partway leaves its body task parked
                 // forever. The scheduler still counts it, so join() would block

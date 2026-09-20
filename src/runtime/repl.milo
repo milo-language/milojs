@@ -116,23 +116,23 @@ fn setC(out: &mut [i64; 4], r: i64, g: i64, b: i64): void {
 fn charRGB(ch: u8, out: &mut [i64; 4]): void {
     let c = ch as i64
     if c == 100 {
-        setC(out, 96, 60, 38) // d  dark brown (ear/outline)
+        setC(&mut out, 96, 60, 38) // d  dark brown (ear/outline)
     } else if c == 98 {
-        setC(out, 145, 96, 58) // b  brown shadow
+        setC(&mut out, 145, 96, 58) // b  brown shadow
     } else if c == 116 {
-        setC(out, 200, 152, 104) // t  tan
+        setC(&mut out, 200, 152, 104) // t  tan
     } else if c == 108 {
-        setC(out, 226, 192, 150) // l  light tan
+        setC(&mut out, 226, 192, 150) // l  light tan
     } else if c == 119 {
-        setC(out, 240, 226, 206) // w  cream muzzle
+        setC(&mut out, 240, 226, 206) // w  cream muzzle
     } else if c == 87 {
-        setC(out, 255, 250, 245) // W  white highlight
+        setC(&mut out, 255, 250, 245) // W  white highlight
     } else if c == 107 {
-        setC(out, 34, 28, 24) // k  eye / nose
+        setC(&mut out, 34, 28, 24) // k  eye / nose
     } else if c == 103 {
-        setC(out, 255, 255, 255) // g  eye glint
+        setC(&mut out, 255, 255, 255) // g  eye glint
     } else if c == 112 {
-        setC(out, 226, 150, 162) // p  pink inner ear
+        setC(&mut out, 226, 150, 162) // p  pink inner ear
     } else {
         out[3] = 0 // space → transparent
     }
@@ -182,8 +182,8 @@ fn banner(): void {
     // The sprite plus wordmark needs 79 visible columns. Leave a little margin
     // so the terminal never wraps an ANSI-painted row into visual corruption.
     if terminalSize().cols < 82 {
-        emit(buf, "\n  " + Color.bold("milojs") + " - JavaScript engine written in Milo.\n")
-        emit(buf, "  " + Color.dim("Tab completes; Ctrl-D exits.") + "\n\n")
+        emit(&mut buf, "\n  " + Color.bold("milojs") + " - JavaScript engine written in Milo.\n")
+        emit(&mut buf, "  " + Color.dim("Tab completes; Ctrl-D exits.") + "\n\n")
         writeStdout(buf)
         return
     }
@@ -191,44 +191,44 @@ fn banner(): void {
     var bcol: [i64; 4] = [0; 4]
     let hc = SPR_ROWS / 2
 
-    emit(buf, "\n")
+    emit(&mut buf, "\n")
     for tr in 0..hc {
-        emit(buf, "  ")
+        emit(&mut buf, "  ")
         let rowTop = spriteRow(tr * 2)
         let rowBot = spriteRow(tr * 2 + 1)
         for c in 0..SPR_W {
-            charRGB(sprCharAt(rowTop, c), tcol)
-            charRGB(sprCharAt(rowBot, c), bcol)
+            charRGB(sprCharAt(rowTop, c), &mut tcol)
+            charRGB(sprCharAt(rowBot, c), &mut bcol)
             let topOp = tcol[3] == 1
             let botOp = bcol[3] == 1
             if topOp && botOp {
-                Ansi.pushFg24(buf, tcol[0], tcol[1], tcol[2])
-                Ansi.pushBg24(buf, bcol[0], bcol[1], bcol[2])
-                emit(buf, "▀")
+                Ansi.pushFg24(&mut buf, tcol[0], tcol[1], tcol[2])
+                Ansi.pushBg24(&mut buf, bcol[0], bcol[1], bcol[2])
+                emit(&mut buf, "▀")
             } else if topOp {
-                emit(buf, "\x1b[49m") // default bg for the empty lower half
-                Ansi.pushFg24(buf, tcol[0], tcol[1], tcol[2])
-                emit(buf, "▀")
+                emit(&mut buf, "\x1b[49m") // default bg for the empty lower half
+                Ansi.pushFg24(&mut buf, tcol[0], tcol[1], tcol[2])
+                emit(&mut buf, "▀")
             } else if botOp {
-                emit(buf, "\x1b[49m")
-                Ansi.pushFg24(buf, bcol[0], bcol[1], bcol[2])
-                emit(buf, "▄")
+                emit(&mut buf, "\x1b[49m")
+                Ansi.pushFg24(&mut buf, bcol[0], bcol[1], bcol[2])
+                emit(&mut buf, "▄")
             } else {
-                emit(buf, "\x1b[49m")
+                emit(&mut buf, "\x1b[49m")
                 buf.push(32 as u8)
             }
         }
-        emit(buf, Ansi.reset())
-        emit(buf, "  ")
-        emit(buf, wordmarkRow(tr))
-        emit(buf, Ansi.reset())
-        emit(buf, "\n")
+        emit(&mut buf, Ansi.reset())
+        emit(&mut buf, "  ")
+        emit(&mut buf, wordmarkRow(tr))
+        emit(&mut buf, Ansi.reset())
+        emit(&mut buf, "\n")
     }
 
-    emit(buf, "\n")
-    emit(buf, "  " + Color.bold("a JavaScript engine written from scratch in Milo.") + "\n")
-    emit(buf, "  " + Color.dim("github.com/milo-language/milojs") + "\n\n")
-    emit(buf, "  " + Color.dim("Tab complete · ↑/↓ history · Ctrl-C cancel line · exit / Ctrl-D to quit") + "\n\n")
+    emit(&mut buf, "\n")
+    emit(&mut buf, "  " + Color.bold("a JavaScript engine written from scratch in Milo.") + "\n")
+    emit(&mut buf, "  " + Color.dim("github.com/milo-language/milojs") + "\n\n")
+    emit(&mut buf, "  " + Color.dim("Tab complete · ↑/↓ history · Ctrl-C cancel line · exit / Ctrl-D to quit") + "\n\n")
     writeStdout(buf)
 }
 
@@ -720,7 +720,7 @@ fn readLineEdited(prompt: &string, history: &Vec<string>, st: &Interp, builtinCo
             let tail = cmplSlice(line, cur, line.len())
             var cands: Vec<string> = Vec.new()
             var kinds: Vec<i64> = Vec.new()
-            let start = completeAt(st, head, cands, kinds, builtinCount)
+            let start = completeAt(st, head, &mut cands, &mut kinds, builtinCount)
             if cands.len() == 0 {
                 continue
             }
@@ -889,13 +889,13 @@ fn runLine(prog: &Prog, top: BlockId, st: &mut Interp): JSValue {
         match getStmt(prog, sIdx) {
             Stmt.ExprStmt(e) => {
                 if isLast {
-                    result = evalExpr(prog, e, st, 0)
+                    result = evalExpr(prog, e, &mut st, 0)
                 } else {
-                    evalExpr(prog, e, st, 0)
+                    evalExpr(prog, e, &mut st, 0)
                 }
             }
             _ => {
-                execStmt(prog, sIdx, st, 0)
+                execStmt(prog, sIdx, &mut st, 0)
             }
         }
         if st.throwing {
@@ -916,7 +916,7 @@ pub fn repl(st: &mut Interp): i32 {
         funcs: Vec.new(), objLits: Vec.new(), arrLits: Vec.new(), declLists: Vec.new(), classes: Vec.new(), switches: Vec.new(), srcNames: Vec.new(), srcTexts: Vec.new(), progStrict: false
     }
     var history: Vec<string> = Vec.new()
-    loadHistory(history)
+    loadHistory(&mut history)
     // everything already in the global scope is a builtin; anything appended past
     // this point was defined by the user, and completion highlights it as such
     let builtinCount = st.scopes[0].vars.len()
@@ -968,7 +968,7 @@ pub fn repl(st: &mut Interp): i32 {
                 var probe = PState { depth: 0, noIn: false,
                     toks: lex(source), pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: "<repl>", errored: false, eofError: false, quiet: true, strict: false
                 }
-                let probeTop = parseProgram(probe, scratch)
+                let probeTop = parseProgram(&mut probe, &mut scratch)
                 if probe.eofError {
                     pending = source.clone()
                     continue
@@ -985,15 +985,15 @@ pub fn repl(st: &mut Interp): i32 {
                     var report = PState { depth: 0, noIn: false,
                         toks: lex(source), pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: "<repl>", errored: false, eofError: false, quiet: false, strict: false
                     }
-                    let reportTop = parseProgram(report, scratch)
+                    let reportTop = parseProgram(&mut report, &mut scratch)
                     continue
                 }
 
                 var p = PState { depth: 0, noIn: false,
                     toks: lex(source), pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: "<repl>", errored: false, eofError: false, quiet: false, strict: false
                 }
-                let top = parseProgram(p, prog)
-                let val = runLine(prog, top, st)
+                let top = parseProgram(&mut p, &mut prog)
+                let val = runLine(prog, top, &mut st)
                 if st.throwing {
                     eprint("Uncaught " + describeThrown(st, st.thrownValue))
                     st.throwing = false

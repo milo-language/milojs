@@ -152,7 +152,7 @@ teeth "check-layering (import edge)" src/engine/regex.milo \
 
 # --- layering half 2: a host native installed by the engine bootstrap ---
 teeth "check-layering (engine global)" src/engine/bootstrap.milo \
-    "perl -0pi -e 's/(scopeDefine\(st, 0, \"__inspect\")/scopeDefine(st, 0, \"__teethNative\", JSValue.Native(Native.Fn(Builtin.Inspect)))\n    \$1/' src/engine/bootstrap.milo" \
+    "perl -0pi -e 's/(scopeDefine\(&mut st, 0, \"__inspect\")/scopeDefine(&mut st, 0, \"__teethNative\", JSValue.Native(Native.Fn(Builtin.Inspect)))\n    \$1/' src/engine/bootstrap.milo" \
     "tools/check-layering.sh --quiet"
 
 # --- sweeps: scoring with no engine binary ---
@@ -195,7 +195,7 @@ fi
 
 # --- ast refs: a guarded binding name goes back to the raw AST reference ---
 teeth "check-ast-refs" src/engine/eval.milo \
-    "perl -pi -e 's/scopeDefine\(st, iterScope, bindName\.clone\(\), eagerBound\)/scopeDefine(st, iterScope, name.clone(), eagerBound)/' src/engine/eval.milo" \
+    "perl -pi -e 's/scopeDefine\(&mut st, iterScope, bindName\.clone\(\), eagerBound\)/scopeDefine(&mut st, iterScope, name.clone(), eagerBound)/' src/engine/eval.milo" \
     "node tools/check-ast-refs.mjs"
 
 # --- a gate that runs only in the hook: drop a CI step and the coverage check

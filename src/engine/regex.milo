@@ -335,16 +335,16 @@ fn reAddPropTo(cls: &mut ReClass, resolved: &string, negated: bool) {
 // character. Returns -1 when this is not a property escape after all, which lets
 // the caller treat `\p` as a literal (the non-unicode Annex B rule).
 fn reParsePropEscape(p: &mut ReParse, negated: bool): i64 {
-    let resolved = reReadPropName(p)
+    let resolved = reReadPropName(&mut p)
     if resolved.len() == 0 {
         return -1
     }
     var cls = ReClass {
         negated: negated, lo: Vec.new(), hi: Vec.new()
     }
-    reAddPropTo(cls, resolved, false)
+    reAddPropTo(&mut cls, resolved, false)
     p.classes.push(cls)
-    return reAddNode(p, ReNode.ClassRef(p.classes.len() - 1))
+    return reAddNode(&mut p, ReNode.ClassRef(p.classes.len() - 1))
 }
 
 // Build a single-shorthand class node (\d \w \s and negations \D \W \S).
@@ -352,10 +352,10 @@ fn reShorthandClass(p: &mut ReParse, kind: u8, negated: bool): i64 {
     var cls = ReClass {
         negated: negated, lo: Vec.new(), hi: Vec.new()
     }
-    reAddShorthand(cls, kind)
+    reAddShorthand(&mut cls, kind)
     p.classes.push(cls)
     let ci = p.classes.len() - 1
-    return reAddNode(p, ReNode.ClassRef(ci))
+    return reAddNode(&mut p, ReNode.ClassRef(ci))
 }
 
 fn reHexVal(c: u8): i64 {
@@ -554,9 +554,9 @@ fn reParseClass(p: &mut ReParse): i64 {
                 let e = p.pat[p.pos + 1]
                 if (e == 'p' || e == 'P') && p.unicode {
                     let saved = p.pos
-                    let resolved = reReadPropName(p)
+                    let resolved = reReadPropName(&mut p)
                     if resolved.len() > 0 {
-                        reAddPropTo(cls, resolved, e == 'P')
+                        reAddPropTo(&mut cls, resolved, e == 'P')
                     } else {
                         // not a property escape: back up and take it literally
                         p.pos = saved
@@ -566,10 +566,10 @@ fn reParseClass(p: &mut ReParse): i64 {
                         p.pos = p.pos + 2
                     }
                 } else if e == 'd' || e == 'w' || e == 's' {
-                    reAddShorthand(cls, e)
+                    reAddShorthand(&mut cls, e)
                     p.pos = p.pos + 2
                 } else if e == 'D' || e == 'W' || e == 'S' {
-                    reAddShorthandNeg(cls, e + 32 as u8)
+                    reAddShorthandNeg(&mut cls, e + 32 as u8)
                     p.pos = p.pos + 2
                 } else {
                     // A numeric escape is a MEMBER, and may be a range endpoint:
@@ -659,7 +659,7 @@ fn reParseClass(p: &mut ReParse): i64 {
     }
     p.classes.push(cls)
     let ci = p.classes.len() - 1
-    return reAddNode(p, ReNode.ClassRef(ci))
+    return reAddNode(&mut p, ReNode.ClassRef(ci))
 }
 
 fn reParseAtom(p: &mut ReParse): i64 {
@@ -675,13 +675,13 @@ fn reParseAtom(p: &mut ReParse): i64 {
         } else if p.pos + 2 < p.pat.len() && p.pat[p.pos] == '?' && p.pat[p.pos + 1] == '<' && (p.pat[p.pos + 2] == '=' || p.pat[p.pos + 2] == '!') {
             let negated = p.pat[p.pos + 2] == '!'
             p.pos = p.pos + 3
-            let body = reParseAlt(p)
+            let body = reParseAlt(&mut p)
             if p.pos < p.pat.len() && p.pat[p.pos] == ')' {
                 p.pos = p.pos + 1
             } else {
                 p.badSyntax = true
             }
-            return reAddNode(p, ReNode.LookBehind(body, negated))
+            return reAddNode(&mut p, ReNode.LookBehind(body, negated))
         } else if p.pos + 1 < p.pat.len() && p.pat[p.pos] == '?' && p.pat[p.pos + 1] == '<' {
             // named capture (?<name>...) — a normal capturing group that also
             // records its name for the result's `.groups` object. (Lookbehind
@@ -701,114 +701,114 @@ fn reParseAtom(p: &mut ReParse): i64 {
             let gnum = p.ngroup
             p.groupNames.push(nm)
             p.groupNums.push(gnum)
-            let inner = reParseAlt(p)
+            let inner = reParseAlt(&mut p)
             if p.pos < p.pat.len() && p.pat[p.pos] == ')' {
                 p.pos = p.pos + 1
             } else {
                 p.badSyntax = true
             }
-            return reAddNode(p, ReNode.Group(inner, gnum))
+            return reAddNode(&mut p, ReNode.Group(inner, gnum))
         } else if p.pos + 1 < p.pat.len() && p.pat[p.pos] == '?' && (p.pat[p.pos + 1] == '=' || p.pat[p.pos + 1] == '!') {
             let negated = p.pat[p.pos + 1] == '!'
             p.pos = p.pos + 2
-            let body = reParseAlt(p)
+            let body = reParseAlt(&mut p)
             if p.pos < p.pat.len() && p.pat[p.pos] == ')' {
                 p.pos = p.pos + 1
             } else {
                 p.badSyntax = true
             }
-            return reAddNode(p, ReNode.Look(body, negated))
+            return reAddNode(&mut p, ReNode.Look(body, negated))
         }
         if capturing {
             p.ngroup = p.ngroup + 1
         }
-        let inner = reParseAlt(p)
+        let inner = reParseAlt(&mut p)
         if p.pos < p.pat.len() && p.pat[p.pos] == ')' {
             p.pos = p.pos + 1
         } else {
             p.badSyntax = true
         }
-        return reAddNode(p, ReNode.Group(inner, capIdx))
+        return reAddNode(&mut p, ReNode.Group(inner, capIdx))
     }
     if c == '[' {
         p.pos = p.pos + 1
-        return reParseClass(p)
+        return reParseClass(&mut p)
     }
     if c == '.' {
         p.pos = p.pos + 1
-        return reAddNode(p, ReNode.Any)
+        return reAddNode(&mut p, ReNode.Any)
     }
     if c == '^' {
         p.pos = p.pos + 1
-        return reAddNode(p, ReNode.Bol)
+        return reAddNode(&mut p, ReNode.Bol)
     }
     if c == '$' {
         p.pos = p.pos + 1
-        return reAddNode(p, ReNode.Eol)
+        return reAddNode(&mut p, ReNode.Eol)
     }
     if c == 92 as u8 && p.pos + 1 < p.pat.len() {
         let e = p.pat[p.pos + 1]
         // \1 .. \9 — a backreference, not an escape. \0 stays the NUL escape.
         if e >= '1' && e <= '9' {
             p.pos = p.pos + 2
-            return reAddNode(p, ReNode.Backref((e - '0') as i64))
+            return reAddNode(&mut p, ReNode.Backref((e - '0') as i64))
         }
         if (e == 'p' || e == 'P') && p.unicode {
-            let node = reParsePropEscape(p, e == 'P')
+            let node = reParsePropEscape(&mut p, e == 'P')
             if node >= 0 {
                 return node
             }
         }
         if e == 'd' {
             p.pos = p.pos + 2
-            return reShorthandClass(p, 'd', false)
+            return reShorthandClass(&mut p, 'd', false)
         }
         if e == 'D' {
             p.pos = p.pos + 2
-            return reShorthandClass(p, 'd', true)
+            return reShorthandClass(&mut p, 'd', true)
         }
         if e == 'w' {
             p.pos = p.pos + 2
-            return reShorthandClass(p, 'w', false)
+            return reShorthandClass(&mut p, 'w', false)
         }
         if e == 'W' {
             p.pos = p.pos + 2
-            return reShorthandClass(p, 'w', true)
+            return reShorthandClass(&mut p, 'w', true)
         }
         if e == 's' {
             p.pos = p.pos + 2
-            return reShorthandClass(p, 's', false)
+            return reShorthandClass(&mut p, 's', false)
         }
         if e == 'S' {
             p.pos = p.pos + 2
-            return reShorthandClass(p, 's', true)
+            return reShorthandClass(&mut p, 's', true)
         }
         if e == 'b' {
             p.pos = p.pos + 2
-            return reAddNode(p, ReNode.WordB)
+            return reAddNode(&mut p, ReNode.WordB)
         }
         if e == 'B' {
             p.pos = p.pos + 2
-            return reAddNode(p, ReNode.NWordB)
+            return reAddNode(&mut p, ReNode.NWordB)
         }
         let num = reNumericEscape(p, p.pos)
         if num.len() == 2 {
             p.pos = p.pos + num[1]
             var bytes: Vec<u8> = Vec.new()
-            reUtf8Bytes(num[0], bytes)
+            reUtf8Bytes(num[0], &mut bytes)
             if bytes.len() == 1 {
-                return reAddNode(p, ReNode.Char(bytes[0]))
+                return reAddNode(&mut p, ReNode.Char(bytes[0]))
             }
             // grouped so a following quantifier binds to the whole character
             var ids: Vec<i64> = Vec.new()
             var nb: i64 = 0
             while nb < bytes.len() {
-                ids.push(reAddNode(p, ReNode.Char(bytes[nb])))
+                ids.push(reAddNode(&mut p, ReNode.Char(bytes[nb])))
                 nb = nb + 1
             }
             p.lists.push(ids)
-            let seq = reAddNode(p, ReNode.Concat(p.lists.len() - 1))
-            return reAddNode(p, ReNode.Group(seq, -1))
+            let seq = reAddNode(&mut p, ReNode.Concat(p.lists.len() - 1))
+            return reAddNode(&mut p, ReNode.Group(seq, -1))
         }
         // Annex B: `\c` NOT followed by an ASCII letter is not a control escape
         // at all — it is a literal backslash, and the `c` is an ordinary
@@ -817,10 +817,10 @@ fn reParseAtom(p: &mut ReParse): i64 {
         // "c0" instead.
         if e == 'c' {
             p.pos = p.pos + 1
-            return reAddNode(p, ReNode.Char('\\' as u8))
+            return reAddNode(&mut p, ReNode.Char('\\' as u8))
         }
         p.pos = p.pos + 2
-        return reAddNode(p, ReNode.Char(reEscapedChar(e)))
+        return reAddNode(&mut p, ReNode.Char(reEscapedChar(e)))
     }
     // A literal character is one CODE POINT, not one byte. Emitting a Char per
     // byte let a following quantifier bind to the last byte only, so /^é+$/
@@ -832,16 +832,16 @@ fn reParseAtom(p: &mut ReParse): i64 {
         var bytes: Vec<i64> = Vec.new()
         var bi: i64 = 0
         while bi < clen {
-            bytes.push(reAddNode(p, ReNode.Char(p.pat[p.pos + bi])))
+            bytes.push(reAddNode(&mut p, ReNode.Char(p.pat[p.pos + bi])))
             bi = bi + 1
         }
         p.pos = p.pos + clen
         p.lists.push(bytes)
-        let seq = reAddNode(p, ReNode.Concat(p.lists.len() - 1))
-        return reAddNode(p, ReNode.Group(seq, -1))
+        let seq = reAddNode(&mut p, ReNode.Concat(p.lists.len() - 1))
+        return reAddNode(&mut p, ReNode.Group(seq, -1))
     }
     p.pos = p.pos + 1
-    return reAddNode(p, ReNode.Char(c))
+    return reAddNode(&mut p, ReNode.Char(c))
 }
 
 // Parse a quantifier suffix on `atom`, if any.
@@ -864,12 +864,12 @@ fn reParseRepeat(p: &mut ReParse, atom: i64): i64 {
             p.badSyntax = true
         }
         if c == '*' {
-            return reAddNode(p, ReNode.Star(atom, greedy))
+            return reAddNode(&mut p, ReNode.Star(atom, greedy))
         }
         if c == '+' {
-            return reAddNode(p, ReNode.Plus(atom, greedy))
+            return reAddNode(&mut p, ReNode.Plus(atom, greedy))
         }
-        return reAddNode(p, ReNode.Quest(atom, greedy))
+        return reAddNode(&mut p, ReNode.Quest(atom, greedy))
     }
     if c == '{' {
         // {n} {n,} {n,m}
@@ -907,7 +907,7 @@ fn reParseRepeat(p: &mut ReParse, atom: i64): i64 {
                 greedy = false
                 p.pos = p.pos + 1
             }
-            return reAddNode(p, ReNode.Repeat(atom, minV, maxV, greedy))
+            return reAddNode(&mut p, ReNode.Repeat(atom, minV, maxV, greedy))
         }
         // not a valid quantifier — treat '{' literally
         p.pos = save
@@ -937,8 +937,8 @@ fn reParseConcat(p: &mut ReParse): i64 {
                 if c == 92 as u8 && p.pos + 1 >= p.pat.len() {
                     p.badSyntax = true
                 }
-                let atom = reParseAtom(p)
-                let quant = reParseRepeat(p, atom)
+                let atom = reParseAtom(&mut p)
+                let quant = reParseRepeat(&mut p, atom)
                 items.push(quant)
             }
         }
@@ -947,21 +947,21 @@ fn reParseConcat(p: &mut ReParse): i64 {
         return items[0]
     }
     p.lists.push(items)
-    return reAddNode(p, ReNode.Concat(p.lists.len() - 1))
+    return reAddNode(&mut p, ReNode.Concat(p.lists.len() - 1))
 }
 
 fn reParseAlt(p: &mut ReParse): i64 {
     var branches: Vec<i64> = Vec.new()
-    branches.push(reParseConcat(p))
+    branches.push(reParseConcat(&mut p))
     while p.pos < p.pat.len() && p.pat[p.pos] == '|' {
         p.pos = p.pos + 1
-        branches.push(reParseConcat(p))
+        branches.push(reParseConcat(&mut p))
     }
     if branches.len() == 1 {
         return branches[0]
     }
     p.lists.push(branches)
-    return reAddNode(p, ReNode.Alt(p.lists.len() - 1))
+    return reAddNode(&mut p, ReNode.Alt(p.lists.len() - 1))
 }
 
 // ── compile node tree → instruction program ──
@@ -1006,25 +1006,25 @@ fn reCompileNode(p: &ReParse, idx: i64, prog: &mut Vec<ReInst>) {
     let node = reCloneNode(p.nodes[idx])
     match node {
         ReNode.Char(c) => {
-            reEmit(prog, RE_CHAR, c as i64, 0)
+            reEmit(&mut prog, RE_CHAR, c as i64, 0)
         }
         ReNode.Any => {
-            reEmit(prog, RE_ANY, 0, 0)
+            reEmit(&mut prog, RE_ANY, 0, 0)
         }
         ReNode.ClassRef(ci) => {
-            reEmit(prog, RE_CLASS, ci, 0)
+            reEmit(&mut prog, RE_CLASS, ci, 0)
         }
         ReNode.Bol => {
-            reEmit(prog, RE_BOL, 0, 0)
+            reEmit(&mut prog, RE_BOL, 0, 0)
         }
         ReNode.Eol => {
-            reEmit(prog, RE_EOL, 0, 0)
+            reEmit(&mut prog, RE_EOL, 0, 0)
         }
         ReNode.WordB => {
-            reEmit(prog, RE_WORDB, 0, 0)
+            reEmit(&mut prog, RE_WORDB, 0, 0)
         }
         ReNode.NWordB => {
-            reEmit(prog, RE_NWORDB, 0, 0)
+            reEmit(&mut prog, RE_NWORDB, 0, 0)
         }
         ReNode.Empty => {
         }
@@ -1032,7 +1032,7 @@ fn reCompileNode(p: &ReParse, idx: i64, prog: &mut Vec<ReInst>) {
             var i: i64 = 0
             let n = p.lists[listIdx].len()
             while i < n {
-                reCompileNode(p, p.lists[listIdx][i], prog)
+                reCompileNode(p, p.lists[listIdx][i], &mut prog)
                 i = i + 1
             }
         }
@@ -1042,14 +1042,14 @@ fn reCompileNode(p: &ReParse, idx: i64, prog: &mut Vec<ReInst>) {
             let n = p.lists[listIdx].len()
             while i < n {
                 if i < n - 1 {
-                    let sp = reEmit(prog, RE_SPLIT, 0, 0)
-                    reCompileNode(p, p.lists[listIdx][i], prog)
-                    let jp = reEmit(prog, RE_JMP, 0, 0)
+                    let sp = reEmit(&mut prog, RE_SPLIT, 0, 0)
+                    reCompileNode(p, p.lists[listIdx][i], &mut prog)
+                    let jp = reEmit(&mut prog, RE_JMP, 0, 0)
                     jmpEnds.push(jp)
                     prog[sp].a = sp + 1
                     prog[sp].b = prog.len()
                 } else {
-                    reCompileNode(p, p.lists[listIdx][i], prog)
+                    reCompileNode(p, p.lists[listIdx][i], &mut prog)
                 }
                 i = i + 1
             }
@@ -1061,12 +1061,12 @@ fn reCompileNode(p: &ReParse, idx: i64, prog: &mut Vec<ReInst>) {
             }
         }
         ReNode.Star(child, greedy) => {
-            let sp = reEmit(prog, RE_SPLIT, 0, 0)
-            let rs = reEmit(prog, RE_RESET, 0, -1)
+            let sp = reEmit(&mut prog, RE_SPLIT, 0, 0)
+            let rs = reEmit(&mut prog, RE_RESET, 0, -1)
             let bodyFrom = prog.len()
-            reCompileNode(p, child, prog)
-            rePatchReset(prog, rs, bodyFrom)
-            reEmit(prog, RE_JMP, sp, 0)
+            reCompileNode(p, child, &mut prog)
+            rePatchReset(&mut prog, rs, bodyFrom)
+            reEmit(&mut prog, RE_JMP, sp, 0)
             let after = prog.len()
             if greedy {
                 prog[sp].a = sp + 1
@@ -1078,11 +1078,11 @@ fn reCompileNode(p: &ReParse, idx: i64, prog: &mut Vec<ReInst>) {
         }
         ReNode.Plus(child, greedy) => {
             let l1 = prog.len()
-            let rs = reEmit(prog, RE_RESET, 0, -1)
+            let rs = reEmit(&mut prog, RE_RESET, 0, -1)
             let bodyFrom = prog.len()
-            reCompileNode(p, child, prog)
-            rePatchReset(prog, rs, bodyFrom)
-            let sp = reEmit(prog, RE_SPLIT, 0, 0)
+            reCompileNode(p, child, &mut prog)
+            rePatchReset(&mut prog, rs, bodyFrom)
+            let sp = reEmit(&mut prog, RE_SPLIT, 0, 0)
             let after = prog.len()
             if greedy {
                 prog[sp].a = l1
@@ -1093,8 +1093,8 @@ fn reCompileNode(p: &ReParse, idx: i64, prog: &mut Vec<ReInst>) {
             }
         }
         ReNode.Quest(child, greedy) => {
-            let sp = reEmit(prog, RE_SPLIT, 0, 0)
-            reCompileNode(p, child, prog)
+            let sp = reEmit(&mut prog, RE_SPLIT, 0, 0)
+            reCompileNode(p, child, &mut prog)
             let after = prog.len()
             if greedy {
                 prog[sp].a = sp + 1
@@ -1107,16 +1107,16 @@ fn reCompileNode(p: &ReParse, idx: i64, prog: &mut Vec<ReInst>) {
         ReNode.Repeat(child, minV, maxV, greedy) => {
             var k: i64 = 0
             while k < minV {
-                reCompileNode(p, child, prog)
+                reCompileNode(p, child, &mut prog)
                 k = k + 1
             }
             if maxV < 0 {
-                let sp = reEmit(prog, RE_SPLIT, 0, 0)
-                let rs = reEmit(prog, RE_RESET, 0, -1)
+                let sp = reEmit(&mut prog, RE_SPLIT, 0, 0)
+                let rs = reEmit(&mut prog, RE_RESET, 0, -1)
                 let bodyFrom = prog.len()
-                reCompileNode(p, child, prog)
-                rePatchReset(prog, rs, bodyFrom)
-                reEmit(prog, RE_JMP, sp, 0)
+                reCompileNode(p, child, &mut prog)
+                rePatchReset(&mut prog, rs, bodyFrom)
+                reEmit(&mut prog, RE_JMP, sp, 0)
                 let after = prog.len()
                 if greedy {
                     prog[sp].a = sp + 1
@@ -1129,12 +1129,12 @@ fn reCompileNode(p: &ReParse, idx: i64, prog: &mut Vec<ReInst>) {
                 var splits: Vec<i64> = Vec.new()
                 var j = minV
                 while j < maxV {
-                    let sp = reEmit(prog, RE_SPLIT, 0, 0)
+                    let sp = reEmit(&mut prog, RE_SPLIT, 0, 0)
                     splits.push(sp)
-                    let rs = reEmit(prog, RE_RESET, 0, -1)
+                    let rs = reEmit(&mut prog, RE_RESET, 0, -1)
                     let bodyFrom = prog.len()
-                    reCompileNode(p, child, prog)
-                    rePatchReset(prog, rs, bodyFrom)
+                    reCompileNode(p, child, &mut prog)
+                    rePatchReset(&mut prog, rs, bodyFrom)
                     j = j + 1
                 }
                 let after = prog.len()
@@ -1153,41 +1153,41 @@ fn reCompileNode(p: &ReParse, idx: i64, prog: &mut Vec<ReInst>) {
             }
         }
         ReNode.Backref(g) => {
-            reEmit(prog, RE_BACKREF, g, 0)
+            reEmit(&mut prog, RE_BACKREF, g, 0)
         }
         ReNode.LookBehind(child, negated) => {
-            let jmp = reEmit(prog, RE_JMP, 0, 0)
+            let jmp = reEmit(&mut prog, RE_JMP, 0, 0)
             let innerStart = prog.len()
-            reCompileNode(p, child, prog)
-            reEmit(prog, RE_LOOKBEND, 0, 0)
+            reCompileNode(p, child, &mut prog)
+            reEmit(&mut prog, RE_LOOKBEND, 0, 0)
             prog[jmp].a = prog.len()
             var negFlag: i64 = 0
             if negated {
                 negFlag = 1
             }
-            reEmit(prog, RE_LOOKBEHIND, innerStart, negFlag)
+            reEmit(&mut prog, RE_LOOKBEHIND, innerStart, negFlag)
         }
         ReNode.Look(child, negated) => {
             // layout: JMP after / <inner> LOOKEND / LOOK(innerStart, neg)
             // the jump keeps the inner program out of the normal instruction flow
-            let jmp = reEmit(prog, RE_JMP, 0, 0)
+            let jmp = reEmit(&mut prog, RE_JMP, 0, 0)
             let innerStart = prog.len()
-            reCompileNode(p, child, prog)
-            reEmit(prog, RE_LOOKEND, 0, 0)
+            reCompileNode(p, child, &mut prog)
+            reEmit(&mut prog, RE_LOOKEND, 0, 0)
             prog[jmp].a = prog.len()
             var negFlag: i64 = 0
             if negated {
                 negFlag = 1
             }
-            reEmit(prog, RE_LOOK, innerStart, negFlag)
+            reEmit(&mut prog, RE_LOOK, innerStart, negFlag)
         }
         ReNode.Group(child, capIdx) => {
             if capIdx >= 0 {
-                reEmit(prog, RE_SAVE, 2 * capIdx, 0)
+                reEmit(&mut prog, RE_SAVE, 2 * capIdx, 0)
             }
-            reCompileNode(p, child, prog)
+            reCompileNode(p, child, &mut prog)
             if capIdx >= 0 {
-                reEmit(prog, RE_SAVE, 2 * capIdx + 1, 0)
+                reEmit(&mut prog, RE_SAVE, 2 * capIdx + 1, 0)
             }
         }
     }
@@ -1293,7 +1293,7 @@ pub fn regexCompile(source: string, flags: string): Regex {
     var p = ReParse {
         pat: patBytes, pos: 0, nodes: Vec.new(), lists: Vec.new(), classes: Vec.new(), ngroup: 0, groupNames: Vec.new(), groupNums: Vec.new(), unicode: fu, badProp: false, badSyntax: false
     }
-    let root = reParseAlt(p)
+    let root = reParseAlt(&mut p)
     // Anything left over is unconsumed input, which at the top level can only be
     // a stray ')': reParseConcat stops at one, so an unbalanced close never gets
     // eaten and shows up here.
@@ -1301,10 +1301,10 @@ pub fn regexCompile(source: string, flags: string): Regex {
         p.badSyntax = true
     }
     var prog: Vec<ReInst> = Vec.new()
-    reEmit(prog, RE_SAVE, 0, 0)
-    reCompileNode(p, root, prog)
-    reEmit(prog, RE_SAVE, 1, 0)
-    reEmit(prog, RE_MATCH, 0, 0)
+    reEmit(&mut prog, RE_SAVE, 0, 0)
+    reCompileNode(p, root, &mut prog)
+    reEmit(&mut prog, RE_SAVE, 1, 0)
+    reEmit(&mut prog, RE_MATCH, 0, 0)
     return Regex {
         prog: prog, classes: p.classes, nGroups: p.ngroup, flagI: fi, flagG: fg, flagM: fm, flagS: fs_, flagY: fy, flagD: fd, valid: !p.badProp && !p.badSyntax, badPropName: p.badProp, groupNames: p.groupNames, groupNums: p.groupNums
     }
@@ -1561,12 +1561,12 @@ fn reRun(re: &Regex, pcStart: i64, s: &string, spStart: i64, saves: &mut Vec<i64
         } else if op == RE_LOOKBEND {
             return sp == saves[saves.len() - 1]
         } else if op == RE_LOOK {
-            if reAssertLook(re, inst.a, inst.b, s, sp, saves) {
+            if reAssertLook(re, inst.a, inst.b, s, sp, &mut saves) {
                 pc = pc + 1
                 advanced = true
             }
         } else if op == RE_LOOKBEHIND {
-            if reAssertLookBehind(re, inst.a, inst.b, s, sp, saves) {
+            if reAssertLookBehind(re, inst.a, inst.b, s, sp, &mut saves) {
                 pc = pc + 1
                 advanced = true
             }
@@ -1604,7 +1604,7 @@ fn reAssertLook(re: &Regex, body: i64, negated: i64, s: &string, sp: i64, saves:
         snapshot.push(saves[si])
         si = si + 1
     }
-    let hit = reRun(re, body, s, sp, saves)
+    let hit = reRun(re, body, s, sp, &mut saves)
     let wantMiss = negated == 1
     if hit == wantMiss {
         var r: i64 = 0
@@ -1639,7 +1639,7 @@ fn reAssertLookBehind(re: &Regex, body: i64, negated: i64, s: &string, sp: i64, 
     var j = sp
     var hit = false
     while j >= 0 && !hit {
-        if reRun(re, body, s, j, saves) {
+        if reRun(re, body, s, j, &mut saves) {
             hit = true
         } else {
             j = j - 1
@@ -1678,7 +1678,7 @@ pub fn regexExec(re: &Regex, s: &string, startPos: i64): Vec<i64> {
             saves.push(-1)
             k = k + 1
         }
-        if reRun(re, 0, s, start, saves) {
+        if reRun(re, 0, s, start, &mut saves) {
             return saves
         }
         // Advance to the next CHARACTER boundary. Stepping one byte restarted

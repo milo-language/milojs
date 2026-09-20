@@ -6,6 +6,6 @@ from "../../src/engine/ast" import {
 
 fn confuseStatementAndExpression(): void {
     var prog = newProg()
-    let exprId = addExpr(prog, Expr.NullLit)
+    let exprId = addExpr(&mut prog, Expr.NullLit)
     let _ = getStmt(prog, exprId)
 }

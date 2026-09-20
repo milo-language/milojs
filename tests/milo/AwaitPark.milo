@@ -34,10 +34,10 @@ pub fn driver(): void {
     // reference to a local interpreter — the reason gInterp exists at all
     // (see docs/proposal-task-shared-state.md).
     gInterp = makeInterp(false, 1024, 2)
-    bootInterp(gInterp)
+    bootInterp(&mut gInterp)
     gInterp.mainTask = schedulerCurrent()
 
-    let p = newPromise(gInterp, 0, JSValue.Undefined)
+    let p = newPromise(&mut gInterp, 0, JSValue.Undefined)
     if isPromise(gInterp, p) {
         print("promise pending")
     }
@@ -49,7 +49,7 @@ pub fn driver(): void {
         } else {
             gLog = gLog + "waiter-sees-settled "
         }
-        let parked = parkOnPromise(gInterp, p)
+        let parked = parkOnPromise(&mut gInterp, p)
         if parked {
             gLog = gLog + "waiter-resumed "
         } else {
@@ -67,7 +67,7 @@ pub fn driver(): void {
         spins = spins + 1
     }
     gLog = gLog + "settler-runs "
-    settlePromise(gInterp, p, 1, JSValue.Str("value"))
+    settlePromise(&mut gInterp, p, 1, JSValue.Str("value"))
     waiter.join()
     print(gLog.trim())
 }

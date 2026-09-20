@@ -46,7 +46,7 @@ from "./unicase" import {
 // with no frames.
 fn throwErr(st: &mut Interp, kind: string, msg: string): JSValue {
     st.throwing = true
-    st.thrownValue = makeError(st, kind, msg)
+    st.thrownValue = makeError(&mut st, kind, msg)
     return JSValue.Undefined
 }
 
@@ -74,7 +74,7 @@ fn strUpper(s: &string): string {
         if sp.len() > 0 {
             out = out + sp
         } else {
-            encodeCodepoint(out, upperCp1(cp.value))
+            encodeCodepoint(&mut out, upperCp1(cp.value))
         }
         i = i + cp.size
     }
@@ -90,7 +90,7 @@ fn strLower(s: &string): string {
         if sp.len() > 0 {
             out = out + sp
         } else {
-            encodeCodepoint(out, lowerCp1(cp.value))
+            encodeCodepoint(&mut out, lowerCp1(cp.value))
         }
         i = i + cp.size
     }
@@ -225,7 +225,7 @@ pub fn strCodePoints(s: &string): Vec<string> {
 }
 
 fn jsSplit(s: &string, args: &Vec<JSValue>, st: &mut Interp): i64 {
-    let arr = newArray(st)
+    let arr = newArray(&mut st)
     // second arg caps the result length; undefined means no limit
     var limit: i64 = -1
     if args.len() > 1 {
@@ -244,7 +244,7 @@ fn jsSplit(s: &string, args: &Vec<JSValue>, st: &mut Interp): i64 {
         return arr
     }
     if args.len() == 0 {
-        arrPush(st, arr, JSValue.Str(s.clone()))
+        arrPush(&mut st, arr, JSValue.Str(s.clone()))
         return arr
     }
     let sep = toStr(args[0])
@@ -258,7 +258,7 @@ fn jsSplit(s: &string, args: &Vec<JSValue>, st: &mut Interp): i64 {
                 return arr
             }
             let cp = decodeCodepoint(s, b)
-            arrPush(st, arr, JSValue.Str(strSlice(s, b, b + cp.size)))
+            arrPush(&mut st, arr, JSValue.Str(strSlice(s, b, b + cp.size)))
             b = b + cp.size
         }
         return arr
@@ -269,12 +269,12 @@ fn jsSplit(s: &string, args: &Vec<JSValue>, st: &mut Interp): i64 {
         if limit >= 0 && arrLen(st, arr) >= limit {
             return arr
         }
-        arrPush(st, arr, JSValue.Str(strSlice(s, start, idx)))
+        arrPush(&mut st, arr, JSValue.Str(strSlice(s, start, idx)))
         start = idx + sep.len()
         idx = jsIndexOf(s, sep, start)
     }
     if limit < 0 || arrLen(st, arr) < limit {
-        arrPush(st, arr, JSValue.Str(strSlice(s, start, s.len())))
+        arrPush(&mut st, arr, JSValue.Str(strSlice(s, start, s.len())))
     }
     return arr
 }
@@ -316,7 +316,7 @@ pub fn stringFromUtf16Units(units: &Vec<i64>): string {
                 i = i + 1
             }
         }
-        encodeCodepoint(out, cp as i32)
+        encodeCodepoint(&mut out, cp as i32)
         i = i + 1
     }
     return out
@@ -581,7 +581,7 @@ fn rejectRegexArg(name: &string, args: &Vec<JSValue>, st: &mut Interp): bool {
         return false
     }
     st.throwing = true
-    st.thrownValue = makeError(st, "TypeError", "First argument to String.prototype." + name.clone() + " must not be a regular expression")
+    st.thrownValue = makeError(&mut st, "TypeError", "First argument to String.prototype." + name.clone() + " must not be a regular expression")
     return true
 }
 
@@ -687,13 +687,13 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
                     i = i + 2
                 } else {
                     wellFormed = false
-                    encodeCodepoint(out, 65533 as i32)
+                    encodeCodepoint(&mut out, 65533 as i32)
                     i = i + 1
                 }
             } else if u >= 56320 && u <= 57343 {
                 // a low surrogate with no high one before it
                 wellFormed = false
-                encodeCodepoint(out, 65533 as i32)
+                encodeCodepoint(&mut out, 65533 as i32)
                 i = i + 1
             } else {
                 out = out + utf16Slice(s, i, i + 1)
@@ -743,7 +743,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         return JSValue.Number(byteToUtf16(s, at) as f64)
     }
     if name == "includes" || name == "startsWith" || name == "endsWith" {
-        if rejectRegexArg(name, args, st) {
+        if rejectRegexArg(name, args, &mut st) {
             return JSValue.Undefined
         }
     }
@@ -861,7 +861,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         // V8's string cap is 2^29; a huge pad request (str-pad-leak.js asks for
         // 2^31) must throw, not grind through gigabytes of concatenation
         if target > 536870888 {
-            return throwErr(st, "RangeError", "Invalid string length")
+            return throwErr(&mut st, "RangeError", "Invalid string length")
         }
         var pad = " "
         if argPresent(args, 1) {
@@ -941,12 +941,12 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         // below, if it is caught at all.
         let rawCnt = argNumF(args, 0, 0.0)
         if rawCnt == rawCnt && (rawCnt > 1.7e308 || rawCnt < -1.7e308) {
-            return throwErr(st, "RangeError", "Invalid count value")
+            return throwErr(&mut st, "RangeError", "Invalid count value")
         }
         let cnt = argNum(args, 0, 0)
         if cnt < 0 {
             st.throwing = true
-            st.thrownValue = makeError(st, "RangeError", "Invalid count value: " + i64ToStr(cnt))
+            st.thrownValue = makeError(&mut st, "RangeError", "Invalid count value: " + i64ToStr(cnt))
             return JSValue.Undefined
         }
         // Repeating an EMPTY string is empty however many times it is asked for,
@@ -959,7 +959,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         // ground through gigabytes and died with no output and exit 0, where node
         // throws. The product is what has to be bounded, not just the count.
         if cnt != 0 && s.len() != 0 && cnt > 536870888 / s.len() {
-            return throwErr(st, "RangeError", "Invalid string length")
+            return throwErr(&mut st, "RangeError", "Invalid string length")
         }
         return JSValue.Str(jsRepeat(s, cnt))
     }
@@ -1059,7 +1059,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
                 _ => {
                     let form = toStr(args[0])
                     if form != "NFC" && form != "NFD" && form != "NFKC" && form != "NFKD" {
-                        return throwErr(st, "RangeError", "The normalization form should be one of NFC, NFD, NFKC, NFKD.")
+                        return throwErr(&mut st, "RangeError", "The normalization form should be one of NFC, NFD, NFKC, NFKD.")
                     }
                 }
             }
@@ -1067,7 +1067,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         return JSValue.Str(s.clone())
     }
     if name == "split" {
-        return JSValue.Obj(jsSplit(s, args, st))
+        return JSValue.Obj(jsSplit(s, args, &mut st))
     }
     if name == "replace" {
         let pat = argStr(args, 0)
@@ -1236,7 +1236,7 @@ pub fn mjJsonOmitted(v: &JSValue): bool {
 // "null" in arrays; object props holding them are omitted. NaN/Infinity → null.
 pub fn mjStringifyVal(v: &JSValue, st: &Interp): string {
     var out = String.withCapacity(64)
-    mjPushStringified(out, v, st)
+    mjPushStringified(&mut out, v, st)
     return out
 }
 
@@ -1278,7 +1278,7 @@ fn mjPushStringified(out: &mut string, v: &JSValue, st: &Interp) {
             }
         }
         JSValue.Str(s) => {
-            mjPushJsonEscaped(out, s)
+            mjPushJsonEscaped(&mut out, s)
         }
         JSValue.Obj(o) => {
             if st.objects[o].isArray {
@@ -1290,7 +1290,7 @@ fn mjPushStringified(out: &mut string, v: &JSValue, st: &Interp) {
                         out.push(',')
                     }
                     let e = cloneValue(st.objects[o].elems[i])
-                    mjPushStringified(out, e, st)
+                    mjPushStringified(&mut out, e, st)
                     i = i + 1
                 }
                 out.push(']')
@@ -1308,9 +1308,9 @@ fn mjPushStringified(out: &mut string, v: &JSValue, st: &Interp) {
                             out.push(',')
                         }
                         first = false
-                        mjPushJsonEscaped(out, i64ToStr(tv))
+                        mjPushJsonEscaped(&mut out, i64ToStr(tv))
                         out.push(':')
-                        mjPushStringified(out, taElemValue(st, o, tv), st)
+                        mjPushStringified(&mut out, taElemValue(st, o, tv), st)
                         tv = tv + 1
                     }
                 }
@@ -1324,9 +1324,9 @@ fn mjPushStringified(out: &mut string, v: &JSValue, st: &Interp) {
                             out.push(',')
                         }
                         first = false
-                        mjPushJsonEscaped(out, key)
+                        mjPushJsonEscaped(&mut out, key)
                         out.push(':')
-                        mjPushStringified(out, val, st)
+                        mjPushStringified(&mut out, val, st)
                     }
                     i = i + 1
                 }
@@ -1412,7 +1412,7 @@ fn mjParseString(s: &string, c: &mut JCur): string {
                     out.push('u')
                     c.pos = c.pos + 2
                 } else {
-                    encodeCodepoint(out, cp as i32)
+                    encodeCodepoint(&mut out, cp as i32)
                     c.pos = c.pos + consumed
                 }
                 continue
@@ -1473,19 +1473,19 @@ fn mjParseNumber(s: &string, c: &mut JCur): JSValue {
 
 fn mjParseArray(s: &string, c: &mut JCur, st: &mut Interp): JSValue {
     c.pos = c.pos + 1
-    let arr = newArray(st)
-    pushTemp(st, JSValue.Obj(arr))
-    mjSkipWs(s, c)
+    let arr = newArray(&mut st)
+    pushTemp(&mut st, JSValue.Obj(arr))
+    mjSkipWs(s, &mut c)
     if c.pos < s.len() && s[c.pos] == ']' {
         c.pos = c.pos + 1
-        popTemp(st)
+        popTemp(&mut st)
         return JSValue.Obj(arr)
     }
     var going = true
     while going {
-        let v = mjParseVal(s, c, st)
-        arrPush(st, arr, v)
-        mjSkipWs(s, c)
+        let v = mjParseVal(s, &mut c, &mut st)
+        arrPush(&mut st, arr, v)
+        mjSkipWs(s, &mut c)
         if c.pos < s.len() && s[c.pos] == ',' {
             c.pos = c.pos + 1
         } else {
@@ -1497,38 +1497,38 @@ fn mjParseArray(s: &string, c: &mut JCur, st: &mut Interp): JSValue {
     } else if c.err.len() == 0 {
         c.err = "Expected ',' or ']' after array element in JSON at position " + i64ToStr(c.pos)
     }
-    popTemp(st)
+    popTemp(&mut st)
     return JSValue.Obj(arr)
 }
 
 fn mjParseObject(s: &string, c: &mut JCur, st: &mut Interp): JSValue {
     c.pos = c.pos + 1
-    let obj = newObject(st)
-    pushTemp(st, JSValue.Obj(obj))
-    mjSkipWs(s, c)
+    let obj = newObject(&mut st)
+    pushTemp(&mut st, JSValue.Obj(obj))
+    mjSkipWs(s, &mut c)
     if c.pos < s.len() && s[c.pos] == '}' {
         c.pos = c.pos + 1
-        popTemp(st)
+        popTemp(&mut st)
         return JSValue.Obj(obj)
     }
     var going = true
     while going {
-        mjSkipWs(s, c)
+        mjSkipWs(s, &mut c)
         var key = ""
         if c.pos < s.len() && s[c.pos] == 34 as u8 {
-            key = mjParseString(s, c)
+            key = mjParseString(s, &mut c)
         } else if c.err.len() == 0 {
             c.err = "Expected property name or '}' in JSON at position " + i64ToStr(c.pos)
         }
-        mjSkipWs(s, c)
+        mjSkipWs(s, &mut c)
         if c.pos < s.len() && s[c.pos] == ':' {
             c.pos = c.pos + 1
         } else if c.err.len() == 0 {
             c.err = "Expected ':' after property name in JSON at position " + i64ToStr(c.pos)
         }
-        let v = mjParseVal(s, c, st)
-        objSet(st, obj, key, v)
-        mjSkipWs(s, c)
+        let v = mjParseVal(s, &mut c, &mut st)
+        objSet(&mut st, obj, key, v)
+        mjSkipWs(s, &mut c)
         if c.pos < s.len() && s[c.pos] == ',' {
             c.pos = c.pos + 1
         } else {
@@ -1540,7 +1540,7 @@ fn mjParseObject(s: &string, c: &mut JCur, st: &mut Interp): JSValue {
     } else if c.err.len() == 0 {
         c.err = "Expected ',' or '}' after property value in JSON at position " + i64ToStr(c.pos)
     }
-    popTemp(st)
+    popTemp(&mut st)
     return JSValue.Obj(obj)
 }
 
@@ -1560,7 +1560,7 @@ fn jsonWordAt(s: &string, at: i64, word: &string): bool {
 }
 
 fn mjParseVal(s: &string, c: &mut JCur, st: &mut Interp): JSValue {
-    mjSkipWs(s, c)
+    mjSkipWs(s, &mut c)
     if c.pos >= s.len() {
         if c.err.len() == 0 {
             c.err = "Unexpected end of JSON input"
@@ -1569,13 +1569,13 @@ fn mjParseVal(s: &string, c: &mut JCur, st: &mut Interp): JSValue {
     }
     let ch = s[c.pos]
     if ch == '{' {
-        return mjParseObject(s, c, st)
+        return mjParseObject(s, &mut c, &mut st)
     }
     if ch == '[' {
-        return mjParseArray(s, c, st)
+        return mjParseArray(s, &mut c, &mut st)
     }
     if ch == 34 as u8 {
-        return JSValue.Str(mjParseString(s, c))
+        return JSValue.Str(mjParseString(s, &mut c))
     }
     // the keywords are matched in full: bare `t` used to be accepted as true and
     // skip four characters, so `JSON.parse("nope")` answered null
@@ -1597,24 +1597,24 @@ fn mjParseVal(s: &string, c: &mut JCur, st: &mut Interp): JSValue {
         }
         return JSValue.Undefined
     }
-    return mjParseNumber(s, c)
+    return mjParseNumber(s, &mut c)
 }
 
 pub fn mjJsonParse(s: &string, st: &mut Interp): JSValue {
     var c = JCur {
         pos: 0, err: ""
     }
-    let v = mjParseVal(s, c, st)
+    let v = mjParseVal(s, &mut c, &mut st)
     if c.err.len() == 0 {
         // anything but whitespace left over is garbage after a complete value,
         // e.g. `{"a":1} extra`
-        mjSkipWs(s, c)
+        mjSkipWs(s, &mut c)
         if c.pos < s.len() {
             c.err = "Unexpected non-whitespace character after JSON at position " + i64ToStr(c.pos)
         }
     }
     if c.err.len() > 0 {
-        return throwErr(st, "SyntaxError", c.err)
+        return throwErr(&mut st, "SyntaxError", c.err)
     }
     return v
 }
@@ -1657,14 +1657,14 @@ pub fn makeRegex(st: &mut Interp, pattern: string, flags: string): JSValue {
     // compile time rather than letting it match nothing or match something else.
     if !re.valid {
         st.throwing = true
-        st.thrownValue = makeError(st, "SyntaxError", "Invalid regular expression: /" + pattern.clone() + "/: " + regexInvalidReason(re))
+        st.thrownValue = makeError(&mut st, "SyntaxError", "Invalid regular expression: /" + pattern.clone() + "/: " + regexInvalidReason(re))
         return JSValue.Undefined
     }
     let isGlobal = re.flagG
     st.regexes.push(re)
     let id = st.regexes.len() - 1
-    let o = newObject(st)
-    let _er = ensureExtra(st, o)
+    let o = newObject(&mut st)
+    let _er = ensureExtra(&mut st, o)
     st.objExtras[st.objects[o].extra].regexId = id
     // EscapeRegExpPattern: an empty pattern reads back as "(?:)" so that
     // `String(new RegExp(""))` is "/(?:)/" and not "//", which would re-parse as
@@ -1674,34 +1674,34 @@ pub fn makeRegex(st: &mut Interp, pattern: string, flags: string): JSValue {
     if srcText.len() == 0 {
         srcText = "(?:)"
     }
-    objSet(st, o, "source", JSValue.Str(srcText))
-    objSetNonEnumerable(st, o, "source")
+    objSet(&mut st, o, "source", JSValue.Str(srcText))
+    objSetNonEnumerable(&mut st, o, "source")
     // The flags getter answers them in the spec's canonical order (dgimsuvy),
     // not in the order the caller happened to write them: `new RegExp("a",
     // "yimsg").flags` is "gimsy".
-    objSet(st, o, "flags", JSValue.Str(canonicalFlagOrder(flags.clone())))
-    objSetNonEnumerable(st, o, "flags")
+    objSet(&mut st, o, "flags", JSValue.Str(canonicalFlagOrder(flags.clone())))
+    objSetNonEnumerable(&mut st, o, "flags")
     // the whole flag family, not just `global` — a test that reads .multiline or
     // .sticky got undefined, and `undefined` is not `false`
-    objSet(st, o, "global", JSValue.Bool(isGlobal))
-    objSetNonEnumerable(st, o, "global")
-    objSet(st, o, "ignoreCase", JSValue.Bool(strIndexOfMj(flags.clone(), "i") >= 0))
-    objSetNonEnumerable(st, o, "ignoreCase")
-    objSet(st, o, "multiline", JSValue.Bool(strIndexOfMj(flags.clone(), "m") >= 0))
-    objSetNonEnumerable(st, o, "multiline")
-    objSet(st, o, "sticky", JSValue.Bool(strIndexOfMj(flags.clone(), "y") >= 0))
-    objSetNonEnumerable(st, o, "sticky")
-    objSet(st, o, "unicode", JSValue.Bool(strIndexOfMj(flags.clone(), "u") >= 0))
-    objSetNonEnumerable(st, o, "unicode")
-    objSet(st, o, "unicodeSets", JSValue.Bool(strIndexOfMj(flags.clone(), "v") >= 0))
-    objSetNonEnumerable(st, o, "unicodeSets")
-    objSet(st, o, "dotAll", JSValue.Bool(strIndexOfMj(flags.clone(), "s") >= 0))
-    objSetNonEnumerable(st, o, "dotAll")
-    objSet(st, o, "hasIndices", JSValue.Bool(strIndexOfMj(flags.clone(), "d") >= 0))
-    objSetNonEnumerable(st, o, "hasIndices")
-    objSet(st, o, "lastIndex", JSValue.Number(0.0))
-    objSetNonEnumerable(st, o, "lastIndex")
-    objSetNonConfigurable(st, o, "lastIndex")
+    objSet(&mut st, o, "global", JSValue.Bool(isGlobal))
+    objSetNonEnumerable(&mut st, o, "global")
+    objSet(&mut st, o, "ignoreCase", JSValue.Bool(strIndexOfMj(flags.clone(), "i") >= 0))
+    objSetNonEnumerable(&mut st, o, "ignoreCase")
+    objSet(&mut st, o, "multiline", JSValue.Bool(strIndexOfMj(flags.clone(), "m") >= 0))
+    objSetNonEnumerable(&mut st, o, "multiline")
+    objSet(&mut st, o, "sticky", JSValue.Bool(strIndexOfMj(flags.clone(), "y") >= 0))
+    objSetNonEnumerable(&mut st, o, "sticky")
+    objSet(&mut st, o, "unicode", JSValue.Bool(strIndexOfMj(flags.clone(), "u") >= 0))
+    objSetNonEnumerable(&mut st, o, "unicode")
+    objSet(&mut st, o, "unicodeSets", JSValue.Bool(strIndexOfMj(flags.clone(), "v") >= 0))
+    objSetNonEnumerable(&mut st, o, "unicodeSets")
+    objSet(&mut st, o, "dotAll", JSValue.Bool(strIndexOfMj(flags.clone(), "s") >= 0))
+    objSetNonEnumerable(&mut st, o, "dotAll")
+    objSet(&mut st, o, "hasIndices", JSValue.Bool(strIndexOfMj(flags.clone(), "d") >= 0))
+    objSetNonEnumerable(&mut st, o, "hasIndices")
+    objSet(&mut st, o, "lastIndex", JSValue.Number(0.0))
+    objSetNonEnumerable(&mut st, o, "lastIndex")
+    objSetNonConfigurable(&mut st, o, "lastIndex")
     if st.regexProtoObj >= 0 {
         st.objects[o].proto = st.regexProtoObj
     }
@@ -1723,17 +1723,17 @@ fn regexIdOf(st: &Interp, v: &JSValue): i64 {
 // `rid` is the regex handle (-1 when none), used to attach `.groups` for named
 // captures (?<name>...).
 fn buildMatchArray(st: &mut Interp, s: &string, saves: &Vec<i64>, rid: i64): JSValue {
-    let arr = newArray(st)
-    pushTemp(st, JSValue.Obj(arr))
+    let arr = newArray(&mut st)
+    pushTemp(&mut st, JSValue.Obj(arr))
     var g: i64 = 0
     let ng = saves.len() / 2
     while g < ng {
         let a = saves[2 * g]
         let b = saves[2 * g + 1]
         if a < 0 || b < 0 {
-            arrPush(st, arr, JSValue.Undefined)
+            arrPush(&mut st, arr, JSValue.Undefined)
         } else {
-            arrPush(st, arr, JSValue.Str(strSlice(s, a, b)))
+            arrPush(&mut st, arr, JSValue.Str(strSlice(s, a, b)))
         }
         g = g + 1
     }
@@ -1741,61 +1741,61 @@ fn buildMatchArray(st: &mut Interp, s: &string, saves: &Vec<i64>, rid: i64): JSV
     // The index is in UTF-16 code units, as every JS string index is: it was the
     // BYTE offset, so any match after a non-ASCII character reported a position
     // the caller could not use to slice the same string.
-    objSet(st, arr, "index", JSValue.Number(byteToUtf16(s, saves[0]) as f64))
+    objSet(&mut st, arr, "index", JSValue.Number(byteToUtf16(s, saves[0]) as f64))
     // `.indices` under the `d` flag: [start, end] per capture in UTF-16 units,
     // undefined for a group that did not participate, plus a parallel `groups`
     // object when the pattern has named captures. Reading `m.indices[0]` was a
     // TypeError without it.
     if rid >= 0 && st.regexes[rid].flagD {
-        let idxArr = newArray(st)
-        pushTemp(st, JSValue.Obj(idxArr))
+        let idxArr = newArray(&mut st)
+        pushTemp(&mut st, JSValue.Obj(idxArr))
         var ii: i64 = 0
         while 2 * ii + 1 < saves.len() {
             let ia = saves[2 * ii]
             let ib = saves[2 * ii + 1]
             if ia >= 0 && ib >= 0 {
-                let pair = newArray(st)
-                pushTemp(st, JSValue.Obj(pair))
-                arrPush(st, pair, JSValue.Number(byteToUtf16(s, ia) as f64))
-                arrPush(st, pair, JSValue.Number(byteToUtf16(s, ib) as f64))
-                popTemp(st)
-                arrPush(st, idxArr, JSValue.Obj(pair))
+                let pair = newArray(&mut st)
+                pushTemp(&mut st, JSValue.Obj(pair))
+                arrPush(&mut st, pair, JSValue.Number(byteToUtf16(s, ia) as f64))
+                arrPush(&mut st, pair, JSValue.Number(byteToUtf16(s, ib) as f64))
+                popTemp(&mut st)
+                arrPush(&mut st, idxArr, JSValue.Obj(pair))
             } else {
-                arrPush(st, idxArr, JSValue.Undefined)
+                arrPush(&mut st, idxArr, JSValue.Undefined)
             }
             ii = ii + 1
         }
         if st.regexes[rid].groupNames.len() > 0 {
-            let igroups = newObject(st)
-            pushTemp(st, JSValue.Obj(igroups))
+            let igroups = newObject(&mut st)
+            pushTemp(&mut st, JSValue.Obj(igroups))
             var ig: i64 = 0
             while ig < st.regexes[rid].groupNames.len() {
                 let iname = st.regexes[rid].groupNames[ig].clone()
                 let inum = st.regexes[rid].groupNums[ig]
                 var ival = JSValue.Undefined
                 if 2 * inum + 1 < saves.len() && saves[2 * inum] >= 0 && saves[2 * inum + 1] >= 0 {
-                    let ipair = newArray(st)
-                    pushTemp(st, JSValue.Obj(ipair))
-                    arrPush(st, ipair, JSValue.Number(byteToUtf16(s, saves[2 * inum]) as f64))
-                    arrPush(st, ipair, JSValue.Number(byteToUtf16(s, saves[2 * inum + 1]) as f64))
-                    popTemp(st)
+                    let ipair = newArray(&mut st)
+                    pushTemp(&mut st, JSValue.Obj(ipair))
+                    arrPush(&mut st, ipair, JSValue.Number(byteToUtf16(s, saves[2 * inum]) as f64))
+                    arrPush(&mut st, ipair, JSValue.Number(byteToUtf16(s, saves[2 * inum + 1]) as f64))
+                    popTemp(&mut st)
                     ival = JSValue.Obj(ipair)
                 }
-                objSet(st, igroups, iname, ival)
+                objSet(&mut st, igroups, iname, ival)
                 ig = ig + 1
             }
-            popTemp(st)
-            objSet(st, idxArr, "groups", JSValue.Obj(igroups))
+            popTemp(&mut st)
+            objSet(&mut st, idxArr, "groups", JSValue.Obj(igroups))
         }
-        popTemp(st)
-        objSet(st, arr, "indices", JSValue.Obj(idxArr))
+        popTemp(&mut st)
+        objSet(&mut st, arr, "indices", JSValue.Obj(idxArr))
     }
-    objSet(st, arr, "input", JSValue.Str(s.clone()))
+    objSet(&mut st, arr, "input", JSValue.Str(s.clone()))
     // .groups: an object of named-capture substrings, or undefined when the
     // pattern has no (?<name>...) groups (matching JS, where .groups is
     // undefined not {} for an un-named pattern)
     if rid >= 0 && st.regexes[rid].groupNames.len() > 0 {
-        let groups = newObject(st)
+        let groups = newObject(&mut st)
         var gi: i64 = 0
         while gi < st.regexes[rid].groupNames.len() {
             let nm = st.regexes[rid].groupNames[gi].clone()
@@ -1808,14 +1808,14 @@ fn buildMatchArray(st: &mut Interp, s: &string, saves: &Vec<i64>, rid: i64): JSV
                     gv = JSValue.Str(strSlice(s, a, b))
                 }
             }
-            objSet(st, groups, nm, gv)
+            objSet(&mut st, groups, nm, gv)
             gi = gi + 1
         }
-        objSet(st, arr, "groups", JSValue.Obj(groups))
+        objSet(&mut st, arr, "groups", JSValue.Obj(groups))
     } else {
-        objSet(st, arr, "groups", JSValue.Undefined)
+        objSet(&mut st, arr, "groups", JSValue.Undefined)
     }
-    popTemp(st)
+    popTemp(&mut st)
     return JSValue.Obj(arr)
 }
 
@@ -1856,7 +1856,7 @@ pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>):
             return JSValue.Str(out)
         }
         st.throwing = true
-        st.thrownValue = makeError(st, "TypeError", "Method RegExp.prototype." + name.clone() + " called on incompatible receiver")
+        st.thrownValue = makeError(&mut st, "TypeError", "Method RegExp.prototype." + name.clone() + " called on incompatible receiver")
         return JSValue.Undefined
     }
     // RegExp.prototype[@@match](str) and friends: delegate to the String method
@@ -1883,12 +1883,12 @@ pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>):
         }
         var recvStr = JSValue.Str("")
         if args.len() > 0 {
-            recvStr = JSValue.Str(toStrProg(gProg, args[0], st))
+            recvStr = JSValue.Str(toStrProg(gProg, args[0], &mut st))
             if st.throwing {
                 return JSValue.Undefined
             }
         }
-        return callBuiltinByName(gProg, recvStr, strOp, sArgs, st)
+        return callBuiltinByName(gProg, recvStr, strOp, sArgs, &mut st)
     }
     let rid = st.objExtras[st.objects[o].extra].regexId
     // exec/test ToString their argument, and that conversion can run user code
@@ -1898,7 +1898,7 @@ pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>):
     // undefined, which is neither true nor false and breaks every caller.
     var subject = ""
     if args.len() > 0 {
-        subject = toStrProg(gProg, args[0], st)
+        subject = toStrProg(gProg, args[0], &mut st)
         if st.throwing {
             return JSValue.Undefined
         }
@@ -1919,21 +1919,21 @@ pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>):
         if args.len() > 1 {
             nf = toStr(args[1])
         }
-        let fresh = makeRegex(st, np, nf)
+        let fresh = makeRegex(&mut st, np, nf)
         let fh = objHandle(fresh)
         if fh >= 0 {
             st.objExtras[st.objects[o].extra].regexId = st.objExtras[st.objects[fh].extra].regexId
-            objSet(st, o, "source", objGet(st, fh, "source"))
-            objSet(st, o, "flags", objGet(st, fh, "flags"))
-            objSet(st, o, "global", objGet(st, fh, "global"))
-            objSet(st, o, "ignoreCase", objGet(st, fh, "ignoreCase"))
-            objSet(st, o, "multiline", objGet(st, fh, "multiline"))
-            objSet(st, o, "sticky", objGet(st, fh, "sticky"))
-            objSet(st, o, "unicode", objGet(st, fh, "unicode"))
-            objSet(st, o, "unicodeSets", objGet(st, fh, "unicodeSets"))
-            objSet(st, o, "dotAll", objGet(st, fh, "dotAll"))
-            objSet(st, o, "hasIndices", objGet(st, fh, "hasIndices"))
-            objSet(st, o, "lastIndex", JSValue.Number(0.0))
+            objSet(&mut st, o, "source", objGet(st, fh, "source"))
+            objSet(&mut st, o, "flags", objGet(st, fh, "flags"))
+            objSet(&mut st, o, "global", objGet(st, fh, "global"))
+            objSet(&mut st, o, "ignoreCase", objGet(st, fh, "ignoreCase"))
+            objSet(&mut st, o, "multiline", objGet(st, fh, "multiline"))
+            objSet(&mut st, o, "sticky", objGet(st, fh, "sticky"))
+            objSet(&mut st, o, "unicode", objGet(st, fh, "unicode"))
+            objSet(&mut st, o, "unicodeSets", objGet(st, fh, "unicodeSets"))
+            objSet(&mut st, o, "dotAll", objGet(st, fh, "dotAll"))
+            objSet(&mut st, o, "hasIndices", objGet(st, fh, "hasIndices"))
+            objSet(&mut st, o, "lastIndex", JSValue.Number(0.0))
         }
         return JSValue.Obj(o)
     }
@@ -1960,7 +1960,7 @@ pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>):
             // resumed mid-character.
             let lastU16 = toNum(objGet(st, o, "lastIndex")) as i64
             if lastU16 < 0 || lastU16 > utf16Length(subject) {
-                objSet(st, o, "lastIndex", JSValue.Number(0.0))
+                objSet(&mut st, o, "lastIndex", JSValue.Number(0.0))
                 if name == "test" {
                     return JSValue.Bool(false)
                 }
@@ -1976,7 +1976,7 @@ pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>):
         }
         if saves.len() == 0 {
             if usesLastIndex {
-                objSet(st, o, "lastIndex", JSValue.Number(0.0))
+                objSet(&mut st, o, "lastIndex", JSValue.Number(0.0))
             }
             if name == "test" {
                 return JSValue.Bool(false)
@@ -1990,12 +1990,12 @@ pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>):
             if next <= start {
                 next = start + utf8LenAt(subject, start)
             }
-            objSet(st, o, "lastIndex", JSValue.Number(byteToUtf16(subject, next) as f64))
+            objSet(&mut st, o, "lastIndex", JSValue.Number(byteToUtf16(subject, next) as f64))
         }
         if name == "test" {
             return JSValue.Bool(true)
         }
-        return buildMatchArray(st, subject, saves, rid)
+        return buildMatchArray(&mut st, subject, saves, rid)
     }
     return JSValue.Undefined
 }
@@ -2148,8 +2148,8 @@ fn regexReplaceFn(prog: &Prog, st: &mut Interp, s: &string, rid: i64, fn_: &JSVa
             // replacer written as `(...a) => a.at(-1).year` read the subject
             // string instead of the groups.
             if rid >= 0 && st.regexes[rid].groupNames.len() > 0 {
-                let gobj = newObject(st)
-                pushTemp(st, JSValue.Obj(gobj))
+                let gobj = newObject(&mut st)
+                pushTemp(&mut st, JSValue.Obj(gobj))
                 var gn: i64 = 0
                 while gn < st.regexes[rid].groupNames.len() {
                     let gname = st.regexes[rid].groupNames[gn].clone()
@@ -2162,13 +2162,13 @@ fn regexReplaceFn(prog: &Prog, st: &mut Interp, s: &string, rid: i64, fn_: &JSVa
                             gval = JSValue.Str(strSlice(s, ga, gb))
                         }
                     }
-                    objSet(st, gobj, gname, gval)
+                    objSet(&mut st, gobj, gname, gval)
                     gn = gn + 1
                 }
-                popTemp(st)
+                popTemp(&mut st)
                 args.push(JSValue.Obj(gobj))
             }
-            let r = callValue(prog, fn_, args, JSValue.Undefined, st)
+            let r = callValue(prog, fn_, args, JSValue.Undefined, &mut st)
             out = out + toStr(r)
             last = mend
             // advance a whole CHARACTER past a zero-width match: stepping one
@@ -2205,20 +2205,20 @@ fn regexReplaceFn(prog: &Prog, st: &mut Interp, s: &string, rid: i64, fn_: &JSVa
 // `"a,b,c".split(/,/, 2)` returned three pieces where the string separator form
 // already returned two.
 fn regexSplit(st: &mut Interp, s: &string, rid: i64, limit: i64): JSValue {
-    let arr = newArray(st)
-    pushTemp(st, JSValue.Obj(arr))
+    let arr = newArray(&mut st)
+    pushTemp(&mut st, JSValue.Obj(arr))
     let size = s.len()
     if size == 0 {
         // "".split(re) is [""] unless the separator matches the empty string
         let saves0 = regexExec(st.regexes[rid], s, 0)
         if saves0.len() == 0 {
-            arrPush(st, arr, JSValue.Str(""))
+            arrPush(&mut st, arr, JSValue.Str(""))
         }
-        popTemp(st)
+        popTemp(&mut st)
         return JSValue.Obj(arr)
     }
     if limit == 0 {
-        popTemp(st)
+        popTemp(&mut st)
         return JSValue.Obj(arr)
     }
     var p: i64 = 0
@@ -2226,7 +2226,7 @@ fn regexSplit(st: &mut Interp, s: &string, rid: i64, limit: i64): JSValue {
     while q < size {
         if limit >= 0 && arrLen(st, arr) >= limit {
             q = size
-            popTemp(st)
+            popTemp(&mut st)
             return JSValue.Obj(arr)
         }
         let saves = regexExec(st.regexes[rid], s, q)
@@ -2245,9 +2245,9 @@ fn regexSplit(st: &mut Interp, s: &string, rid: i64, limit: i64): JSValue {
                 // a UTF-8 continuation byte
                 q = mstart + utf8LenAt(s, mstart)
             } else {
-                arrPush(st, arr, JSValue.Str(strSlice(s, p, mstart)))
+                arrPush(&mut st, arr, JSValue.Str(strSlice(s, p, mstart)))
                 if limit >= 0 && arrLen(st, arr) >= limit {
-                    popTemp(st)
+                    popTemp(&mut st)
                     return JSValue.Obj(arr)
                 }
                 // every capture in the separator becomes an element, undefined
@@ -2258,12 +2258,12 @@ fn regexSplit(st: &mut Interp, s: &string, rid: i64, limit: i64): JSValue {
                 var gi: i64 = 2
                 while gi + 1 < saves.len() {
                     if saves[gi] >= 0 && saves[gi + 1] >= 0 {
-                        arrPush(st, arr, JSValue.Str(strSlice(s, saves[gi], saves[gi + 1])))
+                        arrPush(&mut st, arr, JSValue.Str(strSlice(s, saves[gi], saves[gi + 1])))
                     } else {
-                        arrPush(st, arr, JSValue.Undefined)
+                        arrPush(&mut st, arr, JSValue.Undefined)
                     }
                     if limit >= 0 && arrLen(st, arr) >= limit {
-                        popTemp(st)
+                        popTemp(&mut st)
                         return JSValue.Obj(arr)
                     }
                     gi = gi + 2
@@ -2277,8 +2277,8 @@ fn regexSplit(st: &mut Interp, s: &string, rid: i64, limit: i64): JSValue {
             }
         }
     }
-    arrPush(st, arr, JSValue.Str(strSlice(s, p, size)))
-    popTemp(st)
+    arrPush(&mut st, arr, JSValue.Str(strSlice(s, p, size)))
+    popTemp(&mut st)
     return JSValue.Obj(arr)
 }
 
@@ -2310,10 +2310,10 @@ fn regexStrMatch(st: &mut Interp, s: &string, rid: i64): JSValue {
         if saves.len() == 0 {
             return JSValue.Null
         }
-        return buildMatchArray(st, s, saves, rid)
+        return buildMatchArray(&mut st, s, saves, rid)
     }
-    let arr = newArray(st)
-    pushTemp(st, JSValue.Obj(arr))
+    let arr = newArray(&mut st)
+    pushTemp(&mut st, JSValue.Obj(arr))
     var pos: i64 = 0
     var any = false
     var going = true
@@ -2329,7 +2329,7 @@ fn regexStrMatch(st: &mut Interp, s: &string, rid: i64): JSValue {
             going = false
         } else {
             any = true
-            arrPush(st, arr, JSValue.Str(strSlice(s, gsaves[0], gsaves[1])))
+            arrPush(&mut st, arr, JSValue.Str(strSlice(s, gsaves[0], gsaves[1])))
             if gsaves[1] == gsaves[0] {
                 // same character-advance rule as replace, split and matchAll
                 pos = gsaves[1] + utf8LenAt(s, gsaves[1])
@@ -2341,7 +2341,7 @@ fn regexStrMatch(st: &mut Interp, s: &string, rid: i64): JSValue {
             }
         }
     }
-    popTemp(st)
+    popTemp(&mut st)
     if !any {
         return JSValue.Null
     }
@@ -2353,8 +2353,8 @@ fn regexStrMatch(st: &mut Interp, s: &string, rid: i64): JSValue {
 // Returned as an array, which is iterable for the usual `[...]` / for-of
 // consumption. Iterates regardless of the /g flag (lenient vs the spec's throw).
 fn regexStrMatchAll(st: &mut Interp, s: &string, rid: i64): JSValue {
-    let arr = newArray(st)
-    pushTemp(st, JSValue.Obj(arr))
+    let arr = newArray(&mut st)
+    pushTemp(&mut st, JSValue.Obj(arr))
     var pos: i64 = 0
     var going = true
     while going {
@@ -2362,8 +2362,8 @@ fn regexStrMatchAll(st: &mut Interp, s: &string, rid: i64): JSValue {
         if saves.len() == 0 {
             going = false
         } else {
-            let m = buildMatchArray(st, s, saves, rid)
-            arrPush(st, arr, m)
+            let m = buildMatchArray(&mut st, s, saves, rid)
+            arrPush(&mut st, arr, m)
             if saves[1] == saves[0] {
                 // same character-advance rule as replace and split
                 pos = saves[1] + utf8LenAt(s, saves[1])
@@ -2375,13 +2375,13 @@ fn regexStrMatchAll(st: &mut Interp, s: &string, rid: i64): JSValue {
             }
         }
     }
-    popTemp(st)
+    popTemp(&mut st)
     // matchAll answers an ITERATOR, not an array. Returning the array made the
     // common `[...s.matchAll(re)]` work and everything else fail: `.next` did
     // not exist, and spreading the same value twice yielded the matches twice
     // where an iterator is exhausted after one pass. Reusing the array iterator
     // gives the protocol (next, @@iterator, one-shot) for free.
-    return makeArrayIterator(st, arr, 0)
+    return makeArrayIterator(&mut st, arr, 0)
 }
 
 // RegExp.prototype. Like the buffer family and Date before it, this object did
@@ -2441,7 +2441,7 @@ pub fn regexArgFor(st: &mut Interp, name: &string, args: &Vec<JSValue>): Vec<JSV
         flags = "g"
     }
     var out: Vec<JSValue> = Vec.new()
-    out.push(makeRegex(st, pat, flags))
+    out.push(makeRegex(&mut st, pat, flags))
     var i: i64 = 1
     while i < args.len() {
         out.push(cloneValue(args[i]))
@@ -2458,11 +2458,11 @@ pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>
         // the spec makes it a TypeError rather than letting it half-work.
         if name == "replaceAll" && rid >= 0 && !st.regexes[rid].flagG {
             st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "replaceAll must be called with a global RegExp")
+            st.thrownValue = makeError(&mut st, "TypeError", "replaceAll must be called with a global RegExp")
             return JSValue.Undefined
         }
         if args.len() > 1 && isCallable(args[1]) {
-            return regexReplaceFn(prog, st, s, rid, cloneValue(args[1]))
+            return regexReplaceFn(prog, &mut st, s, rid, cloneValue(args[1]))
         }
         var repl = ""
         if args.len() > 1 {
@@ -2472,25 +2472,25 @@ pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>
             // text instead of propagating. The non-regex spelling of replace
             // already coerced through coercedStringArgs; this branch is the one
             // that runs when the pattern is a regex.
-            repl = toStrProg(prog, cloneValue(args[1]), st)
+            repl = toStrProg(prog, cloneValue(args[1]), &mut st)
             if st.throwing {
                 return JSValue.Undefined
             }
         }
-        return regexReplace(st, s, rid, repl)
+        return regexReplace(&mut st, s, rid, repl)
     }
     if name == "match" {
-        return regexStrMatch(st, s, rid)
+        return regexStrMatch(&mut st, s, rid)
     }
     if name == "matchAll" {
         // the spec rejects a non-global regex here, because the result would be
         // an infinite sequence of the same match
         if !st.regexes[rid].flagG {
             st.throwing = true
-            st.thrownValue = makeError(st, "TypeError", "String.prototype.matchAll called with a non-global RegExp argument")
+            st.thrownValue = makeError(&mut st, "TypeError", "String.prototype.matchAll called with a non-global RegExp argument")
             return JSValue.Undefined
         }
-        return regexStrMatchAll(st, s, rid)
+        return regexStrMatchAll(&mut st, s, rid)
     }
     if name == "split" {
         // limit is the SECOND argument here; args[0] is the separator
@@ -2512,7 +2512,7 @@ pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>
                 }
             }
         }
-        return regexSplit(st, s, rid, splitLimit)
+        return regexSplit(&mut st, s, rid, splitLimit)
     }
     // search: index of the first match, or -1 (UTF-16 units)
     let saves = regexExec(st.regexes[rid], s, 0)
@@ -2647,12 +2647,12 @@ pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>, st: &
         // so `(1).toFixed(101)` answered a 101-decimal number instead of throwing.
         if name == "toFixed" && args.len() > 0 && (digits < 0 || digits > 100) {
             st.throwing = true
-            st.thrownValue = makeError(st, "RangeError", "toFixed() digits argument must be between 0 and 100")
+            st.thrownValue = makeError(&mut st, "RangeError", "toFixed() digits argument must be between 0 and 100")
             return JSValue.Undefined
         }
         if name == "toPrecision" && args.len() > 0 && !isUndefinedValue(args[0]) && (digits < 1 || digits > 100) {
             st.throwing = true
-            st.thrownValue = makeError(st, "RangeError", "toPrecision() argument must be between 1 and 100")
+            st.thrownValue = makeError(&mut st, "RangeError", "toPrecision() argument must be between 1 and 100")
             return JSValue.Undefined
         }
         if name == "toPrecision" {
@@ -2685,7 +2685,7 @@ pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>, st: &
             // fallback to base 10: `(5).toString(1)` answered "5".
             if radix < 2 || radix > 36 {
                 st.throwing = true
-                st.thrownValue = makeError(st, "RangeError", "toString() radix argument must be between 2 and 36")
+                st.thrownValue = makeError(&mut st, "RangeError", "toString() radix argument must be between 2 and 36")
                 return JSValue.Undefined
             }
             if radix != 10 {

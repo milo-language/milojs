@@ -274,7 +274,7 @@ fn declareSlot(c: &mut Comp, name: &string): i64 {
     var i: i64 = 0
     while i < c.slotNames.len() {
         if c.slotNames[i] == name {
-            reject(c, "duplicate-binding")
+            reject(&mut c, "duplicate-binding")
             return i
         }
         i = i + 1
@@ -415,39 +415,39 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
     }
     match prog.exprs[id.index] {
         Expr.Num(n) => {
-            let k = constSlot(c, n)
-            emitOp(c, Op.Const, k)
+            let k = constSlot(&mut c, n)
+            emitOp(&mut c, Op.Const, k)
         }
         Expr.StrLit(v) => {
-            let k = strSlot(c, v)
-            emitOp(c, Op.Str, k)
+            let k = strSlot(&mut c, v)
+            emitOp(&mut c, Op.Str, k)
         }
         Expr.BoolLit(b) => {
             if b {
-                emitOp(c, Op.Prim, 3)
+                emitOp(&mut c, Op.Prim, 3)
             } else {
-                emitOp(c, Op.Prim, 2)
+                emitOp(&mut c, Op.Prim, 2)
             }
         }
         Expr.NullLit => {
-            emitOp(c, Op.Prim, 1)
+            emitOp(&mut c, Op.Prim, 1)
         }
         Expr.UndefLit => {
-            emitOp(c, Op.Prim, 0)
+            emitOp(&mut c, Op.Prim, 0)
         }
         Expr.Ident(name) => {
             if c.viaScope && scopeNameIndex(c, name) >= 0 {
-                let ks = strSlot(c, name)
-                emitOp(c, Op.LoadName, ks)
+                let ks = strSlot(&mut c, name)
+                emitOp(&mut c, Op.LoadName, ks)
             } else {
-                let s = slotOf(c, name, false)
-                emitOp(c, Op.Load, s)
+                let s = slotOf(&mut c, name, false)
+                emitOp(&mut c, Op.Load, s)
             }
         }
         Expr.Member(objIdx, name) => {
-            compExpr(prog, c, objIdx)
-            let k = strSlot(c, name)
-            emitOp(c, Op.GetMem, k)
+            compExpr(prog, &mut c, objIdx)
+            let k = strSlot(&mut c, name)
+            emitOp(&mut c, Op.GetMem, k)
         }
         Expr.ObjLit(litIdx) => {
             // Plain data properties with literal keys only. A computed key needs
@@ -456,23 +456,23 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
             var i: i64 = 0
             while i < prog.objLits[litIdx.index].len() {
                 if prog.objLits[litIdx.index][i].kind > 0 {
-                    reject(c, "objlit-accessor")
+                    reject(&mut c, "objlit-accessor")
                     return
                 }
                 if let Option.Some(_ke) = prog.objLits[litIdx.index][i].keyExpr {
-                    reject(c, "objlit-computed-key")
+                    reject(&mut c, "objlit-computed-key")
                     return
                 }
                 i = i + 1
             }
-            emitOp(c, Op.NewObj, 0)
+            emitOp(&mut c, Op.NewObj, 0)
             var j: i64 = 0
             while j < prog.objLits[litIdx.index].len() {
-                emitOp(c, Op.Dup, 0)
-                compExpr(prog, c, prog.objLits[litIdx.index][j].val)
-                let k = strSlot(c, prog.objLits[litIdx.index][j].key)
-                emitOp(c, Op.SetMem, k)
-                emitOp(c, Op.Pop, 0)
+                emitOp(&mut c, Op.Dup, 0)
+                compExpr(prog, &mut c, prog.objLits[litIdx.index][j].val)
+                let k = strSlot(&mut c, prog.objLits[litIdx.index][j].key)
+                emitOp(&mut c, Op.SetMem, k)
+                emitOp(&mut c, Op.Pop, 0)
                 j = j + 1
             }
         }
@@ -482,13 +482,13 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
             // get right; it is not here yet.
             match prog.exprs[keyIdx.index] {
                 Expr.StrLit(key) => {
-                    compExpr(prog, c, objIdx)
-                    compExpr(prog, c, valIdx)
-                    let k = strSlot(c, key)
-                    emitOp(c, Op.SetMem, k)
+                    compExpr(prog, &mut c, objIdx)
+                    compExpr(prog, &mut c, valIdx)
+                    let k = strSlot(&mut c, key)
+                    emitOp(&mut c, Op.SetMem, k)
                 }
                 _ => {
-                    reject(c, "setmember-computed")
+                    reject(&mut c, "setmember-computed")
                 }
             }
         }
@@ -508,22 +508,22 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                     // against the running module, and threads `this` explicitly
                     // through a desugared `super(...)`.
                     if name == "eval" || name == "require" || isSuperName(name) {
-                        reject(c, "call-magic")
+                        reject(&mut c, "call-magic")
                         return
                     }
                     let argc = prog.argLists[argsIdx.index].len()
                     // The arg word packs the count into 8 bits (see below).
                     if argc > 255 {
-                        reject(c, "call-argc")
+                        reject(&mut c, "call-argc")
                         return
                     }
-                    let cs = slotOf(c, name, false)
-                    emitOp(c, Op.Load, cs)
+                    let cs = slotOf(&mut c, name, false)
+                    emitOp(&mut c, Op.Load, cs)
                     var ai: i64 = 0
                     while ai < argc {
                         // a spread argument is an Expr.Spread, which lands in the
                         // reject-everything-else arm below
-                        compExpr(prog, c, prog.argLists[argsIdx.index][ai])
+                        compExpr(prog, &mut c, prog.argLists[argsIdx.index][ai])
                         ai = ai + 1
                     }
                     // One arg word, two operands: the low 8 bits are the argument
@@ -531,8 +531,8 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                     // NAME, which only the "x is not a function" TypeError needs.
                     // A Chunk carries one i64 per op, and a second array for a
                     // field two opcodes use would cost every op a word.
-                    let ns = strSlot(c, name)
-                    emitOp(c, Op.Call, argc + ns * 256)
+                    let ns = strSlot(&mut c, name)
+                    emitOp(&mut c, Op.Call, argc + ns * 256)
                 }
                 Expr.Member(objIdx, mname) => {
                     // `super.m(...)` threads `this` through machinery only the
@@ -548,7 +548,7 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                         }
                     }
                     if isSuperRecv {
-                        reject(c, "call-super")
+                        reject(&mut c, "call-super")
                         return
                     }
                     // An argument that can CAPTURE (a function expression, or a
@@ -559,20 +559,20 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                     // read a dead snapshot. Scope-backed declared locals are the
                     // fix that admits these; until then they stay on the walker.
                     if !c.viaScope && callMayCapture(prog, calleeId, argsIdx) {
-                        reject(c, "call-arg-capture")
+                        reject(&mut c, "call-arg-capture")
                         return
                     }
-                    let ms = strSlot(c, mname)
+                    let ms = strSlot(&mut c, mname)
                     if ms >= 65536 {
-                        reject(c, "call-method-strs")
+                        reject(&mut c, "call-method-strs")
                         return
                     }
-                    compExpr(prog, c, objIdx)
+                    compExpr(prog, &mut c, objIdx)
                     c.hasAstArgs = true
-                    emitOp(c, Op.CallMember, argsIdx.index * 65536 + ms)
+                    emitOp(&mut c, Op.CallMember, argsIdx.index * 65536 + ms)
                 }
                 _ => {
-                    reject(c, "call-callee:" + exprKindName(prog, calleeId))
+                    reject(&mut c, "call-callee:" + exprKindName(prog, calleeId))
                 }
             }
         }
@@ -581,7 +581,7 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
             // when the left decides, so they compile to peek-jumps, not to a
             // value op.
             if op == "&&" || op == "||" || op == "??" {
-                compExpr(prog, c, a)
+                compExpr(prog, &mut c, a)
                 var jop = Op.JmpFalsePeek
                 if op == "||" {
                     jop = Op.JmpTruePeek
@@ -589,9 +589,9 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                 if op == "??" {
                     jop = Op.JmpNotNullishPeek
                 }
-                let j = emitOp(c, jop, 0)
-                emitOp(c, Op.Pop, 0)
-                compExpr(prog, c, b)
+                let j = emitOp(&mut c, jop, 0)
+                emitOp(&mut c, Op.Pop, 0)
+                compExpr(prog, &mut c, b)
                 c.args[j] = c.ops.len()
                 return
             }
@@ -600,7 +600,7 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
             if op == "in" {
                 if let Expr.Ident(pn) = prog.exprs[a.index] {
                     if pn.len() > 0 && pn[0] == '#' {
-                        reject(c, "private-in")
+                        reject(&mut c, "private-in")
                         return
                     }
                 }
@@ -609,82 +609,82 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
             match o {
                 Op.Halt => {
                     if op == "==" || op == "!=" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "**" || op == "instanceof" || op == "in" {
-                        compExpr(prog, c, a)
-                        compExpr(prog, c, b)
-                        let ks = strSlot(c, op)
-                        emitOp(c, Op.BinSlow, ks)
+                        compExpr(prog, &mut c, a)
+                        compExpr(prog, &mut c, b)
+                        let ks = strSlot(&mut c, op)
+                        emitOp(&mut c, Op.BinSlow, ks)
                     } else {
-                        reject(c, "bin-op:" + op.clone())
+                        reject(&mut c, "bin-op:" + op.clone())
                     }
                 }
                 _ => {
-                    compExpr(prog, c, a)
-                    compExpr(prog, c, b)
-                    emitOp(c, o, 0)
+                    compExpr(prog, &mut c, a)
+                    compExpr(prog, &mut c, b)
+                    emitOp(&mut c, o, 0)
                 }
             }
         }
         Expr.Un(op, a) => {
             if op == "-" {
-                compExpr(prog, c, a)
-                emitOp(c, Op.Neg, 0)
+                compExpr(prog, &mut c, a)
+                emitOp(&mut c, Op.Neg, 0)
             } else if op == "!" || op == "~" || op == "+" || op == "typeof" || op == "void" {
-                compExpr(prog, c, a)
-                let ks = strSlot(c, op)
-                emitOp(c, Op.UnSlow, ks)
+                compExpr(prog, &mut c, a)
+                let ks = strSlot(&mut c, op)
+                emitOp(&mut c, Op.UnSlow, ks)
             } else {
-                reject(c, "un-op:" + op.clone())
+                reject(&mut c, "un-op:" + op.clone())
             }
         }
         Expr.Assign(name, rhs) => {
-            compExpr(prog, c, rhs)
+            compExpr(prog, &mut c, rhs)
             if c.viaScope && scopeNameIndex(c, name) >= 0 {
-                let ks = strSlot(c, name)
-                emitOp(c, Op.StoreName, ks)
-                emitOp(c, Op.LoadName, ks)
+                let ks = strSlot(&mut c, name)
+                emitOp(&mut c, Op.StoreName, ks)
+                emitOp(&mut c, Op.LoadName, ks)
             } else {
-                let s = slotOf(c, name, false)
-                emitOp(c, Op.Store, s)
-                emitOp(c, Op.Load, s)
+                let s = slotOf(&mut c, name, false)
+                emitOp(&mut c, Op.Store, s)
+                emitOp(&mut c, Op.Load, s)
             }
         }
         Expr.CompoundAssign(target, op, rhs) => {
             match prog.exprs[target.index] {
                 Expr.Ident(name) => {
                     if c.viaScope && scopeNameIndex(c, name) >= 0 {
-                        let ks = strSlot(c, name)
-                        emitOp(c, Op.LoadName, ks)
-                        compExpr(prog, c, rhs)
+                        let ks = strSlot(&mut c, name)
+                        emitOp(&mut c, Op.LoadName, ks)
+                        compExpr(prog, &mut c, rhs)
                         let o2 = binOpFor(op)
                         match o2 {
                             Op.Halt => {
-                                reject(c, "bin-op:" + op.clone())
+                                reject(&mut c, "bin-op:" + op.clone())
                             }
                             _ => {
-                                emitOp(c, o2, 0)
-                                emitOp(c, Op.StoreName, ks)
-                                emitOp(c, Op.LoadName, ks)
+                                emitOp(&mut c, o2, 0)
+                                emitOp(&mut c, Op.StoreName, ks)
+                                emitOp(&mut c, Op.LoadName, ks)
                             }
                         }
                         return
                     }
-                    let s = slotOf(c, name, false)
-                    emitOp(c, Op.Load, s)
-                    compExpr(prog, c, rhs)
+                    let s = slotOf(&mut c, name, false)
+                    emitOp(&mut c, Op.Load, s)
+                    compExpr(prog, &mut c, rhs)
                     let o = binOpFor(op)
                     match o {
                         Op.Halt => {
-                            reject(c, "bin-op:" + op.clone())
+                            reject(&mut c, "bin-op:" + op.clone())
                         }
                         _ => {
-                            emitOp(c, o, 0)
-                            emitOp(c, Op.Store, s)
-                            emitOp(c, Op.Load, s)
+                            emitOp(&mut c, o, 0)
+                            emitOp(&mut c, Op.Store, s)
+                            emitOp(&mut c, Op.Load, s)
                         }
                     }
                 }
                 _ => {
-                    reject(c, "compound-target")
+                    reject(&mut c, "compound-target")
                 }
             }
         }
@@ -692,62 +692,62 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
             match prog.exprs[target.index] {
                 Expr.Ident(name) => {
                     if c.viaScope && scopeNameIndex(c, name) >= 0 {
-                        let ks = strSlot(c, name)
-                        let one2 = constSlot(c, 1.0)
+                        let ks = strSlot(&mut c, name)
+                        let one2 = constSlot(&mut c, 1.0)
                         if isPrefix {
-                            emitOp(c, Op.LoadName, ks)
-                            emitOp(c, Op.Const, one2)
+                            emitOp(&mut c, Op.LoadName, ks)
+                            emitOp(&mut c, Op.Const, one2)
                             if isInc {
-                                emitOp(c, Op.Add, 0)
+                                emitOp(&mut c, Op.Add, 0)
                             } else {
-                                emitOp(c, Op.Sub, 0)
+                                emitOp(&mut c, Op.Sub, 0)
                             }
-                            emitOp(c, Op.StoreName, ks)
-                            emitOp(c, Op.LoadName, ks)
+                            emitOp(&mut c, Op.StoreName, ks)
+                            emitOp(&mut c, Op.LoadName, ks)
                         } else {
-                            emitOp(c, Op.LoadName, ks)
-                            emitOp(c, Op.LoadName, ks)
-                            emitOp(c, Op.Const, one2)
+                            emitOp(&mut c, Op.LoadName, ks)
+                            emitOp(&mut c, Op.LoadName, ks)
+                            emitOp(&mut c, Op.Const, one2)
                             if isInc {
-                                emitOp(c, Op.Add, 0)
+                                emitOp(&mut c, Op.Add, 0)
                             } else {
-                                emitOp(c, Op.Sub, 0)
+                                emitOp(&mut c, Op.Sub, 0)
                             }
-                            emitOp(c, Op.StoreName, ks)
+                            emitOp(&mut c, Op.StoreName, ks)
                         }
                         return
                     }
-                    let s = slotOf(c, name, false)
-                    let one = constSlot(c, 1.0)
+                    let s = slotOf(&mut c, name, false)
+                    let one = constSlot(&mut c, 1.0)
                     if isPrefix {
-                        emitOp(c, Op.Load, s)
-                        emitOp(c, Op.Const, one)
+                        emitOp(&mut c, Op.Load, s)
+                        emitOp(&mut c, Op.Const, one)
                         if isInc {
-                            emitOp(c, Op.Add, 0)
+                            emitOp(&mut c, Op.Add, 0)
                         } else {
-                            emitOp(c, Op.Sub, 0)
+                            emitOp(&mut c, Op.Sub, 0)
                         }
-                        emitOp(c, Op.Store, s)
-                        emitOp(c, Op.Load, s)
+                        emitOp(&mut c, Op.Store, s)
+                        emitOp(&mut c, Op.Load, s)
                     } else {
-                        emitOp(c, Op.Load, s)
-                        emitOp(c, Op.Load, s)
-                        emitOp(c, Op.Const, one)
+                        emitOp(&mut c, Op.Load, s)
+                        emitOp(&mut c, Op.Load, s)
+                        emitOp(&mut c, Op.Const, one)
                         if isInc {
-                            emitOp(c, Op.Add, 0)
+                            emitOp(&mut c, Op.Add, 0)
                         } else {
-                            emitOp(c, Op.Sub, 0)
+                            emitOp(&mut c, Op.Sub, 0)
                         }
-                        emitOp(c, Op.Store, s)
+                        emitOp(&mut c, Op.Store, s)
                     }
                 }
                 _ => {
-                    reject(c, "update-target")
+                    reject(&mut c, "update-target")
                 }
             }
         }
         _ => {
-            reject(c, "expr:" + exprKindName(prog, id))
+            reject(&mut c, "expr:" + exprKindName(prog, id))
         }
     }
 }
@@ -760,13 +760,13 @@ fn compStmt(prog: &Prog, c: &mut Comp, id: StmtId) {
         Stmt.Empty => {
         }
         Stmt.ExprStmt(e) => {
-            compExpr(prog, c, e)
-            emitOp(c, Op.Pop, 0)
+            compExpr(prog, &mut c, e)
+            emitOp(&mut c, Op.Pop, 0)
         }
         Stmt.Block(b) => {
             var i: i64 = 0
             while i < prog.blocks[b.index].len() {
-                compStmt(prog, c, prog.blocks[b.index][i])
+                compStmt(prog, &mut c, prog.blocks[b.index][i])
                 i = i + 1
             }
         }
@@ -777,44 +777,44 @@ fn compStmt(prog: &Prog, c: &mut Comp, id: StmtId) {
                 // slot that is never written back would lose it. Rejected rather
                 // than handled: the subset does not need it.
                 if prog.declLists[listIdx.index][i].isVar {
-                    reject(c, "var-decl")
+                    reject(&mut c, "var-decl")
                     return
                 }
                 if c.viaScope {
                     // dup checks against both stores, matching declareSlot
                     if scopeNameIndex(c, prog.declLists[listIdx.index][i].name) >= 0 {
-                        reject(c, "duplicate-binding")
+                        reject(&mut c, "duplicate-binding")
                         return
                     }
                     var sn: i64 = 0
                     while sn < c.slotNames.len() {
                         if c.slotNames[sn] == prog.declLists[listIdx.index][i].name {
-                            reject(c, "duplicate-binding")
+                            reject(&mut c, "duplicate-binding")
                             return
                         }
                         sn = sn + 1
                     }
-                    compExpr(prog, c, prog.declLists[listIdx.index][i].init)
+                    compExpr(prog, &mut c, prog.declLists[listIdx.index][i].init)
                     c.scopeNames.push(prog.declLists[listIdx.index][i].name.clone())
-                    let ks = strSlot(c, prog.declLists[listIdx.index][i].name)
-                    emitOp(c, Op.StoreName, ks)
+                    let ks = strSlot(&mut c, prog.declLists[listIdx.index][i].name)
+                    emitOp(&mut c, Op.StoreName, ks)
                 } else {
-                    compExpr(prog, c, prog.declLists[listIdx.index][i].init)
-                    let s = declareSlot(c, prog.declLists[listIdx.index][i].name)
-                    emitOp(c, Op.Store, s)
+                    compExpr(prog, &mut c, prog.declLists[listIdx.index][i].init)
+                    let s = declareSlot(&mut c, prog.declLists[listIdx.index][i].name)
+                    emitOp(&mut c, Op.Store, s)
                 }
                 i = i + 1
             }
         }
         Stmt.If(cond, then, els) => {
-            compExpr(prog, c, cond)
-            let jf = emitOp(c, Op.Jmpf, 0)
-            compStmt(prog, c, then)
+            compExpr(prog, &mut c, cond)
+            let jf = emitOp(&mut c, Op.Jmpf, 0)
+            compStmt(prog, &mut c, then)
             match els {
                 Option.Some(e) => {
-                    let jend = emitOp(c, Op.Jmp, 0)
+                    let jend = emitOp(&mut c, Op.Jmp, 0)
                     c.args[jf] = c.ops.len()
-                    compStmt(prog, c, e)
+                    compStmt(prog, &mut c, e)
                     c.args[jend] = c.ops.len()
                 }
                 Option.None => {
@@ -824,22 +824,22 @@ fn compStmt(prog: &Prog, c: &mut Comp, id: StmtId) {
         }
         Stmt.Ret(e) => {
             if !c.allowRet {
-                reject(c, "return-in-loop")
+                reject(&mut c, "return-in-loop")
                 return
             }
-            compExpr(prog, c, e)
-            emitOp(c, Op.Ret, 0)
+            compExpr(prog, &mut c, e)
+            emitOp(&mut c, Op.Ret, 0)
         }
         Stmt.While(cond, body) => {
             let top = c.ops.len()
-            compExpr(prog, c, cond)
-            let jf = emitOp(c, Op.Jmpf, 0)
-            compStmt(prog, c, body)
-            emitOp(c, Op.Jmp, top)
+            compExpr(prog, &mut c, cond)
+            let jf = emitOp(&mut c, Op.Jmpf, 0)
+            compStmt(prog, &mut c, body)
+            emitOp(&mut c, Op.Jmp, top)
             c.args[jf] = c.ops.len()
         }
         _ => {
-            reject(c, "stmt:" + stmtKindName(prog, id))
+            reject(&mut c, "stmt:" + stmtKindName(prog, id))
         }
     }
 }
@@ -989,27 +989,27 @@ pub fn compileFor(prog: &Prog, id: StmtId): Option<Chunk> {
                 why: "", hasAstArgs: false, viaScope: false, scopeNames: Vec.new(),
             }
             if let Option.Some(s) = init {
-                compStmt(prog, c, s)
+                compStmt(prog, &mut c, s)
             }
             let top = c.ops.len()
             match cond {
                 Option.Some(e) => {
-                    compExpr(prog, c, e)
+                    compExpr(prog, &mut c, e)
                 }
                 Option.None => {
-                    let k = constSlot(c, 1.0)
-                    emitOp(c, Op.Const, k)
+                    let k = constSlot(&mut c, 1.0)
+                    emitOp(&mut c, Op.Const, k)
                 }
             }
-            let jf = emitOp(c, Op.Jmpf, 0)
-            compStmt(prog, c, body)
+            let jf = emitOp(&mut c, Op.Jmpf, 0)
+            compStmt(prog, &mut c, body)
             if let Option.Some(e) = update {
-                compExpr(prog, c, e)
-                emitOp(c, Op.Pop, 0)
+                compExpr(prog, &mut c, e)
+                emitOp(&mut c, Op.Pop, 0)
             }
-            emitOp(c, Op.Jmp, top)
+            emitOp(&mut c, Op.Jmp, top)
             c.args[jf] = c.ops.len()
-            emitOp(c, Op.Halt, 0)
+            emitOp(&mut c, Op.Halt, 0)
             if !c.ok {
                 if gVmStats {
                     gStatLoopsNo = gStatLoopsNo + 1
@@ -1112,7 +1112,7 @@ fn vmFlushOuter(st: &mut Interp, ch: &Chunk, base: i64, scope: i64) {
     var k: i64 = 0
     while k < ch.slotNames.len() {
         if ch.slotOuter[k] && ch.slotWritten[k] {
-            scopeAssign(st, scope, ch.slotNames[k], cloneValue(st.vmStack[base + k]))
+            scopeAssign(&mut st, scope, ch.slotNames[k], cloneValue(st.vmStack[base + k]))
         }
         k = k + 1
     }
@@ -1148,14 +1148,14 @@ fn vmSeedFrame(st: &mut Interp, cid: i64, at: i64, scope: i64): bool {
         if gChunks[cid].slotOuter[i] {
             match scopeTryLookup(st, scope, gChunks[cid].slotNames[i]) {
                 Option.Some(v) => {
-                    vmSet(st, at + i, v)
+                    vmSet(&mut st, at + i, v)
                 }
                 Option.None => {
                     return false
                 }
             }
         } else {
-            vmSet(st, at + i, JSValue.Undefined)
+            vmSet(&mut st, at + i, JSValue.Undefined)
         }
         i = i + 1
     }
@@ -1164,7 +1164,7 @@ fn vmSeedFrame(st: &mut Interp, cid: i64, at: i64, scope: i64): bool {
     // still republishes its own exact top before it does.
     var r: i64 = 0
     while r < gChunks[cid].need {
-        vmSet(st, at + gChunks[cid].slotNames.len() + r, JSValue.Number(0.0))
+        vmSet(&mut st, at + gChunks[cid].slotNames.len() + r, JSValue.Number(0.0))
         r = r + 1
     }
     st.vmSp = at + gChunks[cid].slotNames.len() + gChunks[cid].need
@@ -1421,7 +1421,7 @@ pub fn runChunkNumeric(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Opti
     var w: i64 = 0
     while w < ch.slotNames.len() {
         if ch.slotOuter[w] && ch.slotWritten[w] {
-            scopeAssign(st, scope, ch.slotNames[w], JSValue.Number(stk[w]))
+            scopeAssign(&mut st, scope, ch.slotNames[w], JSValue.Number(stk[w]))
         }
         w = w + 1
     }
@@ -1433,11 +1433,11 @@ pub fn runChunkNumeric(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Opti
 // active so a collect mid-frame keeps it; the popActive pairs live at the
 // frame-exit sites, keyed off the chunk's viaScope flag.
 fn vmEnterBodyScope(st: &mut Interp, cid: i64, parent: i64): i64 {
-    let bs = newScope(st, parent)
-    pushActive(st, bs)
+    let bs = newScope(&mut st, parent)
+    pushActive(&mut st, bs)
     var i: i64 = 0
     while i < gChunks[cid].scopeNames.len() {
-        scopeDefine(st, bs, gChunks[cid].scopeNames[i].clone(), JSValue.Undefined)
+        scopeDefine(&mut st, bs, gChunks[cid].scopeNames[i].clone(), JSValue.Undefined)
         i = i + 1
     }
     return bs
@@ -1454,12 +1454,12 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
     let base0 = st.vmSp
     var base = base0
     var curScope = scope
-    if !vmSeedFrame(st, cid, base, curScope) {
+    if !vmSeedFrame(&mut st, cid, base, curScope) {
         st.vmSp = base0
         return Option.None
     }
     if ch.viaScope {
-        curScope = vmEnterBodyScope(st, cid, curScope)
+        curScope = vmEnterBodyScope(&mut st, cid, curScope)
     }
 
     var frames: Vec<VmFrame> = Vec.new()
@@ -1501,17 +1501,17 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
             let a = ch.args[pc]
             match ch.ops[pc] {
                 Op.Const => {
-                    vmSet(st, sp, JSValue.Number(ch.consts[a]))
+                    vmSet(&mut st, sp, JSValue.Number(ch.consts[a]))
                     sp = sp + 1
                     pc = pc + 1
                 }
                 Op.Str => {
-                    vmSet(st, sp, JSValue.Str(ch.strs[a].clone()))
+                    vmSet(&mut st, sp, JSValue.Str(ch.strs[a].clone()))
                     sp = sp + 1
                     pc = pc + 1
                 }
                 Op.Load => {
-                    vmSet(st, sp, cloneValue(st.vmStack[base + a]))
+                    vmSet(&mut st, sp, cloneValue(st.vmStack[base + a]))
                     sp = sp + 1
                     pc = pc + 1
                 }
@@ -1531,15 +1531,15 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     } else {
                         st.vmSp = sp + 1
                         if dirty {
-                            vmFlushOuter(st, ch, base, curScope)
+                            vmFlushOuter(&mut st, ch, base, curScope)
                             dirty = false
                         }
                         let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
-                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Add), x, y, st)
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Add), x, y, &mut st)
                         if st.funcCallTicks != t0 {
-                            vmSeedOuter(st, ch, base, curScope)
+                            vmSeedOuter(&mut st, ch, base, curScope)
                         }
                         st.vmSp = sp
                     }
@@ -1553,15 +1553,15 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     } else {
                         st.vmSp = sp + 1
                         if dirty {
-                            vmFlushOuter(st, ch, base, curScope)
+                            vmFlushOuter(&mut st, ch, base, curScope)
                             dirty = false
                         }
                         let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
-                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Sub), x, y, st)
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Sub), x, y, &mut st)
                         if st.funcCallTicks != t0 {
-                            vmSeedOuter(st, ch, base, curScope)
+                            vmSeedOuter(&mut st, ch, base, curScope)
                         }
                         st.vmSp = sp
                     }
@@ -1575,15 +1575,15 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     } else {
                         st.vmSp = sp + 1
                         if dirty {
-                            vmFlushOuter(st, ch, base, curScope)
+                            vmFlushOuter(&mut st, ch, base, curScope)
                             dirty = false
                         }
                         let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
-                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Mul), x, y, st)
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Mul), x, y, &mut st)
                         if st.funcCallTicks != t0 {
-                            vmSeedOuter(st, ch, base, curScope)
+                            vmSeedOuter(&mut st, ch, base, curScope)
                         }
                         st.vmSp = sp
                     }
@@ -1597,15 +1597,15 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     } else {
                         st.vmSp = sp + 1
                         if dirty {
-                            vmFlushOuter(st, ch, base, curScope)
+                            vmFlushOuter(&mut st, ch, base, curScope)
                             dirty = false
                         }
                         let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
-                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Div), x, y, st)
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Div), x, y, &mut st)
                         if st.funcCallTicks != t0 {
-                            vmSeedOuter(st, ch, base, curScope)
+                            vmSeedOuter(&mut st, ch, base, curScope)
                         }
                         st.vmSp = sp
                     }
@@ -1619,15 +1619,15 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     } else {
                         st.vmSp = sp + 1
                         if dirty {
-                            vmFlushOuter(st, ch, base, curScope)
+                            vmFlushOuter(&mut st, ch, base, curScope)
                             dirty = false
                         }
                         let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
-                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Mod), x, y, st)
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Mod), x, y, &mut st)
                         if st.funcCallTicks != t0 {
-                            vmSeedOuter(st, ch, base, curScope)
+                            vmSeedOuter(&mut st, ch, base, curScope)
                         }
                         st.vmSp = sp
                     }
@@ -1640,7 +1640,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     } else {
                         st.vmSp = sp
                         if dirty {
-                            vmFlushOuter(st, ch, base, curScope)
+                            vmFlushOuter(&mut st, ch, base, curScope)
                             dirty = false
                         }
                         let tn0 = st.funcCallTicks
@@ -1650,9 +1650,9 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         // reaches it too (`Symbol() == 1` is false, not a throw). The
                         // evaluator's own `-` arm has this guard; the compiled path
                         // bypassed it and `-Symbol()` quietly produced NaN.
-                        let n = toNumArg(prog, x, st)
+                        let n = toNumArg(prog, x, &mut st)
                         if st.funcCallTicks != tn0 {
-                            vmSeedOuter(st, ch, base, curScope)
+                            vmSeedOuter(&mut st, ch, base, curScope)
                         }
                         st.vmStack[sp - 1] = JSValue.Number(-n)
                     }
@@ -1666,15 +1666,15 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     } else {
                         st.vmSp = sp + 1
                         if dirty {
-                            vmFlushOuter(st, ch, base, curScope)
+                            vmFlushOuter(&mut st, ch, base, curScope)
                             dirty = false
                         }
                         let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
-                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Lt), x, y, st)
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Lt), x, y, &mut st)
                         if st.funcCallTicks != t0 {
-                            vmSeedOuter(st, ch, base, curScope)
+                            vmSeedOuter(&mut st, ch, base, curScope)
                         }
                         st.vmSp = sp
                     }
@@ -1688,15 +1688,15 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     } else {
                         st.vmSp = sp + 1
                         if dirty {
-                            vmFlushOuter(st, ch, base, curScope)
+                            vmFlushOuter(&mut st, ch, base, curScope)
                             dirty = false
                         }
                         let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
-                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Gt), x, y, st)
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Gt), x, y, &mut st)
                         if st.funcCallTicks != t0 {
-                            vmSeedOuter(st, ch, base, curScope)
+                            vmSeedOuter(&mut st, ch, base, curScope)
                         }
                         st.vmSp = sp
                     }
@@ -1710,15 +1710,15 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     } else {
                         st.vmSp = sp + 1
                         if dirty {
-                            vmFlushOuter(st, ch, base, curScope)
+                            vmFlushOuter(&mut st, ch, base, curScope)
                             dirty = false
                         }
                         let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
-                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Le), x, y, st)
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Le), x, y, &mut st)
                         if st.funcCallTicks != t0 {
-                            vmSeedOuter(st, ch, base, curScope)
+                            vmSeedOuter(&mut st, ch, base, curScope)
                         }
                         st.vmSp = sp
                     }
@@ -1732,15 +1732,15 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     } else {
                         st.vmSp = sp + 1
                         if dirty {
-                            vmFlushOuter(st, ch, base, curScope)
+                            vmFlushOuter(&mut st, ch, base, curScope)
                             dirty = false
                         }
                         let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
-                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Ge), x, y, st)
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Ge), x, y, &mut st)
                         if st.funcCallTicks != t0 {
-                            vmSeedOuter(st, ch, base, curScope)
+                            vmSeedOuter(&mut st, ch, base, curScope)
                         }
                         st.vmSp = sp
                     }
@@ -1754,15 +1754,15 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     } else {
                         st.vmSp = sp + 1
                         if dirty {
-                            vmFlushOuter(st, ch, base, curScope)
+                            vmFlushOuter(&mut st, ch, base, curScope)
                             dirty = false
                         }
                         let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
-                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Eq), x, y, st)
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Eq), x, y, &mut st)
                         if st.funcCallTicks != t0 {
-                            vmSeedOuter(st, ch, base, curScope)
+                            vmSeedOuter(&mut st, ch, base, curScope)
                         }
                         st.vmSp = sp
                     }
@@ -1776,15 +1776,15 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     } else {
                         st.vmSp = sp + 1
                         if dirty {
-                            vmFlushOuter(st, ch, base, curScope)
+                            vmFlushOuter(&mut st, ch, base, curScope)
                             dirty = false
                         }
                         let t0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
                         let y = cloneValue(st.vmStack[sp])
-                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Ne), x, y, st)
+                        st.vmStack[sp - 1] = evalBinValues(prog, opSpelling(Op.Ne), x, y, &mut st)
                         if st.funcCallTicks != t0 {
-                            vmSeedOuter(st, ch, base, curScope)
+                            vmSeedOuter(&mut st, ch, base, curScope)
                         }
                         st.vmSp = sp
                     }
@@ -1804,14 +1804,14 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                 Op.GetMem => {
                     st.vmSp = sp
                     if dirty {
-                        vmFlushOuter(st, ch, base, curScope)
+                        vmFlushOuter(&mut st, ch, base, curScope)
                         dirty = false
                     }
                     let tg0 = st.funcCallTicks
                     let recv = cloneValue(st.vmStack[sp - 1])
-                    st.vmStack[sp - 1] = memberOfValue(prog, recv, ch.strs[a], st)
+                    st.vmStack[sp - 1] = memberOfValue(prog, recv, ch.strs[a], &mut st)
                     if st.funcCallTicks != tg0 {
-                        vmSeedOuter(st, ch, base, curScope)
+                        vmSeedOuter(&mut st, ch, base, curScope)
                     }
                     pc = pc + 1
                 }
@@ -1819,28 +1819,28 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     sp = sp - 1
                     st.vmSp = sp + 1
                     if dirty {
-                        vmFlushOuter(st, ch, base, curScope)
+                        vmFlushOuter(&mut st, ch, base, curScope)
                         dirty = false
                     }
                     let ts0 = st.funcCallTicks
                     let v = cloneValue(st.vmStack[sp])
                     let ov = cloneValue(st.vmStack[sp - 1])
-                    st.vmStack[sp - 1] = setMemberOfValue(prog, ov, ch.strs[a].clone(), v, st)
+                    st.vmStack[sp - 1] = setMemberOfValue(prog, ov, ch.strs[a].clone(), v, &mut st)
                     if st.funcCallTicks != ts0 {
-                        vmSeedOuter(st, ch, base, curScope)
+                        vmSeedOuter(&mut st, ch, base, curScope)
                     }
                     pc = pc + 1
                 }
                 Op.NewObj => {
                     st.vmSp = sp
-                    let o = newObject(st)
-                    vmSet(st, sp, JSValue.Obj(o))
+                    let o = newObject(&mut st)
+                    vmSet(&mut st, sp, JSValue.Obj(o))
                     sp = sp + 1
                     st.vmSp = sp
                     pc = pc + 1
                 }
                 Op.Dup => {
-                    vmSet(st, sp, cloneValue(st.vmStack[sp - 1]))
+                    vmSet(&mut st, sp, cloneValue(st.vmStack[sp - 1]))
                     sp = sp + 1
                     pc = pc + 1
                 }
@@ -1862,7 +1862,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     // program's allocation happens. It also gives MILOJS_GC_THRESHOLD=1
                     // reach into this path: without it the frame stack was never once
                     // marked mid-dispatch under the GC-stress pass.
-                    maybeGc(st)
+                    maybeGc(&mut st)
                     let calleeVal = cloneValue(st.vmStack[calleeSlot])
                     var argVals: Vec<JSValue> = Vec.new()
                     var ai: i64 = 0
@@ -1872,7 +1872,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     }
                     // Whatever this frame is holding in its slots has to be in the
                     // scope chain before the callee resolves a single free name.
-                    vmFlushOuter(st, ch, base, curScope)
+                    vmFlushOuter(&mut st, ch, base, curScope)
                     dirty = false
                     var handled = false
                     if let JSValue.Func(fIdx, envIdx) = calleeVal {
@@ -1886,7 +1886,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                             // The same guard callFunctionBody applies. A frame here
                             // costs no native stack, so the depth counter is the only
                             // half of it that can fire.
-                            if callGuardTripped(st) {
+                            if callGuardTripped(&mut st) {
                                 threwInCallee = true
                             } else {
                                 // Everything callFunctionBody does for an ordinary
@@ -1896,15 +1896,15 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                                 st.suppressAsyncSpawn = false
                                 st.suppressGenSpawn = false
                                 st.callDepth = st.callDepth + 1
-                                let callScope = bindActivationScope(prog, fIdx, envIdx, argVals, JSValue.Undefined, st, gChunks[cid2].usesArguments)
-                                pushActive(st, callScope)
+                                let callScope = bindActivationScope(prog, fIdx, envIdx, argVals, JSValue.Undefined, &mut st, gChunks[cid2].usesArguments)
+                                pushActive(&mut st, callScope)
                                 // The callee's frame goes ABOVE this one's operands,
                                 // so every live value in every frame stays below vmSp
                                 // and stays marked.
-                                if vmSeedFrame(st, cid2, sp, callScope) {
+                                if vmSeedFrame(&mut st, cid2, sp, callScope) {
                                     var enterScope = callScope
                                     if gChunks[cid2].viaScope {
-                                        enterScope = vmEnterBodyScope(st, cid2, callScope)
+                                        enterScope = vmEnterBodyScope(&mut st, cid2, callScope)
                                     }
                                     st.fnFileStack.push(prog.funcs[fIdx].file.clone())
                                     frames.push(VmFrame {
@@ -1924,7 +1924,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                                     // A free name the callee reads is bound nowhere:
                                     // only the tree walker raises that ReferenceError.
                                     // Undo the activation and take the slow path.
-                                    popActive(st)
+                                    popActive(&mut st)
                                     st.callDepth = st.callDepth - 1
                                     handled = false
                                 }
@@ -1936,27 +1936,27 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         // or a body outside the subset: one native round trip, which
                         // is what the tree walker pays for every call it makes.
                         if isPlainCallable(st, calleeVal) {
-                            let res = callPlainValue(prog, calleeVal, argVals, st)
+                            let res = callPlainValue(prog, calleeVal, argVals, &mut st)
                             sp = calleeSlot + 1
                             st.vmSp = sp
-                            vmSet(st, calleeSlot, res)
-                            vmSeedOuter(st, ch, base, curScope)
+                            vmSet(&mut st, calleeSlot, res)
+                            vmSeedOuter(&mut st, ch, base, curScope)
                             threwInCallee = st.throwing
                         } else {
-                            throwNotAFunction(st, ch.strs[nameSlot])
+                            throwNotAFunction(&mut st, ch.strs[nameSlot])
                         }
                         pc = pc + 1
                     }
                 }
                 Op.Prim => {
                     if a == 3 {
-                        vmSet(st, sp, JSValue.Bool(true))
+                        vmSet(&mut st, sp, JSValue.Bool(true))
                     } else if a == 2 {
-                        vmSet(st, sp, JSValue.Bool(false))
+                        vmSet(&mut st, sp, JSValue.Bool(false))
                     } else if a == 1 {
-                        vmSet(st, sp, JSValue.Null)
+                        vmSet(&mut st, sp, JSValue.Null)
                     } else {
-                        vmSet(st, sp, JSValue.Undefined)
+                        vmSet(&mut st, sp, JSValue.Undefined)
                     }
                     sp = sp + 1
                     pc = pc + 1
@@ -1964,10 +1964,10 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                 Op.LoadName => {
                     match scopeTryLookup(st, curScope, ch.strs[a]) {
                         Option.Some(v) => {
-                            vmSet(st, sp, v)
+                            vmSet(&mut st, sp, v)
                         }
                         Option.None => {
-                            vmSet(st, sp, JSValue.Undefined)
+                            vmSet(&mut st, sp, JSValue.Undefined)
                         }
                     }
                     sp = sp + 1
@@ -1975,7 +1975,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                 }
                 Op.StoreName => {
                     sp = sp - 1
-                    scopeAssign(st, curScope, ch.strs[a], cloneValue(st.vmStack[sp]))
+                    scopeAssign(&mut st, curScope, ch.strs[a], cloneValue(st.vmStack[sp]))
                     pc = pc + 1
                 }
                 Op.UnSlow => {
@@ -1983,14 +1983,14 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     // operand stays rooted at sp-1 until the result replaces it.
                     st.vmSp = sp
                     if dirty {
-                        vmFlushOuter(st, ch, base, curScope)
+                        vmFlushOuter(&mut st, ch, base, curScope)
                         dirty = false
                     }
                     let tu0 = st.funcCallTicks
                     let x = cloneValue(st.vmStack[sp - 1])
-                    st.vmStack[sp - 1] = evalUnValue(prog, ch.strs[a], x, st)
+                    st.vmStack[sp - 1] = evalUnValue(prog, ch.strs[a], x, &mut st)
                     if st.funcCallTicks != tu0 {
-                        vmSeedOuter(st, ch, base, curScope)
+                        vmSeedOuter(&mut st, ch, base, curScope)
                     }
                     pc = pc + 1
                 }
@@ -1998,15 +1998,15 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     sp = sp - 1
                     st.vmSp = sp + 1
                     if dirty {
-                        vmFlushOuter(st, ch, base, curScope)
+                        vmFlushOuter(&mut st, ch, base, curScope)
                         dirty = false
                     }
                     let tb0 = st.funcCallTicks
                     let x = cloneValue(st.vmStack[sp - 1])
                     let y = cloneValue(st.vmStack[sp])
-                    st.vmStack[sp - 1] = evalBinValues(prog, ch.strs[a], x, y, st)
+                    st.vmStack[sp - 1] = evalBinValues(prog, ch.strs[a], x, y, &mut st)
                     if st.funcCallTicks != tb0 {
-                        vmSeedOuter(st, ch, base, curScope)
+                        vmSeedOuter(&mut st, ch, base, curScope)
                     }
                     st.vmSp = sp
                     pc = pc + 1
@@ -2049,7 +2049,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     // Same publication discipline as Op.Call: the receiver sits
                     // below sp, argument evaluation can allocate and collect.
                     st.vmSp = sp
-                    maybeGc(st)
+                    maybeGc(&mut st)
                     let recv = cloneValue(st.vmStack[sp - 1])
                     // The walker evaluates the argument expressions in this
                     // frame's scope, so the frame's writes must be visible first:
@@ -2059,23 +2059,23 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     // curScope itself would leak a loop chunk's block lets into
                     // the enclosing (even global) scope. No closure can capture
                     // the child: a body containing a FuncExpr never compiles.
-                    vmFlushOuter(st, ch, base, curScope)
+                    vmFlushOuter(&mut st, ch, base, curScope)
                     dirty = false
                     // The child scope exists only to hold declared locals for
                     // the walker; a chunk with none skips the allocation, which
                     // is most method-heavy code (params and captures are outer).
                     var res = JSValue.Undefined
                     if ch.hasDeclared {
-                        let callEnv = newScope(st, curScope)
-                        pushActive(st, callEnv)
+                        let callEnv = newScope(&mut st, curScope)
+                        pushActive(&mut st, callEnv)
                         var dk: i64 = 0
                         while dk < ch.slotNames.len() {
                             if !ch.slotOuter[dk] {
-                                scopeDefine(st, callEnv, ch.slotNames[dk].clone(), cloneValue(st.vmStack[base + dk]))
+                                scopeDefine(&mut st, callEnv, ch.slotNames[dk].clone(), cloneValue(st.vmStack[base + dk]))
                             }
                             dk = dk + 1
                         }
-                        res = callMember(prog, recv, ch.strs[ms], ArgListId { index: ali }, st, callEnv)
+                        res = callMember(prog, recv, ch.strs[ms], ArgListId { index: ali }, &mut st, callEnv)
                         // An argument expression can assign any slot this frame
                         // holds, declared (child scope) or outer (real chain):
                         // both kinds re-read.
@@ -2088,12 +2088,12 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                             }
                             dr = dr + 1
                         }
-                        popActive(st)
+                        popActive(&mut st)
                     } else {
-                        res = callMember(prog, recv, ch.strs[ms], ArgListId { index: ali }, st, curScope)
+                        res = callMember(prog, recv, ch.strs[ms], ArgListId { index: ali }, &mut st, curScope)
                     }
                     st.vmStack[sp - 1] = res
-                    vmSeedOuter(st, ch, base, curScope)
+                    vmSeedOuter(&mut st, ch, base, curScope)
                     threwInCallee = st.throwing
                     pc = pc + 1
                 }
@@ -2128,15 +2128,15 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
             // would put a stale snapshot back over whatever the callee wrote
             // before it threw.
             if !threwInCallee {
-                vmFlushOuter(st, ch, base, curScope)
+                vmFlushOuter(&mut st, ch, base, curScope)
             }
             flushedOnThrow = true
             while frames.len() > 0 {
                 if ch.viaScope {
                     // the frame's own body scope sits above its activation
-                    popActive(st)
+                    popActive(&mut st)
                 }
-                popActive(st)
+                popActive(&mut st)
                 st.callDepth = st.callDepth - 1
                 let _f = st.fnFileStack.pop()
                 let fr = frames.pop()!
@@ -2158,11 +2158,11 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                 // The callee is finished: publish its writes, drop its
                 // activation, and resume the caller with the result in the slot
                 // the callee value occupied.
-                vmFlushOuter(st, ch, base, curScope)
+                vmFlushOuter(&mut st, ch, base, curScope)
                 if ch.viaScope {
-                    popActive(st)
+                    popActive(&mut st)
                 }
-                popActive(st)
+                popActive(&mut st)
                 st.callDepth = st.callDepth - 1
                 let _f = st.fnFileStack.pop()
                 let fr = frames.pop()!
@@ -2175,16 +2175,16 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                 st.vmStack[fr.resSlot] = retVal
                 retVal = JSValue.Undefined
                 st.vmSp = sp
-                vmSeedOuter(st, ch, base, curScope)
+                vmSeedOuter(&mut st, ch, base, curScope)
             }
         }
     }
 
     if !flushedOnThrow {
-        vmFlushOuter(st, ch, base, curScope)
+        vmFlushOuter(&mut st, ch, base, curScope)
     }
     if ch.viaScope {
-        popActive(st)
+        popActive(&mut st)
     }
     // Drop the whole frame in one move: everything at or above vmSp is dead and
     // collect stops marking there.
@@ -2240,11 +2240,11 @@ pub fn tryRunFor(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): bool {
     // The raw-f64 lane first: it answers None (before any side effect) when a
     // seed is not a plain number, and the boxed path takes over.
     if gChunks[slot - 1].numericOnly {
-        if let Option.Some(_n) = runChunkNumeric(prog, slot - 1, st, scope) {
+        if let Option.Some(_n) = runChunkNumeric(prog, slot - 1, &mut st, scope) {
             return true
         }
     }
-    if let Option.Some(_v) = runChunk(prog, slot - 1, st, scope) {
+    if let Option.Some(_v) = runChunk(prog, slot - 1, &mut st, scope) {
         return true
     }
     return false
@@ -2326,10 +2326,10 @@ fn compileBodyMode(prog: &Prog, fIdx: i64, viaScope: bool): Option<Chunk> {
     let body = prog.funcs[fIdx].body
     var i: i64 = 0
     while i < prog.blocks[body.index].len() {
-        compStmt(prog, c, prog.blocks[body.index][i])
+        compStmt(prog, &mut c, prog.blocks[body.index][i])
         i = i + 1
     }
-    emitOp(c, Op.Halt, 0)
+    emitOp(&mut c, Op.Halt, 0)
     if !c.ok {
         gLastCompileWhy = c.why
         return Option.None
