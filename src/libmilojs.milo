@@ -8,7 +8,7 @@ from "./engine/bytecode" import {
     resetLoopCache
 }
 from "./engine/runtime" import {
-    gInterp
+    gInterp, markBuiltinGlobals
 }
 from "./engine/driver" import {
     makeInterp, bootInterp, describeThrown, evalSourceValue
@@ -104,6 +104,7 @@ pub fn milojs_context_new(outContext: *i64): i32 {
     resetLoopCache()
     bootInterp(&mut gInterp)
     let _prelude = evalSourceValue(@embedFile("../lib/engine-prelude.js"), &mut gProg, &mut gInterp)
+    markBuiltinGlobals(&mut gInterp)
     if gInterp.throwing {
         mjEmbedException = describeThrown(gInterp, gInterp.thrownValue)
         gInterp = makeInterp(false, 1024, 2)

@@ -905,6 +905,11 @@ pub struct Interp {
     regexProtoObj: i64,
     // Map.prototype / Set.prototype / Promise.prototype, linked from instances
     mapProtoObj: i64,
+    // scope 0 bindings below this index were defined by bootstrap and the
+    // preludes: the global object reports them with a builtin's attributes
+    // (writable, non-enumerable, configurable); later ones are the program's
+    // `var`s. Set by markBuiltinGlobals once the preludes have run.
+    builtinGlobals: i64,
     setProtoObj: i64,
     promiseProtoObj: i64,
     // shared prototype for all iterator objects, so the helper methods installed
@@ -1098,7 +1103,7 @@ pub var gInterp: Interp = Interp {
     throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 10000,
     rngState: 88172645463325252,
-    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, nativeKeys: Vec.new(), nativeProps: Vec.new(), resolverProps: Vec.new(), dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, objectProtoPristine: true, symbolCounter: 0, anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actEnv: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), inspectMaxDepth: 2, parseFailed: false, hadUnhandledRejection: false, gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false
+    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, nativeKeys: Vec.new(), nativeProps: Vec.new(), resolverProps: Vec.new(), dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, objectProtoPristine: true, symbolCounter: 0, anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actEnv: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), inspectMaxDepth: 2, parseFailed: false, hadUnhandledRejection: false, gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false, builtinGlobals: 0
 }
 
 fn allocObj(st: &mut Interp, isArray: bool): i64 {
@@ -2860,6 +2865,22 @@ pub fn scopeHas(st: &Interp, scope: i64, name: &string): bool {
 
 // Is `name` bound in this scope itself (not a parent)? Hoisting must not
 // clobber a binding of the same name from an enclosing scope.
+// Index of `name` among scope's own bindings, or -1.
+pub fn scopeOwnIndex(st: &Interp, scope: i64, name: &string): i64 {
+    var i = st.scopes[scope].vars.len() - 1
+    while i >= 0 {
+        if st.scopes[scope].vars[i].name == name {
+            return i
+        }
+        i = i - 1
+    }
+    return -1
+}
+
+pub fn markBuiltinGlobals(st: &mut Interp) {
+    st.builtinGlobals = st.scopes[0].vars.len()
+}
+
 pub fn scopeHasOwn(st: &Interp, scope: i64, name: &string): bool {
     var i = st.scopes[scope].vars.len() - 1
     while i >= 0 {

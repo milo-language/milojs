@@ -18,7 +18,7 @@ from "./value" import {
     JSValue, Native, Builtin, i64ToStr, daysFromCivil, nativeEq, isNativeValue
 }
 from "./runtime" import {
-    Interp, Timer, Microtask, Reaction, PendingFetch, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn, TA_MAX, TA_I64, TA_U64, taIsBigKind, taLoadBig, taStoreBig, isPrivateKey
+    Interp, Timer, Microtask, Reaction, PendingFetch, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn, TA_MAX, TA_I64, TA_U64, taIsBigKind, taLoadBig, taStoreBig, isPrivateKey, scopeOwnIndex
 }
 from "./strutil" import {
     strSlice
@@ -7450,6 +7450,8 @@ pub fn runModule(prog: &Prog, idx: i64, st: &mut Interp): JSValue {
     objSet(&mut st, moduleObj, "exports", JSValue.Obj(exportsObj))
     scopeDefine(&mut st, modScope, "module", JSValue.Obj(moduleObj))
     scopeDefine(&mut st, modScope, "exports", JSValue.Obj(exportsObj))
+    // a CommonJS module's top-level `this` is its exports object
+    scopeDefine(&mut st, modScope, "this", JSValue.Obj(exportsObj))
     // node guarantees these are ABSOLUTE, and packages build paths from them:
     // `bindings` joins its candidate addon paths onto the module root it derives
     // from __filename, so a relative one made every candidate resolve against
@@ -8700,7 +8702,7 @@ fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): 
         // typeof is the one context where an undeclared name is legal
         if code == UnOp.TypeOf {
             if let Expr.Ident(iname) = prog.exprs[a.index] {
-                if !scopeHas(st, scope, iname) {
+                if iname != "this" && !scopeHas(st, scope, iname) {
                     return JSValue.Str("undefined")
                 }
             }
@@ -9243,11 +9245,13 @@ pub fn evalExpr(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue {
                     return v
                 }
                 Option.None => {
-                    if name != "this" {
-                        st.throwing = true
-                        st.thrownValue = makeError(&mut st, "ReferenceError", name.clone() + " is not defined")
+                    if name == "this" {
+                        // no enclosing function or module bound one: script
+                        // code's `this` is the global object, as is an arrow's
+                        // at top level
+                        return scopeLookup(st, 0, "globalThis")
                     }
-                    return JSValue.Undefined
+                    return throwErr(&mut st, "ReferenceError", name.clone() + " is not defined")
                 }
             }
         }
@@ -11382,15 +11386,28 @@ fn ordinaryGetOwnPropDesc(st: &mut Interp, v: &JSValue, key: &string): JSValue {
         // a top-level binding is a property of the global object even though
         // it lives in scope 0; it is writable and enumerable but, like a
         // `var` declaration, not configurable
-        if st.objects[h].isGlobal && scopeHasOwn(st, 0, key) {
-            let gd = newObject(&mut st)
-            pushTemp(&mut st, JSValue.Obj(gd))
-            objSet(&mut st, gd, "value", scopeLookup(st, 0, key))
-            objSet(&mut st, gd, "writable", JSValue.Bool(true))
-            objSet(&mut st, gd, "enumerable", JSValue.Bool(true))
-            objSet(&mut st, gd, "configurable", JSValue.Bool(false))
-            popTemp(&mut st)
-            return JSValue.Obj(gd)
+        if st.objects[h].isGlobal {
+            var bi = scopeOwnIndex(st, 0, key)
+            if key == "undefined" {
+                // a literal, not a binding, but an own frozen property of the
+                // global object all the same
+                bi = 0
+            }
+            if bi >= 0 {
+                // a builtin global is writable, non-enumerable, configurable;
+                // the three value constants are frozen; the program's own
+                // `var`s are writable, enumerable, non-configurable
+                let builtin = bi < st.builtinGlobals
+                let frozen = key == "NaN" || key == "Infinity" || key == "undefined"
+                let gd = newObject(&mut st)
+                pushTemp(&mut st, JSValue.Obj(gd))
+                objSet(&mut st, gd, "value", scopeLookup(st, 0, key))
+                objSet(&mut st, gd, "writable", JSValue.Bool(!frozen))
+                objSet(&mut st, gd, "enumerable", JSValue.Bool(!builtin))
+                objSet(&mut st, gd, "configurable", JSValue.Bool(builtin && !frozen))
+                popTemp(&mut st)
+                return JSValue.Obj(gd)
+            }
         }
         return JSValue.Undefined
     }

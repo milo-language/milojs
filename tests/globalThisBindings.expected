@@ -1,0 +1,8 @@
+object true object
+true false true function true
+NaN false false false NaN
+Infinity false false false Infinity
+undefined false false false undefined
+true,true,2 2
+false undefined true
+true true undefined true

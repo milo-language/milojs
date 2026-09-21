@@ -304,6 +304,14 @@ pub fn mapPut(st: &mut Interp, o: i64, key: JSValue, value: JSValue)
 
 _Undocumented._
 
+### `markBuiltinGlobals`
+
+```milo
+pub fn markBuiltinGlobals(st: &mut Interp)
+```
+
+_Undocumented._
+
 ### `maybeGc`
 
 ```milo
@@ -654,8 +662,7 @@ still work — it is only a user binding that shadows it that should turn
 pub fn scopeHasOwn(st: &Interp, scope: i64, name: &string): bool
 ```
 
-Is `name` bound in this scope itself (not a parent)? Hoisting must not
-clobber a binding of the same name from an enclosing scope.
+_Undocumented._
 
 ### `scopeLookup`
 
@@ -664,6 +671,16 @@ pub fn scopeLookup(st: &Interp, scope: i64, name: &string): JSValue
 ```
 
 _Undocumented._
+
+### `scopeOwnIndex`
+
+```milo
+pub fn scopeOwnIndex(st: &Interp, scope: i64, name: &string): i64
+```
+
+Is `name` bound in this scope itself (not a parent)? Hoisting must not
+clobber a binding of the same name from an enclosing scope.
+Index of `name` among scope's own bindings, or -1.
 
 ### `scopeTryLookup`
 

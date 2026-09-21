@@ -42,7 +42,7 @@ from "./engine/value" import {
     JSValue, Native, Builtin, objHandle
 }
 from "./engine/runtime" import {
-    Interp, newObject, newArray, objSet, arrPush, scopeDefine, scopeLookup, objGet
+    Interp, newObject, newArray, objSet, arrPush, scopeDefine, scopeLookup, objGet, markBuiltinGlobals
 }
 from "./engine/driver" import {
     makeInterp, bootInterp
@@ -370,6 +370,7 @@ fn main(): i32 {
         hoistBlock(gProg, gInterp.modBlocks[preludeIdx], &mut gInterp, 0)
         execBlock(gProg, gInterp.modBlocks[preludeIdx], &mut gInterp, 0)
     }
+    markBuiltinGlobals(&mut gInterp)
     // Node runs NOTHING when the source will not parse, and exits 1. Running the
     // partial block the parser managed to build would execute half a program and
     // then report success.

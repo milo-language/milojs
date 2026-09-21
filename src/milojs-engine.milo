@@ -48,6 +48,9 @@ from "./engine/bytecode" import {
 from "./engine/version" import {
     versionText
 }
+from "./engine/runtime" import {
+    markBuiltinGlobals
+}
 from "./engine/driver" import {
     makeInterp, bootInterp, describeThrown
 , interpStackBytes}
@@ -156,6 +159,7 @@ fn main(): i32 {
                 hoistBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, 0)
                 execBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, 0)
             }
+            markBuiltinGlobals(&mut gInterp)
             if gInterp.throwing {
                 eprint("milojs-engine: prelude failed: " + describeThrown(gInterp, gInterp.thrownValue))
                 return 1

@@ -80,6 +80,16 @@ delete the darwin branch of `interpStackBytes`. The alternative that does not
 need milo — shrinking the ~7 KB per-frame cost — is the same work the bytecode
 VM stage already owns.
 
+## Engine: a global written through globalThis reads back as a var
+
+`globalThis.x = 1` and `var x = 1` both become a scope-0 binding, and the
+global object synthesises one descriptor shape for a binding the program made
+(writable, enumerable, non-configurable). Node gives the assignment form
+`configurable: true`. One bit, but modelling it means the global object
+keeping its own property table for assigned names alongside the bindings for
+declared ones, with reads consulting both. tests/globalThisBindings.js leaves
+the bit out until then.
+
 ## Engine: string concatenation in a loop is quadratic
 
 `s += "x"` copies the whole string each time: 100k appends take ~0.9 s
