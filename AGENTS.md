@@ -339,8 +339,18 @@ MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run-repl.sh
 ./tests/run-embed.sh
 MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run-napi.sh
 # and the same fixtures again, collecting at every safepoint
-MILOJS_GC_GROWTH=0 MILOJS_GC_THRESHOLD=1 MILOJS_ENGINE_BIN=/tmp/mj-engine MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tests/run.sh
+MILOJS_ENGINE_BIN=/tmp/mj-engine MILOJS_RUNTIME_BIN=/tmp/mj-runtime ./tools/gc-stress.sh
 ```
+
+`tools/gc-stress.sh` is that last line with the knobs owned in one place:
+strict (`MILOJS_GC_GROWTH=0`, every allocation) by default, `--quick` for the
+`live*2` trigger CI has always run, and a pattern to run a subset. The strict
+whole suite is minutes; the pre-commit hook runs the strict `*Gc*` fixtures
+(seconds), CI runs strict `Gc` plus the quick whole suite. The strict run found
+four holes the quick one never saw (2026-09-20: slice's result across a proxy's
+reads, a synthesised bound callee across argument evaluation, splice's removed
+array across write-back, an eval scope between statements), so a new native
+that runs user code gets its fixture named `*Gc*`.
 
 `MILOJS_GC_GROWTH=0` is the part that matters and it is newer than this file's
 advice. `collect()` resets the trigger to `max(MILOJS_GC_THRESHOLD, live * growth)`,
@@ -472,6 +482,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/vm-coverage.mjs` | runs `milojs-engine --vm-audit` over the node corpus and writes `docs/conformance/vm-coverage.json`: what fraction of real function bodies compile to bytecode, with the residue ranked by construct |
 | `tools/check-vm-coverage.mjs` | floor on the committed coverage pct (`docs/conformance/vm-coverage-floor.txt`); coverage may only ratchet up |
 | `tools/check-bench-budget.mjs` | per-bench ceilings on the milojs/peer time ratio from `docs/conformance/bench.json`. Fails on a regression, on a bench the budget does not cover (or covers and the report no longer measures), and on a bench that came in under half its ceiling so the ceiling stopped bounding anything. `--baseline` re-records at +15%. |
+| `tools/gc-stress.sh` | the fixture suite under collection at every allocation (strict) or the live*2 trigger (`--quick`); the one gate that sees an unrooted Milo local. `tools/gc-stress.sh [--quick] [pattern]` |
 | `tools/check-gate-teeth.sh` | introduces each gate's own violation and requires it to fail; needs a clean tree, so it runs in CI rather than the hook |
 | `tools/check-docs-exec.mjs` | runs the `<!-- exec -->`-tagged examples in the docs and diffs them against the output the docs claim. Needs built binaries; part of `dev.sh`. |
 | `tools/check-docs.mjs` | doc-meta present, key-files real, AGENTS tables complete, and a staleness ratchet against each doc's key-files |
