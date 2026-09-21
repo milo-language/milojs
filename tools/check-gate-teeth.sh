@@ -288,5 +288,21 @@ else
     skipped=$((skipped + 1))
 fi
 
+# --- readme: a section over its prose budget ---
+# Usage allows 2 prose lines; three more paragraphs must trip it.
+teeth "check-readme (prose budget)" README.md \
+    "perl -0pi -e 's/(\n## Usage\n)/\$1\nTeeth line one.\n\nTeeth line two.\n\nTeeth line three.\n/' README.md" \
+    "node tools/check-readme.mjs"
+
+# --- docs-exec: an executable README example whose printed output is wrong. Needs both binaries. ---
+if [ -n "$ENGINE" ] && [ -n "$RUNTIME" ]; then
+    teeth "check-docs-exec (stale output)" README.md \
+        "perl -0pi -e 's/^hello from Milo\$/hello from Teeth/m' README.md" \
+        "MILOJS_ENGINE_BIN=$ENGINE MILOJS_RUNTIME_BIN=$RUNTIME node tools/check-docs-exec.mjs"
+else
+    echo "check-gate-teeth: engine and runtime binaries both needed (.dev/, /tmp/) — check-docs-exec not probed" >&2
+    skipped=$((skipped + 1))
+fi
+
 echo "check-gate-teeth: $checked gate(s) probed, $toothless toothless, $skipped skipped"
 exit "$status"
