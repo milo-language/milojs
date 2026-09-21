@@ -71,7 +71,7 @@ keeps in step with the reports.
 | set | count |
 |---|---:|
 | engine (`tests/*.js`) | <!--fact:fixtures-engine-->270<!--/fact--> |
-| runtime (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->66<!--/fact--> |
+| runtime (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->67<!--/fact--> |
 | Milo invariants | <!--fact:fixtures-milo-->3<!--/fact--> + <!--fact:fixtures-milo-errors-->8<!--/fact--> |
 | node-oracle exemptions | <!--fact:fixtures-node-exempt-->7<!--/fact--> |
 

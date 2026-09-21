@@ -62,7 +62,7 @@ from "std/event" import {
     setNonblocking
 }
 from "std/platform" import {
-    netErrno, netEagain
+    netErrno, netEagain, getErrno
 }
 from "std/process" import {
     Child, Command, Stdio, exePath
@@ -5443,17 +5443,19 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     }
     if id == Builtin.Mkdir {
         // __mkdirSync(path): one directory, no parents (the JS shim walks the
-        // path for {recursive:true}). true on success, false on any error —
-        // "already exists" reads as false, which the shim treats as fine.
+        // path for {recursive:true}). true on success, otherwise the NEGATIVE
+        // errno: the shim needs EEXIST vs ENOENT to drive mkdir -p, and EACCES
+        // and ENOTDIR reach the caller as themselves instead of a guessed
+        // ENOENT. IoError folds ENOTDIR into Other, so errno is read directly.
         if argVals.len() < 1 {
-            return JSValue.Bool(false)
+            return JSValue.Number(-22.0)
         }
         match makeDir(toStr(argVals[0]), 511 as i32) {
             Result.Ok(_v) => {
                 return JSValue.Bool(true)
             }
             Result.Err(_e) => {
-                return JSValue.Bool(false)
+                return JSValue.Number(0.0 - (getErrno() as f64))
             }
         }
     }

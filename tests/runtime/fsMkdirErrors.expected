@@ -1,0 +1,10 @@
+enotdir plain ENOTDIR true mkdir file/sub "ENOTDIR: not a directory, mkdir '<root>/file/sub'"
+enotdir recursive ENOTDIR true mkdir file/sub/deep "ENOTDIR: not a directory, mkdir '<root>/file/sub/deep'"
+eexist file plain EEXIST true mkdir file "EEXIST: file already exists, mkdir '<root>/file'"
+eexist file recursive EEXIST true mkdir file "EEXIST: file already exists, mkdir '<root>/file'"
+enoent plain ENOENT true mkdir a/b "ENOENT: no such file or directory, mkdir '<root>/a/b'"
+recursive creates ok a
+recursive partial ok a/b/d
+recursive existing ok undefined
+eexist dir plain EEXIST true mkdir a "EEXIST: file already exists, mkdir '<root>/a'"
+callback ENOTDIR mkdir file/cb
