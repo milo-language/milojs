@@ -1,0 +1,7 @@
+hasRef new: true
+unref returns same: true hasRef: false
+hasRef after ref: true
+sync end
+unrefd 10ms fired
+t fired
+refd 50ms fired

@@ -134,6 +134,8 @@ pub enum Builtin {
     SetInterval,
     ClearTimer,
     SetImmediate,
+    // __timerRef(id, flag): the engine half of Timeout.ref/unref.
+    TimerRef,
     QueueMicrotask,
     // queueMicrotask has its own native (distinct from process.nextTick, which
     // shares Builtin.QueueMicrotask) so it can call the callback with zero

@@ -528,6 +528,10 @@ pub struct Timer {
     cb: JSValue,
     args: Vec<JSValue>,
     active: bool,
+    // false after Timeout.unref(): the timer still fires when the loop is alive
+    // for another reason, but on its own it is not worth keeping the loop
+    // running, so runEventLoop exits past it as node does.
+    refed: bool,
 }
 
 // A queued microtask: call cb with one argument. Promise reactions and

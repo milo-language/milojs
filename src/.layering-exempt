@@ -60,3 +60,4 @@ global: __reflectOwnKeys             engine-intrinsic Reflect.ownKeys, same reas
 global: __reflectPreventExtensions   engine-intrinsic Reflect.preventExtensions, same reason
 global: __reflectSet                 engine-intrinsic Reflect.set, same reason
 global: __reflectSetPrototypeOf      engine-intrinsic Reflect.setPrototypeOf, same reason
+global: __timerRef                  engine-intrinsic the ref flag on a timer in the engine's own queue, which setTimeout/setInterval put there; the prelude's Timeout.ref/unref have no other way to reach it

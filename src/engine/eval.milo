@@ -5623,10 +5623,28 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             due = 0.0
         }
         st.timers.push(Timer {
-            id: tid, dueMs: due, intervalMs: repeat, cb: cloneValue(argVals[0]), args: extra, active: true
+            id: tid, dueMs: due, intervalMs: repeat, cb: cloneValue(argVals[0]), args: extra, active: true, refed: true
         }
         )
         return JSValue.Number(tid as f64)
+    }
+    if id == Builtin.TimerRef {
+        // Returns the timer's resulting ref state; false when no active timer
+        // has that id, which is also what hasRef reports for a cleared one.
+        if argVals.len() < 2 {
+            return JSValue.Bool(false)
+        }
+        let tid = numToIndex(toNum(argVals[0]))
+        let flag = truthy(argVals[1])
+        var i: i64 = 0
+        while i < st.timers.len() {
+            if st.timers[i].id == tid && st.timers[i].active {
+                st.timers[i].refed = flag
+                return JSValue.Bool(flag)
+            }
+            i = i + 1
+        }
+        return JSValue.Bool(false)
     }
     if id == Builtin.ClearTimer {
         if argVals.len() > 0 {
@@ -13730,6 +13748,23 @@ fn earliestTimer(st: &Interp): i64 {
     return best
 }
 
+// Index of the earliest active timer that is still ref'd, or -1. Only these
+// justify keeping the loop alive; runOneTimer and runDueTimer still fire an
+// unref'd timer that is due while the loop is alive for another reason.
+fn earliestRefedTimer(st: &Interp): i64 {
+    var best: i64 = -1
+    var i: i64 = 0
+    while i < st.timers.len() {
+        if st.timers[i].active && st.timers[i].refed {
+            if best < 0 || st.timers[i].dueMs < st.timers[best].dueMs {
+                best = i
+            }
+        }
+        i = i + 1
+    }
+    return best
+}
+
 // Run one due timer, sleeping until it is due. Returns false when there is
 // nothing left to run.
 fn runOneTimer(prog: &Prog, st: &mut Interp): bool {
@@ -13839,8 +13874,10 @@ pub fn runEventLoop(prog: &Prog, st: &mut Interp) {
             // for a blocking accept (live activations or an armed timer). Sleep a
             // slice and re-probe; due timers are caught at the top of the loop.
             sleepMs(1)
-        } else if runOneTimer(prog, &mut st) {
-            // nothing to serve, so waiting for the next timer is correct
+        } else if earliestRefedTimer(st) >= 0 && runOneTimer(prog, &mut st) {
+            // Nothing to serve, so waiting for the next timer is correct. Only a
+            // ref'd timer is worth sleeping for: with just unref'd timers left
+            // the loop falls through and exits, as node does.
         } else if st.actTask.len() > 0 {
             // activations are still live; their continuations are real work, so
             // exiting here would drop them on the floor
@@ -13991,7 +14028,7 @@ fn compactTimers(st: &mut Interp) {
                 k = k + 1
             }
             live.push(Timer {
-                id: st.timers[j].id, dueMs: st.timers[j].dueMs, intervalMs: st.timers[j].intervalMs, cb: cloneValue(st.timers[j].cb), args: args, active: true
+                id: st.timers[j].id, dueMs: st.timers[j].dueMs, intervalMs: st.timers[j].intervalMs, cb: cloneValue(st.timers[j].cb), args: args, active: true, refed: st.timers[j].refed
             }
             )
         }
