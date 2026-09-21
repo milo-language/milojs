@@ -2567,7 +2567,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     // the slot is reserved before the body is parsed so the class has a unique
     // index to key its super binding on while `super(...)` is being rewritten
     prog.classes.push(ClassDef {
-        name: "", superKey: "", superName: "", ctorFn: -1, defaultCtor: -1, members: Vec.new(), staticFieldNames: Vec.new(), staticFieldInits: Vec.new(), staticFieldKeys: Vec.new()
+        name: "", superKey: "", superName: "", superExpr: -1, ctorFn: -1, defaultCtor: -1, members: Vec.new(), staticFieldNames: Vec.new(), staticFieldInits: Vec.new(), staticFieldKeys: Vec.new()
     }
     )
     let classIdx = prog.classes.len() - 1
@@ -2575,15 +2575,18 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     let savedClass = p.curClass.clone()
     p.curClass = superKey.clone()
     var superName = ""
+    var superExpr: i64 = -1
     if peekKind(p) == T_EXTENDS {
         advance(&mut p)
-        if peekKind(p) == T_IDENT {
+        if peekKind(p) == T_IDENT && p.pos + 1 < p.toks.len() && p.toks[p.pos + 1].kind == T_LBRACE {
             superName = p.toks[p.pos].text.clone()
             advance(&mut p)
-        }
-        // a non-identifier base (`extends f().Base`) is skipped to the body
-        while peekKind(p) != T_LBRACE && peekKind(p) != T_EOF {
-            advance(&mut p)
+        } else {
+            // ClassHeritage is a LeftHandSideExpression: `extends Mixin(Base)`,
+            // `extends f().Base`, `extends null`, `extends class {}`. It used to
+            // be skipped to the body, which silently made the class a base.
+            superExpr = parsePostfix(&mut p, &mut prog).index
+            superName = "__heritage$" + superKey.clone()
         }
     }
     expect(&mut p, T_LBRACE)
@@ -2828,7 +2831,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
     }
     p.strict = classSaved
     prog.classes[classIdx] = ClassDef {
-        name: name, superKey: superKey, superName: superName, ctorFn: ctorFn, defaultCtor: defaultCtor, members: members, staticFieldNames: staticFieldNames, staticFieldInits: staticFieldInits, staticFieldKeys: staticFieldKeys
+        name: name, superKey: superKey, superName: superName, superExpr: superExpr, ctorFn: ctorFn, defaultCtor: defaultCtor, members: members, staticFieldNames: staticFieldNames, staticFieldInits: staticFieldInits, staticFieldKeys: staticFieldKeys
     }
     return classIdx
 }

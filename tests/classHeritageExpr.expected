@@ -1,0 +1,13 @@
+TypeError TypeError ok TypeError TypeError ok
+mixed:b true
+heritage read
+eb
+9
+null true
+b
+2 true
+Class extends value 42 is not a constructor or null
+Class extends value function abs() { [native code] } is not a constructor or null
+Class extends value ()=>1 is not a constructor or null
+Class extends value #<Object> is not a constructor or null
+Class extends value undefined is not a constructor or null

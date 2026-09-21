@@ -14709,6 +14709,18 @@ pub fn isSuperName(name: &string): bool {
     return name[0] == '_' && name[1] == '_' && name[2] == 's' && name[3] == 'u' && name[4] == 'p' && name[5] == 'e' && name[6] == 'r' && name[7] == '$'
 }
 
+// How node names a bad heritage: a function by its source, an object as
+// #<Object>, a primitive by its string.
+fn classErrDisplay(prog: &Prog, st: &mut Interp, v: &JSValue): string {
+    if funcHandle(v) >= 0 || isCallableIn(st, v) {
+        return toStrProg(prog, v, &mut st)
+    }
+    if objHandle(v) >= 0 {
+        return "#<Object>"
+    }
+    return toStr(v)
+}
+
 fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JSValue {
     var ctorFn = prog.classes[classIdx].ctorFn
     if ctorFn < 0 {
@@ -14731,9 +14743,40 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
     linkProtoConstructor(&mut st, proto, ctorFn, classScope)
     let superName = prog.classes[classIdx].superName.clone()
     if superName.len() > 0 {
-        let baseVal = scopeLookup(st, scope, superName)
+        var baseVal = JSValue.Undefined
+        if prog.classes[classIdx].superExpr >= 0 {
+            baseVal = evalExpr(prog, ExprId { index: prog.classes[classIdx].superExpr }, &mut st, scope)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+        } else {
+            baseVal = scopeLookup(st, scope, superName)
+        }
+        // ClassDefinitionEvaluation: the heritage is null or a constructor
+        // whose `prototype` is an object or null; anything else is a TypeError
+        // at class creation, not at the first `new`
+        if !(baseVal is JSValue.Null) {
+            if !valueIsConstructor(prog, st, baseVal) {
+                return throwErr(&mut st, "TypeError", "Class extends value " + classErrDisplay(prog, &mut st, baseVal) + " is not a constructor or null")
+            }
+            let hbag = propertyBagOf(&mut st, baseVal)
+            if hbag >= 0 {
+                let hp = getMemberDyn(prog, hbag, "prototype", &mut st)
+                if st.throwing {
+                    return JSValue.Undefined
+                }
+                if objHandle(hp) < 0 && !(hp is JSValue.Null) && funcHandle(hp) < 0 {
+                    return throwErr(&mut st, "TypeError", "Class extends value does not have valid prototype property " + toStr(hp))
+                }
+            }
+        }
         let baseFn = funcHandle(baseVal)
-        if baseFn >= 0 {
+        if baseVal is JSValue.Null {
+            // class C extends null: C.prototype has a null [[Prototype]], and
+            // the constructor keeps Function.prototype
+            st.objects[proto].proto = -1
+            st.objects[proto].protoNull = true
+        } else if baseFn >= 0 {
             let baseProto = getFuncProto(&mut st, baseFn)
             st.objects[proto].proto = baseProto
             // Statics are inherited too: `class D extends B {}` makes D.staticOfB

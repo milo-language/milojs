@@ -278,9 +278,12 @@ pub struct ClassDef {
     // `__super$<name>`; the second definition then makes the first class's
     // super() call resolve to the first class itself and recurse forever.
     superKey: string,
-    // base class identifier, or "" — only a bare name is supported, not an
-    // arbitrary expression
+    // the heritage binding the class resolves at creation: a bare identifier
+    // as written, or a hidden name when superExpr holds an arbitrary
+    // expression (`extends Mixin(Base)`); "" for a base class
     superName: string,
+    // the ClassHeritage expression's index, or -1 when it is a bare identifier
+    superExpr: i64,
     // constructor function index, or -1 when the class declares none
     ctorFn: i64,
     // an empty function used as the constructor when none is declared
