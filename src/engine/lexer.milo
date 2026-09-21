@@ -10,6 +10,7 @@ from "std/unicode" import {
 from "./value" import {
     i64ToStr, hexDigitVal, hexDigitVal
 }
+from "./bigint" import { bnFromRadix, bigNormalizeDec }
 
 pub let T_NUM: i32 = 0
 pub let T_STR: i32 = 1

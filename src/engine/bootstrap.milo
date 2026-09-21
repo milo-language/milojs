@@ -7,9 +7,13 @@
 // eval.milo, because the call paths there need them too.
 
 from "./value" import {
+    objHandle, cloneValue, jsNan, jsInfinity,
     JSValue, Builtin, Native
 }
 from "./runtime" import {
+    ensureExtra, objSet, objSetNonEnumerable, newObject, objDefineAccessor, TA_MAX, objSetFrozenOwn,
+    taWidth, getNativeProps, objDefineProtoAttr, objSetBuiltinAttr, taName, objDefineBuiltinAttr,
+    scopeDefine, objOwnIndex, objGet,
     Interp
 }
 from "./eval" import {

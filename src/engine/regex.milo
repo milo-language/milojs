@@ -22,6 +22,7 @@ from "./uniprops" import {
 from "./value" import {
     JSValue
 }
+from "./unicase" import { lowerCp1, upperCp1 }
 
 // ── node tree ──
 enum ReNode {

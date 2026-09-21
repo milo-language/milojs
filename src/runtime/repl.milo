@@ -51,6 +51,7 @@ from "../engine/runtime" import {
 from "./complete" import {
     completeAt, cmplCommonPrefix, cmplSlice, cmplIsIdentByte, CMPL_SESSION, CMPL_KEYWORD
 }
+from "../engine/driver" import { describeThrown }
 
 enum LineResult {
     Line(string),

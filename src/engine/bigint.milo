@@ -8,6 +8,7 @@
 // exponents. `bn` prefix avoids the flat-namespace clashes noted for milojs.
 
 from "./value" import {
+    i64ToStr, strToNum, numToStr,
     JSValue
 }
 

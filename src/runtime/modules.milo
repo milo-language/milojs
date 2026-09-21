@@ -21,6 +21,7 @@ from "../engine/lexer" import {
     lex, Token, T_IDENT, T_LPAREN, T_STR, T_IMPORT, T_EXPORT, T_STAR, T_LBRACE, T_RBRACE, T_COMMA, T_DOT
 }
 from "../engine/ast" import {
+    BlockId,
     Prog, registerSource, gProg
 }
 from "../engine/parser" import {

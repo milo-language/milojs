@@ -18,12 +18,17 @@ from "./strutil" import {
     clampIndex, strSlice, jsIndexOf, jsStartsWith, jsEndsWith
 }
 from "./eval" import {
+    isSymbolValue, isUndefinedValue,
     toStrProg, callBuiltinByName, makeError, throwErr, isCallable, isSymbolStr, symbolDisplay, isBigIntVal, bigStrOf, callValue, makeArrayIterator, taCurrentLen, taElemValue
 }
 from "./value" import {
+    toNum, toStr, isFiniteF, objHandle, jsNan, i64ToStr, cloneValue, numToStr, numToFixed,
+    numToExponential, numToPrecision, numToRadix,
     JSValue, hexDigitVal, wsRunAt, wsRunBefore, truthy
 }
 from "./runtime" import {
+    newArray, arrPush, arrLen, isWrapperObj, objHasInChain, propIsAccessor, enumOrder, pushTemp,
+    popTemp, ensureExtra, objSetNonEnumerable, objSetNonConfigurable, objGet,
     Interp, newObject, objSet
 }
 from "std/math" import {
@@ -35,6 +40,10 @@ from "std/unicode" import {
 from "./unicase" import {
     upperCp1, lowerCp1, upperSpecial, lowerSpecial
 }
+from "std/strconv" import { parseFloat }
+from "./regex" import { Regex, regexCompile, regexExec }
+from "./ast" import { gProg, Prog }
+from "./bigint" import { bnToRadix }
 
 // Throw a built-in error of `kind`, the way a JS `throw` does. makeError in
 // eval.milo builds the object: the same prototype a constructed error of that

@@ -11,6 +11,8 @@ from "std/os" import {
 from "std/math" import {
     Math
 }
+from "./bigint" import { bnMul, bnPow, bnDiv, bnMod, bnCmp, bnAdd, bnSub }
+from "./eval" import { utcFromLocalSec }
 
 // libm: needed for half-ulp precision bound in numToRadix (no bit-level f64
 // access in Milo, so the "how many digits are meaningful" question is answered

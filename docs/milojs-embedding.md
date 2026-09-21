@@ -3,7 +3,7 @@ system: milojs-embedding
 purpose: how to link libmilojs.a into a C program: inputs, build, and where the callable API is listed
 key-files: src/libmilojs.milo, include/milojs.h, examples/embed/hello.c, tests/run-embed.sh
 update-when: an ABI function lands or the build inputs change
-last-verified: 2026-09-20 (key file change was the explicit &mut spelling only; ABI and build inputs unchanged)
+last-verified: 2026-09-20 (re-verified after the import-list commit: every name a file used without importing it is now listed in its import block (the milo compiler enforces the list from 2026-09-20; scripts/fix-imports.ts there added them), a spelling change only; nothing this doc describes changes. Previous note: key file change was the explicit &mut spelling only; ABI and build inputs unchanged)
 -->
 
 # Embedding milojs in C

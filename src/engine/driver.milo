@@ -15,15 +15,18 @@ from "./parser" import {
     PState, parseProgram
 }
 from "./value" import {
+    objHandle, cloneValue,
     toStr, i64ToStr, JSValue
 }
 from "./runtime" import {
+    objOwnIndex, defaultExtra,
     Interp, newScope, collect, pushTemp, popTemp
 }
 from "./bootstrap" import {
     setupGlobals
 }
 from "./eval" import {
+    getMember,
     execBlock, execStmt, evalExpr, hoistBlock, makeError, throwErr, runEventLoop
 }
 

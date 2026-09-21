@@ -22,9 +22,11 @@ from "std/io" import {
     writeStdout
 }
 from "../engine/value" import {
+    toStr,
     JSValue, cloneValue, toNum, truthy
 }
 from "../engine/runtime" import {
+    setArrayLength, arrLen, arrGet, arrSet, newPromise, objHasInChain, objHas, objDefineAccessor,
     Interp, gInterp, newObject, newArray, objGet, objSet, objSetNonEnumerable,
     ensureExtra, scopeLookup, getFuncProto, bufferBytesHandle,
     bufferNativeViewHandle, nativeBufferLen, nativeBufferPtr, nativeBufferSet
@@ -32,6 +34,10 @@ from "../engine/runtime" import {
 from "std/os" import {
     malloc, memset
 }
+from "./modules" import { fileExists }
+from "std/platform" import { pipe, write, read }
+from "std/event" import { setNonblocking }
+from "std/unicode" import { encodeCodepoint }
 
 // napi_status — only the values this surface can actually produce.
 pub let NAPI_OK: i32 = 0

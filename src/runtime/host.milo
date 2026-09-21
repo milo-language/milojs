@@ -11,11 +11,15 @@ from "../engine/strutil" import {
     strSlice, jsIndexOf, jsStartsWith
 }
 from "../engine/value" import {
+    toNum, i64ToStr,
     JSValue, Native, Builtin
 }
 from "../engine/runtime" import {
     Interp, scopeDefine
 }
+from "std/net" import { resolve, TcpStream, ip4 }
+from "std/fs" import { currentDir }
+from "std/process" import { Child, Command, Stdio }
 // A live index into st.sqliteDbs, or -1 when the handle is closed or bogus. Every
 // sqlite native funnels through this so a use-after-close is a JS-level error
 // rather than a call on a freed sqlite3*.

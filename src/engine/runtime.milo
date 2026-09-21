@@ -18,6 +18,7 @@ from "std/sync" import {
     Channel
 }
 from "./value" import {
+    cloneValue, jsStrictEquals,
     JSValue, Native, Builtin, i64ToStr, roundHalfAwayFromZero, cloneNative, nativeEq
 }
 from "./bigint" import {
@@ -35,6 +36,7 @@ from "std/math" import {
 from "std/os" import {
     free
 }
+from "./eval" import { makeError }
 
 struct Binding {
     name: string,

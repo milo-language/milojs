@@ -42,9 +42,11 @@ from "./engine/value" import {
     JSValue, Native, Builtin, objHandle
 }
 from "./engine/runtime" import {
+    gInterp, scopeTryLookup,
     Interp, newObject, newArray, objSet, arrPush, scopeDefine, scopeLookup, objGet, markBuiltinGlobals
 }
 from "./engine/driver" import {
+    describeThrown,
     makeInterp, bootInterp
 , interpStackBytes}
 from "./engine/strutil" import {
@@ -63,6 +65,7 @@ from "./runtime/modules" import {
     preloadGraph, dirOf, fileExists
 }
 from "./engine/eval" import {
+    getMember,
     runModule
 }
 from "./engine/eval" import {

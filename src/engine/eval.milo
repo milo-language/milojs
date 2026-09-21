@@ -9,25 +9,42 @@ from "./bytecode" import {
     tryRunFor, bodyChunkOf, chunkUsesArguments, runChunk, runChunkNumeric, chunkIsNumeric
 }
 from "./methods" import {
+    mapSetOverride,
     dateMethod, mapMethod, dataViewMethod, isDataViewMethodName, dataViewProto, arrayMethod, arrayMethodGeneric, isArrayMethod, arrayIterNext, typedArrayMethod, typedArrayOverride, typedArrayDataPtr, typedArrayFromBytes, bytesFromTypedArray, isTypedArrayMethodName, taIntegrityBlocked
 }
 from "./ast" import {
+    Expr, getStmt, Stmt,
     ArgListId, ArrLitId, BlockId, ExprId, ObjLitId, Prog, StmtId, gProg, registerSource, sourceOf
 }
 from "./value" import {
+    isStr, toStr, toNum, toInt32, toUint32, jsEquals, jsStrictEquals, strLess, objHandle, numToStr,
+    cloneValue, funcHandle, jsNan, truthy, nativeHandle, isNullish, strToNum, jsInfinity,
+    jsParseFloatPrefix, jsParsePrefixNum, uriEncode, uriHasBadEscape, uriDecode, parseIsoDate, jsInf,
+    funcEnv, pad2, pad3,
     JSValue, Native, Builtin, i64ToStr, daysFromCivil, nativeEq, isNativeValue
 }
 from "./runtime" import {
+    objOwnIndex, propIsAccessor, accGetter, accSetter, arrLen, arrGet, pushTemp, popTemp,
+    getNativeProps, objGet, newObject, ensureExtra, arrIsHole, asArrayIndex, scopeHasOwn,
+    scopeLookup, objSet, newArray, enumOrder, arrPush, isSymbolKey, taWidth, taName, taLoad, taStore,
+    nativeBufferLen, objHas, getFuncStatics, nativeBufferGet, nativeBufferSet, scopeDefine, arrSet,
+    setArrayLength, scopeAssign, scopeTryLookup, mapPut, objSetNonEnumerable, isPromise, newPromise,
+    objDeleteKey, objDefineAccessor, newScope, pushActive, popActive, scopeHas, nativePropsOf,
+    getFuncProto, bufferNativeViewHandle, bufferBytesHandle, isPromiseCtor, arrMarkHole, gInterp,
+    saveExecCtx, restoreExecCtx, objDefineFnProtoAttr, scopeHasBelowGlobal, maybeGc,
     Interp, Timer, Microtask, Reaction, PendingFetch, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn, TA_MAX, TA_I64, TA_U64, taIsBigKind, taLoadBig, taStoreBig, isPrivateKey, scopeOwnIndex
 }
 from "./strutil" import {
     strSlice
 }
 from "./builtins" import {
+    strCodePoints, utf16Length, utf16Slice, mjStringifyFast, jsTrim, stringFromUtf16Units,
+    mjNextRandom, mjFloor, mjCeil, mjRound, mjTrunc, mjAbs, mjSign,
     isRegexAccessorName,
     stringMethod, jsCharAt, mjStringifyVal, mjJsonParse, mjJsonOmitted, numToIndex, regexMethod, isRegexMethodName, makeRegex, regexArgFor, stringRegexOp, stringOpNeedsRegexArg, isStringRegexOp, primitiveMethod, isStringMethodName, isPrimitiveMethodName
 }
 from "./bigint" import {
+    bnStrFrom, bnShl, bnShr, bnBitwise,
     bigNormalizeDec, bnAdd, bnSub, bnMul, bnDiv, bnMod, bnPow, bnNeg, bnCmp, bnFromF64, bnToRadix, bnFromRadix, isDecimalIntStr
 }
 from "./regex" import {
@@ -71,6 +88,7 @@ from "std/env" import {
     Env
 }
 from "std/runtime" import {
+    rtReadI64, tStack, guardPageSize,
     spawnOsThreadDetached, schedulerCurrent, schedulerPark, schedulerUnpark, schedulerYield, Task
 }
 from "std/sync" import {
@@ -103,6 +121,8 @@ from "../runtime/napi" import {
 from "std/math" import {
     Math
 }
+from "./parser" import { PState, parseProgram }
+from "./lexer" import { lex, T_EOF }
 
 enum Flow {
     Normal,

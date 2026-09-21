@@ -4,9 +4,22 @@
 // tokens are consumed) so a bad script can't hang the parser.
 
 from "./lexer" import {
+    T_EOF, T_IDENT, T_UNDEFINED, T_ASYNC, T_AWAIT, T_YIELD, T_LET, T_STR, T_NUM, tokenName, T_SEMI,
+    T_RBRACE, T_TEMPLATE_BEGIN, T_TEMPLATE_CHUNK, T_TEMPLATE_END, T_SPREAD, T_LBRACE, T_LPAREN,
+    T_LBRACKET, T_RBRACKET, T_RPAREN, T_ARROW, T_COMMA, T_COLON, T_EQ, T_IMPORT, T_BIGINT, T_TRUE,
+    T_FALSE, T_NULL, T_SUPER, T_CLASS, T_FUNCTION, T_REGEX, T_NEW, T_DOT, T_STAR, T_OPTCHAIN, T_INC,
+    T_DEC, T_MINUS, T_NOT, T_TYPEOF, T_VOID, T_DELETE, T_TILDE, T_PLUS, T_STARSTAR, T_SLASH,
+    T_PERCENT, T_SHL, T_SHR, T_USHR, T_LT, T_GT, T_LE, T_GE, T_INSTANCEOF, T_IN, T_EQEQ, T_NEQ,
+    T_STRICTEQ, T_STRICTNEQ, T_AMP, T_CARET, T_PIPE, T_ANDAND, T_OROR, T_NULLISH, T_QUESTION,
+    T_PLUSEQ, T_MINUSEQ, T_STAREQ, T_SLASHEQ, T_SHLEQ, T_SHREQ, T_USHREQ, T_AMPEQ, T_PIPEEQ,
+    T_CARETEQ, T_STARSTAREQ, T_PERCENTEQ, T_ANDANDEQ, T_OROREQ, T_NULLISHEQ, T_VAR, T_CONST, T_DO,
+    T_WHILE, T_SWITCH, T_CASE, T_DEFAULT, T_IF, T_ELSE, T_FOR, T_BREAK, T_CONTINUE, T_THROW, T_WITH,
+    T_TRY, T_CATCH, T_FINALLY, T_RETURN, T_EXTENDS, T_EXPORT,
     Token
 }
 from "./ast" import {
+    addExpr, Expr, addArrLit, addArgList, DeclItem, addStmt, Stmt, addBlock, FuncDef, addDeclList,
+    PropInit, addObjLit, getExpr, SwitchCase, addSwitch, ClassDef, ClassMember,
     ArgListId, ArrLitId, BlockId, ExprId, ObjLitId, Prog, StmtId
 }
 from "./value" import {

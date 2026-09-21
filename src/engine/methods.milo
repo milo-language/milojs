@@ -11,14 +11,24 @@ from "./strutil" import {
     strSlice
 }
 from "./value" import {
+    objHandle, truthy, cloneValue, toNum, daysFromCivil, pad2, i64ToStr, jsNan, numToStr, toStr,
+    funcHandle, funcEnv, jsStrictEquals, strLess, jsEquals,
     JSValue, Builtin, Native
 }
 from "./runtime" import {
+    objGet, getNativeProps, f64ToBits, f32ToBits, bitsToF64, bitsToF32, mapFind, mapPut, pushTemp,
+    popTemp, newObject, ensureExtra, newArray, arrPush, arrLen, objSet, nativePropsOf, objHas,
+    objOwnIndex, taWidth, arrIsHole, arrMarkHole, arrGet, objDeleteKey, arrHasIndex, getFuncProto,
+    linkProtoConstructor, setArrayLength, sameValueZero, arrSet,
     Interp
 }
 from "./eval" import {
     timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, toNumArg, makeError, throwErr, taIsDetached, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, valueIsArrayLike, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, isSymbolStr, ARRAY_LIKE_MAX
 }
+from "./ast" import { Prog }
+from "std/datetime" import { DateTime }
+from "std/math" import { Math }
+from "./builtins" import { numToIndex, argPresent, utf16Length, utf16Slice }
 
 pub fn dataViewProto(st: &mut Interp): i64 {
     return objHandle(objGet(st, getNativeProps(&mut st, Native.Fn(Builtin.DataView)), "prototype"))

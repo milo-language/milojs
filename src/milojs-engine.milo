@@ -49,6 +49,7 @@ from "./engine/version" import {
     versionText
 }
 from "./engine/runtime" import {
+    gInterp,
     markBuiltinGlobals
 }
 from "./engine/driver" import {
