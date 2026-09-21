@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "8c4f8dc7e642917528736b790f5f6f03439b6456",
+    "revision": "055275d272da9a984e9249949346ec5d1f333828",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -18,9 +18,9 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 1187,
-    "fail": 283,
-    "parseFail": 22,
+    "pass": 1189,
+    "fail": 281,
+    "parseFail": 20,
     "skip": 30,
     "scored": 1470,
     "selected": 1500,
@@ -841,7 +841,9 @@
     "language/expressions/dynamic-import/syntax/invalid/nested-with-import-source-no-rest-param.js",
     "language/expressions/dynamic-import/syntax/valid/nested-arrow-import-defer-script-code-valid.js",
     "language/expressions/dynamic-import/syntax/valid/nested-async-function-await-empty-str-is-valid-assign-expr.js",
+    "language/expressions/dynamic-import/syntax/valid/nested-async-function-import-attributes-trailing-comma-second.js",
     "language/expressions/dynamic-import/syntax/valid/nested-async-gen-await-empty-str-is-valid-assign-expr.js",
+    "language/expressions/dynamic-import/syntax/valid/nested-else-import-attributes-trailing-comma-second.js",
     "language/expressions/dynamic-import/syntax/valid/nested-while-empty-str-is-valid-assign-expr.js",
     "language/expressions/dynamic-import/usage/nested-function-import-then-is-call-expression-square-brackets.js",
     "language/expressions/equals/S11.9.1_A2.4_T3.js",
@@ -1218,8 +1220,8 @@
   "areas": [
     {
       "area": "language/expressions",
-      "pass": 293,
-      "fail": 41,
+      "pass": 295,
+      "fail": 39,
       "total": 334
     },
     {
@@ -1817,14 +1819,6 @@
         "built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-18.js",
         "built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-30.js",
         "built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-29.js"
-      ]
-    },
-    {
-      "reason": "milojs: /case.js: expected an expression",
-      "count": 2,
-      "cases": [
-        "language/expressions/dynamic-import/syntax/valid/nested-else-import-attributes-trailing-comma-second.js",
-        "language/expressions/dynamic-import/syntax/valid/nested-async-function-import-attributes-trailing-comma-second.js"
       ]
     },
     {

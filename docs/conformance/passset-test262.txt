@@ -815,7 +815,9 @@ language/expressions/dynamic-import/syntax/invalid/nested-with-expression-import
 language/expressions/dynamic-import/syntax/invalid/nested-with-import-source-no-rest-param.js
 language/expressions/dynamic-import/syntax/valid/nested-arrow-import-defer-script-code-valid.js
 language/expressions/dynamic-import/syntax/valid/nested-async-function-await-empty-str-is-valid-assign-expr.js
+language/expressions/dynamic-import/syntax/valid/nested-async-function-import-attributes-trailing-comma-second.js
 language/expressions/dynamic-import/syntax/valid/nested-async-gen-await-empty-str-is-valid-assign-expr.js
+language/expressions/dynamic-import/syntax/valid/nested-else-import-attributes-trailing-comma-second.js
 language/expressions/dynamic-import/syntax/valid/nested-while-empty-str-is-valid-assign-expr.js
 language/expressions/dynamic-import/usage/nested-function-import-then-is-call-expression-square-brackets.js
 language/expressions/equals/S11.9.1_A2.4_T3.js
