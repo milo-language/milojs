@@ -238,8 +238,14 @@ jobs:
       # dormant until an allocation was added to a loop that had not allocated
       # before -- so the trigger is a routine change somewhere else entirely, and
       # nothing about the normal pass hints at it. ~22s on top of the ~21s pass.
+      # tools/gc-stress.sh owns the knobs. --quick is the trigger CI has always
+      # run (max(1, live*2)); the strict every-allocation mode is the one that
+      # found the slice-result and call-argument holes and is far slower, so it
+      # runs on the *Gc* fixtures only, which are the ones written to test roots.
       - name: js fixtures, collecting at every allocation
-        run: MILOJS_GC_THRESHOLD=1 MILOJS_ENGINE_BIN=/tmp/milojs-engine MILOJS_RUNTIME_BIN=/tmp/milojs ./tests/run.sh
+        run: MILOJS_ENGINE_BIN=/tmp/milojs-engine MILOJS_RUNTIME_BIN=/tmp/milojs ./tools/gc-stress.sh --quick
+      - name: root fixtures, strict every-allocation collection
+        run: MILOJS_ENGINE_BIN=/tmp/milojs-engine MILOJS_RUNTIME_BIN=/tmp/milojs ./tools/gc-stress.sh Gc
 
       # The compiled path against the tree-walking evaluator. src/engine/bytecode.milo
       # compiles some shapes to opcodes and falls back for the rest; it exists to be

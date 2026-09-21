@@ -304,5 +304,17 @@ else
     skipped=$((skipped + 1))
 fi
 
+# --- gc-stress: a fixture whose output diverges under collection at every allocation. Needs both binaries. ---
+# The probe corrupts the .expected rather than the engine: what it proves is that
+# the runner diffs and fails, the same way tests/run.sh's own probe would.
+if [ -n "$ENGINE" ] && [ -n "$RUNTIME" ]; then
+    teeth "gc-stress (diverging fixture)" tests/gcStressProxyArray.expected \
+        "printf 'teeth\\n' >> tests/gcStressProxyArray.expected" \
+        "MILOJS_ENGINE_BIN=$ENGINE MILOJS_RUNTIME_BIN=$RUNTIME tools/gc-stress.sh --quick gcStressProxyArray"
+else
+    echo "check-gate-teeth: engine and runtime binaries both needed (.dev/, /tmp/) — gc-stress not probed" >&2
+    skipped=$((skipped + 1))
+fi
+
 echo "check-gate-teeth: $checked gate(s) probed, $toothless toothless, $skipped skipped"
 exit "$status"

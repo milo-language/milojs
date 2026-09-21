@@ -69,6 +69,12 @@ if command -v node >/dev/null 2>&1 && [ -x .dev/mj-runtime ]; then
     fi
 fi
 
+# The root fixtures under strict every-allocation collection: seconds, and the
+# only local check that sees an unrooted local. The whole suite runs in CI.
+if [ -x .dev/mj-engine ] && [ -x .dev/mj-runtime ] && ! tools/gc-stress.sh Gc >/dev/null; then
+    echo "precommit: tools/gc-stress.sh Gc failed (rerun it for the diff)"
+    status=1
+fi
 if command -v node >/dev/null 2>&1 && [ -x .dev/mj-engine ] && ! node tools/check-gaps.mjs; then
     status=1
 fi
