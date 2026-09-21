@@ -30,5 +30,12 @@ if [ ! -x "$ENGINE" ] || [ ! -x "$RUNTIME" ]; then
   echo "gc-stress: no binaries at $ENGINE / $RUNTIME; run tools/dev.sh first or set MILOJS_ENGINE_BIN and MILOJS_RUNTIME_BIN" >&2
   exit 2
 fi
+# Strict mode skips the fixtures argued in tests/.gc-stress-exempt (one per
+# line: name, then why). --quick runs everything.
+skip=""
+if [ "$growth" -eq 0 ] && [ -f tests/.gc-stress-exempt ]; then
+  skip="$(grep -v '^#' tests/.gc-stress-exempt | awk 'NF {print $1}' | tr '\n' ' ')"
+fi
 MILOJS_GC_THRESHOLD=1 MILOJS_GC_GROWTH=$growth MILOJS_TEST_TIMEOUT="${MILOJS_TEST_TIMEOUT:-300}" \
+  MILOJS_SKIP_FIXTURES="$skip" \
   MILOJS_ENGINE_BIN="$ENGINE" MILOJS_RUNTIME_BIN="$RUNTIME" tests/run.sh "$@"

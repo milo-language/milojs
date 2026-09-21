@@ -80,6 +80,12 @@ run_one() {
     echo "SKIP $name (no .expected)" >"$outfile"
     return 0
   fi
+  # tools/gc-stress.sh names fixtures its strict mode must not run (argued in
+  # tests/.gc-stress-exempt); nothing else sets this
+  case " ${MILOJS_SKIP_FIXTURES:-} " in *" $name "*)
+    echo "SKIP $name (MILOJS_SKIP_FIXTURES)" >"$outfile"
+    return 0 ;;
+  esac
   # A GC-rooting fixture is vacuous at the default collection threshold — it
   # only exercises the root walk if a collection actually happens during the
   # window it sets up. Force one per allocation so `*Gc*` fixtures test R7.

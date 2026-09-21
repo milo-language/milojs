@@ -1,0 +1,6 @@
+# Fixtures tools/gc-stress.sh does NOT run in strict (every-allocation) mode.
+# One per line: <name> <why>. --quick still runs them. Every entry is a hole in
+# the only gate that sees an unrooted Milo local, so the argument has to be
+# about cost or determinism, never "it fails".
+gcDeepGraph    builds a 300k-deep chain one allocation at a time; strict collection marks the whole chain on every allocation, which is quadratic (hours), and the fixture tests mark-phase depth, not rooting. --quick covers it.
+parseDuringLoop    require()s a module per iteration; strict collection marks the whole module graph on every allocation of every parse, past the 300s per-fixture cap. What it tests (an AST reference held across a body) is not a rooting question. --quick covers it.
