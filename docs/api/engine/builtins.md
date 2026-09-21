@@ -265,7 +265,8 @@ U+00FF was destroyed.
 pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue
 ```
 
-_Undocumented._
+Dispatch a String method by name. Callback-taking methods don't exist on
+strings, so this needs nothing from eval — only heap access for split.
 
 ### `stringOpNeedsRegexArg`
 

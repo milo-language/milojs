@@ -279,12 +279,6 @@ fn jsSplit(s: &string, args: &Vec<JSValue>, st: &mut Interp): i64 {
     return arr
 }
 
-// Dispatch a String method by name. Callback-taking methods don't exist on
-// strings, so this needs nothing from eval — only heap access for split.
-fn isJsSpace(c: u8): bool {
-    return c == ' ' || c == 9 as u8 || c == 10 as u8 || c == 13 as u8 || c == 12 as u8 || c == 11 as u8
-}
-
 // Does `needle` occur in `s` starting exactly at `at`?
 fn jsSubstringAt(s: &string, needle: &string, at: i64): bool {
     if at + needle.len() > s.len() {
@@ -645,6 +639,8 @@ fn canonicalFlagOrder(flags: string): string {
     return out
 }
 
+// Dispatch a String method by name. Callback-taking methods don't exist on
+// strings, so this needs nothing from eval — only heap access for split.
 pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     if name == "toUpperCase" || name == "toLocaleUpperCase" {
         // the locale forms are the locale-independent ones here: this engine has

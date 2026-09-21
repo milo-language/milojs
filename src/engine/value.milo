@@ -1872,10 +1872,6 @@ pub fn wsRunBefore(s: &string, i: i64): i64 {
     return 0
 }
 
-fn isJsWs(c: u8): bool {
-    return c == ' ' || c == 9 as u8 || c == 10 as u8 || c == 13 as u8 || c == 12 as u8 || c == 11 as u8
-}
-
 pub fn hexDigitVal(c: u8): i64 {
     if c >= '0' && c <= '9' {
         return (c - '0') as i64
