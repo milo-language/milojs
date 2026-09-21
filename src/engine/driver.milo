@@ -24,7 +24,7 @@ from "./bootstrap" import {
     setupGlobals
 }
 from "./eval" import {
-    execBlock, execStmt, evalExpr, hoistBlock, makeError, runEventLoop
+    execBlock, execStmt, evalExpr, hoistBlock, makeError, throwErr, runEventLoop
 }
 
 // gcThreshold is the allocation count that triggers a collection. Lowering it to
@@ -93,9 +93,7 @@ pub fn evalSourceValue(src: &string, prog: &mut Prog, st: &mut Interp): JSValue 
     }
     let top = parseProgram(&mut p, &mut prog)
     if p.errored {
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "SyntaxError", "failed to parse script")
-        return JSValue.Undefined
+        return throwErr(&mut st, "SyntaxError", "failed to parse script")
     }
 
     hoistBlock(prog, top, &mut st, 0)

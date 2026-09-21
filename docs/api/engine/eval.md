@@ -888,6 +888,16 @@ pub fn taSetElem(st: &mut Interp, view: i64, i: i64, v: f64)
 
 _Undocumented._
 
+### `throwErr`
+
+```milo
+pub fn throwErr(st: &mut Interp, kind: string, msg: string): JSValue
+```
+
+Raise `kind` with `msg` and yield undefined, the shape every throwing arm
+returns. A JS throw travels on st.throwing/st.thrownValue, not on a Result,
+so this is the one spelling of "set the flag and bail".
+
 ### `throwNotAFunction`
 
 ```milo

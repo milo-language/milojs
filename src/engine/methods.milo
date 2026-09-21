@@ -17,7 +17,7 @@ from "./runtime" import {
     Interp
 }
 from "./eval" import {
-    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, toNumArg, makeError, taIsDetached, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, valueIsArrayLike, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, isSymbolStr, ARRAY_LIKE_MAX
+    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, toNumArg, makeError, throwErr, taIsDetached, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, valueIsArrayLike, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, isSymbolStr, ARRAY_LIKE_MAX
 }
 
 pub fn dataViewProto(st: &mut Interp): i64 {
@@ -69,9 +69,7 @@ pub fn dataViewMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, s
         if rawOffset != rawOffset {
             byteOffset = 0
         } else if rawOffset < 0.0 || rawOffset > 9007199254740991.0 {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "RangeError", "Offset is outside the bounds of the DataView")
-            return JSValue.Undefined
+            return throwErr(&mut st, "RangeError", "Offset is outside the bounds of the DataView")
         } else {
             byteOffset = rawOffset as i64
         }
@@ -91,19 +89,13 @@ pub fn dataViewMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, s
     // check. Without them a shrunk buffer either produced a RangeError (the
     // wrong error) or indexed past the byte vector and took the engine out.
     if taIsDetached(st, o) {
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "TypeError", "Cannot perform " + name.clone() + " on a detached ArrayBuffer")
-        return JSValue.Undefined
+        return throwErr(&mut st, "TypeError", "Cannot perform " + name.clone() + " on a detached ArrayBuffer")
     }
     if taOutOfBounds(st, o) {
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "TypeError", "Cannot perform " + name.clone() + " on a DataView whose buffer has shrunk out of bounds")
-        return JSValue.Undefined
+        return throwErr(&mut st, "TypeError", "Cannot perform " + name.clone() + " on a DataView whose buffer has shrunk out of bounds")
     }
     if byteOffset < 0 || byteOffset + width > dataViewByteLen(st, o) {
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "RangeError", "Offset is outside the bounds of the DataView")
-        return JSValue.Undefined
+        return throwErr(&mut st, "RangeError", "Offset is outside the bounds of the DataView")
     }
     let buf = st.objExtras[st.objects[o].extra].taBuf
     let absPos = st.objExtras[st.objects[o].extra].taOffset + byteOffset
@@ -171,9 +163,7 @@ fn callObjMethod(prog: &Prog, st: &mut Interp, recv: &JSValue, name: &string, ar
     }
     let f = getMember(st, h, name)
     if !isCallableIn(st, f) {
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "TypeError", name.clone() + " is not a function")
-        return JSValue.Undefined
+        return throwErr(&mut st, "TypeError", name.clone() + " is not a function")
     }
     return callValue(prog, f, args, cloneValue(recv), &mut st)
 }
@@ -695,9 +685,7 @@ pub fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): 
         // A non-finite time has no ISO representation, and the spec raises rather
         // than inventing one: `new Date(NaN).toISOString()` is a RangeError.
         if ms != ms {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "RangeError", "Invalid time value")
-            return JSValue.Undefined
+            return throwErr(&mut st, "RangeError", "Invalid time value")
         }
         return JSValue.Str(isoFromMillis(ms))
     }
@@ -1212,17 +1200,13 @@ fn taCallbackArg(args: &Vec<JSValue>): JSValue {
 // typed-array bug.
 pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     if taIsDetached(st, o) {
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "TypeError", "Cannot perform " + name.clone() + " on a detached ArrayBuffer")
-        return JSValue.Undefined
+        return throwErr(&mut st, "TypeError", "Cannot perform " + name.clone() + " on a detached ArrayBuffer")
     }
     // ValidateTypedArray also rejects a view left OUT OF BOUNDS by a resizable
     // buffer that shrank. Without it the method walked the stale extent and read
     // zeroes off the end of the buffer, which reads as a successful call.
     if taOutOfBounds(st, o) {
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "TypeError", "Cannot perform " + name.clone() + " on a typed array whose buffer has shrunk out of bounds")
-        return JSValue.Undefined
+        return throwErr(&mut st, "TypeError", "Cannot perform " + name.clone() + " on a typed array whose buffer has shrunk out of bounds")
     }
     // taCurrentLen, not the stored taLen: a tracking view over a resizable
     // buffer has a different element count after every resize.
@@ -1273,9 +1257,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>,
         // before writing: node throws TypeError, and without the check this wrote
         // zeros into a detached view and answered as if it had worked.
         if taIsDetached(st, o) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot perform fill on a detached ArrayBuffer")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Cannot perform fill on a detached ArrayBuffer")
         }
         var i = start
         while i < end {
@@ -1440,9 +1422,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>,
     // a non-callable argument quietly iterated nothing.
     if isTypedArrayCallbackMethod(name) {
         if args.len() == 0 || !isCallableIn(st, args[0]) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", toStr(taCallbackArg(args)) + " is not a function")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", toStr(taCallbackArg(args)) + " is not a function")
         }
     }
     // The callback's third argument is the typed array itself and its `this` is
@@ -1614,23 +1594,17 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>,
             }
         }
         if idx < 0 || idx >= snapLen {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "RangeError", "invalid index in TypedArray.prototype.with")
-            return JSValue.Undefined
+            return throwErr(&mut st, "RangeError", "invalid index in TypedArray.prototype.with")
         }
         if taIsDetached(st, o) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "RangeError", "TypedArray buffer was detached during conversion")
-            return JSValue.Undefined
+            return throwErr(&mut st, "RangeError", "TypedArray buffer was detached during conversion")
         }
         // ...and against the length as it stands NOW. A resizable buffer shrunk to
         // zero leaves a tracking view with no elements, so an index that was valid
         // against the snapshot is not valid any more. A partial shrink is NOT an
         // error: the surviving prefix is copied and the rest reads zero.
         if idx >= taCurrentLen(st, o) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "RangeError", "index is out of bounds after conversion resized the buffer")
-            return JSValue.Undefined
+            return throwErr(&mut st, "RangeError", "index is out of bounds after conversion resized the buffer")
         }
         var lenArgs: Vec<JSValue> = Vec.new()
         lenArgs.push(JSValue.Number(snapLen as f64))
@@ -2228,19 +2202,13 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
     // `Object.freeze([1,2]).push(3)` grew the array.
     if arrayMethodMutates(name) && st.objects[o].isArray {
         if st.objects[o].frozen {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot modify a frozen array")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Cannot modify a frozen array")
         }
         if st.objects[o].lengthNonWritable && arrayMethodResizes(name) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot assign to read only property 'length' of object")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Cannot assign to read only property 'length' of object")
         }
         if st.objects[o].sealed && arrayMethodResizes(name) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot add property, object is not extensible")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Cannot add property, object is not extensible")
         }
     }
     let n = arrLen(st, o)
@@ -2250,22 +2218,16 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
             cb = cloneValue(args[0])
         }
         if !isCallableIn(st, cb) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", toStr(cb) + " is not a function")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", toStr(cb) + " is not a function")
         }
         // reduce over an empty array with no seed has nothing to return
         if (name == "reduce" || name == "reduceRight") && args.len() < 2 && arrCountPresent(st, o) == 0 {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Reduce of empty array with no initial value")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Reduce of empty array with no initial value")
         }
     }
     // a comparator, when given, must be callable too
     if name == "sort" && args.len() > 0 && !isUndefinedValue(args[0]) && !isCallableIn(st, args[0]) {
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "TypeError", "The comparison function must be either a function or undefined")
-        return JSValue.Undefined
+        return throwErr(&mut st, "TypeError", "The comparison function must be either a function or undefined")
     }
     // the mutating methods write through arrPush/elems directly, bypassing
     // setMember's frozen check, so a frozen array has to be caught here too
@@ -2276,9 +2238,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
     }
     if name == "push" {
         if n > 4294967295 - args.len() {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "RangeError", "Invalid array length")
-            return JSValue.Undefined
+            return throwErr(&mut st, "RangeError", "Invalid array length")
         }
         var j: i64 = 0
         while j < args.len() {
@@ -2473,9 +2433,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: 
         // spec: out of range throws rather than clamping, so a bad index is a
         // loud error instead of a silently misplaced element
         if wi < 0 || wi >= n {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "RangeError", "Invalid index")
-            return JSValue.Undefined
+            return throwErr(&mut st, "RangeError", "Invalid index")
         }
         var wv = JSValue.Undefined
         if args.len() > 1 {

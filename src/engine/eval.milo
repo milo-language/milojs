@@ -753,7 +753,7 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
         // where `this` is a proxy over the instance is a TypeError, which is what
         // makes the brand check meaningful across a proxy at all.
         if isPrivateKey(key) {
-            return throwTypeErr(&mut st, "Cannot read private member " + privDisplay(key) + " from an object whose class did not declare it")
+            return throwErr(&mut st, "TypeError", "Cannot read private member " + privDisplay(key) + " from an object whose class did not declare it")
         }
         let trap = proxyTrapChecked(prog, &mut st, o, "get")
         if st.throwing {
@@ -821,9 +821,7 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
                 }
             }
             if !found {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "TypeError", "Cannot read private member " + privDisplay(key) + " from an object whose class did not declare it")
-                return JSValue.Undefined
+                return throwErr(&mut st, "TypeError", "Cannot read private member " + privDisplay(key) + " from an object whose class did not declare it")
             }
         }
         // obj.__proto__ mirrors Object.getPrototypeOf (a Object.prototype accessor
@@ -1670,9 +1668,7 @@ pub fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValu
                     return JSValue.Undefined
                 }
                 if rawOff == rawOff && (rawOff < 0.0 || rawOff > 9007199254740991.0) {
-                    st.throwing = true
-                    st.thrownValue = makeError(&mut st, "RangeError", "Invalid typed array offset")
-                    return JSValue.Undefined
+                    return throwErr(&mut st, "RangeError", "Invalid typed array offset")
                 }
                 boff = numToIndex(rawOff)
                 if boff < 0 {
@@ -1683,16 +1679,12 @@ pub fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValu
             // fit inside the buffer.
             let bufLen = st.objExtras[st.objects[h].extra].bytes.len()
             if boff % w != 0 || boff > bufLen {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "RangeError", "start offset of " + taName(kind) + " should be a multiple of " + i64ToStr(w))
-                return JSValue.Undefined
+                return throwErr(&mut st, "RangeError", "start offset of " + taName(kind) + " should be a multiple of " + i64ToStr(w))
             }
             // With no explicit length the view spans the rest of the buffer, so
             // the buffer itself has to divide evenly into elements.
             if (args.len() <= 2 || isUndefinedValue(args[2])) && bufLen % w != 0 {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "RangeError", "byte length of " + taName(kind) + " should be a multiple of " + i64ToStr(w))
-                return JSValue.Undefined
+                return throwErr(&mut st, "RangeError", "byte length of " + taName(kind) + " should be a multiple of " + i64ToStr(w))
             }
             let avail = st.objExtras[st.objects[h].extra].bytes.len() - boff
             var count = avail / w
@@ -1705,9 +1697,7 @@ pub fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValu
                 // Clamping it instead handed back a SHORTER view than asked for,
                 // so the caller saw a successful construction of the wrong size.
                 if want < 0 || boff + want * w > st.objExtras[st.objects[h].extra].bytes.len() {
-                    st.throwing = true
-                    st.thrownValue = makeError(&mut st, "RangeError", "Invalid typed array length")
-                    return JSValue.Undefined
+                    return throwErr(&mut st, "RangeError", "Invalid typed array length")
                 }
                 count = want
             }
@@ -1780,9 +1770,7 @@ pub fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValu
                 return JSValue.Undefined
             }
             if rawLen == rawLen && (rawLen < 0.0 || rawLen > 9007199254740991.0) {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "RangeError", "Invalid typed array length: " + numToStr(rawLen))
-                return JSValue.Undefined
+                return throwErr(&mut st, "RangeError", "Invalid typed array length: " + numToStr(rawLen))
             }
             len = numToIndex(rawLen)
             if len < 0 {
@@ -2037,9 +2025,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
     if name == "__regexpToString" {
         let rh = objHandle(recv)
         if rh < 0 {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "RegExp.prototype.toString called on non-object")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "RegExp.prototype.toString called on non-object")
         }
         let rsrc = toStrProg(prog, getMemberDyn(prog, rh, "source", &mut st), &mut st)
         if st.throwing {
@@ -2057,18 +2043,14 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
     if name == "__dateToPrimitive" {
         let dh = objHandle(recv)
         if dh < 0 {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Date.prototype[Symbol.toPrimitive] called on non-object")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Date.prototype[Symbol.toPrimitive] called on non-object")
         }
         var hint = "default"
         if args.len() > 0 {
             hint = toStr(args[0])
         }
         if hint != "number" && hint != "string" && hint != "default" {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Invalid hint: " + hint)
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Invalid hint: " + hint)
         }
         var dargs: Vec<JSValue> = Vec.new()
         if hint == "number" {
@@ -2083,9 +2065,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
     if name == "__errorToString" {
         let eh = objHandle(recv)
         if eh < 0 {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Error.prototype.toString called on non-object")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Error.prototype.toString called on non-object")
         }
         let rawName = getMemberDyn(prog, eh, "name", &mut st)
         if st.throwing {
@@ -2281,9 +2261,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
                     // only a buffer created with {maxByteLength} may resize, and
                     // only within [0, cap]
                     if st.objExtras[st.objects[o].extra].abMaxLen < 0 || to < 0 || to > st.objExtras[st.objects[o].extra].abMaxLen {
-                        st.throwing = true
-                        st.thrownValue = makeError(&mut st, "RangeError", "ArrayBuffer.prototype.resize: invalid length")
-                        return JSValue.Undefined
+                        return throwErr(&mut st, "RangeError", "ArrayBuffer.prototype.resize: invalid length")
                     }
                     var b: Vec<u8> = Vec.new()
                     var ci: i64 = 0
@@ -2836,7 +2814,7 @@ pub fn setMemberDyn(prog: &Prog, o: i64, key: string, v: JSValue, st: &mut Inter
     if st.objects[o].isProxy {
         // as on the read side: a proxy has no private state of its own
         if isPrivateKey(key) {
-            let _t = throwTypeErr(&mut st, "Cannot write private member " + privDisplay(key) + " to an object whose class did not declare it")
+            let _t = throwErr(&mut st, "TypeError", "Cannot write private member " + privDisplay(key) + " to an object whose class did not declare it")
             return
         }
         let trap = proxyTrapChecked(prog, &mut st, o, "set")
@@ -3314,9 +3292,7 @@ fn readLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
                     // reading an undeclared identifier is a ReferenceError in JS;
                     // without this a typo just evaluates to undefined and the
                     // failure surfaces somewhere else entirely
-                    st.throwing = true
-                    st.thrownValue = makeError(&mut st, "ReferenceError", name.clone() + " is not defined")
-                    return JSValue.Undefined
+                    return throwErr(&mut st, "ReferenceError", name.clone() + " is not defined")
                 }
             }
         }
@@ -3583,9 +3559,7 @@ pub fn callNativeAsFunction(prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st:
         return JSValue.Str("Invalid Date")
     }
     if nativeRequiresNew(n) {
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "TypeError", "Constructor " + nativeCtorName(n) + " requires 'new'")
-        return JSValue.Undefined
+        return throwErr(&mut st, "TypeError", "Constructor " + nativeCtorName(n) + " requires 'new'")
     }
     return callNativeProg(prog, n, argVals, &mut st)
 }
@@ -3957,9 +3931,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // strings here, so toNum happily parsed one as a failed number and every
         // "reject a symbol argument" case read as a quiet NaN instead.
         if isSymbolValue(argVals[0]) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot convert a Symbol value to a number")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a number")
         }
         // an object coerces via ToPrimitive(number) — honouring a user
         // [Symbol.toPrimitive]/valueOf — before ToNumber; toNum alone gives NaN
@@ -3969,9 +3941,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 return JSValue.Undefined
             }
             if isSymbolValue(p) {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "TypeError", "Cannot convert a Symbol value to a number")
-                return JSValue.Undefined
+                return throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a number")
             }
             return JSValue.Number(toNum(p))
         }
@@ -4093,9 +4063,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // must throw returned the object unchanged and the caller carried on
         // believing the property was defined.
         if argVals.len() < 3 {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Object.defineProperty called on non-object")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Object.defineProperty called on non-object")
         }
         // NOT objHandle: a function is an object in JS but is a Func here, not
         // an Obj, so an objHandle test rejects every `defineProperty(fn, ...)`.
@@ -4105,15 +4073,11 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         let key = toStr(argVals[1])
         let o = propertyBagOf(&mut st, target)
         if o < 0 {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Object.defineProperty called on non-object")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Object.defineProperty called on non-object")
         }
         let d = objHandle(argVals[2])
         if d < 0 {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Property description must be an object")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Property description must be an object")
         }
         if st.objects[o].isProxy {
             let pok = definePropOf(gProg, &mut st, target, key, d)
@@ -4121,9 +4085,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 return JSValue.Undefined
             }
             if !pok {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "TypeError", "'defineProperty' on proxy: trap returned falsish for property '" + key + "'")
-                return JSValue.Undefined
+                return throwErr(&mut st, "TypeError", "'defineProperty' on proxy: trap returned falsish for property '" + key + "'")
             }
             return cloneValue(target)
         }
@@ -4211,9 +4173,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         let o = propertyBagOf(&mut st, argVals[0])
         let descs = objHandle(argVals[1])
         if o < 0 || descs < 0 {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Object.defineProperties called on non-object")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Object.defineProperties called on non-object")
         }
         // Every descriptor is READ first and only then applied, which is the
         // order the spec fixes and what makes a later descriptor that throws
@@ -4240,9 +4200,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 let d = objHandle(dv)
                 if d < 0 {
                     popTemp(&mut st)
-                    st.throwing = true
-                    st.thrownValue = makeError(&mut st, "TypeError", "Property description must be an object")
-                    return JSValue.Undefined
+                    return throwErr(&mut st, "TypeError", "Property description must be an object")
                 }
                 arrPush(&mut st, holder, JSValue.Obj(d))
                 keys.push(key)
@@ -4263,9 +4221,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 let sd = objHandle(sdv)
                 if sd < 0 {
                     popTemp(&mut st)
-                    st.throwing = true
-                    st.thrownValue = makeError(&mut st, "TypeError", "Property description must be an object")
-                    return JSValue.Undefined
+                    return throwErr(&mut st, "TypeError", "Property description must be an object")
                 }
                 arrPush(&mut st, holder, JSValue.Obj(sd))
                 keys.push(skey)
@@ -4315,9 +4271,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     if id == Builtin.ObjectGetOwnPropNames || id == Builtin.ObjectGetOwnPropSymbols {
         // Same ToObject rejection as Object.keys above.
         if argVals.len() == 0 || isNullish(argVals[0]) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot convert undefined or null to object")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Cannot convert undefined or null to object")
         }
         // Two views of the same [[OwnPropertyKeys]] list: symbols are stored as
         // "@@sym:"-prefixed string keys, and a symbol value IS that string, so
@@ -5934,9 +5888,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             text = toStr(argVals[0])
         }
         if uriHasBadEscape(text) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "URIError", "URI malformed")
-            return JSValue.Undefined
+            return throwErr(&mut st, "URIError", "URI malformed")
         }
         return JSValue.Str(uriDecode(text))
     }
@@ -6140,9 +6092,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             let cpN = toNum(argVals[i])
             let cpI = cpN as i64
             if cpN != cpN || (cpI as f64) != cpN || cpI < 0 || cpI > 1114111 {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "RangeError", "Invalid code point " + numToStr(cpN))
-                return JSValue.Undefined
+                return throwErr(&mut st, "RangeError", "Invalid code point " + numToStr(cpN))
             }
             out = out + codePointToUtf8(cpI)
             i = i + 1
@@ -6204,9 +6154,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     }
     if id == Builtin.ObjectGetProto {
         if argVals.len() == 0 || isNullish(argVals[0]) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Object.getPrototypeOf called on null or undefined")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Object.getPrototypeOf called on null or undefined")
         }
         return getProtoOf(gProg, &mut st, argVals[0])
     }
@@ -6247,9 +6195,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     }
     if id == Builtin.ObjectSetProto {
         if argVals.len() == 0 || isNullish(argVals[0]) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Object.setPrototypeOf called on null or undefined")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Object.setPrototypeOf called on null or undefined")
         }
         if argVals.len() > 1 {
             // express's Router is a function whose prototype chain is set to the
@@ -6308,9 +6254,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             // that HAS any: freezing one is a TypeError rather than a no-op that
             // reports success. An empty view has nothing to object to.
             if taIntegrityBlocked(st, argVals[0]) {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "TypeError", "Cannot freeze array buffer views with elements")
-                return JSValue.Undefined
+                return throwErr(&mut st, "TypeError", "Cannot freeze array buffer views with elements")
             }
             let _ok = preventExtOf(gProg, &mut st, argVals[0], true)
             if st.throwing {
@@ -6385,9 +6329,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             bufH = objHandle(argVals[0])
         }
         if bufH < 0 || !st.objects[bufH].isArrayBuffer {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "First argument to DataView constructor must be an ArrayBuffer")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "First argument to DataView constructor must be an ArrayBuffer")
         }
         let bufLen = st.objExtras[st.objects[bufH].extra].bytes.len()
         var off: i64 = 0
@@ -6399,9 +6341,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             byteLen = numToIndex(toNum(argVals[2]))
         }
         if off < 0 || byteLen < 0 || off + byteLen > bufLen {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "RangeError", "Invalid DataView length")
-            return JSValue.Undefined
+            return throwErr(&mut st, "RangeError", "Invalid DataView length")
         }
         let dv = newObject(&mut st)
         st.objects[dv].isDataView = true
@@ -6417,18 +6357,14 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             // Sealing has the same obstacle as freezing: see the note there.
             // preventExtensions does not, since it never touches the elements.
             if id == Builtin.ObjectSeal && taIntegrityBlocked(st, argVals[0]) {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "TypeError", "Cannot seal array buffer views with elements")
-                return JSValue.Undefined
+                return throwErr(&mut st, "TypeError", "Cannot seal array buffer views with elements")
             }
             let ok = preventExtOf(gProg, &mut st, argVals[0], id == Builtin.ObjectSeal)
             if st.throwing {
                 return JSValue.Undefined
             }
             if !ok {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "TypeError", "Cannot prevent extensions")
-                return JSValue.Undefined
+                return throwErr(&mut st, "TypeError", "Cannot prevent extensions")
             }
             return cloneValue(argVals[0])
         }
@@ -6446,7 +6382,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     }
     if id == Builtin.ReflectDefineProp {
         if argVals.len() < 3 {
-            return throwTypeErr(&mut st, "Reflect.defineProperty requires 3 arguments")
+            return throwErr(&mut st, "TypeError", "Reflect.defineProperty requires 3 arguments")
         }
         let key = toStrProg(gProg, argVals[1], &mut st)
         if st.throwing {
@@ -6454,7 +6390,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         let d = objHandle(argVals[2])
         if d < 0 {
-            return throwTypeErr(&mut st, "Property description must be an object")
+            return throwErr(&mut st, "TypeError", "Property description must be an object")
         }
         let nd = toPropertyDescriptor(gProg, &mut st, d)
         if st.throwing {
@@ -6658,9 +6594,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // answered an empty array instead, so Object.keys(undefined) was [] and
         // a typo that produced undefined read as "an object with no keys".
         if argVals.len() == 0 || isNullish(argVals[0]) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot convert undefined or null to object")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Cannot convert undefined or null to object")
         }
         let wantPairs = id == Builtin.ObjectEntries
         let arr = newArray(&mut st)
@@ -6758,9 +6692,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // answered an empty array instead, so Object.keys(undefined) was [] and
         // a typo that produced undefined read as "an object with no keys".
         if argVals.len() == 0 || isNullish(argVals[0]) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot convert undefined or null to object")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Cannot convert undefined or null to object")
         }
         let arr = newArray(&mut st)
         if argVals.len() > 0 {
@@ -6815,17 +6747,13 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     if id == Builtin.ObjectAssign {
         if argVals.len() == 0 {
             // no target at all is the same as an undefined one
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot convert undefined or null to object")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Cannot convert undefined or null to object")
         }
         // ToObject on the target: nullish is a TypeError, and a PRIMITIVE is
         // boxed rather than handed back unchanged — `typeof Object.assign(1, {})`
         // is "object".
         if isNullish(argVals[0]) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot convert undefined or null to object")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Cannot convert undefined or null to object")
         }
         var target = cloneValue(argVals[0])
         if propertyBagOf(&mut st, target) < 0 {
@@ -7547,9 +7475,7 @@ fn requireModuleFrom(prog: &Prog, spec: &string, st: &mut Interp, dirIn: string)
                 return v
             }
             Result.Err(e) => {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "Error", e)
-                return JSValue.Undefined
+                return throwErr(&mut st, "Error", e)
             }
         }
     }
@@ -7872,9 +7798,7 @@ fn evalBigIntBin(op: &string, va: JSValue, vb: JSValue, st: &mut Interp): JSValu
     // arithmetic: both operands must be BigInt
     if op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**" {
         if !(aBig && bBig) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot mix BigInt and other types, use explicit conversions")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Cannot mix BigInt and other types, use explicit conversions")
         }
         let sa = bigStrOf(va)
         let sb = bigStrOf(vb)
@@ -7889,25 +7813,19 @@ fn evalBigIntBin(op: &string, va: JSValue, vb: JSValue, st: &mut Interp): JSValu
         }
         if op == "/" {
             if sb == "0" {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "RangeError", "Division by zero")
-                return JSValue.Undefined
+                return throwErr(&mut st, "RangeError", "Division by zero")
             }
             return JSValue.BigInt(bnDiv(sa, sb))
         }
         if op == "%" {
             if sb == "0" {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "RangeError", "Division by zero")
-                return JSValue.Undefined
+                return throwErr(&mut st, "RangeError", "Division by zero")
             }
             return JSValue.BigInt(bnMod(sa, sb))
         }
         // op == "**"
         if sb.len() > 0 && sb[0] == '-' {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "RangeError", "Exponent must be non-negative")
-            return JSValue.Undefined
+            return throwErr(&mut st, "RangeError", "Exponent must be non-negative")
         }
         return JSValue.BigInt(bnPow(sa, sb))
     }
@@ -7948,9 +7866,7 @@ fn evalBigIntBin(op: &string, va: JSValue, vb: JSValue, st: &mut Interp): JSValu
     // &, |, ^, <<, >> on BigInt. Both operands must be BigInt (like arithmetic).
     if op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" {
         if !(aBig && bBig) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot mix BigInt and other types, use explicit conversions")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Cannot mix BigInt and other types, use explicit conversions")
         }
         let sa = bigStrOf(va)
         let sb = bigStrOf(vb)
@@ -7962,9 +7878,7 @@ fn evalBigIntBin(op: &string, va: JSValue, vb: JSValue, st: &mut Interp): JSValu
         }
         if op == ">>>" {
             // JS: BigInts are signed, `>>>` has no meaning → TypeError
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "BigInts have no unsigned right shift, use >> instead")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "BigInts have no unsigned right shift, use >> instead")
         }
         var opc: u8 = '&'
         if op == "|" {
@@ -7974,9 +7888,7 @@ fn evalBigIntBin(op: &string, va: JSValue, vb: JSValue, st: &mut Interp): JSValu
         }
         return JSValue.BigInt(bnBitwise(opc, sa, sb))
     }
-    st.throwing = true
-    st.thrownValue = makeError(&mut st, "TypeError", "BigInt operation not supported")
-    return JSValue.Undefined
+    return throwErr(&mut st, "TypeError", "BigInt operation not supported")
 }
 
 // Binary evaluation is separated from the full expression dispatcher because a
@@ -8043,9 +7955,7 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Inter
                 if oh < 0 {
                     // the right side of `in` must be an object, private name
                     // or not
-                    st.throwing = true
-                    st.thrownValue = makeError(&mut st, "TypeError", "Cannot use 'in' operator to search for '" + pn.clone() + "' in " + toStr(ov0))
-                    return JSValue.Undefined
+                    return throwErr(&mut st, "TypeError", "Cannot use 'in' operator to search for '" + pn.clone() + "' in " + toStr(ov0))
                 }
                 // private METHODS are installed on the prototype rather
                 // than per instance, so the brand is "somewhere on this
@@ -8110,9 +8020,7 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Inter
     // user output. Equality compares without converting and stays allowed.
     let symbolic = isSymbolValue(va) || isSymbolValue(vb)
     if symbolic && op != "===" && op != "!==" && op != "==" && op != "!=" {
-    st.throwing = true
-    st.thrownValue = makeError(&mut st, "TypeError", "Cannot convert a Symbol value to a string")
-    return JSValue.Undefined
+    return throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a string")
     }
     let coerces = op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "<" || op == ">" || op == "<=" || op == ">="
     if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0 || funcHandle(va) >= 0 || funcHandle(vb) >= 0 || isNativeValue(va) || isNativeValue(vb)) {
@@ -8517,9 +8425,7 @@ pub fn setMemberOfValue(prog: &Prog, ov: JSValue, key: string, v: JSValue, st: &
             // reports that failure. Sloppy mode drops the write, which is what
             // this did for both modes.
             if st.strict {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "TypeError", "Cannot create property '" + key.clone() + "' on " + typeofStr(ov) + " '" + toStr(cloneValue(ov)) + "'")
-                return JSValue.Undefined
+                return throwErr(&mut st, "TypeError", "Cannot create property '" + key.clone() + "' on " + typeofStr(ov) + " '" + toStr(cloneValue(ov)) + "'")
             }
         }
     }
@@ -8583,9 +8489,7 @@ pub fn evalBinValues(prog: &Prog, op: &string, va: JSValue, vb: JSValue, st: &mu
     // user output. Equality compares without converting and stays allowed.
     let symbolic = isSymbolValue(va) || isSymbolValue(vb)
     if symbolic && op != "===" && op != "!==" && op != "==" && op != "!=" {
-    st.throwing = true
-    st.thrownValue = makeError(&mut st, "TypeError", "Cannot convert a Symbol value to a string")
-    return JSValue.Undefined
+    return throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a string")
     }
     let coerces = op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "<" || op == ">" || op == "<=" || op == ">="
     if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0 || funcHandle(va) >= 0 || funcHandle(vb) >= 0 || isNativeValue(va) || isNativeValue(vb)) {
@@ -8946,9 +8850,7 @@ pub fn evalUnValue(prog: &Prog, op: &string, va: JSValue, st: &mut Interp): JSVa
         // The numeric unary operators coerce, and ToNumber of a SYMBOL throws.
         // `typeof` and `void` do not convert.
         if isSymbolValue(va) && (code == UnOp.Neg || code == UnOp.Plus || code == UnOp.BitNot) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot convert a Symbol value to a number")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a number")
         }
         if code == UnOp.Neg {
             // BigInt negation stays a BigInt; unary + on a BigInt throws in JS
@@ -8993,9 +8895,7 @@ pub fn evalUnValue(prog: &Prog, op: &string, va: JSValue, st: &mut Interp): JSVa
             // `+x` cannot silently lose precision. Answering the numeric value
             // did exactly what the rule exists to prevent.
             if isBigIntVal(va) {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "TypeError", "Cannot convert a BigInt value to a number")
-                return JSValue.Undefined
+                return throwErr(&mut st, "TypeError", "Cannot convert a BigInt value to a number")
             }
             // unary plus is ToNumber, which ToPrimitive(number)s an object
             // first (so +new Date(0) is its epoch ms, not NaN)
@@ -9068,9 +8968,7 @@ fn evalNewArm(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inter
                 // constructors, and Reflect.construct already rejected all
                 // of them while `new` on the same value quietly succeeded.
                 if !valueIsConstructor(prog, st, JSValue.Func(fIdx, envIdx)) {
-                    st.throwing = true
-                    st.thrownValue = makeError(&mut st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor")
-                    return JSValue.Undefined
+                    return throwErr(&mut st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor")
                 }
                 pushTemp(&mut st, JSValue.Func(fIdx, envIdx))
                 let argVals = evalArgs(prog, argsIdx, &mut st, scope)
@@ -9111,9 +9009,7 @@ fn evalNewArm(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inter
             }
             JSValue.Native(nativeId) => {
                 if !nativeIsConstructor(nativeId) {
-                    st.throwing = true
-                    st.thrownValue = makeError(&mut st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor")
-                    return JSValue.Undefined
+                    return throwErr(&mut st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor")
                 }
                 let argVals = evalArgs(prog, argsIdx, &mut st, scope)
                 // An argument expression that threw ABORTS the call: without this the
@@ -9161,18 +9057,14 @@ fn evalNewArm(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inter
                     // constructor. A genuine bind() RESULT is, when its
                     // target is, and that is the case just below.
                     if st.objExtras[st.objects[co].extra].boundMethod.len() > 0 {
-                        st.throwing = true
-                        st.thrownValue = makeError(&mut st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor")
-                        return JSValue.Undefined
+                        return throwErr(&mut st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor")
                     }
                     // Binding does not MAKE something constructable: an arrow, a
                     // method or a generator is still not a constructor after
                     // `.bind(null)`, and `new (arrow.bind(null))()` built an
                     // object and ran the arrow against it.
                     if !valueIsConstructor(prog, st, JSValue.Obj(co)) {
-                        st.throwing = true
-                        st.thrownValue = makeError(&mut st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor")
-                        return JSValue.Undefined
+                        return throwErr(&mut st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor")
                     }
                     let bex = st.objects[co].extra
                     let btarget = cloneValue(st.objExtras[bex].boundTarget)
@@ -9249,14 +9141,10 @@ fn evalNewArm(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inter
                         }
                     }
                 }
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "TypeError", "value is not a constructor")
-                return JSValue.Undefined
+                return throwErr(&mut st, "TypeError", "value is not a constructor")
             }
             _ => {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "TypeError", "value is not a constructor")
-                return JSValue.Undefined
+                return throwErr(&mut st, "TypeError", "value is not a constructor")
             }
         }
 }
@@ -9529,9 +9417,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             // ToString has no symbol case, so it throws where String() does not
             if let JSValue.Str(hs) = cloneValue(hv) {
                 if isSymbolStr(hs) {
-                    st.throwing = true
-                    st.thrownValue = makeError(&mut st, "TypeError", "Cannot convert a Symbol value to a string")
-                    return JSValue.Undefined
+                    return throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a string")
                 }
             }
             return JSValue.Str(toStrProg(prog, hv, &mut st))
@@ -9638,9 +9524,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             // `({a} = null)` and `[a] = null` are TypeErrors: both patterns
             // convert their source before reading anything out of it
             if isNullish(rhs) {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "TypeError", "Cannot destructure '" + toStr(rhs) + "' as it is " + toStr(rhs) + ".")
-                return JSValue.Undefined
+                return throwErr(&mut st, "TypeError", "Cannot destructure '" + toStr(rhs) + "' as it is " + toStr(rhs) + ".")
             }
             pushTemp(&mut st, cloneValue(rhs))
             assignPattern(prog, patIdx, cloneValue(rhs), &mut st, scope)
@@ -10894,9 +10778,7 @@ pub fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
     // caller carried on with an undefined it never checked.
     if fIdx >= 0 && fIdx < prog.funcs.len() && prog.funcs[fIdx].isClassCtor {
         if isUndefinedValue(st.newTarget) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Class constructor " + prog.funcs[fIdx].name.clone() + " cannot be invoked without 'new'")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Class constructor " + prog.funcs[fIdx].name.clone() + " cannot be invoked without 'new'")
         }
     }
     if fIdx >= 0 && fIdx < prog.funcs.len() {
@@ -11205,24 +11087,16 @@ fn describeCallee(prog: &Prog, calleeId: ExprId): string {
     }
 }
 
-// A real Error object, so catch blocks see .name/.message and instanceof works.
-// Raise a TypeError and yield undefined, for the proxy traps.
-fn throwTypeErr(st: &mut Interp, msg: string): JSValue {
-    st.throwing = true
-    st.thrownValue = makeError(&mut st, "TypeError", msg)
-    return JSValue.Undefined
-}
-
 // ProxyCreate, shared by `new Proxy(t, h)` and Proxy.revocable(t, h).
 fn makeProxy(st: &mut Interp, argVals: &Vec<JSValue>): JSValue {
     if argVals.len() < 2 {
-        return throwTypeErr(&mut st, "Cannot create proxy with a non-object as target or handler")
+        return throwErr(&mut st, "TypeError", "Cannot create proxy with a non-object as target or handler")
     }
     let t = cloneValue(argVals[0])
     let h = cloneValue(argVals[1])
     // a function target is legal and common — `new Proxy(fn, {apply})`
     if (objHandle(t) < 0 && !isCallable(t)) || objHandle(h) < 0 {
-        return throwTypeErr(&mut st, "Cannot create proxy with a non-object as target or handler")
+        return throwErr(&mut st, "TypeError", "Cannot create proxy with a non-object as target or handler")
     }
     let callable = isCallableIn(st, t)
     let o = newObject(&mut st)
@@ -11299,7 +11173,7 @@ fn proxyTrapChecked(prog: &Prog, st: &mut Interp, o: i64, name: &string): JSValu
     // interpreter and move the program storage this reference points into.
     let nameCopy = name.clone()
     if proxyRevoked(st, o) {
-        return throwTypeErr(&mut st, "Cannot perform '" + nameCopy.clone() + "' on a proxy that has been revoked")
+        return throwErr(&mut st, "TypeError", "Cannot perform '" + nameCopy.clone() + "' on a proxy that has been revoked")
     }
     let h = objHandle(st.objExtras[st.objects[o].extra].proxyHandler)
     // the handler may itself be a proxy, so this read has to go through the
@@ -11312,7 +11186,7 @@ fn proxyTrapChecked(prog: &Prog, st: &mut Interp, o: i64, name: &string): JSValu
         return JSValue.Undefined
     }
     if !isCallableIn(st, t) {
-        return throwTypeErr(&mut st, "'" + nameCopy.clone() + "' trap must be a function")
+        return throwErr(&mut st, "TypeError", "'" + nameCopy.clone() + "' trap must be a function")
     }
     return t
 }
@@ -11513,7 +11387,7 @@ pub fn getOwnPropDescOf(prog: &Prog, st: &mut Interp, v: &JSValue, key: &string)
         let rh = objHandle(r)
         if rh < 0 {
             if !isUndefinedValue(r) {
-                return throwTypeErr(&mut st, "'getOwnPropertyDescriptor' on proxy: trap returned neither object nor undefined")
+                return throwErr(&mut st, "TypeError", "'getOwnPropertyDescriptor' on proxy: trap returned neither object nor undefined")
             }
             // the target cannot lose a non-configurable own property behind the
             // proxy's back, nor gain the absence of one it cannot delete
@@ -11523,10 +11397,10 @@ pub fn getOwnPropDescOf(prog: &Prog, st: &mut Interp, v: &JSValue, key: &string)
             }
             let tdh = objHandle(td)
             if tdh >= 0 && !truthy(getMember(st, tdh, "configurable")) {
-                return throwTypeErr(&mut st, "'getOwnPropertyDescriptor' on proxy: trap returned undefined for property '" + key.clone() + "' which is non-configurable in the proxy target")
+                return throwErr(&mut st, "TypeError", "'getOwnPropertyDescriptor' on proxy: trap returned undefined for property '" + key.clone() + "' which is non-configurable in the proxy target")
             }
             if tdh >= 0 && !isExtensibleOf(prog, &mut st, target) {
-                return throwTypeErr(&mut st, "'getOwnPropertyDescriptor' on proxy: trap returned undefined for property '" + key.clone() + "' which exists in the non-extensible proxy target")
+                return throwErr(&mut st, "TypeError", "'getOwnPropertyDescriptor' on proxy: trap returned undefined for property '" + key.clone() + "' which exists in the non-extensible proxy target")
             }
             return JSValue.Undefined
         }
@@ -11542,7 +11416,7 @@ pub fn getOwnPropDescOf(prog: &Prog, st: &mut Interp, v: &JSValue, key: &string)
             }
             let tdh = objHandle(td)
             if tdh < 0 || truthy(getMember(st, tdh, "configurable")) {
-                return throwTypeErr(&mut st, "'getOwnPropertyDescriptor' on proxy: trap reported non-configurability for property '" + key.clone() + "' which is either non-existent or configurable in the proxy target")
+                return throwErr(&mut st, "TypeError", "'getOwnPropertyDescriptor' on proxy: trap reported non-configurability for property '" + key.clone() + "' which is either non-existent or configurable in the proxy target")
             }
         }
         return done
@@ -11600,7 +11474,7 @@ pub fn getProtoOf(prog: &Prog, st: &mut Interp, v: &JSValue): JSValue {
             return JSValue.Undefined
         }
         if !isObjectValue(&mut st, r) && !isNullValue(r) {
-            return throwTypeErr(&mut st, "'getPrototypeOf' on proxy: trap returned neither object nor null")
+            return throwErr(&mut st, "TypeError", "'getPrototypeOf' on proxy: trap returned neither object nor null")
         }
         // a non-extensible target's prototype is fixed, so the trap may not
         // report a different one
@@ -11613,7 +11487,7 @@ pub fn getProtoOf(prog: &Prog, st: &mut Interp, v: &JSValue): JSValue {
                 return JSValue.Undefined
             }
             if !jsStrictEquals(r, tp) {
-                return throwTypeErr(&mut st, "'getPrototypeOf' on proxy: proxy target is non-extensible but the trap did not return its actual prototype")
+                return throwErr(&mut st, "TypeError", "'getPrototypeOf' on proxy: proxy target is non-extensible but the trap did not return its actual prototype")
             }
         }
         return r
@@ -11699,7 +11573,7 @@ pub fn setProtoOf(prog: &Prog, st: &mut Interp, v: &JSValue, proto: &JSValue): b
                 return false
             }
             if !jsStrictEquals(proto, tp) {
-                let _t = throwTypeErr(&mut st, "'setPrototypeOf' on proxy: trap returned truish for setting a new prototype on the non-extensible proxy target")
+                let _t = throwErr(&mut st, "TypeError", "'setPrototypeOf' on proxy: trap returned truish for setting a new prototype on the non-extensible proxy target")
                 return false
             }
         }
@@ -11731,7 +11605,7 @@ pub fn isExtensibleOf(prog: &Prog, st: &mut Interp, v: &JSValue): bool {
         }
         // extensibility is not something a proxy may lie about
         if truthy(r) != want {
-            let _t = throwTypeErr(&mut st, "'isExtensible' on proxy: trap result does not reflect extensibility of proxy target")
+            let _t = throwErr(&mut st, "TypeError", "'isExtensible' on proxy: trap result does not reflect extensibility of proxy target")
             return false
         }
         return want
@@ -11770,7 +11644,7 @@ pub fn preventExtOf(prog: &Prog, st: &mut Interp, v: &JSValue, seal: bool): bool
             if st.throwing {
                 return false
             }
-            let _t = throwTypeErr(&mut st, "'preventExtensions' on proxy: trap returned truish but the proxy target is extensible")
+            let _t = throwErr(&mut st, "TypeError", "'preventExtensions' on proxy: trap returned truish but the proxy target is extensible")
             return false
         }
         return true
@@ -11859,7 +11733,7 @@ pub fn definePropOf(prog: &Prog, st: &mut Interp, v: &JSValue, key: &string, d: 
             }
         }
         if bad {
-            let _t = throwTypeErr(&mut st, "'defineProperty' on proxy: trap returned truish for property '" + key.clone() + "' which is either non-existent or configurable in the proxy target")
+            let _t = throwErr(&mut st, "TypeError", "'defineProperty' on proxy: trap returned truish for property '" + key.clone() + "' which is either non-existent or configurable in the proxy target")
             return false
         }
         return true
@@ -11884,12 +11758,12 @@ fn checkProxyGetResult(prog: &Prog, st: &mut Interp, target: &JSValue, key: &str
     }
     if objHasInChain(st, tdh, "get") {
         if isUndefinedValue(getMember(st, tdh, "get")) && !isUndefinedValue(r) {
-            let _t = throwTypeErr(&mut st, "'get' on proxy: property '" + keyCopy.clone() + "' is a non-configurable accessor property on the proxy target and does not have a getter function, but the trap did not return 'undefined'")
+            let _t = throwErr(&mut st, "TypeError", "'get' on proxy: property '" + keyCopy.clone() + "' is a non-configurable accessor property on the proxy target and does not have a getter function, but the trap did not return 'undefined'")
         }
         return
     }
     if !truthy(getMember(st, tdh, "writable")) && !sameValue(r, getMember(st, tdh, "value")) {
-        let _t = throwTypeErr(&mut st, "'get' on proxy: property '" + keyCopy.clone() + "' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value")
+        let _t = throwErr(&mut st, "TypeError", "'get' on proxy: property '" + keyCopy.clone() + "' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value")
     }
 }
 
@@ -11909,7 +11783,7 @@ fn checkProxySetResult(prog: &Prog, st: &mut Interp, target: &JSValue, key: &str
     }
     if objHasInChain(st, tdh, "set") {
         if isUndefinedValue(getMember(st, tdh, "set")) {
-            let _t = throwTypeErr(&mut st, "'set' on proxy: trap returned truish for property '" + keyCopy.clone() + "' which exists in the proxy target as a non-configurable and non-writable accessor property without a setter")
+            let _t = throwErr(&mut st, "TypeError", "'set' on proxy: trap returned truish for property '" + keyCopy.clone() + "' which exists in the proxy target as a non-configurable and non-writable accessor property without a setter")
         }
         return
     }
@@ -11917,7 +11791,7 @@ fn checkProxySetResult(prog: &Prog, st: &mut Interp, target: &JSValue, key: &str
         return
     }
     if !truthy(getMember(st, tdh, "writable")) && !sameValue(v, getMember(st, tdh, "value")) {
-        let _t = throwTypeErr(&mut st, "'set' on proxy: trap returned truish for property '" + keyCopy.clone() + "' which exists in the proxy target as a non-configurable and non-writable data property with a different value")
+        let _t = throwErr(&mut st, "TypeError", "'set' on proxy: trap returned truish for property '" + keyCopy.clone() + "' which exists in the proxy target as a non-configurable and non-writable data property with a different value")
     }
 }
 
@@ -11928,9 +11802,7 @@ fn constructPromise(prog: &Prog, st: &mut Interp, argVals: &Vec<JSValue>): JSVal
     // validated first, so a non-callable one produced a permanently pending
     // promise instead of throwing.
     if argVals.len() == 0 || !isCallableIn(st, argVals[0]) {
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "TypeError", "Promise resolver is not a function")
-        return JSValue.Undefined
+        return throwErr(&mut st, "TypeError", "Promise resolver is not a function")
     }
     let pr = newPromise(&mut st, 0, JSValue.Undefined)
     pushTemp(&mut st, JSValue.Obj(pr))
@@ -12016,7 +11888,7 @@ pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec
     let co = objHandle(ctor)
     if co >= 0 && st.objects[co].isProxy {
         if !valueIsConstructor(prog, st, ctor) {
-            return throwTypeErr(&mut st, "proxy is not a constructor")
+            return throwErr(&mut st, "TypeError", "proxy is not a constructor")
         }
         let trap = proxyTrapChecked(prog, &mut st, co, "construct")
         if st.throwing {
@@ -12045,7 +11917,7 @@ pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec
         // a construct trap must answer an object; returning a primitive is a
         // TypeError rather than a silent `this`
         if !isObjectValue(&mut st, cr) {
-            return throwTypeErr(&mut st, "'construct' on proxy: trap returned non-object")
+            return throwErr(&mut st, "TypeError", "'construct' on proxy: trap returned non-object")
         }
         return cr
     }
@@ -12459,7 +12331,7 @@ pub fn ownKeysOf(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string> {
         }
         let rh = objHandle(res)
         if rh < 0 || !st.objects[rh].isArray {
-            let _t = throwTypeErr(&mut st, "CreateListFromArrayLike called on non-object")
+            let _t = throwErr(&mut st, "TypeError", "CreateListFromArrayLike called on non-object")
             return out
         }
         var i: i64 = 0
@@ -12472,7 +12344,7 @@ pub fn ownKeysOf(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string> {
                     out.push(s)
                 }
                 _ => {
-                    let _t = throwTypeErr(&mut st, "'ownKeys' on proxy: trap result must contain only string and symbol keys")
+                    let _t = throwErr(&mut st, "TypeError", "'ownKeys' on proxy: trap result must contain only string and symbol keys")
                     return out
                 }
             }
@@ -12483,7 +12355,7 @@ pub fn ownKeysOf(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string> {
             var dj = di + 1
             while dj < out.len() {
                 if out[di] == out[dj] {
-                    let _t = throwTypeErr(&mut st, "'ownKeys' on proxy: trap returned duplicate entries")
+                    let _t = throwErr(&mut st, "TypeError", "'ownKeys' on proxy: trap returned duplicate entries")
                     return out
                 }
                 dj = dj + 1
@@ -12512,7 +12384,7 @@ pub fn ownKeysOf(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string> {
                 required = tdh >= 0 && !truthy(getMember(st, tdh, "configurable"))
             }
             if required && !vecHasStr(out, tkeys[ki]) {
-                let _t = throwTypeErr(&mut st, "'ownKeys' on proxy: trap result did not include '" + tkeys[ki].clone() + "'")
+                let _t = throwErr(&mut st, "TypeError", "'ownKeys' on proxy: trap result did not include '" + tkeys[ki].clone() + "'")
                 return out
             }
             ki = ki + 1
@@ -12521,7 +12393,7 @@ pub fn ownKeysOf(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string> {
             var oi2: i64 = 0
             while oi2 < out.len() {
                 if !vecHasStr(tkeys, out[oi2]) {
-                    let _t = throwTypeErr(&mut st, "'ownKeys' on proxy: trap returned extra keys but the proxy target is non-extensible")
+                    let _t = throwErr(&mut st, "TypeError", "'ownKeys' on proxy: trap returned extra keys but the proxy target is non-extensible")
                     return out
                 }
                 oi2 = oi2 + 1
@@ -12579,6 +12451,15 @@ fn proxyOwnEnumKeys(prog: &Prog, st: &mut Interp, o: i64): Vec<string> {
         i = i + 1
     }
     return out
+}
+
+// Raise `kind` with `msg` and yield undefined, the shape every throwing arm
+// returns. A JS throw travels on st.throwing/st.thrownValue, not on a Result,
+// so this is the one spelling of "set the flag and bail".
+pub fn throwErr(st: &mut Interp, kind: string, msg: string): JSValue {
+    st.throwing = true
+    st.thrownValue = makeError(&mut st, kind, msg)
+    return JSValue.Undefined
 }
 
 pub fn makeError(st: &mut Interp, kind: string, msg: string): JSValue {
@@ -13212,9 +13093,7 @@ fn genResume(o: i64, args: Vec<JSValue>, mode: i64, st: &mut Interp): JSValue {
         if o >= 0 && st.objects[o].isGenerator {
             return genCompletedResult(arg0, mode, &mut st)
         }
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "TypeError", "not a generator")
-        return JSValue.Undefined
+        return throwErr(&mut st, "TypeError", "not a generator")
     }
     // Never started, or already finished: neither throw() nor return() runs any
     // of the body — there is no `yield` parked to resume from. throw() raises at
@@ -13228,9 +13107,7 @@ fn genResume(o: i64, args: Vec<JSValue>, mode: i64, st: &mut Interp): JSValue {
     if caller as i64 == 0 {
         // no green task to drive the body (engine main thread) — generators need
         // the runtime's task scheduler; see the R1b note in the suspension doc
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "TypeError", "generators require the milojs runtime (not the engine)")
-        return JSValue.Undefined
+        return throwErr(&mut st, "TypeError", "generators require the milojs runtime (not the engine)")
     }
     st.genSent[gi] = cloneValue(arg0)
     st.genResumeMode[gi] = mode
@@ -13427,9 +13304,7 @@ pub fn awaitValue(prog: &Prog, va: &JSValue, st: &mut Interp): JSValue {
                             serviceFetches(&mut st)
                             if (epochMillis() as f64) > awaitDeadline {
                                 popTemp(&mut st)
-                                st.throwing = true
-                                st.thrownValue = makeError(&mut st, "TypeError", "await did not settle within budget — likely a promise nothing will ever resolve")
-                                return JSValue.Undefined
+                                return throwErr(&mut st, "TypeError", "await did not settle within budget — likely a promise nothing will ever resolve")
                             }
                             if st.microtasks.len() > 0 {
                                 drainMicrotasks(prog, &mut st, 1000000)
@@ -13467,9 +13342,7 @@ pub fn awaitValue(prog: &Prog, va: &JSValue, st: &mut Interp): JSValue {
                                         napiWaitBriefly()
                                     } else if st.microtasks.len() == 0 {
                                         popTemp(&mut st)
-                                        st.throwing = true
-                                        st.thrownValue = makeError(&mut st, "TypeError", "await on a promise that can never settle (no pending work)")
-                                        return JSValue.Undefined
+                                        return throwErr(&mut st, "TypeError", "await on a promise that can never settle (no pending work)")
                                     }
                                 }
                             }
@@ -14220,13 +14093,13 @@ fn proxyDelete(prog: &Prog, o: i64, key: string, st: &mut Interp): JSValue {
         let tdh = objHandle(td)
         if tdh >= 0 {
             if !truthy(getMember(st, tdh, "configurable")) {
-                return throwTypeErr(&mut st, "'deleteProperty' on proxy: trap returned truish for property '" + key.clone() + "' which is non-configurable in the proxy target")
+                return throwErr(&mut st, "TypeError", "'deleteProperty' on proxy: trap returned truish for property '" + key.clone() + "' which is non-configurable in the proxy target")
             }
             if !isExtensibleOf(prog, &mut st, target) {
                 if st.throwing {
                     return JSValue.Undefined
                 }
-                return throwTypeErr(&mut st, "'deleteProperty' on proxy: trap returned truish for property '" + key.clone() + "' but the proxy target is non-extensible")
+                return throwErr(&mut st, "TypeError", "'deleteProperty' on proxy: trap returned truish for property '" + key.clone() + "' but the proxy target is non-extensible")
             }
             if st.throwing {
                 return JSValue.Undefined
@@ -14275,9 +14148,7 @@ fn deleteOnNoBag(st: &mut Interp, base: &JSValue): JSValue {
         }
     }
     if nullish {
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "TypeError", "Cannot convert undefined or null to object")
-        return JSValue.Undefined
+        return throwErr(&mut st, "TypeError", "Cannot convert undefined or null to object")
     }
     return JSValue.Bool(true)
 }
@@ -14288,9 +14159,7 @@ fn deleteOnNoBag(st: &mut Interp, base: &JSValue): JSValue {
 // with the property still present and no indication.
 fn deleteResult(st: &mut Interp, ok: bool, key: &string): JSValue {
     if !ok && st.strict {
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "TypeError", "Cannot delete property '" + key.clone() + "' of object")
-        return JSValue.Undefined
+        return throwErr(&mut st, "TypeError", "Cannot delete property '" + key.clone() + "' of object")
     }
     return JSValue.Bool(ok)
 }
@@ -14811,7 +14680,7 @@ pub fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSVa
                 // a proxy over a non-callable target has no [[Call]] of its own,
                 // whatever the handler defines
                 if !st.objects[o].isFunctionLike {
-                    return throwTypeErr(&mut st, "proxy is not a function")
+                    return throwErr(&mut st, "TypeError", "proxy is not a function")
                 }
                 let trap = proxyTrapChecked(prog, &mut st, o, "apply")
                 if st.throwing {
@@ -15120,14 +14989,10 @@ pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
         // answered "null" where node throws.
         match recv {
             JSValue.Null => {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "TypeError", "Cannot read properties of null (reading '" + name.clone() + "')")
-                return JSValue.Undefined
+                return throwErr(&mut st, "TypeError", "Cannot read properties of null (reading '" + name.clone() + "')")
             }
             JSValue.Undefined => {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "TypeError", "Cannot read properties of undefined (reading '" + name.clone() + "')")
-                return JSValue.Undefined
+                return throwErr(&mut st, "TypeError", "Cannot read properties of undefined (reading '" + name.clone() + "')")
             }
             _ => {
             }
@@ -15173,9 +15038,7 @@ pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 if isCallableIn(st, method) {
                     return callValue(prog, method, argVals, JSValue.Str(s.clone()), &mut st)
                 }
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "TypeError", name.clone() + " is not a function")
-                return JSValue.Undefined
+                return throwErr(&mut st, "TypeError", name.clone() + " is not a function")
             }
             // the argument's own @@replace/@@match/@@split, when it has one
             let symOp2 = stringOpSymbolMethod(prog, &mut st, name, argVals)
@@ -15589,9 +15452,7 @@ pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                         return r
                     }
                     popTemp(&mut st)
-                    st.throwing = true
-                    st.thrownValue = makeError(&mut st, "TypeError", name.clone() + " is not a function")
-                    return JSValue.Undefined
+                    return throwErr(&mut st, "TypeError", name.clone() + " is not a function")
                 }
                 _ => {
                     // plain objects are not linked to Object.prototype, so its
@@ -15610,9 +15471,7 @@ pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                         return r
                     }
                     popTemp(&mut st)
-                    st.throwing = true
-                    st.thrownValue = makeError(&mut st, "TypeError", name.clone() + " is not a function")
-                    return JSValue.Undefined
+                    return throwErr(&mut st, "TypeError", name.clone() + " is not a function")
                 }
             }
         }
@@ -15678,9 +15537,7 @@ pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                     return callValue(prog, m, argVals, JSValue.Undefined, &mut st)
                 }
             }
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", name.clone() + " is not a function")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", name.clone() + " is not a function")
         }
         JSValue.Func(bf, benv) => {
             // method call on a function value: either a static (Class.make())
@@ -15808,14 +15665,10 @@ pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 }
                 return callValue(prog, m, argVals, JSValue.Func(bf, benv), &mut st)
             }
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", name.clone() + " is not a function")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", name.clone() + " is not a function")
         }
         _ => {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot read properties of a non-object (reading '" + name.clone() + "')")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Cannot read properties of a non-object (reading '" + name.clone() + "')")
         }
     }
 }
@@ -15887,9 +15740,7 @@ pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
         leftover = true
     }
     if ep.errored || ep.eofError || leftover {
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "SyntaxError", "Unexpected token in eval")
-        return JSValue.Undefined
+        return throwErr(&mut st, "SyntaxError", "Unexpected token in eval")
     }
     // A top-level `return` is legal in a CommonJS module (node wraps the file in
     // a function) but not in eval, so this check belongs here rather than in the
@@ -15897,9 +15748,7 @@ pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
     var ri: i64 = 0
     while ri < gProg.blocks[top.index].len() {
         if let Stmt.Ret(_rv) = getStmt(gProg, gProg.blocks[top.index][ri]) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "SyntaxError", "Illegal return statement")
-            return JSValue.Undefined
+            return throwErr(&mut st, "SyntaxError", "Illegal return statement")
         }
         ri = ri + 1
     }
@@ -15973,14 +15822,14 @@ pub fn evalInOperator(prog: &Prog, key: string, ov: JSValue, st: &mut Interp): J
                     let tdh = objHandle(td)
                     if tdh >= 0 {
                         if !truthy(getMember(st, tdh, "configurable")) {
-                            return throwTypeErr(&mut st, "'has' on proxy: trap returned falsish for property '" + key.clone() + "' which exists in the proxy target as non-configurable")
+                            return throwErr(&mut st, "TypeError", "'has' on proxy: trap returned falsish for property '" + key.clone() + "' which exists in the proxy target as non-configurable")
                         }
                         let hext = isExtensibleOf(prog, &mut st, target)
                         if st.throwing {
                             return JSValue.Undefined
                         }
                         if !hext {
-                            return throwTypeErr(&mut st, "'has' on proxy: trap returned falsish for property '" + key.clone() + "' but the proxy target is not extensible")
+                            return throwErr(&mut st, "TypeError", "'has' on proxy: trap returned falsish for property '" + key.clone() + "' but the proxy target is not extensible")
                         }
                     }
                     return JSValue.Bool(false)
@@ -16053,9 +15902,7 @@ pub fn evalInOperator(prog: &Prog, key: string, ov: JSValue, st: &mut Interp): J
         }
         _ => {
             // `"a" in 5` is a TypeError, not false
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot use 'in' operator to search for '" + key.clone() + "' in " + toStr(ov))
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "Cannot use 'in' operator to search for '" + key.clone() + "' in " + toStr(ov))
         }
     }
 }

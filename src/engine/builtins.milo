@@ -18,7 +18,7 @@ from "./strutil" import {
     clampIndex, strSlice, jsIndexOf, jsStartsWith, jsEndsWith
 }
 from "./eval" import {
-    toStrProg, callBuiltinByName, makeError, isCallable, isSymbolStr, symbolDisplay, isBigIntVal, bigStrOf, callValue, makeArrayIterator, taCurrentLen, taElemValue
+    toStrProg, callBuiltinByName, makeError, throwErr, isCallable, isSymbolStr, symbolDisplay, isBigIntVal, bigStrOf, callValue, makeArrayIterator, taCurrentLen, taElemValue
 }
 from "./value" import {
     JSValue, hexDigitVal, wsRunAt, wsRunBefore, truthy
@@ -44,12 +44,6 @@ from "./unicase" import {
 // is not) and were each less correct than it: an own `name` property that
 // Object.getOwnPropertyNames must not show, no prototype at all, and a stack
 // with no frames.
-fn throwErr(st: &mut Interp, kind: string, msg: string): JSValue {
-    st.throwing = true
-    st.thrownValue = makeError(&mut st, kind, msg)
-    return JSValue.Undefined
-}
-
 fn isWs(c: u8): bool {
     return c == ' ' || c == 9 as u8 || c == 10 as u8 || c == 13 as u8
 }
@@ -941,9 +935,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         }
         let cnt = argNum(args, 0, 0)
         if cnt < 0 {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "RangeError", "Invalid count value: " + i64ToStr(cnt))
-            return JSValue.Undefined
+            return throwErr(&mut st, "RangeError", "Invalid count value: " + i64ToStr(cnt))
         }
         // Repeating an EMPTY string is empty however many times it is asked for,
         // and answering directly is what stops a huge count from spinning through
@@ -1652,9 +1644,7 @@ pub fn makeRegex(st: &mut Interp, pattern: string, flags: string): JSValue {
     // a reversed {n,m} are all EARLY errors: the spec rejects the pattern at
     // compile time rather than letting it match nothing or match something else.
     if !re.valid {
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "SyntaxError", "Invalid regular expression: /" + pattern.clone() + "/: " + regexInvalidReason(re))
-        return JSValue.Undefined
+        return throwErr(&mut st, "SyntaxError", "Invalid regular expression: /" + pattern.clone() + "/: " + regexInvalidReason(re))
     }
     let isGlobal = re.flagG
     st.regexes.push(re)
@@ -1851,9 +1841,7 @@ pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>):
             if truthy(objGet(st, o, "sticky")) { out = out + "y" }
             return JSValue.Str(out)
         }
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "TypeError", "Method RegExp.prototype." + name.clone() + " called on incompatible receiver")
-        return JSValue.Undefined
+        return throwErr(&mut st, "TypeError", "Method RegExp.prototype." + name.clone() + " called on incompatible receiver")
     }
     // RegExp.prototype[@@match](str) and friends: delegate to the String method
     // that actually implements the operation in this engine
@@ -2453,9 +2441,7 @@ pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>
         // first match only, which is the opposite of what the name promises, so
         // the spec makes it a TypeError rather than letting it half-work.
         if name == "replaceAll" && rid >= 0 && !st.regexes[rid].flagG {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "replaceAll must be called with a global RegExp")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "replaceAll must be called with a global RegExp")
         }
         if args.len() > 1 && isCallable(args[1]) {
             return regexReplaceFn(prog, &mut st, s, rid, cloneValue(args[1]))
@@ -2482,9 +2468,7 @@ pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>
         // the spec rejects a non-global regex here, because the result would be
         // an infinite sequence of the same match
         if !st.regexes[rid].flagG {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "String.prototype.matchAll called with a non-global RegExp argument")
-            return JSValue.Undefined
+            return throwErr(&mut st, "TypeError", "String.prototype.matchAll called with a non-global RegExp argument")
         }
         return regexStrMatchAll(&mut st, s, rid)
     }
@@ -2642,14 +2626,10 @@ pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>, st: &
         // RangeError. Out of range simply produced a string of that many digits,
         // so `(1).toFixed(101)` answered a 101-decimal number instead of throwing.
         if name == "toFixed" && args.len() > 0 && (digits < 0 || digits > 100) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "RangeError", "toFixed() digits argument must be between 0 and 100")
-            return JSValue.Undefined
+            return throwErr(&mut st, "RangeError", "toFixed() digits argument must be between 0 and 100")
         }
         if name == "toPrecision" && args.len() > 0 && !isUndefinedValue(args[0]) && (digits < 1 || digits > 100) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "RangeError", "toPrecision() argument must be between 1 and 100")
-            return JSValue.Undefined
+            return throwErr(&mut st, "RangeError", "toPrecision() argument must be between 1 and 100")
         }
         if name == "toPrecision" {
             if args.len() == 0 {
@@ -2680,9 +2660,7 @@ pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>, st: &
             // 2..36, and anything else is a RangeError rather than a silent
             // fallback to base 10: `(5).toString(1)` answered "5".
             if radix < 2 || radix > 36 {
-                st.throwing = true
-                st.thrownValue = makeError(&mut st, "RangeError", "toString() radix argument must be between 2 and 36")
-                return JSValue.Undefined
+                return throwErr(&mut st, "RangeError", "toString() radix argument must be between 2 and 36")
             }
             if radix != 10 {
                 return JSValue.Str(numToRadix(toNum(recv), radix))
