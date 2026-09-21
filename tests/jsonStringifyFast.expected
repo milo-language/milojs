@@ -1,0 +1,17 @@
+{"1":"one","2":"two","a":1,"b":"s\n\"q\"","c":[1,null,null,null,null,true,0,1e+21,null],"d":{"e":{"f":[]}},"h":null}
+["1970-01-01T00:00:00.000Z","tj",5,"w",false,{},{"0":1,"1":2}]
+TypeError
+[{"k":1},{"k":1}]
+{"g":7} [null,1,null] "é😀\u0001" [null,null,null,1]
+TypeError
+undefined undefined null {} {}
+{
+  "a": [
+    1,
+    {
+      "b": 2
+    }
+  ]
+} {"b":2} {"a":2}
+{"0":1,"1":2}
+[1,2] {} {"z":1}

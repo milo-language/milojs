@@ -881,6 +881,7 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(&mut st, 0, "clearImmediate", JSValue.Native(Native.Fn(Builtin.ClearTimer)))
     scopeDefine(&mut st, 0, "setImmediate", JSValue.Native(Native.Fn(Builtin.SetImmediate)))
     scopeDefine(&mut st, 0, "__timerRef", JSValue.Native(Native.Fn(Builtin.TimerRef)))
+    scopeDefine(&mut st, 0, "__jsonStringifyFast", JSValue.Native(Native.Fn(Builtin.JsonStringifyFast)))
     scopeDefine(&mut st, 0, "queueMicrotask", JSValue.Native(Native.Fn(Builtin.QueueMicrotaskJs)))
     // not a JS global in node; lib/util.js reads it off globalThis so util.inspect
     // and console.log render identically

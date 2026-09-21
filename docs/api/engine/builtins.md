@@ -175,6 +175,22 @@ pub fn mjSign(x: f64): f64
 
 _Undocumented._
 
+### `mjStringifyFast`
+
+```milo
+pub fn mjStringifyFast(v: &JSValue, st: &Interp): Option<string>
+```
+
+JSON.stringify(value) with no replacer and no indent, serialised natively in
+one buffer, or None when the graph needs the JS serialiser in the prelude:
+anything that can run user code or throw (a toJSON in the chain, so every
+Date; an accessor; a Proxy; a wrapper object; a BigInt; a cycle), and the
+array shapes the plain element loop cannot spell (holes, sparse tails, an
+index accessor). Object keys follow enumOrder, which is Object.keys' order,
+and skip symbols and non-enumerables the way Object.keys does. The prelude's
+ser() ran the whole walk as tree-walked JS for every call: 1 MB of plain data
+took 680 ms against node's 1.4 ms.
+
 ### `mjStringifyVal`
 
 ```milo

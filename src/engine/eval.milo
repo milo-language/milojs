@@ -3968,6 +3968,19 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Str(mjStringifyVal(argVals[0], st))
     }
+    if id == Builtin.JsonStringifyFast {
+        if argVals.len() == 0 {
+            return JSValue.Undefined
+        }
+        match mjStringifyFast(argVals[0], st) {
+            Option.Some(text) => {
+                return JSValue.Str(text)
+            }
+            Option.None => {
+                return JSValue.Undefined
+            }
+        }
+    }
     if id == Builtin.JsonParse {
         if argVals.len() == 0 {
             return JSValue.Undefined

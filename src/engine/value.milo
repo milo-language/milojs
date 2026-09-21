@@ -136,6 +136,9 @@ pub enum Builtin {
     SetImmediate,
     // __timerRef(id, flag): the engine half of Timeout.ref/unref.
     TimerRef,
+    // __jsonStringifyFast(v): the native serialiser, or undefined when the
+    // prelude's JS serialiser has to run (see mjStringifyFast).
+    JsonStringifyFast,
     QueueMicrotask,
     // queueMicrotask has its own native (distinct from process.nextTick, which
     // shares Builtin.QueueMicrotask) so it can call the callback with zero

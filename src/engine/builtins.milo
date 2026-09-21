@@ -1228,6 +1228,154 @@ pub fn mjStringifyVal(v: &JSValue, st: &Interp): string {
     return out
 }
 
+// JSON.stringify(value) with no replacer and no indent, serialised natively in
+// one buffer, or None when the graph needs the JS serialiser in the prelude:
+// anything that can run user code or throw (a toJSON in the chain, so every
+// Date; an accessor; a Proxy; a wrapper object; a BigInt; a cycle), and the
+// array shapes the plain element loop cannot spell (holes, sparse tails, an
+// index accessor). Object keys follow enumOrder, which is Object.keys' order,
+// and skip symbols and non-enumerables the way Object.keys does. The prelude's
+// ser() ran the whole walk as tree-walked JS for every call: 1 MB of plain data
+// took 680 ms against node's 1.4 ms.
+pub fn mjStringifyFast(v: &JSValue, st: &Interp): Option<string> {
+    var out = String.withCapacity(256)
+    var stack: Vec<i64> = Vec.new()
+    if !mjPushFast(&mut out, v, st, &mut stack) {
+        return Option.None
+    }
+    return Option.Some(out)
+}
+
+fn mjIsBoundObj(st: &Interp, v: &JSValue): bool {
+    let h = objHandle(v)
+    return h >= 0 && st.objects[h].isBound
+}
+
+fn mjPushFast(out: &mut string, v: &JSValue, st: &Interp, stack: &mut Vec<i64>): bool {
+    match v {
+        JSValue.Null => {
+            out.pushStr("null")
+            return true
+        }
+        JSValue.Bool(b) => {
+            if b {
+                out.pushStr("true")
+            } else {
+                out.pushStr("false")
+            }
+            return true
+        }
+        JSValue.Number(n) => {
+            if !(n == n) || !isFiniteF(n) {
+                out.pushStr("null")
+            } else {
+                out.pushStr(numToStr(n))
+            }
+            return true
+        }
+        JSValue.Str(s) => {
+            if isSymbolStr(s) {
+                return false
+            }
+            mjPushJsonEscaped(&mut out, s)
+            return true
+        }
+        JSValue.Obj(o) => {
+            if st.objects[o].isProxy || st.objects[o].isDate || st.objects[o].isArguments
+                || isWrapperObj(st, o) || objHasInChain(st, o, "toJSON") {
+                return false
+            }
+            // a bound method object is a function value (a native getter read
+            // off a descriptor, a bind() result): omitted like any function
+            if st.objects[o].isBound {
+                return false
+            }
+            var si: i64 = 0
+            while si < stack.len() {
+                if stack[si] == o {
+                    return false
+                }
+                si = si + 1
+            }
+            if st.objects[o].isArray {
+                let n = st.objects[o].elems.len()
+                if st.objects[o].holes.len() > 0 || arrLen(st, o) != n {
+                    return false
+                }
+                var pi: i64 = 0
+                while pi < st.objects[o].props.len() {
+                    if propIsAccessor(st, o, pi) {
+                        return false
+                    }
+                    pi = pi + 1
+                }
+                stack.push(o)
+                out.push('[')
+                var i: i64 = 0
+                while i < n {
+                    if i > 0 {
+                        out.push(',')
+                    }
+                    let e = cloneValue(st.objects[o].elems[i])
+                    if mjJsonOmitted(e) || mjIsBoundObj(st, e) {
+                        out.pushStr("null")
+                    } else if !mjPushFast(&mut out, e, st, &mut stack) {
+                        return false
+                    }
+                    i = i + 1
+                }
+                out.push(']')
+                let _p = stack.pop()
+                return true
+            }
+            // a typed array's elements are in its buffer, and it serialises as
+            // an object keyed by index; the prelude path is fine for the rare
+            // case
+            if st.objExtras[st.objects[o].extra].taBuf >= 0 {
+                return false
+            }
+            stack.push(o)
+            out.push('{')
+            var first = true
+            let order = enumOrder(st, o)
+            var oi: i64 = 0
+            while oi < order.len() {
+                let pi = order[oi]
+                oi = oi + 1
+                if !st.objects[o].props[pi].enumerable {
+                    continue
+                }
+                if propIsAccessor(st, o, pi) {
+                    return false
+                }
+                let val = cloneValue(st.objects[o].props[pi].value)
+                if mjJsonOmitted(val) || mjIsBoundObj(st, val) {
+                    continue
+                }
+                if isSymbolValue(val) {
+                    continue
+                }
+                if !first {
+                    out.push(',')
+                }
+                first = false
+                mjPushJsonEscaped(&mut out, st.objects[o].props[pi].key)
+                out.push(':')
+                if !mjPushFast(&mut out, val, st, &mut stack) {
+                    return false
+                }
+            }
+            out.push('}')
+            let _p = stack.pop()
+            return true
+        }
+        _ => {
+            // undefined, a function, a native, a BigInt: the prelude decides
+            return false
+        }
+    }
+}
+
 // Appends into a single growing buffer rather than returning a string per node.
 // Returning strings made the top-level accumulator `out = out + piece` copy the
 // whole prefix once per element — quadratic, and it allocated ~35x the output
