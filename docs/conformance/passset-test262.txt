@@ -801,7 +801,9 @@ language/expressions/does-not-equals/S11.9.2_A2.1_T1.js
 language/expressions/does-not-equals/S11.9.2_A2.4_T3.js
 language/expressions/does-not-equals/S11.9.2_A6.2_T2.js
 language/expressions/does-not-equals/S11.9.2_A7.5.js
+language/expressions/dynamic-import/catch/nested-while-import-catch-eval-rqstd-abrupt-typeerror.js
 language/expressions/dynamic-import/catch/top-level-import-catch-file-does-not-exist.js
+language/expressions/dynamic-import/namespace/promise-then-ns-prevent-extensions-reflect.js
 language/expressions/dynamic-import/syntax/invalid/nested-async-arrow-function-return-await-import-defer-assignment-expr-not-optional.js
 language/expressions/dynamic-import/syntax/invalid/nested-async-gen-await-import-call-unknown.js
 language/expressions/dynamic-import/syntax/invalid/nested-block-import-defer-no-rest-param.js
@@ -815,6 +817,7 @@ language/expressions/dynamic-import/syntax/valid/nested-arrow-import-defer-scrip
 language/expressions/dynamic-import/syntax/valid/nested-async-function-await-empty-str-is-valid-assign-expr.js
 language/expressions/dynamic-import/syntax/valid/nested-async-gen-await-empty-str-is-valid-assign-expr.js
 language/expressions/dynamic-import/syntax/valid/nested-while-empty-str-is-valid-assign-expr.js
+language/expressions/dynamic-import/usage/nested-function-import-then-is-call-expression-square-brackets.js
 language/expressions/equals/S11.9.1_A2.4_T3.js
 language/expressions/equals/S11.9.1_A7.6.js
 language/expressions/function/dstr/ary-ptrn-elem-ary-elision-init.js

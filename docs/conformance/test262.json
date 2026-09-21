@@ -6,7 +6,7 @@
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "ff7d5ac2a609f492a4dea46bc20242c595c50cb6",
+    "revision": "8c4f8dc7e642917528736b790f5f6f03439b6456",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -18,9 +18,9 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 1184,
-    "fail": 286,
-    "parseFail": 23,
+    "pass": 1187,
+    "fail": 283,
+    "parseFail": 22,
     "skip": 30,
     "scored": 1470,
     "selected": 1500,
@@ -827,7 +827,9 @@
     "language/expressions/does-not-equals/S11.9.2_A2.4_T3.js",
     "language/expressions/does-not-equals/S11.9.2_A6.2_T2.js",
     "language/expressions/does-not-equals/S11.9.2_A7.5.js",
+    "language/expressions/dynamic-import/catch/nested-while-import-catch-eval-rqstd-abrupt-typeerror.js",
     "language/expressions/dynamic-import/catch/top-level-import-catch-file-does-not-exist.js",
+    "language/expressions/dynamic-import/namespace/promise-then-ns-prevent-extensions-reflect.js",
     "language/expressions/dynamic-import/syntax/invalid/nested-async-arrow-function-return-await-import-defer-assignment-expr-not-optional.js",
     "language/expressions/dynamic-import/syntax/invalid/nested-async-gen-await-import-call-unknown.js",
     "language/expressions/dynamic-import/syntax/invalid/nested-block-import-defer-no-rest-param.js",
@@ -841,6 +843,7 @@
     "language/expressions/dynamic-import/syntax/valid/nested-async-function-await-empty-str-is-valid-assign-expr.js",
     "language/expressions/dynamic-import/syntax/valid/nested-async-gen-await-empty-str-is-valid-assign-expr.js",
     "language/expressions/dynamic-import/syntax/valid/nested-while-empty-str-is-valid-assign-expr.js",
+    "language/expressions/dynamic-import/usage/nested-function-import-then-is-call-expression-square-brackets.js",
     "language/expressions/equals/S11.9.1_A2.4_T3.js",
     "language/expressions/equals/S11.9.1_A7.6.js",
     "language/expressions/function/dstr/ary-ptrn-elem-ary-elision-init.js",
@@ -1215,8 +1218,8 @@
   "areas": [
     {
       "area": "language/expressions",
-      "pass": 290,
-      "fail": 44,
+      "pass": 293,
+      "fail": 41,
       "total": 334
     },
     {
@@ -1698,18 +1701,6 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:Error: Cannot find module '…'",
-      "count": 6,
-      "cases": [
-        "language/expressions/dynamic-import/usage/nested-function-import-then-is-call-expression-square-brackets.js",
-        "language/expressions/dynamic-import/namespace/promise-then-ns-prop-descs.js",
-        "language/expressions/dynamic-import/namespace/promise-then-ns-prevent-extensions-reflect.js",
-        "language/expressions/dynamic-import/usage/top-level-import-then-eval-gtbndng-indirect-update-dflt.js",
-        "language/expressions/dynamic-import/namespace/await-ns-get-own-property-sym.js",
-        "language/expressions/dynamic-import/usage/nested-async-arrow-function-return-await-eval-gtbndng-indirect-update-dflt.js"
-      ]
-    },
-    {
       "reason": "Uncaught TypeError: createRealm is not a function",
       "count": 6,
       "cases": [
@@ -1845,11 +1836,11 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«\"Error\"», «\"Synta",
+      "reason": "Test262:AsyncTestFailure:Error: Cannot find module '…'",
       "count": 2,
       "cases": [
-        "language/expressions/dynamic-import/catch/nested-while-import-catch-instn-iee-err-circular.js",
-        "language/expressions/dynamic-import/catch/nested-async-function-await-instn-iee-err-ambiguous-import.js"
+        "language/expressions/dynamic-import/namespace/await-ns-get-own-property-sym.js",
+        "language/expressions/dynamic-import/usage/nested-async-arrow-function-return-await-eval-gtbndng-indirect-update-dflt.js"
       ]
     },
     {
@@ -2028,10 +2019,24 @@
       ]
     },
     {
-      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«\"Error\"», «\"TypeE",
+      "reason": "Test262:AsyncTestFailure:Test262Error: [object Object]",
       "count": 1,
       "cases": [
-        "language/expressions/dynamic-import/catch/nested-while-import-catch-eval-rqstd-abrupt-typeerror.js"
+        "language/expressions/dynamic-import/catch/nested-while-import-catch-instn-iee-err-circular.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: default: is non-configurable Expected",
+      "count": 1,
+      "cases": [
+        "language/expressions/dynamic-import/namespace/promise-then-ns-prop-descs.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«\"Error\"», «\"Synta",
+      "count": 1,
+      "cases": [
+        "language/expressions/dynamic-import/catch/nested-async-function-await-instn-iee-err-ambiguous-import.js"
       ]
     },
     {
@@ -2046,6 +2051,13 @@
       "count": 1,
       "cases": [
         "language/statements/async-generator/yield-star-return-missing-value-is-awaited.js"
+      ]
+    },
+    {
+      "reason": "Test262:AsyncTestFailure:Test262Error: Test262Error: Expected SameValue(«function fn() {",
+      "count": 1,
+      "cases": [
+        "language/expressions/dynamic-import/usage/top-level-import-then-eval-gtbndng-indirect-update-dflt.js"
       ]
     },
     {
