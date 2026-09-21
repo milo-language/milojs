@@ -142,6 +142,38 @@ leaves its roots pushed, and the arms' own popTemp calls are now redundant but
 harmless (they pop an argument root early, which truncation would have dropped
 anyway). Deleting those ~27 pops is a follow-up; the throw-path imbalance is gone
 because nothing below the boundary can leave the stack deeper than it found it.
+`tools/gc-stress.sh` (collect on every allocation, 344/344 on 2026-09-21) is the
+dynamic gate for the rooting half; `spreadInto` was the sixth hole it found.
+
+### Where to pick this up: two type-level moves, in this order
+
+Both are expressible in Milo today (it has `Drop` impls and `?` on `Result`);
+neither needs a compiler change. What Milo cannot give is a branded lifetime
+that forbids holding a raw `i64` handle across an allocating call, so the
+strict gate stays the check for that half.
+
+**A. `Roots` guard (~1 day).** A value type whose construction pushes onto
+`gInterp.tempRoots` and whose `drop` pops, so every return path unwinds by
+construction instead of by a recorded length: `evalArgs` returns the guard
+alongside its values, the four boundary functions stop recording `base`, and
+the ~27 stray `popTemp`s go. Verify: `tools/gc-stress.sh` stays 344/344, the
+bench holds, `tempRoots` is never read except through the guard.
+
+**B. `Result`-typed completions (pilot first).** Convert `methods.milo` (82
+reads, the leafiest file) to return `Result<JSValue, Throw>` and propagate with
+`?`, keeping `st.throwing` at its boundary with `eval.milo`. Measure lines,
+perf, and how many of its 82 reads were missing checks the compiler now
+exposes. Decide on `eval.milo` (398) from that number, not from the plan. The
+lint in the paragraph above is still the cheaper first probe if the pilot
+stalls.
+
+Smaller compat leftovers found alongside, none gated yet:
+`class C extends null {}; new C()` must throw (super not a constructor);
+`f.prototype = 3; class C extends f` is not rejected because a function's
+assigned `prototype` is not visible through its property bag;
+`import.source`/`import.defer` parse errors (stage-3 proposals node lacks,
+66 test262 files, leave them); `tests/run.sh` wedges in its `wait` after a
+SIGKILLed fixture (three orphaned runners seen on 2026-09-20).
 
 ## http: no keep-alive, so every response closes its connection
 
