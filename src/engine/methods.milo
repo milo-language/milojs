@@ -2023,25 +2023,6 @@ ensures result >= 0 && result <= ARRAY_LIKE_MAX
 
 // Run an Array.prototype method against a receiver that is not a real array.
 pub fn arrayMethodGeneric(prog: &Prog, recv: &JSValue, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
-    // `args` is a Milo Vec the collector cannot see. A method that runs user
-    // code (a callback, a proxy trap, a getter) can collect an argument that
-    // nothing else references, and its slot is reused under the method: concat
-    // on a proxy once appended a trap's own argument list in place of [9].
-    var ai: i64 = 0
-    while ai < args.len() {
-        pushTemp(&mut st, cloneValue(args[ai]))
-        ai = ai + 1
-    }
-    let r = arrayMethodGenericUnrooted(prog, recv, name, args, &mut st)
-    ai = 0
-    while ai < args.len() {
-        popTemp(&mut st)
-        ai = ai + 1
-    }
-    return r
-}
-
-fn arrayMethodGenericUnrooted(prog: &Prog, recv: &JSValue, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     let tmp = arrayLikeToArray(prog, recv, &mut st)
     // adapting the receiver READS its length, and that read can run a getter
     // that throws. The spec performs it before validating the callback, so a
@@ -2055,12 +2036,16 @@ fn arrayMethodGenericUnrooted(prog: &Prog, recv: &JSValue, name: &string, args: 
     }
     pushTemp(&mut st, JSValue.Obj(tmp))
     let r = arrayMethod(prog, tmp, name, args, &mut st)
+    // the result (splice's removed array) is held only here while the
+    // write-back runs the receiver's set traps
+    pushTemp(&mut st, cloneValue(r))
     if !st.throwing && arrayMethodMutates(name) {
         let o = objHandle(recv)
         if o >= 0 && !st.objects[o].frozen {
             writeBackArrayLike(prog, &mut st, tmp, o)
         }
     }
+    popTemp(&mut st)
     popTemp(&mut st)
     // reverse/sort/fill/copyWithin are specified to return THE RECEIVER. Handing
     // back the scratch adapter instead turned `Array.prototype.sort.call(obj)`
@@ -2226,25 +2211,6 @@ fn arrayMethodResizes(name: &string): bool {
 }
 
 pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
-    // `args` is a Milo Vec the collector cannot see. A method that runs user
-    // code (a callback, a proxy trap, a getter) can collect an argument that
-    // nothing else references, and its slot is reused under the method: concat
-    // on a proxy once appended a trap's own argument list in place of [9].
-    var ai: i64 = 0
-    while ai < args.len() {
-        pushTemp(&mut st, cloneValue(args[ai]))
-        ai = ai + 1
-    }
-    let r = arrayMethodUnrooted(prog, o, name, args, &mut st)
-    ai = 0
-    while ai < args.len() {
-        popTemp(&mut st)
-        ai = ai + 1
-    }
-    return r
-}
-
-fn arrayMethodUnrooted(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     // A mutating method on a FROZEN array, or one that resizes an array whose
     // `length` is non-writable, is a TypeError. Both used to succeed silently:
     // `Object.freeze([1,2]).push(3)` grew the array.
@@ -2927,11 +2893,15 @@ fn arrayMethodUnrooted(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, 
             return JSValue.Undefined
         }
         let sliced = newArray(&mut st)
+        // rooted across the reads: an adapter's element read runs the proxy's
+        // get trap, whose own argument list took this array's slot once
+        pushTemp(&mut st, JSValue.Obj(sliced))
         var i = a
         while i < b {
             arrPushMaybeHole(prog, &mut st, sliced, o, i)
             i = i + 1
         }
+        popTemp(&mut st)
         if sliceSpecies >= 0 {
             return transferToSpecies(prog, sliced, sliceSpecies, &mut st)
         }
@@ -2997,7 +2967,9 @@ fn arrayMethodUnrooted(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, 
                     // present, and IsArray otherwise. The arguments object is
                     // array-shaped here but is not an Array, so it must be appended
                     // whole — `[].concat(arguments)` is one element, not three.
-                    var spread = st.objects[other].isArray && !st.objects[other].isArguments
+                    // IsArray sees through a proxy to its target, so a proxy
+                    // of an array spreads (by its trapped length and reads)
+                    var spread = valueIsArrayLike(st, JSValue.Obj(other))
                     let flag = getMemberDyn(prog, other, symConcatSpreadableKey(), &mut st)
                     if st.throwing {
                         popTemp(&mut st)

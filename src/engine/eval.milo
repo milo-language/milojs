@@ -9073,6 +9073,15 @@ pub fn evalUnValue(prog: &Prog, op: &string, va: JSValue, st: &mut Interp): JSVa
 }
 
 fn evalNewArm(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {
+    // scoped roots: the receiver and every argument evalArgs pushes stay alive
+    // for the whole call, and the arms need not balance their pops (see evalArgs)
+    let base = st.tempRoots.len()
+    let r = evalNewArms(prog, calleeIdx, argsIdx, &mut st, scope)
+    truncateTemps(&mut st, base)
+    return r
+}
+
+fn evalNewArms(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {
         let calleeVal = evalExpr(prog, calleeIdx, &mut st, scope)
         // a throw while resolving the constructor expression must propagate:
         // continuing here replaced the real error with "value is not a
@@ -9364,6 +9373,20 @@ pub fn evalExpr(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue {
     return evalExprFallback(prog, id, &mut st, scope)
         }
     }
+}
+
+// The call half of f?.(args), a scoped-root call boundary like evalCall.
+fn callOptional(prog: &Prog, calleeVal: JSValue, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {
+    let base = st.tempRoots.len()
+    rootIfHeap(&mut st, calleeVal)
+    let argVals = evalArgs(prog, argsIdx, &mut st, scope)
+    var r = JSValue.Undefined
+    // An argument expression that threw ABORTS the call
+    if !st.throwing {
+        r = callValue(prog, calleeVal, argVals, JSValue.Undefined, &mut st)
+    }
+    truncateTemps(&mut st, base)
+    return r
 }
 
 fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue {
@@ -9729,17 +9752,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                 st.optShort = true
                 return JSValue.Undefined
             }
-            pushTemp(&mut st, cloneValue(calleeVal))
-            let argVals = evalArgs(prog, argsIdx, &mut st, scope)
-            // An argument expression that threw ABORTS the call: without this the
-            // callee still ran with the arguments evaluated so far, so
-            // `arr.push(boom())` pushed a value and a Promise executor's
-            // `resolve(boom())` settled the promise with undefined.
-            if st.throwing {
-                return JSValue.Undefined
-            }
-            popTemp(&mut st)
-            return callValue(prog, calleeVal, argVals, JSValue.Undefined, &mut st)
+            return callOptional(prog, calleeVal, argsIdx, &mut st, scope)
         }
         Expr.OptIndex(objIdx, keyIdx) => {
             let ov = evalExpr(prog, objIdx, &mut st, scope)
@@ -10146,7 +10159,6 @@ fn spreadBuiltin(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Inte
 // the array swept and its slot reused while g() runs.
 fn evalArgs(prog: &Prog, argsIdx: ArgListId, st: &mut Interp, scope: i64): Vec<JSValue> {
     var out: Vec<JSValue> = Vec.new()
-    var rooted: i64 = 0
     var j: i64 = 0
     let n = prog.argLists[argsIdx.index].len()
     while j < n {
@@ -10154,27 +10166,61 @@ fn evalArgs(prog: &Prog, argsIdx: ArgListId, st: &mut Interp, scope: i64): Vec<J
         match prog.exprs[eIdx.index] {
             Expr.Spread(inner) => {
                 let v = evalExpr(prog, inner, &mut st, scope)
-                pushTemp(&mut st, cloneValue(v))
-                rooted = rooted + 1
+                rootIfHeap(&mut st, v)
+                let before = out.len()
                 spreadInto(prog, &mut out, v, &mut st)
+                // the elements an iterator produced are reachable from nothing
+                // but `out` once the source is done with
+                var si = before
+                while si < out.len() {
+                    rootIfHeap(&mut st, out[si])
+                    si = si + 1
+                }
             }
             _ => {
                 let v = evalExpr(prog, eIdx, &mut st, scope)
-                pushTemp(&mut st, cloneValue(v))
-                rooted = rooted + 1
+                rootIfHeap(&mut st, v)
                 out.push(v)
             }
         }
         j = j + 1
     }
-    // the caller binds these into a scope before the next safepoint, so the
-    // temp roots can be released here
-    var r: i64 = 0
-    while r < rooted {
-        popTemp(&mut st)
-        r = r + 1
-    }
+    // The roots stay PUSHED. A native holds `out` as a Milo Vec the collector
+    // cannot see, and runs user code (a proxy trap, a callback, a getter) that
+    // allocates; releasing here handed an argument's slot to the trap's own
+    // argument list. The call boundary (callMember, evalCall, evalNewArm,
+    // OptCall) records the temp-stack depth on entry and truncates back to it
+    // on exit, which is also what makes every throw path inside the arms
+    // balanced without each one popping.
     return out
+}
+
+// Root `v` only if the collector could free something through it: an object
+// handle, a closure's scope, or a resolver's promise (the arms of markValue).
+// A string or number is Milo-owned, and cloning a string just to root nothing
+// cost strRead 20% when every receiver was pushed.
+fn rootIfHeap(st: &mut Interp, v: &JSValue) {
+    match v {
+        JSValue.Obj(_o) => {
+            pushTemp(&mut st, cloneValue(v))
+        }
+        JSValue.Func(_f, _e) => {
+            pushTemp(&mut st, cloneValue(v))
+        }
+        JSValue.Native(_n) => {
+            pushTemp(&mut st, cloneValue(v))
+        }
+        _ => {
+        }
+    }
+}
+
+// Drop every temp root pushed since `base`: the scoped-root discipline of the
+// call boundaries, see evalArgs.
+fn truncateTemps(st: &mut Interp, base: i64) {
+    while st.tempRoots.len() > base {
+        popTemp(&mut st)
+    }
 }
 
 fn spaces(n: i64): string {
@@ -15169,6 +15215,16 @@ pub fn isCallableIn(st: &Interp, v: &JSValue): bool {
 pub let ARRAY_LIKE_MAX: i64 = 1 << 24
 
 pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {
+    // scoped roots: the receiver and every argument evalArgs pushes stay alive
+    // for the whole call, and the arms need not balance their pops (see evalArgs)
+    let base = st.tempRoots.len()
+    rootIfHeap(&mut st, recv)
+    let r = callMemberArms(prog, recv, name, argsIdx, &mut st, scope)
+    truncateTemps(&mut st, base)
+    return r
+}
+
+fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {
     // A SYMBOL-keyed member resolves through the ordinary property machinery and
     // is then called with the receiver, rather than being routed by the built-in
     // kind dispatch below -- that dispatch is keyed on ordinary method names and
@@ -15181,6 +15237,7 @@ pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
             return JSValue.Undefined
         }
         if isCallableIn(st, symM) {
+            rootIfHeap(&mut st, symM)
             let symArgs = evalArgs(prog, argsIdx, &mut st, scope)
             if st.throwing {
                 return JSValue.Undefined
@@ -15300,6 +15357,7 @@ pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
             if objOwnIndex(st, o, name) >= 0 {
                 let ownFn = getMemberDyn(prog, o, name, &mut st)
                 if isCallableIn(st, ownFn) {
+                    rootIfHeap(&mut st, ownFn)
                     let ownArgs = evalArgs(prog, argsIdx, &mut st, scope)
                     if st.throwing {
                         popTemp(&mut st)
@@ -15334,6 +15392,7 @@ pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 if objOwnIndex(st, o, name) >= 0 {
                     let userFn = getMemberDyn(prog, o, name, &mut st)
                     if isCallableIn(st, userFn) {
+                        rootIfHeap(&mut st, userFn)
                         let uArgs = evalArgs(prog, argsIdx, &mut st, scope)
                         if st.throwing {
                             popTemp(&mut st)
@@ -15617,6 +15676,10 @@ pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
             // getMemberDyn so a property whose value comes from a getter is
             // callable, e.g. Object.defineProperty(o, "fn", { get: () => f })
             let m = getMemberDyn(prog, o, name, &mut st)
+            // the callee may be freshly allocated (a typed array's `with` is a
+            // bound method synthesised by the read) and nothing else holds it
+            // while the arguments run; the boundary truncates the root
+            rootIfHeap(&mut st, m)
             match m {
                 JSValue.Func(fIdx, envIdx) => {
                     let argVals = evalArgs(prog, argsIdx, &mut st, scope)
@@ -15975,6 +16038,10 @@ pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
     if st.strict {
         hoistTarget = evalScope
     }
+    // the eval scope is a root only while it is active: a collection between
+    // two statements freed it and the second ran in whatever reused the slot,
+    // whose parent chain no longer reached the prelude
+    pushActive(&mut st, evalScope)
     hoistBlock(gProg, top, &mut st, hoistTarget)
     var result = JSValue.Undefined
     let n = gProg.blocks[top.index].len()
@@ -15990,10 +16057,12 @@ pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
             }
         }
         if st.throwing {
+            popActive(&mut st)
             return JSValue.Undefined
         }
         i = i + 1
     }
+    popActive(&mut st)
     return result
 }
 
@@ -16170,6 +16239,15 @@ fn consoleMethodIsPristine(st: &mut Interp, scope: i64, name: &string): bool {
 }
 
 fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {
+    // scoped roots: the receiver and every argument evalArgs pushes stay alive
+    // for the whole call, and the arms need not balance their pops (see evalArgs)
+    let base = st.tempRoots.len()
+    let r = evalCallArms(prog, calleeId, argsIdx, &mut st, scope)
+    truncateTemps(&mut st, base)
+    return r
+}
+
+fn evalCallArms(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, scope: i64): JSValue {
     // builtin: console.log(...)
     match prog.exprs[calleeId.index] {
         Expr.Ident(fname) => {
