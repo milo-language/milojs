@@ -539,9 +539,26 @@ pub fn toStrProg(prog: &Prog, v: &JSValue, st: &mut Interp): string {
     return toStr(p)
 }
 
+// ToString in an argument position, where a symbol is the spec's TypeError.
+// toStrProg itself cannot throw for one: String(sym) reaches it and answers
+// the descriptive string.
+pub fn toStrArg(prog: &Prog, v: &JSValue, st: &mut Interp): string {
+    if isSymbolValue(v) {
+        let _t = throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a string")
+        return ""
+    }
+    return toStrProg(prog, v, &mut st)
+}
+
 // ToNumber for the paths that DO have a Prog, so a user-defined valueOf is
-// honoured. The mirror of toStrProg.
+// honoured and a symbol is the spec's TypeError rather than NaN. The mirror of
+// toStrProg. Loose equality never reaches here (it compares symbols by
+// identity first), so every caller is a spec ToNumber position.
 pub fn toNumProg(prog: &Prog, v: &JSValue, st: &mut Interp): f64 {
+    if isSymbolValue(v) {
+        let _t = throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a number")
+        return jsNan()
+    }
     if objHandle(v) < 0 {
         return toNum(v)
     }
@@ -549,16 +566,49 @@ pub fn toNumProg(prog: &Prog, v: &JSValue, st: &mut Interp): f64 {
     return toNum(p)
 }
 
-// ToNumber for an ARGUMENT position, where a symbol is a TypeError rather than
-// NaN. toNumProg cannot do this for every caller: loose equality reaches it too,
-// and `Symbol() == 1` is false rather than an exception.
-pub fn toNumArg(prog: &Prog, v: &JSValue, st: &mut Interp): f64 {
-    if isSymbolValue(v) {
-        st.throwing = true
-        st.thrownValue = makeError(&mut st, "TypeError", "Cannot convert a Symbol value to a number")
-        return jsNan()
+// A Date setter ToNumbers every argument in order before touching the date;
+// dateMethod has no Prog, so the coercion happens here.
+fn dateMethodProg(prog: &Prog, st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSValue {
+    if name.len() > 3 && name[0] == 's' && name[1] == 'e' && name[2] == 't' {
+        let nums = numArgsProg(prog, args, &mut st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        return dateMethod(&mut st, o, name, nums)
     }
-    return toNumProg(prog, v, &mut st)
+    return dateMethod(&mut st, o, name, args)
+}
+
+// Number.prototype.toFixed/toPrecision/toExponential/toString take one
+// ToNumber'd argument; primitiveMethod has no Prog, so it is coerced here.
+fn primitiveMethodProg(prog: &Prog, name: &string, recv: &JSValue, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    if args.len() > 0 && (name == "toFixed" || name == "toPrecision" || name == "toExponential" || name == "toString")
+        && (objHandle(args[0]) >= 0 || isSymbolValue(args[0])) {
+        if let JSValue.Number(_n) = recv {
+            let nums = numArgsProg(prog, args, &mut st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            return primitiveMethod(name, recv, nums, &mut st)
+        }
+    }
+    return primitiveMethod(name, recv, args, &mut st)
+}
+
+// ToNumber over an argument list, left to right, stopping at the first throw:
+// the coercion a native that only knows toNum needs done for it.
+pub fn numArgsProg(prog: &Prog, args: &Vec<JSValue>, st: &mut Interp): Vec<JSValue> {
+    var out: Vec<JSValue> = Vec.new()
+    var i: i64 = 0
+    while i < args.len() {
+        let n = toNumProg(prog, args[i], &mut st)
+        if st.throwing {
+            return out
+        }
+        out.push(JSValue.Number(n))
+        i = i + 1
+    }
+    return out
 }
 
 // Which argument positions of a String.prototype method the spec ToStrings, and
@@ -598,7 +648,7 @@ fn strArgWantsNumber(name: &string, i: i64): bool {
 fn stringArgsNeedCoercion(name: &string, args: &Vec<JSValue>): bool {
     var i: i64 = 0
     while i < args.len() {
-        if objHandle(args[i]) >= 0 && (strArgWantsString(name, i) || strArgWantsNumber(name, i)) {
+        if (objHandle(args[i]) >= 0 || isSymbolValue(args[i])) && (strArgWantsString(name, i) || strArgWantsNumber(name, i)) {
             return true
         }
         i = i + 1
@@ -628,9 +678,10 @@ fn coercedStringArgs(prog: &Prog, name: &string, args: &Vec<JSValue>, st: &mut I
     }
     var i: i64 = 0
     while i < args.len() {
-        if objHandle(args[i]) >= 0 && strArgWantsString(name, i) && !isCallableIn(st, args[i]) {
-            out.push(JSValue.Str(toStrProg(prog, args[i], &mut st)))
-        } else if objHandle(args[i]) >= 0 && strArgWantsNumber(name, i) {
+        let coercible = objHandle(args[i]) >= 0 || isSymbolValue(args[i])
+        if coercible && strArgWantsString(name, i) && !isCallableIn(st, args[i]) {
+            out.push(JSValue.Str(toStrArg(prog, args[i], &mut st)))
+        } else if coercible && strArgWantsNumber(name, i) {
             out.push(JSValue.Number(toNumProg(prog, args[i], &mut st)))
         } else {
             out.push(cloneValue(args[i]))
@@ -1780,7 +1831,7 @@ pub fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValu
             // a view at offset 0, so every one of these cases read as success.
             var boff: i64 = 0
             if args.len() > 1 && !isUndefinedValue(args[1]) {
-                let rawOff = toNumArg(prog, args[1], &mut st)
+                let rawOff = toNumProg(prog, args[1], &mut st)
                 if st.throwing {
                     return JSValue.Undefined
                 }
@@ -1882,7 +1933,7 @@ pub fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValu
             // ToIndex rejects a negative or non-integral length with a
             // RangeError; clamping it to 0 made `new Int8Array(-1)` an empty
             // view, which reads as a successful construction.
-            let rawLen = toNumArg(prog, args[0], &mut st)
+            let rawLen = toNumProg(prog, args[0], &mut st)
             if st.throwing {
                 return JSValue.Undefined
             }
@@ -2254,13 +2305,13 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
     if isPrimitiveMethodName(name) {
         match recv {
             JSValue.Number(_pn) => {
-                return primitiveMethod(name, recv, args, &mut st)
+                return primitiveMethodProg(prog, name, recv, args, &mut st)
             }
             JSValue.Bool(_pb) => {
-                return primitiveMethod(name, recv, args, &mut st)
+                return primitiveMethodProg(prog, name, recv, args, &mut st)
             }
             JSValue.BigInt(_pg) => {
-                return primitiveMethod(name, recv, args, &mut st)
+                return primitiveMethodProg(prog, name, recv, args, &mut st)
             }
             _ => {
             }
@@ -2456,7 +2507,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
                 // fell through to the object tag: `String(d)` and `"" + d` both
                 // answered "[object Date]", and `d.valueOf.call(d)` answered the
                 // ISO string instead of the epoch number.
-                return dateMethod(&mut st, o, name, args)
+                return dateMethodProg(prog, &mut st, o, name, args)
             }
             if st.objects[o].isMap || st.objects[o].isSet {
                 return mapMethod(prog, o, name, args, &mut st)
@@ -2789,7 +2840,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             if isArrayMethod(name) {
                 return arrayMethodGeneric(prog, cloneValue(recv), name, args, &mut st)
             }
-            return primitiveMethod(name, recv, args, &mut st)
+            return primitiveMethodProg(prog, name, recv, args, &mut st)
         }
     }
 }
@@ -4009,7 +4060,14 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         return mjJsonParse(text, &mut st)
     }
     if isMathBuiltin(id) {
-        return mathNative(id, argVals, &mut st)
+        if id == Builtin.MathRandom {
+            return mathNative(id, argVals, &mut st)
+        }
+        let nums = numArgsProg(gProg, argVals, &mut st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        return mathNative(id, nums, &mut st)
     }
     if id == Builtin.Gc {
         // a real collection, not a no-op: the QuickJS GC tests call this to force
@@ -4265,7 +4323,10 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     if id == Builtin.IsNan || id == Builtin.IsFinite {
         var x = jsNan()
         if argVals.len() > 0 {
-            x = toNum(argVals[0])
+            x = toNumProg(gProg, argVals[0], &mut st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
         }
         let isNan = x != x
         if id == Builtin.IsNan {
@@ -4287,7 +4348,10 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if argVals.len() == 0 {
             return JSValue.Number(jsNan())
         }
-        let text = toStr(argVals[0])
+        let text = toStrArg(gProg, argVals[0], &mut st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
         if id == Builtin.ParseFloat {
             return JSValue.Number(jsParseFloatPrefix(text))
         }
@@ -15122,7 +15186,7 @@ pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
             if st.throwing {
                 return JSValue.Undefined
             }
-            return primitiveMethod(name, recv, argVals, &mut st)
+            return primitiveMethodProg(prog, name, recv, argVals, &mut st)
         }
     }
     match recv {
@@ -15421,7 +15485,7 @@ pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 if st.throwing {
                     return JSValue.Undefined
                 }
-                let r = dateMethod(&mut st, o, name, argVals)
+                let r = dateMethodProg(prog, &mut st, o, name, argVals)
                 popTemp(&mut st)
                 return r
             }

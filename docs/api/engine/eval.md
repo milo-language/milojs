@@ -613,6 +613,15 @@ to tell a built-in from a user function, so every user function looked native.
 A built-in's source text. Its own `name` property is authoritative: it is set
 from node's own tables by nameNativesOf.
 
+### `numArgsProg`
+
+```milo
+pub fn numArgsProg(prog: &Prog, args: &Vec<JSValue>, st: &mut Interp): Vec<JSValue>
+```
+
+ToNumber over an argument list, left to right, stopping at the first throw:
+the coercion a native that only knows toNum needs done for it.
+
 ### `ownEnumerableKeys`
 
 ```milo
@@ -919,16 +928,6 @@ so does a non-finite one. milojs had no clamp anywhere, so `new Date(9e15)`,
 `Date.UTC(275760, 8, 14)` and `d.setFullYear(400000)` all produced a Date that
 answers out-of-range milliseconds instead of Invalid Date.
 
-### `toNumArg`
-
-```milo
-pub fn toNumArg(prog: &Prog, v: &JSValue, st: &mut Interp): f64
-```
-
-ToNumber for an ARGUMENT position, where a symbol is a TypeError rather than
-NaN. toNumProg cannot do this for every caller: loose equality reaches it too,
-and `Symbol() == 1` is false rather than an exception.
-
 ### `toNumProg`
 
 ```milo
@@ -936,7 +935,19 @@ pub fn toNumProg(prog: &Prog, v: &JSValue, st: &mut Interp): f64
 ```
 
 ToNumber for the paths that DO have a Prog, so a user-defined valueOf is
-honoured. The mirror of toStrProg.
+honoured and a symbol is the spec's TypeError rather than NaN. The mirror of
+toStrProg. Loose equality never reaches here (it compares symbols by
+identity first), so every caller is a spec ToNumber position.
+
+### `toStrArg`
+
+```milo
+pub fn toStrArg(prog: &Prog, v: &JSValue, st: &mut Interp): string
+```
+
+ToString in an argument position, where a symbol is the spec's TypeError.
+toStrProg itself cannot throw for one: String(sym) reaches it and answers
+the descriptive string.
 
 ### `toStrProg`
 

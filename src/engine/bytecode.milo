@@ -54,7 +54,7 @@ from "./runtime" import {
     maybeGc, newScope, scopeDefine
 }
 from "./eval" import {
-    evalBinValues, toNumProg, toNumArg, memberOfValue, setMemberOfValue,
+    evalBinValues, toNumProg, memberOfValue, setMemberOfValue,
     bindActivationScope, callGuardTripped, callPlainValue, isPlainCallable,
     throwNotAFunction, isSuperName, callMember, callMayCapture, evalUnValue
 }
@@ -1645,12 +1645,10 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                         }
                         let tn0 = st.funcCallTicks
                         let x = cloneValue(st.vmStack[sp - 1])
-                        // toNumArg, not toNumProg: unary minus on a Symbol is a
-                        // TypeError, and toNumProg answers NaN because loose equality
-                        // reaches it too (`Symbol() == 1` is false, not a throw). The
-                        // evaluator's own `-` arm has this guard; the compiled path
-                        // bypassed it and `-Symbol()` quietly produced NaN.
-                        let n = toNumArg(prog, x, &mut st)
+                        // unary minus on a Symbol is a TypeError, which toNumProg
+                        // raises; the compiled path once bypassed the evaluator's
+                        // guard and `-Symbol()` quietly produced NaN.
+                        let n = toNumProg(prog, x, &mut st)
                         if st.funcCallTicks != tn0 {
                             vmSeedOuter(&mut st, ch, base, curScope)
                         }
@@ -2199,7 +2197,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
 // different, and an opcode that skips a guard the evaluator applies is exactly
 // the bug this catches -- `-Symbol()` answered NaN through Op.Neg instead of
 // throwing, because the fallback called toNumProg where the evaluator's own arm
-// calls toNumArg. That shipped to main and only a fixture written for an
+// calls toNumProg. That shipped to main and only a fixture written for an
 // unrelated reason caught it.
 pub var gVmDisabled: bool = false
 

@@ -23,7 +23,7 @@ from "./runtime" import {
     Interp
 }
 from "./eval" import {
-    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, toNumArg, makeError, throwErr, taIsDetached, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, valueIsArrayLike, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, isSymbolStr, ARRAY_LIKE_MAX
+    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, makeError, throwErr, taIsDetached, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, valueIsArrayLike, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, isSymbolStr, ARRAY_LIKE_MAX
 }
 from "./ast" import { Prog }
 from "std/datetime" import { DateTime }
@@ -63,10 +63,10 @@ pub fn dataViewMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, s
     let isSet = name.len() > 0 && name[0] == 115
     var byteOffset: i64 = 0
     if args.len() > 0 {
-        // toNumArg, not toNum: the offset is ToIndex'd, which runs a user
+        // toNumProg, not toNum: the offset is ToIndex'd, which runs a user
         // valueOf and rejects a symbol. toNum consulted neither, so an object
         // argument silently read as NaN (offset 0) and a symbol as NaN too.
-        let rawOffset = toNumArg(prog, args[0], &mut st)
+        let rawOffset = toNumProg(prog, args[0], &mut st)
         if st.throwing {
             return JSValue.Undefined
         }
@@ -90,7 +90,7 @@ pub fn dataViewMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, s
     // in the wrong order.
     var value: f64 = 0.0
     if isSet && args.len() > 1 {
-        value = toNumArg(prog, args[1], &mut st)
+        value = toNumProg(prog, args[1], &mut st)
         if st.throwing {
             return JSValue.Undefined
         }
