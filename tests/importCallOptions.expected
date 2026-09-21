@@ -1,0 +1,11 @@
+read with
+sync done
+spec toString
+threw synchronously: no
+TypeError The second argument to import() must be an object
+TypeError The 'with' option must be an object
+TypeError Import attribute value must be a string
+symbol TypeError
+abrupt RangeError
+loaded
+object spec loaded object

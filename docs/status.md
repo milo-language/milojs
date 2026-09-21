@@ -3,7 +3,7 @@ system: status
 purpose: current conformance numbers, product gate state, and what is next
 key-files: docs/conformance/node-compat.json, docs/node-compat.md, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, scripts/node-compat-sweep.ts
 update-when: a sweep is rerun or a product gate changes state
-last-verified: 2026-08-26 (re-verified after Op.CallMember: every published number held exactly (test262 1182, quickjs 104, node 581, all per-case). Previous note: re-verified for the per-case pass lists and the new pass-set ratchet; every published number reproduced identically on the reseeded corpus checkouts. Previous note: node-compat re-measured with the confirm pass; node-compat.md is the table alone now, so the whole-suite totals and the peer comparison are cited here rather than there)
+last-verified: 2026-09-20 (re-verified after the sweep fixture staging and the import() argument work: numbers here are compiled by gen-facts from the committed reports, test262 sample 1187/1470 at 8c4f8dc. Previous note: re-verified after Op.CallMember: every published number held exactly (test262 1182, quickjs 104, node 581, all per-case). Previous note: re-verified for the per-case pass lists and the new pass-set ratchet; every published number reproduced identically on the reseeded corpus checkouts. Previous note: node-compat re-measured with the confirm pass; node-compat.md is the table alone now, so the whole-suite totals and the peer comparison are cited here rather than there)
 -->
 
 # milojs status
@@ -70,7 +70,7 @@ keeps in step with the reports.
 
 | set | count |
 |---|---:|
-| engine (`tests/*.js`) | <!--fact:fixtures-engine-->272<!--/fact--> |
+| engine (`tests/*.js`) | <!--fact:fixtures-engine-->273<!--/fact--> |
 | runtime (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->67<!--/fact--> |
 | Milo invariants | <!--fact:fixtures-milo-->3<!--/fact--> + <!--fact:fixtures-milo-errors-->8<!--/fact--> |
 | node-oracle exemptions | <!--fact:fixtures-node-exempt-->7<!--/fact--> |
@@ -80,7 +80,7 @@ conformance percentages.
 
 ## Size
 
-<!--fact:loc-milo-->49.3k<!--/fact--> lines of Milo, <!--fact:loc-js-->18.7k<!--/fact--> of JavaScript, <!--fact:loc-total-->68.0k<!--/fact--> total. No V8,
+<!--fact:loc-milo-->49.3k<!--/fact--> lines of Milo, <!--fact:loc-js-->18.8k<!--/fact--> of JavaScript, <!--fact:loc-total-->68.1k<!--/fact--> total. No V8,
 JavaScriptCore, or C JavaScript engine underneath. Layering: <!--fact:layering-exempt-edges-->4<!--/fact--> registered
 engine to runtime edges, <!--fact:layering-host-globals-->0<!--/fact--> host natives in the engine bootstrap.
 Node-API entry points: <!--fact:napi-entry-points-->84<!--/fact-->, ten of them stubs.

@@ -721,18 +721,54 @@ fn parsePrimary(p: &mut PState, prog: &mut Prog): ExprId {
         advance(&mut p)
         advance(&mut p)
         let spec = parseExpr(&mut p, &mut prog)
+        // import(spec, options,): __importOptions in the prelude applies the
+        // spec's checks (an object, whose `with` is an object) and the result is
+        // dropped, since the loader has no import attributes to hand it to; a
+        // trailing comma is allowed after either.
+        var options: i64 = -1
+        if peekKind(p) == T_COMMA {
+            advance(&mut p)
+            if peekKind(p) != T_RPAREN {
+                options = parseExpr(&mut p, &mut prog).index
+                if peekKind(p) == T_COMMA {
+                    advance(&mut p)
+                }
+            }
+        }
         if peekKind(p) == T_RPAREN {
             advance(&mut p)
         }
+        // ToString(specifier) with the string hint, synchronously, so an object
+        // specifier's toString runs and a symbol rejects; require alone would
+        // have asked for "[object Object]".
+        let specCallee = addExpr(&mut prog, Expr.Ident("__importSpec"))
+        var specArgs: Vec<ExprId> = Vec.new()
+        specArgs.push(spec)
+        let specStr = addExpr(&mut prog, Expr.Call(specCallee, addArgList(&mut prog, specArgs)))
         let reqCallee = addExpr(&mut prog, Expr.Ident("require"))
         var reqArgs: Vec<ExprId> = Vec.new()
-        reqArgs.push(spec)
+        reqArgs.push(specStr)
         let loaded = addExpr(&mut prog, Expr.Call(reqCallee, addArgList(&mut prog, reqArgs)))
         let promise = addExpr(&mut prog, Expr.Ident("Promise"))
         let resolve = addExpr(&mut prog, Expr.Member(promise, "resolve"))
         var pArgs: Vec<ExprId> = Vec.new()
         pArgs.push(loaded)
-        let call = addExpr(&mut prog, Expr.Call(resolve, addArgList(&mut prog, pArgs)))
+        let resolved = addExpr(&mut prog, Expr.Call(resolve, addArgList(&mut prog, pArgs)))
+        // one microtask hop: node's loader settles a successful import() later
+        // than a rejection from argument validation, and fixtures pin that order.
+        // The load itself is still synchronous, so specifier evaluation and any
+        // ToString side effect happen where the spec puts them.
+        let thenFn = addExpr(&mut prog, Expr.Member(resolved, "then"))
+        var thenArgs: Vec<ExprId> = Vec.new()
+        thenArgs.push(addExpr(&mut prog, Expr.Ident("__importSettle")))
+        var call = addExpr(&mut prog, Expr.Call(thenFn, addArgList(&mut prog, thenArgs)))
+        if options >= 0 {
+            let checkCallee = addExpr(&mut prog, Expr.Ident("__importOptions"))
+            var checkArgs: Vec<ExprId> = Vec.new()
+            checkArgs.push(ExprId { index: options })
+            let check = addExpr(&mut prog, Expr.Call(checkCallee, addArgList(&mut prog, checkArgs)))
+            call = addExpr(&mut prog, Expr.Comma(check, call))
+        }
         return addExpr(&mut prog, Expr.ImportCall(call))
     }
     if k == T_NUM {
