@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "suite": "test262",
   "corpus": {
-    "path": "/tmp/test262",
+    "path": "~/git/test262",
     "revision": "b363f29d3c43c626dc852744ad64a0b48a003693"
   },
   "milojs": {
-    "revision": "924aeca8929532d2db4270c388300bcb94e2a5de",
+    "revision": "ff7d5ac2a609f492a4dea46bc20242c595c50cb6",
     "dirty": false
   },
   "engine": ".dev/mj-engine",
@@ -18,13 +18,13 @@
     "seed": "0x2f6e2b1"
   },
   "totals": {
-    "pass": 1182,
-    "fail": 288,
+    "pass": 1184,
+    "fail": 286,
     "parseFail": 23,
     "skip": 30,
     "scored": 1470,
     "selected": 1500,
-    "crashes": 1
+    "crashes": 0
   },
   "passes": [
     "annexB/built-ins/Date/prototype/toGMTString/not-a-constructor.js",
@@ -196,6 +196,7 @@
     "built-ins/JSON/stringify/replacer-function-result.js",
     "built-ins/JSON/stringify/value-number-non-finite.js",
     "built-ins/Map/groupBy/emptyList.js",
+    "built-ins/Map/iterator-item-first-entry-returns-abrupt.js",
     "built-ins/Map/prototype/forEach/not-a-constructor.js",
     "built-ins/Map/prototype/set/does-not-have-mapdata-internal-slot-weakmap.js",
     "built-ins/Math/E/prop-desc.js",
@@ -402,6 +403,7 @@
     "built-ins/Set/Symbol.species/return-value.js",
     "built-ins/Set/Symbol.species/symbol-species.js",
     "built-ins/Set/prototype/add/preserves-insertion-order.js",
+    "built-ins/Set/prototype/clear/this-not-object-throw-number.js",
     "built-ins/Set/prototype/has/returns-true-when-value-present-nan.js",
     "built-ins/Set/prototype/intersection/intersection.js",
     "built-ins/Set/prototype/isSubsetOf/name.js",
@@ -1321,8 +1323,8 @@
     },
     {
       "area": "built-ins/Set",
-      "pass": 10,
-      "fail": 1,
+      "pass": 11,
+      "fail": 0,
       "total": 11
     },
     {
@@ -1363,8 +1365,8 @@
     },
     {
       "area": "built-ins/Map",
-      "pass": 3,
-      "fail": 3,
+      "pass": 4,
+      "fail": 2,
       "total": 6
     },
     {
@@ -1666,22 +1668,6 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all",
-      "count": 10,
-      "cases": [
-        "language/statements/class/elements/privatefieldset-typeerror-5.js",
-        "built-ins/Array/prototype/flatMap/target-array-non-extensible.js",
-        "built-ins/Array/prototype/shift/set-length-array-length-is-non-writable.js",
-        "built-ins/MapIteratorPrototype/next/does-not-have-mapiterator-internal-slots-map.js",
-        "language/statements/class/definition/invalid-extends.js",
-        "language/statements/generators/restricted-properties.js",
-        "built-ins/Array/prototype/copyWithin/return-abrupt-from-start-as-symbol.js",
-        "built-ins/Set/prototype/clear/this-not-object-throw-number.js",
-        "built-ins/isFinite/return-abrupt-from-tonumber-number-symbol.js",
-        "built-ins/Promise/prototype/then/ctor-null.js"
-      ]
-    },
-    {
       "reason": "Uncaught undefined: Expected a Test262Error to be thrown but no exception was thrown at al",
       "count": 9,
       "cases": [
@@ -1694,6 +1680,21 @@
         "built-ins/RegExp/prototype/Symbol.match/g-match-empty-coerce-lastindex-err.js",
         "built-ins/Date/prototype/setMilliseconds/arg-to-number-err.js",
         "built-ins/TypedArray/prototype/subarray/speciesctor-get-species-abrupt.js"
+      ]
+    },
+    {
+      "reason": "Uncaught undefined: Expected a TypeError to be thrown but no exception was thrown at all",
+      "count": 9,
+      "cases": [
+        "language/statements/class/elements/privatefieldset-typeerror-5.js",
+        "built-ins/Array/prototype/flatMap/target-array-non-extensible.js",
+        "built-ins/Array/prototype/shift/set-length-array-length-is-non-writable.js",
+        "built-ins/MapIteratorPrototype/next/does-not-have-mapiterator-internal-slots-map.js",
+        "language/statements/class/definition/invalid-extends.js",
+        "language/statements/generators/restricted-properties.js",
+        "built-ins/Array/prototype/copyWithin/return-abrupt-from-start-as-symbol.js",
+        "built-ins/isFinite/return-abrupt-from-tonumber-number-symbol.js",
+        "built-ins/Promise/prototype/then/ctor-null.js"
       ]
     },
     {
@@ -1816,15 +1817,6 @@
         "language/expressions/compound-assignment/S11.13.2_A7.1_T2.js",
         "language/expressions/compound-assignment/S11.13.2_A7.11_T1.js",
         "built-ins/Array/prototype/values/resizable-buffer-shrink-mid-iteration.js"
-      ]
-    },
-    {
-      "reason": "Uncaught undefined: Expected SameValue(«undefined», «N») to be true",
-      "count": 3,
-      "cases": [
-        "language/statements/class/cpn-class-decl-accessors-computed-property-name-from-arrow-function-expression.js",
-        "built-ins/Map/prototype/getOrInsertComputed/returns-value-if-key-is-not-present-different-key-types.js",
-        "language/statements/labeled/cptn-break.js"
       ]
     },
     {
@@ -1957,6 +1949,14 @@
       ]
     },
     {
+      "reason": "Uncaught undefined: Expected SameValue(«undefined», «N») to be true",
+      "count": 2,
+      "cases": [
+        "language/statements/class/cpn-class-decl-accessors-computed-property-name-from-arrow-function-expression.js",
+        "language/statements/labeled/cptn-break.js"
+      ]
+    },
+    {
       "reason": "Uncaught undefined: Expected TypeError, got Test262Error: Expected an exception.",
       "count": 2,
       "cases": [
@@ -2018,13 +2018,6 @@
       "cases": [
         "annexB/language/eval-code/direct/func-if-decl-else-decl-b-eval-func-skip-early-err.js",
         "annexB/language/eval-code/indirect/global-if-decl-else-decl-b-eval-global-skip-early-err.js"
-      ]
-    },
-    {
-      "reason": "crash(SIGTERM)",
-      "count": 1,
-      "cases": [
-        "built-ins/Map/iterator-item-first-entry-returns-abrupt.js"
       ]
     },
     {
@@ -2242,6 +2235,13 @@
       "count": 1,
       "cases": [
         "built-ins/Array/prototype/concat/Array.prototype.concat_non-array.js"
+      ]
+    },
+    {
+      "reason": "Uncaught TypeError: getOrInsertComputed is not a function",
+      "count": 1,
+      "cases": [
+        "built-ins/Map/prototype/getOrInsertComputed/returns-value-if-key-is-not-present-different-key-types.js"
       ]
     },
     {
@@ -2581,7 +2581,7 @@
       ]
     },
     {
-      "reason": "Uncaught undefined: Expected a Error to be thrown but no exception was thrown at all",
+      "reason": "Uncaught undefined: Expected a Error but got a TypeError",
       "count": 1,
       "cases": [
         "built-ins/Map/prototype/getOrInsertComputed/check-state-after-callback-fn-throws.js"

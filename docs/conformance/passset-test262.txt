@@ -170,6 +170,7 @@ built-ins/JSON/15.12-0-2.js
 built-ins/JSON/stringify/replacer-function-result.js
 built-ins/JSON/stringify/value-number-non-finite.js
 built-ins/Map/groupBy/emptyList.js
+built-ins/Map/iterator-item-first-entry-returns-abrupt.js
 built-ins/Map/prototype/forEach/not-a-constructor.js
 built-ins/Map/prototype/set/does-not-have-mapdata-internal-slot-weakmap.js
 built-ins/Math/E/prop-desc.js
@@ -376,6 +377,7 @@ built-ins/RegExp/unicodeSets/generated/character-property-escape-intersection-ch
 built-ins/Set/Symbol.species/return-value.js
 built-ins/Set/Symbol.species/symbol-species.js
 built-ins/Set/prototype/add/preserves-insertion-order.js
+built-ins/Set/prototype/clear/this-not-object-throw-number.js
 built-ins/Set/prototype/has/returns-true-when-value-present-nan.js
 built-ins/Set/prototype/intersection/intersection.js
 built-ins/Set/prototype/isSubsetOf/name.js
