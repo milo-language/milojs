@@ -93,3 +93,4 @@ global: __reflectPreventExtensions   engine-intrinsic Reflect.preventExtensions,
 global: __reflectSet                 engine-intrinsic Reflect.set, same reason
 global: __reflectSetPrototypeOf      engine-intrinsic Reflect.setPrototypeOf, same reason
 global: __timerRef                  engine-intrinsic the ref flag on a timer in the engine's own queue, which setTimeout/setInterval put there; the prelude's Timeout.ref/unref have no other way to reach it
+global: __jsonStringifyFast         engine-intrinsic the native JSON.stringify fast path over plain data; the prelude wrapper calls it first and falls back to its own walker when it answers undefined
