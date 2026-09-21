@@ -16,7 +16,7 @@ Open gaps are listed in [docs/backlog.md](backlog.md); per-module detail in
 
 | suite | measures | score |
 |---|---|---:|
-| test262 (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->`) | engine | **<!--fact:t262-pct-->80.9%<!--/fact-->** <!--fact:t262-pass-->1189<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> |
+| test262 (<!--fact:t262-sample-->1500<!--/fact-->-case deterministic sample, seed `<!--fact:t262-seed-->0x2f6e2b1<!--/fact-->`) | engine | **<!--fact:t262-pct-->82.0%<!--/fact-->** <!--fact:t262-pass-->1206<!--/fact-->/<!--fact:t262-scored-->1470<!--/fact--> |
 | QuickJS `tests/` | engine | **<!--fact:qjs-pct-->69.8%<!--/fact-->** <!--fact:qjs-pass-->104<!--/fact-->/<!--fact:qjs-total-->149<!--/fact--> |
 | Node `test/parallel` | runtime | **<!--fact:node-pct-all-->17.3%<!--/fact-->** <!--fact:node-pass-->584<!--/fact-->/<!--fact:node-total-->3373<!--/fact--> |
 | Node `test/parallel` | peer: <!--fact:node-peer-name-->bun 1.3.10<!--/fact--> | **<!--fact:node-peer-pct-all-->40.8%<!--/fact-->** <!--fact:node-peer-pass-->1377<!--/fact-->/<!--fact:node-peer-total-->3373<!--/fact--> |
@@ -39,7 +39,7 @@ runtime got strictly better. Against what ran it is <!--fact:node-pct-->24.0%<!-
 (<!--fact:node-pass-->584<!--/fact-->/<!--fact:node-ran-->2437<!--/fact-->); that form is for tracking milojs against itself,
 never against another engine, which skips a different amount.
 
-Parse gaps: <!--fact:t262-parsefail-->20<!--/fact--> of <!--fact:t262-fail-->281<!--/fact--> test262 failures (<!--fact:t262-parsefail-pct-->7.1%<!--/fact-->) are syntax; the rest are
+Parse gaps: <!--fact:t262-parsefail-->21<!--/fact--> of <!--fact:t262-fail-->264<!--/fact--> test262 failures (<!--fact:t262-parsefail-pct-->8.0%<!--/fact-->) are syntax; the rest are
 semantics. QuickJS parse gaps: <!--fact:qjs-parsefail-->0<!--/fact-->.
 
 ### test262 failures by area
@@ -47,14 +47,14 @@ semantics. QuickJS parse gaps: <!--fact:qjs-parsefail-->0<!--/fact-->.
 <!--fact-block:t262-areas-->
 | area | failing | passing |
 |---|---:|---:|
-| `language/statements` | 40 | 242/282 |
 | `language/expressions` | 39 | 295/334 |
-| `built-ins/Object` | 31 | 96/127 |
+| `language/statements` | 38 | 244/282 |
 | `built-ins/Array` | 22 | 69/91 |
+| `built-ins/Object` | 20 | 107/127 |
 | `built-ins/Temporal` | 18 | 113/131 |
 | `built-ins/RegExp` | 18 | 55/73 |
-| `built-ins/TypedArray` | 9 | 29/38 |
 | `built-ins/Promise` | 9 | 16/25 |
+| `built-ins/String` | 8 | 31/39 |
 <!--/fact-block-->
 
 ### Node compatibility by module

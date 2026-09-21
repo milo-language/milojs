@@ -200,12 +200,17 @@ built-ins/Number/prototype/toLocaleString/name.js
 built-ins/Number/prototype/toString/numeric-literal-tostring-radix-11.js
 built-ins/Number/prototype/toString/prop-desc.js
 built-ins/Number/string-octal-literal.js
+built-ins/Object/S15.2_A1.js
 built-ins/Object/S9.9_A4.js
 built-ins/Object/assign/target-set-not-writable.js
 built-ins/Object/create/15.2.3.5-4-120.js
 built-ins/Object/create/15.2.3.5-4-144.js
+built-ins/Object/create/15.2.3.5-4-149.js
+built-ins/Object/create/15.2.3.5-4-185.js
+built-ins/Object/create/15.2.3.5-4-187.js
 built-ins/Object/create/15.2.3.5-4-191.js
 built-ins/Object/create/15.2.3.5-4-221.js
+built-ins/Object/create/15.2.3.5-4-24.js
 built-ins/Object/create/15.2.3.5-4-249.js
 built-ins/Object/create/15.2.3.5-4-263.js
 built-ins/Object/create/15.2.3.5-4-269.js
@@ -222,13 +227,16 @@ built-ins/Object/defineProperties/15.2.3.7-6-a-127.js
 built-ins/Object/defineProperties/15.2.3.7-6-a-186.js
 built-ins/Object/defineProperties/15.2.3.7-6-a-200.js
 built-ins/Object/defineProperties/15.2.3.7-6-a-289.js
+built-ins/Object/defineProperties/15.2.3.7-6-a-298.js
 built-ins/Object/defineProperties/15.2.3.7-6-a-309.js
 built-ins/Object/defineProperties/15.2.3.7-6-a-38.js
 built-ins/Object/defineProperties/15.2.3.7-6-a-9.js
+built-ins/Object/defineProperties/15.2.3.7-6-a-91.js
 built-ins/Object/defineProperties/property-description-must-be-an-object-not-null.js
 built-ins/Object/defineProperty/15.2.3.6-3-106.js
 built-ins/Object/defineProperty/15.2.3.6-3-108.js
 built-ins/Object/defineProperty/15.2.3.6-3-116.js
+built-ins/Object/defineProperty/15.2.3.6-3-161.js
 built-ins/Object/defineProperty/15.2.3.6-3-226.js
 built-ins/Object/defineProperty/15.2.3.6-3-231.js
 built-ins/Object/defineProperty/15.2.3.6-3-36-1.js
@@ -242,6 +250,7 @@ built-ins/Object/defineProperty/15.2.3.6-4-2.js
 built-ins/Object/defineProperty/15.2.3.6-4-206.js
 built-ins/Object/defineProperty/15.2.3.6-4-22.js
 built-ins/Object/defineProperty/15.2.3.6-4-232.js
+built-ins/Object/defineProperty/15.2.3.6-4-253.js
 built-ins/Object/defineProperty/15.2.3.6-4-305.js
 built-ins/Object/defineProperty/15.2.3.6-4-307.js
 built-ins/Object/defineProperty/15.2.3.6-4-319.js
@@ -271,8 +280,10 @@ built-ins/Object/fromEntries/not-a-constructor.js
 built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-25.js
 built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-100.js
 built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-158.js
+built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-178.js
 built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-191.js
 built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-34.js
+built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-5.js
 built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-97.js
 built-ins/Object/getOwnPropertyDescriptor/name.js
 built-ins/Object/getOwnPropertyNames/15.2.3.4-4-46.js
@@ -545,6 +556,7 @@ built-ins/TypedArray/prototype/filter/resizable-buffer.js
 built-ins/TypedArray/prototype/find/invoked-as-func.js
 built-ins/TypedArray/prototype/findLast/prop-desc.js
 built-ins/TypedArray/prototype/findLastIndex/invoked-as-method.js
+built-ins/TypedArray/prototype/findLastIndex/predicate-call-this-non-strict.js
 built-ins/TypedArray/prototype/findLastIndex/predicate-may-detach-buffer.js
 built-ins/TypedArray/prototype/forEach/resizable-buffer-shrink-mid-iteration.js
 built-ins/TypedArray/prototype/includes/search-undefined-after-shrinking-buffer-index-is-oob.js
@@ -585,6 +597,7 @@ built-ins/encodeURI/S15.1.3.3_A3.2_T1.js
 built-ins/isNaN/not-a-constructor.js
 built-ins/parseInt/S15.1.2.2_A1_T1.js
 built-ins/parseInt/S15.1.2.2_A6.1_T6.js
+built-ins/parseInt/S15.1.2.2_A9.5.js
 harness/assert-obj.js
 harness/asyncHelpers-throwsAsync-custom-typeerror.js
 harness/propertyhelper-verifyconfigurable-not-configurable.js
@@ -909,6 +922,8 @@ language/expressions/yield/from-try.js
 language/expressions/yield/star-rhs-iter-nrml-res-value-final.js
 language/function-code/10.4.3-1-28-s.js
 language/function-code/10.4.3-1-33gs.js
+language/function-code/10.4.3-1-49-s.js
+language/function-code/10.4.3-1-95gs.js
 language/future-reserved-words/implements-strict-escaped.js
 language/future-reserved-words/yield-strict.js
 language/identifier-resolution/S10.2.2_A1_T9.js
@@ -1189,4 +1204,6 @@ language/statements/variable/dstr/ary-init-iter-get-err-array-prototype.js
 language/statements/variable/dstr/ary-ptrn-rest-obj-id.js
 language/statements/variable/eval-non-strict.js
 language/statements/with/S12.10_A3.11_T1.js
+language/statements/with/S12.10_A3.7_T2.js
+language/statements/with/S12.10_A3.8_T1.js
 language/types/string/S8.4_A3.js
