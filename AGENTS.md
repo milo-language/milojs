@@ -51,7 +51,12 @@ that list is a ratchet: an unregistered crossing fails, and so does a registered
 one that has been removed. Read that file before assuming the split is clean —
 the evaluator's builtin dispatch still reaches `host.milo`, `napi.milo` and
 `modules.milo` (<!--fact:layering-exempt-edges-->4<!--/fact--> registered edges), and `src/engine/bootstrap.milo` installs
-<!--fact:layering-host-globals-->0<!--/fact--> host natives into the engine binary's global scope.
+<!--fact:layering-host-globals-->0<!--/fact--> host natives into the engine binary's global scope. The same
+ratchet covers the engine side's imports of the HOST modules of the Milo std
+(`std/fs`, `std/net`, `std/sqlite`, ...): no project file is crossed, so the
+import graph never showed them, yet `eval.milo` imports `std/sqlite` for the
+same reason it imports `host.milo`. <!--fact:layering-host-std-edges-->15<!--/fact--> such edges are registered,
+each with the arm or table that uses it.
 
 ## Before you write any Milo
 
@@ -447,7 +452,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/guard.sh` | process-group watchdog. Wrap anything that spawns milojs: caps RLIMIT_NPROC, SIGKILLs the whole group on process-count / RSS / free-memory / wall-clock breach. Exit 99 = it fired. |
 | `tools/dev.sh` | one-command dev loop: build engine+runtime (cached in `.dev/`, skipped when up to date), then run the suites in "Tests". `tools/dev.sh <pattern>` filters `run.sh` to matching fixtures. |
 | `tools/lint-symbols.sh` | duplicate + std-shadowing definitions. Exit 1 on a finding. |
-| `tools/check-layering.sh` | keeps `src/engine/` the language: no import into `src/runtime/`, and no unclassified `__` global in the engine's bootstrap. Holes are argued in `src/.layering-exempt`; the list only shrinks. |
+| `tools/check-layering.sh` | keeps `src/engine/` the language: no import into `src/runtime/`, no import of a host std module (`std/fs`, `std/net`, `std/sqlite`, ...), and no unclassified `__` global in the engine's bootstrap. Holes are argued in `src/.layering-exempt`; the list only shrinks. |
 | `tools/gen-docs.sh` | regenerates `docs/api/` from doc-comments |
 | `tools/verify-expected.sh` | proves every `.expected` is what node prints. `--update` captures a new one, `--structure` is the instant registry-only half the hook runs. |
 | `tools/verify-contracts.sh` | static contract gate: fails on a refuted contract, or one that quietly stopped being proven. `--update` re-baselines. |

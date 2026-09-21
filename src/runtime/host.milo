@@ -4,6 +4,9 @@
 // src/engine/eval.milo, which is the evaluator. `milojs-engine` links this file and
 // never calls into it; only the `milojs` runtime does.
 
+from "std/fetch" import {
+    TlsStream
+}
 from "../engine/strutil" import {
     strSlice, jsIndexOf, jsStartsWith
 }

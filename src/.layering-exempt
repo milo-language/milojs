@@ -8,9 +8,13 @@
 # The gate is a ratchet in both directions: an unregistered violation fails, and
 # so does a registered exemption that no longer applies. The list only shrinks.
 #
-# Two record shapes:
+# Three record shapes:
 #
 #   <engine file> -> <runtime file>    an import edge from the engine side
+#   <engine file> -> std/<module>      an engine-side import of a HOST std module
+#                                      (fs, os, process, net, fetch, sqlite, env, args,
+#                                      argparse); no project file is crossed, so the
+#                                      first shape never shows it
 #   global: <name> <class> <reason>    a `__`-prefixed global src/engine/bootstrap.milo
 #                                      installs, so the milojs-engine binary exposes it.
 #                                      class is engine-intrinsic or host-native.
@@ -25,6 +29,34 @@ src/engine/eval.milo -> src/runtime/host.milo    eval.milo owns the single Built
 src/engine/eval.milo -> src/runtime/napi.milo    same shape: the Node-API natives are dispatched from that same switch. Node-API is host by definition, so this edge is pure debt with no language argument behind it.
 src/engine/eval.milo -> src/runtime/modules.milo    the evaluator has to turn a specifier into a module record to execute `import`, `export` and dynamic `import()`, which ARE the language. But modules.milo is two things in one file: that graph loader, and node's resolution algorithm (node_modules walk, package.json main, ~50 embedded node builtin shims). Only the first half belongs to the engine. Splitting the file is the fix; the edge stands until it happens.
 src/milojs-engine.milo -> src/runtime/modules.milo    the engine entry point calls preloadGraph to load its OWN built-ins — lib/engine-prelude.js (spec built-ins written in JS) and lib/temporal.js — before any user code runs. So the engine genuinely needs a module loader; it does not need node's resolver, and today those are the same file. Not removable without the split above.
+
+
+# --- HOST STD EDGES ---
+#
+# One line per (file, module). The engine binary links every one of these; what
+# keeps it honest is that half 3 of the gate runs it and finds no host native
+# reachable from JS. The edges are the same debt as the import edges above: the
+# evaluator's Builtin switch still holds the host arms (ReadFileSync, TcpListen,
+# SpawnSync, SqliteOpen and ~60 more), and Interp still carries the host handle
+# tables. Lifting those out is the modules.milo/host.milo split, not a move.
+# std/os is listed where only libc plumbing is used, because the ratchet keys on
+# the module, and the argument says so.
+
+src/engine/eval.milo -> std/fs    the Builtin switch's fs arms: ReadFileSync reads through readFile, and WriteFileSync, ReadDir, Mkdir, Stat, Realpath and the rest are the second std/fs import block at the same site. Host arms in the evaluator, see host.milo.
+src/engine/eval.milo -> std/os    the same arms' fd-level half (open, read, write, lseek, fsync, ftruncate, fchmod, close), the raw socket for Builtin.UdpBind, kill for child processes, and exit for process.exit. Capability, not plumbing.
+src/engine/eval.milo -> std/process    Builtin.SpawnSync and the async spawn arms drive Child.spawn and read the pipes; exePath answers process.execPath.
+src/engine/eval.milo -> std/env    a member read on the process.env object (isEnv) falls through to Env.get for names the object does not hold yet.
+src/engine/eval.milo -> std/net    Builtin.TcpListen/TcpConnect arms construct TcpListener/TcpStream; the handles live in Interp.listeners/conns (see runtime.milo below).
+src/engine/eval.milo -> std/sqlite    the Builtin.Sqlite* arms (open, close, exec, query, step, bind, column) are the node:sqlite binding, dispatched from the evaluator.
+src/engine/runtime.milo -> std/net    Interp owns the open-socket tables (listeners: Vec<TcpListener>, conns: Vec<TcpStream>) because the evaluator's arms above need somewhere to keep them across calls; type-only, no I/O happens here.
+src/engine/runtime.milo -> std/sqlite    same: Interp.sqliteDbs/sqliteStmts hold Database/Statement handles for the sqlite arms. Type-only.
+src/engine/runtime.milo -> std/os    free only: releasing a typed array's malloc'd backing buffer in the collector. Plumbing, not a capability.
+src/engine/value.milo -> std/os    snprintf only: number-to-string formatting for JS Number stringification. Plumbing, not a capability.
+src/milojs-engine.milo -> std/fs    the engine binary's own entry point reads the script file it was handed. An entry point, not the language; it stays on the engine side of the gate because it must link nothing from src/runtime/.
+src/milojs-engine.milo -> std/env    MILOJS_* environment switches for the engine binary's CLI.
+src/milojs-engine.milo -> std/os    exit with the script's status code.
+src/milojs-engine.milo -> std/argparse    the engine binary's command line.
+src/milojs-engine.milo -> std/args    the engine binary's command line.
 
 
 # --- ENGINE GLOBAL SURFACE ---

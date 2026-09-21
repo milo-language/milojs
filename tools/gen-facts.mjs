@@ -89,7 +89,16 @@ const FACTS = {
     String(
       readFileSync(p("src/.layering-exempt"), "utf8")
         .split("\n")
-        .filter((l) => !l.trim().startsWith("#") && / -> /.test(l)).length
+        .filter((l) => !l.trim().startsWith("#") && / -> src\/runtime\//.test(l)).length
+    ),
+  // The engine side's imports of host std modules (fs, net, sqlite, ...). Same
+  // ledger, same ratchet; a separate count because it is a different hole: no
+  // project file is crossed, the capability comes straight from the Milo std.
+  "layering-host-std-edges": () =>
+    String(
+      readFileSync(p("src/.layering-exempt"), "utf8")
+        .split("\n")
+        .filter((l) => !l.trim().startsWith("#") && / -> std\//.test(l)).length
     ),
 
   // --- host surface ---

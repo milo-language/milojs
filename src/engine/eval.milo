@@ -79,9 +79,6 @@ from "std/sync" import {
 from "std/net" import {
     TcpListener, TcpStream
 }
-from "std/fetch" import {
-    TlsStream
-}
 from "std/sqlite" import {
     Database, Statement, dbOpen, dbClose, dbExec, dbQuery, dbStep, dbColumnCount,
     dbColumnInt64, dbColumnFloat, dbColumnText, dbFinalize, dbBindInt64, dbBindText,

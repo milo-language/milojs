@@ -21,7 +21,13 @@
 #      src/runtime/host.milo:installHostGlobals, called only from src/milojs.milo,
 #      and the engine bootstrap may install intrinsics ONLY.
 #
-# Both halves are ratchets against src/.layering-exempt, in the shape
+#   1b. HOST STD EDGES — an engine-side file importing a host module from the
+#      Milo std (fs, os, process, net, fetch, sqlite, env, args, argparse). No
+#      project file is crossed, so half 1 never sees it, yet it is the same
+#      reach: eval.milo imports std/sqlite because the Builtin switch owns the
+#      sqlite arms. Registered per (file, module) with an argument, like half 1.
+#
+# All halves are ratchets against src/.layering-exempt, in the shape
 # tests/.node-oracle-exempt already uses here: every hole in the rule is a line
 # in one file with an argument next to it, rather than a comment at the top of a
 # source file that nobody reads. A registered exemption that no longer applies is
@@ -93,7 +99,8 @@ if [ "$n_edges" -lt 40 ]; then
 fi
 
 # Registered exemptions, "<from> -> <to>" before any whitespace-separated reason.
-exempt_edges=$(grep -E '^[^#]*[^ ] -> ' "$EXEMPT_FILE" 2>/dev/null \
+# Only the src/runtime/ targets belong to this half; "-> std/..." lines are half 1b's.
+exempt_edges=$(grep -E '^[^#]*[^ ] -> src/runtime/' "$EXEMPT_FILE" 2>/dev/null \
     | sed -E 's/^([^ ]+) -> ([^ ]+).*/\1 -> \2/' | sort -u)
 
 seen_edges=""
@@ -121,6 +128,61 @@ while IFS= read -r e; do
         echo "stale layering exemption: $e no longer exists — delete its line from $EXEMPT_FILE"
     fi
 done <<< "$exempt_edges"
+
+# --- half 1b: host std edges ---
+#
+# The Milo std modules that hand a program a host capability. A Milo program that
+# imports none of these can read no file, open no socket, spawn nothing: that is
+# the property an embedder of libmilojs is buying. std/os is the libc surface and
+# carries both capability (open, socket, kill) and plumbing (snprintf, free); it
+# is in the set because the imports are by module, and the argument on each
+# registered line says which half is actually used.
+HOST_STD='fs|os|process|net|fetch|sqlite|env|args|argparse|http|child_process'
+
+std_edges=$(
+    echo "$engine_files" | while IFS= read -r f; do
+        grep -nE "^[[:space:]]*from \"std/($HOST_STD)\"" "$f" | while IFS= read -r line; do
+            lineno=${line%%:*}
+            spec=$(printf '%s' "$line" | sed -E 's/^[0-9]+:[[:space:]]*from "([^"]+)".*/\1/')
+            printf '%s\t%s\t%s\n' "$f" "$lineno" "$spec"
+        done
+    done
+)
+
+exempt_std=$(grep -E '^[^#]*[^ ] -> std/' "$EXEMPT_FILE" 2>/dev/null \
+    | sed -E 's/^([^ ]+) -> ([^ ]+).*/\1 -> \2/' | sort -u)
+
+seen_std=""
+while IFS=$'\t' read -r f lineno target; do
+    [ -z "$f" ] && continue
+    edge="$f -> $target"
+    seen_std="$seen_std$edge
+"
+    if echo "$exempt_std" | grep -qxF "$edge"; then
+        continue
+    fi
+    status=1
+    echo "layering violation: $f:$lineno imports $target"
+    echo "    $target is a host capability and src/engine/ is the language. If the"
+    echo "    engine genuinely needs it, register '$edge' in $EXEMPT_FILE with an argument."
+done <<< "$std_edges"
+
+seen_std_sorted=$(printf '%s' "$seen_std" | grep . | sort -u)
+while IFS= read -r e; do
+    [ -z "$e" ] && continue
+    if ! echo "$seen_std_sorted" | grep -qxF "$e"; then
+        status=1
+        echo "stale layering exemption: $e no longer exists — delete its line from $EXEMPT_FILE"
+    fi
+done <<< "$exempt_std"
+
+# Anti-vacuity: the engine side imports std/math, std/strconv and friends by the
+# dozen; if the std-import parse finds nothing at all, the regex broke.
+n_std_any=$(echo "$engine_files" | xargs grep -lE '^[[:space:]]*from "std/' 2>/dev/null | grep -c .)
+if [ "$n_std_any" -lt 5 ]; then
+    echo "check-layering: only $n_std_any engine files import from std/ — the std-import parse is broken" >&2
+    exit 1
+fi
 
 # --- half 2: the engine's global surface ---
 #
@@ -189,6 +251,7 @@ rm -f "$probe"
 if [ "$status" -eq 0 ] && [ "$quiet" -eq 0 ]; then
     n_viol=$(printf '%s' "$seen_sorted" | grep -c . )
     echo "check-layering: $n_files engine files, $n_edges imports, $n_globals engine globals checked"
-    echo "check-layering: 0 unregistered engine->runtime edges ($n_viol registered), 0 host natives in the engine bootstrap, $n_probed binaries probed"
+    n_std_viol=$(printf '%s' "$seen_std_sorted" | grep -c . )
+    echo "check-layering: 0 unregistered engine->runtime edges ($n_viol registered), 0 unregistered engine->host-std edges ($n_std_viol registered), 0 host natives in the engine bootstrap, $n_probed binaries probed"
 fi
 exit "$status"

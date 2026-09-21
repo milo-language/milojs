@@ -150,6 +150,16 @@ teeth "check-layering (import edge)" src/engine/regex.milo \
     "printf '\nfrom \"../runtime/host\" import {\n    absolutePathOf\n}\n' >> src/engine/regex.milo" \
     "tools/check-layering.sh --quiet"
 
+# --- layering half 1b: an engine file importing a host std module ---
+teeth "check-layering (host std edge)" src/engine/regex.milo \
+    "printf '\nfrom \"std/fs\" import {\n    readFile\n}\n' >> src/engine/regex.milo" \
+    "tools/check-layering.sh --quiet"
+
+# --- layering half 1b, the other direction: a registered edge that is gone ---
+teeth "check-layering (stale host std edge)" src/.layering-exempt \
+    "printf 'src/engine/regex.milo -> std/sqlite    teeth probe, never real\n' >> src/.layering-exempt" \
+    "tools/check-layering.sh --quiet"
+
 # --- layering half 2: a host native installed by the engine bootstrap ---
 teeth "check-layering (engine global)" src/engine/bootstrap.milo \
     "perl -0pi -e 's/(scopeDefine\(&mut st, 0, \"__inspect\")/scopeDefine(&mut st, 0, \"__teethNative\", JSValue.Native(Native.Fn(Builtin.Inspect)))\n    \$1/' src/engine/bootstrap.milo" \
