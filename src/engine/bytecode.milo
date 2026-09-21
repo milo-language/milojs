@@ -1253,7 +1253,7 @@ fn numTruthy(n: f64): bool {
 // Answers None when an outer seed is not a plain Number (a slot holding a
 // string, an object with valueOf, anything coercing) — the boxed path handles
 // those; this lane never coerces.
-pub fn runChunkNumeric(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSValue> {
+pub fn runChunkNumeric(_prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSValue> {
     let ch = gChunks[cid]
     var stk: Vec<f64> = Vec.new()
     var i: i64 = 0

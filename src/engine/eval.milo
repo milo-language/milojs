@@ -3593,7 +3593,7 @@ pub fn callNativeAsFunction(prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st:
     return callNativeProg(prog, n, argVals, &mut st)
 }
 
-pub fn callNativeProg(prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
+pub fn callNativeProg(_prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     if nativeEq(n, Native.Fn(Builtin.String)) && argVals.len() > 0 {
         let h = objHandle(argVals[0])
         if h >= 0 {
@@ -3628,6 +3628,35 @@ fn callNative(n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return callResolver(&mut st, target, isReject, argVals)
         }
     }
+}
+
+// One entry of new Map(iterable) / new Set(iterable). Every Map entry must be
+// an OBJECT: node raises a TypeError rather than skipping it, which is what
+// once made `new Map(["ab"])` answer an empty map. Its halves are read with
+// [[Get]] so an accessor on index 0 runs (test262 pins that it throws), and a
+// short pair is not an error: the missing half is undefined.
+fn mapSetAddEntry(id: Builtin, o: i64, e: JSValue, st: &mut Interp) {
+    if id == Builtin.Set {
+        mapPut(&mut st, o, e, JSValue.Bool(true))
+        return
+    }
+    let pair = objHandle(e)
+    if pair < 0 {
+        st.throwing = true
+        st.thrownValue = makeError(&mut st, "TypeError", "Iterator value " + toStr(e) + " is not an entry object")
+        return
+    }
+    pushTemp(&mut st, cloneValue(e))
+    let pk = getMemberDyn(gProg, pair, "0", &mut st)
+    if !st.throwing {
+        pushTemp(&mut st, cloneValue(pk))
+        let pv = getMemberDyn(gProg, pair, "1", &mut st)
+        popTemp(&mut st)
+        if !st.throwing {
+            mapPut(&mut st, o, pk, pv)
+        }
+    }
+    popTemp(&mut st)
 }
 
 // One half of a promise's resolve/reject pair. The pair fires at most once
@@ -4118,44 +4147,111 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         let _me = ensureExtra(&mut st, o)
         pushTemp(&mut st, JSValue.Obj(o))
         // new Map([[k, v], ...]) / new Set([v, ...])
-        if argVals.len() > 0 {
-            // new Set(gen) / new Map(gen) — anything iterable, not just an array
-            let srcVal = iterableToArray(gProg, cloneValue(argVals[0]), &mut st)
-            pushTemp(&mut st, cloneValue(srcVal))
-            let src = objHandle(srcVal)
-            if src >= 0 && st.objects[src].isArray {
+        if argVals.len() > 0 && !isNullish(argVals[0]) {
+            let argH = objHandle(argVals[0])
+            if argH >= 0 && st.objects[argH].isArray {
+                // a plain array needs no iterator protocol
                 var i: i64 = 0
-                while i < arrLen(st, src) {
-                    let e = arrGet(st, src, i)
-                    if id == Builtin.Set {
-                        mapPut(&mut st, o, e, JSValue.Bool(true))
-                    } else {
-                        // Every entry must be an OBJECT; node raises a TypeError
-                        // for anything else rather than skipping it, which is what
-                        // made `new Map(["ab"])` answer an empty map.
-                        let pair = objHandle(e)
-                        if pair < 0 {
-                            st.throwing = true
-                            st.thrownValue = makeError(&mut st, "TypeError", "Iterator value " + toStr(e) + " is not an entry object")
-                            popTemp(&mut st)
-                            popTemp(&mut st)
-                            return JSValue.Undefined
-                        }
-                        // a short pair is not an error: the missing half is undefined
-                        var pk = JSValue.Undefined
-                        var pv = JSValue.Undefined
-                        if arrLen(st, pair) > 0 {
-                            pk = arrGet(st, pair, 0)
-                        }
-                        if arrLen(st, pair) > 1 {
-                            pv = arrGet(st, pair, 1)
-                        }
-                        mapPut(&mut st, o, pk, pv)
-                    }
+                while i < arrLen(st, argH) && !st.throwing {
+                    let e = arrGet(st, argH, i)
+                    mapSetAddEntry(id, o, e, &mut st)
                     i = i + 1
                 }
+            } else if isStr(argVals[0]) {
+                let sv = toStr(argVals[0])
+                if !isSymbolStr(sv) {
+                    let cps = strCodePoints(sv)
+                    var ci: i64 = 0
+                    while ci < cps.len() && !st.throwing {
+                        mapSetAddEntry(id, o, JSValue.Str(cps[ci].clone()), &mut st)
+                        ci = ci + 1
+                    }
+                }
+            } else {
+                // Drive Symbol.iterator one entry at a time. Materializing through
+                // iterableToArray first hung on an iterator that never reports
+                // done, because the throw that ends it comes from reading the
+                // entry, and that read happened only after the whole walk.
+                var itFn = JSValue.Undefined
+                if argH >= 0 {
+                    itFn = getMemberDyn(gProg, argH, symIteratorKey(), &mut st)
+                }
+                if !st.throwing && !isCallableIn(st, itFn) {
+                    st.throwing = true
+                    st.thrownValue = makeError(&mut st, "TypeError", spreadErrText(argVals[0]))
+                }
+                if !st.throwing {
+                    var noArgs: Vec<JSValue> = Vec.new()
+                    let iter = callValue(gProg, itFn, noArgs, cloneValue(argVals[0]), &mut st)
+                    if !st.throwing {
+                        pushTemp(&mut st, cloneValue(iter))
+                        let ih = objHandle(iter)
+                        let isGen = ih >= 0 && st.objects[ih].isGenerator
+                        // a throw from next() or the done read leaves the iterator
+                        // to its own devices; one from the entry closes it
+                        var closeIt = false
+                        var guard: i64 = 0
+                        while ih >= 0 && !st.throwing && guard < 100000000 {
+                            guard = guard + 1
+                            var step = JSValue.Undefined
+                            if isGen {
+                                var nA: Vec<JSValue> = Vec.new()
+                                step = genNext(ih, nA, &mut st)
+                            } else {
+                                let nextFn = getMember(st, ih, "next")
+                                if !isCallableIn(st, nextFn) {
+                                    st.throwing = true
+                                    st.thrownValue = makeError(&mut st, "TypeError", "iterator.next is not a function")
+                                    break
+                                }
+                                var nArgs: Vec<JSValue> = Vec.new()
+                                step = callValue(gProg, nextFn, nArgs, cloneValue(iter), &mut st)
+                            }
+                            if st.throwing {
+                                break
+                            }
+                            let sh = objHandle(step)
+                            if sh < 0 {
+                                st.throwing = true
+                                st.thrownValue = makeError(&mut st, "TypeError", "Iterator result " + toStr(step) + " is not an object")
+                                break
+                            }
+                            if truthy(getMemberDyn(gProg, sh, "done", &mut st)) || st.throwing {
+                                break
+                            }
+                            let entry = getMemberDyn(gProg, sh, "value", &mut st)
+                            if st.throwing {
+                                break
+                            }
+                            mapSetAddEntry(id, o, entry, &mut st)
+                            if st.throwing {
+                                closeIt = true
+                            }
+                        }
+                        if closeIt {
+                            // IteratorClose: the entry's throw wins over anything
+                            // return() raises, as in node
+                            pushTemp(&mut st, cloneValue(st.thrownValue))
+                            st.throwing = false
+                            st.thrownValue = JSValue.Undefined
+                            if isGen {
+                                var rArgs: Vec<JSValue> = Vec.new()
+                                let _r = genResume(ih, rArgs, 2, &mut st)
+                            } else {
+                                let retFn = getMemberDyn(gProg, ih, "return", &mut st)
+                                if !st.throwing && isCallableIn(st, retFn) {
+                                    var rArgs: Vec<JSValue> = Vec.new()
+                                    let _r = callValue(gProg, retFn, rArgs, cloneValue(iter), &mut st)
+                                }
+                            }
+                            let savedThrow = st.tempRoots.pop()!
+                            st.throwing = true
+                            st.thrownValue = savedThrow
+                        }
+                        popTemp(&mut st)
+                    }
+                }
             }
-            popTemp(&mut st)
         }
         popTemp(&mut st)
         return JSValue.Obj(o)
@@ -14736,7 +14832,7 @@ pub fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSVa
 // callValue rather than in napi.milo because the evaluator already imports the
 // Node-API layer; importing the evaluator back from there would create a cycle.
 @externalLinkage
-fn napi_call_function(_env: *u8, recv: i64, func: i64, argc: i64, argv: *u8, result: *u8): i32 {
+pub fn napi_call_function(_env: *u8, recv: i64, func: i64, argc: i64, argv: *u8, result: *u8): i32 {
     if argc < 0 || (argc > 0 && argv as i64 == 0) {
         return NAPI_INVALID_ARG
     }

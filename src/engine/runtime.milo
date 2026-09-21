@@ -1152,7 +1152,7 @@ fn freeAccessor(st: &mut Interp, acc: Option<Handle<Accessor>>) {
         Option.Some(h) => {
             // a stale handle returns false rather than recycling someone else's
             // live slot, so a double free is refused instead of aliasing
-            arenaFree(&mut st.accessors, h)
+            let _ = arenaFree(&mut st.accessors, h)
         }
         Option.None => {
         }
