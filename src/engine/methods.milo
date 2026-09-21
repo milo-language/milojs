@@ -2013,6 +2013,25 @@ ensures result >= 0 && result <= ARRAY_LIKE_MAX
 
 // Run an Array.prototype method against a receiver that is not a real array.
 pub fn arrayMethodGeneric(prog: &Prog, recv: &JSValue, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    // `args` is a Milo Vec the collector cannot see. A method that runs user
+    // code (a callback, a proxy trap, a getter) can collect an argument that
+    // nothing else references, and its slot is reused under the method: concat
+    // on a proxy once appended a trap's own argument list in place of [9].
+    var ai: i64 = 0
+    while ai < args.len() {
+        pushTemp(&mut st, cloneValue(args[ai]))
+        ai = ai + 1
+    }
+    let r = arrayMethodGenericUnrooted(prog, recv, name, args, &mut st)
+    ai = 0
+    while ai < args.len() {
+        popTemp(&mut st)
+        ai = ai + 1
+    }
+    return r
+}
+
+fn arrayMethodGenericUnrooted(prog: &Prog, recv: &JSValue, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     let tmp = arrayLikeToArray(prog, recv, &mut st)
     // adapting the receiver READS its length, and that read can run a getter
     // that throws. The spec performs it before validating the callback, so a
@@ -2197,6 +2216,25 @@ fn arrayMethodResizes(name: &string): bool {
 }
 
 pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    // `args` is a Milo Vec the collector cannot see. A method that runs user
+    // code (a callback, a proxy trap, a getter) can collect an argument that
+    // nothing else references, and its slot is reused under the method: concat
+    // on a proxy once appended a trap's own argument list in place of [9].
+    var ai: i64 = 0
+    while ai < args.len() {
+        pushTemp(&mut st, cloneValue(args[ai]))
+        ai = ai + 1
+    }
+    let r = arrayMethodUnrooted(prog, o, name, args, &mut st)
+    ai = 0
+    while ai < args.len() {
+        popTemp(&mut st)
+        ai = ai + 1
+    }
+    return r
+}
+
+fn arrayMethodUnrooted(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
     // A mutating method on a FROZEN array, or one that resizes an array whose
     // `length` is non-writable, is a TypeError. Both used to succeed silently:
     // `Object.freeze([1,2]).push(3)` grew the array.

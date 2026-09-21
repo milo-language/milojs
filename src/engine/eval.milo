@@ -1152,6 +1152,96 @@ fn applyArgsInto(prog: &Prog, st: &mut Interp, v: &JSValue, out: &mut Vec<JSValu
     }
 }
 
+// ObjectDefineProperties: Object.defineProperties and the second argument of
+// Object.create. Answers false with st.throwing set on any rejection.
+fn objectDefineProperties(st: &mut Interp, o: i64, descs: i64): bool {
+    // Every descriptor is READ first and only then applied, which is the
+    // order the spec fixes and what makes a later descriptor that throws
+    // leave the earlier ones unapplied. Reading also has to go through the
+    // ordinary Get: the props array holds an accessor's unused value slot,
+    // so a descriptor supplied by a getter read as a non-object and the call
+    // died with "Property description must be an object".
+    var keys: Vec<string> = Vec.new()
+    var descList: Vec<i64> = Vec.new()
+    // A holder keeps every descriptor object rooted across the reads, which
+    // run user code and can collect.
+    // `descs` is an argument nothing else roots; the holder below is allocated
+    pushTemp(&mut st, JSValue.Obj(descs))
+    let holder = newArray(&mut st)
+    pushTemp(&mut st, JSValue.Obj(holder))
+    let order = enumOrder(st, descs)
+    var oi: i64 = 0
+    while oi < order.len() {
+        if st.objects[descs].props[order[oi]].enumerable {
+            let key = st.objects[descs].props[order[oi]].key.clone()
+            let dv = getMemberDyn(gProg, descs, key, &mut st)
+            if st.throwing {
+                popTemp(&mut st)
+                popTemp(&mut st)
+                return false
+            }
+            let d = objHandle(dv)
+            if d < 0 {
+                popTemp(&mut st)
+                popTemp(&mut st)
+                let _t = throwErr(&mut st, "TypeError", "Property description must be an object")
+                return false
+            }
+            arrPush(&mut st, holder, JSValue.Obj(d))
+            keys.push(key)
+            descList.push(toPropertyDescriptor(gProg, &mut st, d))
+            if st.throwing {
+                popTemp(&mut st)
+                popTemp(&mut st)
+                return false
+            }
+        }
+        oi = oi + 1
+    }
+    // Own enumerable SYMBOL keys count too, and enumOrder omits them.
+    var sy: i64 = 0
+    while sy < st.objects[descs].props.len() {
+        if isSymbolKey(st.objects[descs].props[sy].key) && st.objects[descs].props[sy].enumerable {
+            let skey = st.objects[descs].props[sy].key.clone()
+            let sdv = getMemberDyn(gProg, descs, skey, &mut st)
+            if st.throwing {
+                popTemp(&mut st)
+                popTemp(&mut st)
+                return false
+            }
+            let sd = objHandle(sdv)
+            if sd < 0 {
+                popTemp(&mut st)
+                popTemp(&mut st)
+                let _t = throwErr(&mut st, "TypeError", "Property description must be an object")
+                return false
+            }
+            arrPush(&mut st, holder, JSValue.Obj(sd))
+            keys.push(skey)
+            descList.push(toPropertyDescriptor(gProg, &mut st, sd))
+            if st.throwing {
+                popTemp(&mut st)
+                popTemp(&mut st)
+                return false
+            }
+        }
+        sy = sy + 1
+    }
+    var ai: i64 = 0
+    while ai < keys.len() {
+        if !validDescriptor(&mut st, o, keys[ai], descList[ai]) {
+            popTemp(&mut st)
+            popTemp(&mut st)
+            return false
+        }
+        applyDescriptor(&mut st, o, keys[ai], descList[ai])
+        ai = ai + 1
+    }
+    popTemp(&mut st)
+    popTemp(&mut st)
+    return true
+}
+
 // ValidateAndApplyPropertyDescriptor's rejection rules. Answers "" when the
 // definition is legal, otherwise the message Object.defineProperty would throw.
 // Reported rather than thrown because Reflect.defineProperty has to turn the
@@ -1207,6 +1297,16 @@ fn descRejectReason(st: &mut Interp, o: i64, key: &string, d: i64): string {
         }
         if objHasInChain(st, d, "enumerable") && truthy(getMember(st, d, "enumerable")) != st.objects[o].props[existing].enumerable {
             return cannotRedefine
+        }
+        // a non-configurable accessor keeps its functions: a different get or
+        // set (SameValue) is a rejected redefinition
+        if wasAccessor {
+            if hasGet && !sameValue(getMember(st, d, "get"), accGetter(st, st.objects[o].props[existing].acc)) {
+                return cannotRedefine
+            }
+            if hasSet && !sameValue(getMember(st, d, "set"), accSetter(st, st.objects[o].props[existing].acc)) {
+                return cannotRedefine
+            }
         }
         if hasValue && !st.objects[o].props[existing].writable {
             let nv = getMember(st, d, "value")
@@ -4086,10 +4186,24 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
             return cloneValue(target)
         }
-        if !validDescriptor(&mut st, o, key, d) {
+        // the descriptor is an argument, which nothing roots across the
+        // allocation toPropertyDescriptor makes; a collection there reused its
+        // slot and the normalised copy read another object's fields
+        pushTemp(&mut st, JSValue.Obj(d))
+        let nd = toPropertyDescriptor(gProg, &mut st, d)
+        if st.throwing {
+            popTemp(&mut st)
             return JSValue.Undefined
         }
-        applyDescriptor(&mut st, o, key, d)
+        pushTemp(&mut st, JSValue.Obj(nd))
+        if !validDescriptor(&mut st, o, key, nd) {
+            popTemp(&mut st)
+            popTemp(&mut st)
+            return JSValue.Undefined
+        }
+        applyDescriptor(&mut st, o, key, nd)
+        popTemp(&mut st)
+        popTemp(&mut st)
         return JSValue.Obj(o)
     }
     if id == Builtin.PromiseResolve || id == Builtin.PromiseReject {
@@ -4172,70 +4286,9 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if o < 0 || descs < 0 {
             return throwErr(&mut st, "TypeError", "Object.defineProperties called on non-object")
         }
-        // Every descriptor is READ first and only then applied, which is the
-        // order the spec fixes and what makes a later descriptor that throws
-        // leave the earlier ones unapplied. Reading also has to go through the
-        // ordinary Get: the props array holds an accessor's unused value slot,
-        // so a descriptor supplied by a getter read as a non-object and the call
-        // died with "Property description must be an object".
-        var keys: Vec<string> = Vec.new()
-        var descList: Vec<i64> = Vec.new()
-        // A holder keeps every descriptor object rooted across the reads, which
-        // run user code and can collect.
-        let holder = newArray(&mut st)
-        pushTemp(&mut st, JSValue.Obj(holder))
-        let order = enumOrder(st, descs)
-        var oi: i64 = 0
-        while oi < order.len() {
-            if st.objects[descs].props[order[oi]].enumerable {
-                let key = st.objects[descs].props[order[oi]].key.clone()
-                let dv = getMemberDyn(gProg, descs, key, &mut st)
-                if st.throwing {
-                    popTemp(&mut st)
-                    return JSValue.Undefined
-                }
-                let d = objHandle(dv)
-                if d < 0 {
-                    popTemp(&mut st)
-                    return throwErr(&mut st, "TypeError", "Property description must be an object")
-                }
-                arrPush(&mut st, holder, JSValue.Obj(d))
-                keys.push(key)
-                descList.push(d)
-            }
-            oi = oi + 1
+        if !objectDefineProperties(&mut st, o, descs) {
+            return JSValue.Undefined
         }
-        // Own enumerable SYMBOL keys count too, and enumOrder omits them.
-        var sy: i64 = 0
-        while sy < st.objects[descs].props.len() {
-            if isSymbolKey(st.objects[descs].props[sy].key) && st.objects[descs].props[sy].enumerable {
-                let skey = st.objects[descs].props[sy].key.clone()
-                let sdv = getMemberDyn(gProg, descs, skey, &mut st)
-                if st.throwing {
-                    popTemp(&mut st)
-                    return JSValue.Undefined
-                }
-                let sd = objHandle(sdv)
-                if sd < 0 {
-                    popTemp(&mut st)
-                    return throwErr(&mut st, "TypeError", "Property description must be an object")
-                }
-                arrPush(&mut st, holder, JSValue.Obj(sd))
-                keys.push(skey)
-                descList.push(sd)
-            }
-            sy = sy + 1
-        }
-        var ai: i64 = 0
-        while ai < keys.len() {
-            if !validDescriptor(&mut st, o, keys[ai], descList[ai]) {
-                popTemp(&mut st)
-                return JSValue.Undefined
-            }
-            applyDescriptor(&mut st, o, keys[ai], descList[ai])
-            ai = ai + 1
-        }
-        popTemp(&mut st)
         return JSValue.Obj(o)
     }
     if id == Builtin.Map || id == Builtin.Set {
@@ -6131,20 +6184,16 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // Object.defineProperties. express builds app.request/app.response with
         // this to hang `app` off the prototype, so ignoring it left req.app and
         // res.app undefined.
-        if argVals.len() > 1 {
-            let descs = objHandle(argVals[1])
-            if descs >= 0 {
-                pushTemp(&mut st, JSValue.Obj(o))
-                var di: i64 = 0
-                while di < st.objects[descs].props.len() {
-                    let key = st.objects[descs].props[di].key.clone()
-                    let dh = objHandle(cloneValue(st.objects[descs].props[di].value))
-                    if dh >= 0 {
-                        applyDescriptor(&mut st, o, key, dh)
-                    }
-                    di = di + 1
-                }
-                popTemp(&mut st)
+        if argVals.len() > 1 && !isUndefinedValue(argVals[1]) {
+            let descs = propertyBagOf(&mut st, argVals[1])
+            if descs < 0 {
+                return throwErr(&mut st, "TypeError", "Cannot convert undefined or null to object")
+            }
+            pushTemp(&mut st, JSValue.Obj(o))
+            let ok = objectDefineProperties(&mut st, o, descs)
+            popTemp(&mut st)
+            if !ok {
+                return JSValue.Undefined
             }
         }
         return JSValue.Obj(o)
@@ -6389,11 +6438,17 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if d < 0 {
             return throwErr(&mut st, "TypeError", "Property description must be an object")
         }
+        pushTemp(&mut st, JSValue.Obj(d))
         let nd = toPropertyDescriptor(gProg, &mut st, d)
         if st.throwing {
+            popTemp(&mut st)
             return JSValue.Undefined
         }
-        return JSValue.Bool(definePropOf(gProg, &mut st, argVals[0], key, nd))
+        pushTemp(&mut st, JSValue.Obj(nd))
+        let ok = definePropOf(gProg, &mut st, argVals[0], key, nd)
+        popTemp(&mut st)
+        popTemp(&mut st)
+        return JSValue.Bool(ok)
     }
     if id == Builtin.ReflectDelete {
         // [[Delete]] as a boolean: no strict-mode throw, and a non-configurable
