@@ -3,7 +3,7 @@ system: milojs
 purpose: active work plan for improving the QuickJS-suite score without confusing historical gaps with current code
 key-files: scripts/quickjs-sweep.ts, src/engine/parser.milo, src/engine/eval.milo, src/engine/runtime.milo, lib/engine-prelude.js, src/milojs-engine.milo
 update-when: the sweep is rerun, a failure bucket changes, or a lane lands
-last-verified: 2026-09-20 (re-verified after the timer unref and mkdir errno commits: host-side timer ref state and an fs builtin, outside the language surface this plan compares against QuickJS. Previous note: re-verified after the explicit &mut call-argument migration: every bare argument bound to a &mut parameter now reads '&mut x', a spelling change only; no behaviour this doc describes changes. Previous note: re-verified after mode B: sweeps held per case. Previous note: re-verified after the outer-slot flush fix: both sweeps held per case again. Previous note: re-verified after the literals-and-operators batch: both sweeps held exactly per case; the differential matrix caught the loose-eq coercion drift before any suite did. Previous note: re-verified after Op.CallMember: the quickjs sweep held 104/149 per case, and the differential matrix gained method-call shapes. Previous note: re-verified after the raw-f64 lane: quickjs-suite behavior is unchanged (the lane only runs where the boxed path computed the same numbers faster). Previous note: re-verified after the vm-audit flag in milojs-engine.milo: audit parses and compiles without executing, which touches no quickjs-suite behavior this doc plans against. Previous note: re-verified for the per-case pass list in the report; the plan reads buckets, which are unchanged. Previous note: re-checked against the per-OS interpreter stack: the native-stack budget this doc describes is unchanged in mechanism, only its size moved, and bug776's catchable RangeError still holds on both sizes)
+last-verified: 2026-09-20 (re-verified after Map/Set prototype dispatch landed: the §2 table rows and prose for Map/Set are updated in this same edit; RegExp, Date, DataView and typed-array rows are unchanged. Previous note: re-verified after the timer unref and mkdir errno commits: host-side timer ref state and an fs builtin, outside the language surface this plan compares against QuickJS. Previous note: re-verified after the explicit &mut call-argument migration: every bare argument bound to a &mut parameter now reads '&mut x', a spelling change only; no behaviour this doc describes changes. Previous note: re-verified after mode B: sweeps held per case. Previous note: re-verified after the outer-slot flush fix: both sweeps held per case again. Previous note: re-verified after the literals-and-operators batch: both sweeps held exactly per case; the differential matrix caught the loose-eq coercion drift before any suite did. Previous note: re-verified after Op.CallMember: the quickjs sweep held 104/149 per case, and the differential matrix gained method-call shapes. Previous note: re-verified after the raw-f64 lane: quickjs-suite behavior is unchanged (the lane only runs where the boxed path computed the same numbers faster). Previous note: re-verified after the vm-audit flag in milojs-engine.milo: audit parses and compiles without executing, which touches no quickjs-suite behavior this doc plans against. Previous note: re-verified for the per-case pass list in the report; the plan reads buckets, which are unchanged. Previous note: re-checked against the per-OS interpreter stack: the native-stack budget this doc describes is unchanged in mechanism, only its size moved, and bug776's catchable RangeError still holds on both sizes)
 -->
 
 # milojs QuickJS-parity plan
@@ -98,9 +98,9 @@ reductions that distinguish engine loops from legitimate slow paths.
 
 ### 2. Real builtin prototype dispatch
 
-Array, String, and the Error family now use real prototype objects. Map/Set,
-RegExp, Date, DataView, and typed arrays still have whitelist-dispatched methods
-in parts of the property/call path. This causes overrides, extraction, identity,
+Array, String, the Error family, and now Map/Set (2026-09-20) dispatch through
+real prototype objects. RegExp, Date, DataView, and typed arrays still have
+whitelist-dispatched methods in parts of the property/call path. This causes overrides, extraction, identity,
 and inheritance to disagree with JavaScript even when direct calls work.
 
 **Measured 2026-08-19, because "still whitelist-dispatched" is vaguer than it needs to be.**
@@ -108,15 +108,15 @@ Assigning over the prototype method and calling it on an instance:
 
 | receiver | `Object.getOwnPropertyNames(proto)` has the method | override honoured |
 |---|---|---|
-| `Map.prototype.has` | yes | **no** |
-| `Set.prototype.has` | yes | **no** |
+| `Map.prototype.has` | yes | yes (2026-09-20: `mapSetOverride` deopts the fast path; reads take the chain) |
+| `Set.prototype.has` | yes | yes (same commit) |
 | `RegExp.prototype.test` | yes | **no** |
 | `Date.prototype.getTime` | yes | **no** |
 | `DataView.prototype.getInt8` | yes | **no** |
 | `Uint8Array.prototype.at` | **no** | no |
 
-So the prototype OBJECT exists and is populated for five of the six; what does not happen is
-consulting it. The property is there to be read and the dispatch ignores it, which is the worst
+So the prototype OBJECT exists and is populated for five of the six; for the three still
+marked **no** what does not happen is consulting it. The property is there to be read and the dispatch ignores it, which is the worst
 of the three possible states — `Object.getOwnPropertyNames` and a direct call both agree with
 node, so nothing looks wrong until someone overrides. Note this is narrower than
 `docs/status.md` gate 2's "every constructor has a real prototype", which is true as written and
@@ -124,7 +124,15 @@ reads as more finished than it is.
 
 Take one receiver family per commit. Preserve the Array pattern: a guarded fast
 path is valid only while the real prototype is pristine; writes permanently
-deopt to ordinary prototype lookup. Lock reads, calls, extracted methods,
+deopt to ordinary prototype lookup. Map/Set took the `typedArrayOverride`
+shape instead (`mapSetOverride` in methods.milo: a per-call chain walk from the
+receiver to the builtin prototype, plus a pristine check on the builtin's own
+entry), and dropped the per-read bound-method synthesis entirely since
+`buildNativeProto` already stores every method: `m.get === Map.prototype.get`
+holds and an unbound `m.get` call is the spec's TypeError. `super.m()` on a
+native base resolves through the constructor's `prototype` property, and
+`class X extends Map` fills its entries through `this.set` so an override on
+`X.prototype` sees them (`mapSetFill` in eval.milo). Lock reads, calls, extracted methods,
 overrides, computed access, and `Object.create(Prototype)` behavior.
 
 String is first because it is common in real programs and its methods still span

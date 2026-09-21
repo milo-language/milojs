@@ -846,9 +846,6 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
         if st.objects[o].promiseState >= 0 && (key == "then" || key == "catch" || key == "finally") {
             return makeBoundMethod(&mut st, JSValue.Obj(o), key.clone())
         }
-        if (st.objects[o].isMap || st.objects[o].isSet) && isMapSetMethodName(key) {
-            return makeBoundMethod(&mut st, JSValue.Obj(o), key.clone())
-        }
         if st.objExtras[st.objects[o].extra].regexId >= 0 && isRegexMethodName(key) {
             return makeBoundMethod(&mut st, JSValue.Obj(o), key.clone())
         }
@@ -3635,9 +3632,149 @@ fn callNative(n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
 // once made `new Map(["ab"])` answer an empty map. Its halves are read with
 // [[Get]] so an accessor on index 0 runs (test262 pins that it throws), and a
 // short pair is not an error: the missing half is undefined.
-fn mapSetAddEntry(id: Builtin, o: i64, e: JSValue, st: &mut Interp) {
+// Feeds new Map(src) / new Set(src) into `o`, which already carries its brand
+// and prototype: the adder is read off `o` so a subclass or patched
+// prototype method sees every entry.
+fn mapSetFill(id: Builtin, o: i64, src: &JSValue, st: &mut Interp) {
+    if isNullish(src) {
+        return
+    }
+    var adderName = "add"
+    var hostName = "Set"
+    if id == Builtin.Map {
+        adderName = "set"
+        hostName = "Map"
+    }
+    let adder = getMemberDyn(gProg, o, adderName, &mut st)
+    if st.throwing {
+        return
+    }
+    if !isCallableIn(st, adder) {
+        st.throwing = true
+        st.thrownValue = makeError(&mut st, "TypeError", "'" + toStr(adder) + "' returned for property '" + adderName + "' of object '#<" + hostName + ">' is not a function")
+        return
+    }
+    pushTemp(&mut st, cloneValue(adder))
+    let fast = isPristineAdder(st, adder, id)
+    let argH = objHandle(src)
+    if argH >= 0 && st.objects[argH].isArray {
+        // a plain array needs no iterator protocol
+        var i: i64 = 0
+        while i < arrLen(st, argH) && !st.throwing {
+            let e = arrGet(st, argH, i)
+            mapSetAddEntry(id, o, e, adder, fast, &mut st)
+            i = i + 1
+        }
+    } else if isStr(src) {
+        let sv = toStr(src)
+        if !isSymbolStr(sv) {
+            let cps = strCodePoints(sv)
+            var ci: i64 = 0
+            while ci < cps.len() && !st.throwing {
+                mapSetAddEntry(id, o, JSValue.Str(cps[ci].clone()), adder, fast, &mut st)
+                ci = ci + 1
+            }
+        }
+    } else {
+        // Drive Symbol.iterator one entry at a time. Materializing through
+        // iterableToArray first hung on an iterator that never reports
+        // done, because the throw that ends it comes from reading the
+        // entry, and that read happened only after the whole walk.
+        var itFn = JSValue.Undefined
+        if argH >= 0 {
+            itFn = getMemberDyn(gProg, argH, symIteratorKey(), &mut st)
+        }
+        if !st.throwing && !isCallableIn(st, itFn) {
+            st.throwing = true
+            st.thrownValue = makeError(&mut st, "TypeError", spreadErrText(src))
+        }
+        if !st.throwing {
+            var noArgs: Vec<JSValue> = Vec.new()
+            let iter = callValue(gProg, itFn, noArgs, cloneValue(src), &mut st)
+            if !st.throwing {
+                pushTemp(&mut st, cloneValue(iter))
+                let ih = objHandle(iter)
+                let isGen = ih >= 0 && st.objects[ih].isGenerator
+                // a throw from next() or the done read leaves the iterator
+                // to its own devices; one from the entry closes it
+                var closeIt = false
+                var guard: i64 = 0
+                while ih >= 0 && !st.throwing && guard < 100000000 {
+                    guard = guard + 1
+                    var step = JSValue.Undefined
+                    if isGen {
+                        var nA: Vec<JSValue> = Vec.new()
+                        step = genNext(ih, nA, &mut st)
+                    } else {
+                        let nextFn = getMember(st, ih, "next")
+                        if !isCallableIn(st, nextFn) {
+                            st.throwing = true
+                            st.thrownValue = makeError(&mut st, "TypeError", "iterator.next is not a function")
+                            break
+                        }
+                        var nArgs: Vec<JSValue> = Vec.new()
+                        step = callValue(gProg, nextFn, nArgs, cloneValue(iter), &mut st)
+                    }
+                    if st.throwing {
+                        break
+                    }
+                    let sh = objHandle(step)
+                    if sh < 0 {
+                        st.throwing = true
+                        st.thrownValue = makeError(&mut st, "TypeError", "Iterator result " + toStr(step) + " is not an object")
+                        break
+                    }
+                    if truthy(getMemberDyn(gProg, sh, "done", &mut st)) || st.throwing {
+                        break
+                    }
+                    let entry = getMemberDyn(gProg, sh, "value", &mut st)
+                    if st.throwing {
+                        break
+                    }
+                    mapSetAddEntry(id, o, entry, adder, fast, &mut st)
+                    if st.throwing {
+                        closeIt = true
+                    }
+                }
+                if closeIt {
+                    // IteratorClose: the entry's throw wins over anything
+                    // return() raises, as in node
+                    pushTemp(&mut st, cloneValue(st.thrownValue))
+                    st.throwing = false
+                    st.thrownValue = JSValue.Undefined
+                    if isGen {
+                        var rArgs: Vec<JSValue> = Vec.new()
+                        let _r = genResume(ih, rArgs, 2, &mut st)
+                    } else {
+                        let retFn = getMemberDyn(gProg, ih, "return", &mut st)
+                        if !st.throwing && isCallableIn(st, retFn) {
+                            var rArgs: Vec<JSValue> = Vec.new()
+                            let _r = callValue(gProg, retFn, rArgs, cloneValue(iter), &mut st)
+                        }
+                    }
+                    let savedThrow = st.tempRoots.pop()!
+                    st.throwing = true
+                    st.thrownValue = savedThrow
+                }
+                popTemp(&mut st)
+            }
+        }
+    }
+    popTemp(&mut st)
+}
+
+// `adder` is this.set / this.add read off the new instance, as the spec has
+// it, so a patched Map.prototype.set sees every entry; `fast` says it is still
+// the pristine native and mapPut can stand in for the call.
+fn mapSetAddEntry(id: Builtin, o: i64, e: JSValue, adder: &JSValue, fast: bool, st: &mut Interp) {
     if id == Builtin.Set {
-        mapPut(&mut st, o, e, JSValue.Bool(true))
+        if fast {
+            mapPut(&mut st, o, e, JSValue.Bool(true))
+        } else {
+            var aArgs: Vec<JSValue> = Vec.new()
+            aArgs.push(e)
+            let _r = callValue(gProg, adder, aArgs, JSValue.Obj(o), &mut st)
+        }
         return
     }
     let pair = objHandle(e)
@@ -3653,10 +3790,30 @@ fn mapSetAddEntry(id: Builtin, o: i64, e: JSValue, st: &mut Interp) {
         let pv = getMemberDyn(gProg, pair, "1", &mut st)
         popTemp(&mut st)
         if !st.throwing {
-            mapPut(&mut st, o, pk, pv)
+            if fast {
+                mapPut(&mut st, o, pk, pv)
+            } else {
+                var aArgs: Vec<JSValue> = Vec.new()
+                aArgs.push(pk)
+                aArgs.push(pv)
+                let _r = callValue(gProg, adder, aArgs, JSValue.Obj(o), &mut st)
+            }
         }
     }
     popTemp(&mut st)
+}
+
+// True when `adder` is the untouched native Map.prototype.set / Set.prototype.add.
+fn isPristineAdder(st: &Interp, adder: &JSValue, id: Builtin): bool {
+    let h = objHandle(adder)
+    if h < 0 || !st.objects[h].isBound {
+        return false
+    }
+    let ex = st.objects[h].extra
+    if id == Builtin.Map {
+        return st.objExtras[ex].boundBrand == BRAND_MAP && st.objExtras[ex].boundMethod == "set"
+    }
+    return st.objExtras[ex].boundBrand == BRAND_SET && st.objExtras[ex].boundMethod == "add"
 }
 
 // One half of a promise's resolve/reject pair. The pair fires at most once
@@ -4146,114 +4303,13 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // shared default at index 0.
         let _me = ensureExtra(&mut st, o)
         pushTemp(&mut st, JSValue.Obj(o))
-        // new Map([[k, v], ...]) / new Set([v, ...])
-        if argVals.len() > 0 && !isNullish(argVals[0]) {
-            let argH = objHandle(argVals[0])
-            if argH >= 0 && st.objects[argH].isArray {
-                // a plain array needs no iterator protocol
-                var i: i64 = 0
-                while i < arrLen(st, argH) && !st.throwing {
-                    let e = arrGet(st, argH, i)
-                    mapSetAddEntry(id, o, e, &mut st)
-                    i = i + 1
-                }
-            } else if isStr(argVals[0]) {
-                let sv = toStr(argVals[0])
-                if !isSymbolStr(sv) {
-                    let cps = strCodePoints(sv)
-                    var ci: i64 = 0
-                    while ci < cps.len() && !st.throwing {
-                        mapSetAddEntry(id, o, JSValue.Str(cps[ci].clone()), &mut st)
-                        ci = ci + 1
-                    }
-                }
-            } else {
-                // Drive Symbol.iterator one entry at a time. Materializing through
-                // iterableToArray first hung on an iterator that never reports
-                // done, because the throw that ends it comes from reading the
-                // entry, and that read happened only after the whole walk.
-                var itFn = JSValue.Undefined
-                if argH >= 0 {
-                    itFn = getMemberDyn(gProg, argH, symIteratorKey(), &mut st)
-                }
-                if !st.throwing && !isCallableIn(st, itFn) {
-                    st.throwing = true
-                    st.thrownValue = makeError(&mut st, "TypeError", spreadErrText(argVals[0]))
-                }
-                if !st.throwing {
-                    var noArgs: Vec<JSValue> = Vec.new()
-                    let iter = callValue(gProg, itFn, noArgs, cloneValue(argVals[0]), &mut st)
-                    if !st.throwing {
-                        pushTemp(&mut st, cloneValue(iter))
-                        let ih = objHandle(iter)
-                        let isGen = ih >= 0 && st.objects[ih].isGenerator
-                        // a throw from next() or the done read leaves the iterator
-                        // to its own devices; one from the entry closes it
-                        var closeIt = false
-                        var guard: i64 = 0
-                        while ih >= 0 && !st.throwing && guard < 100000000 {
-                            guard = guard + 1
-                            var step = JSValue.Undefined
-                            if isGen {
-                                var nA: Vec<JSValue> = Vec.new()
-                                step = genNext(ih, nA, &mut st)
-                            } else {
-                                let nextFn = getMember(st, ih, "next")
-                                if !isCallableIn(st, nextFn) {
-                                    st.throwing = true
-                                    st.thrownValue = makeError(&mut st, "TypeError", "iterator.next is not a function")
-                                    break
-                                }
-                                var nArgs: Vec<JSValue> = Vec.new()
-                                step = callValue(gProg, nextFn, nArgs, cloneValue(iter), &mut st)
-                            }
-                            if st.throwing {
-                                break
-                            }
-                            let sh = objHandle(step)
-                            if sh < 0 {
-                                st.throwing = true
-                                st.thrownValue = makeError(&mut st, "TypeError", "Iterator result " + toStr(step) + " is not an object")
-                                break
-                            }
-                            if truthy(getMemberDyn(gProg, sh, "done", &mut st)) || st.throwing {
-                                break
-                            }
-                            let entry = getMemberDyn(gProg, sh, "value", &mut st)
-                            if st.throwing {
-                                break
-                            }
-                            mapSetAddEntry(id, o, entry, &mut st)
-                            if st.throwing {
-                                closeIt = true
-                            }
-                        }
-                        if closeIt {
-                            // IteratorClose: the entry's throw wins over anything
-                            // return() raises, as in node
-                            pushTemp(&mut st, cloneValue(st.thrownValue))
-                            st.throwing = false
-                            st.thrownValue = JSValue.Undefined
-                            if isGen {
-                                var rArgs: Vec<JSValue> = Vec.new()
-                                let _r = genResume(ih, rArgs, 2, &mut st)
-                            } else {
-                                let retFn = getMemberDyn(gProg, ih, "return", &mut st)
-                                if !st.throwing && isCallableIn(st, retFn) {
-                                    var rArgs: Vec<JSValue> = Vec.new()
-                                    let _r = callValue(gProg, retFn, rArgs, cloneValue(iter), &mut st)
-                                }
-                            }
-                            let savedThrow = st.tempRoots.pop()!
-                            st.throwing = true
-                            st.thrownValue = savedThrow
-                        }
-                        popTemp(&mut st)
-                    }
-                }
-            }
+        if argVals.len() > 0 {
+            mapSetFill(id, o, argVals[0], &mut st)
         }
         popTemp(&mut st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
         return JSValue.Obj(o)
     }
     if id == Builtin.ObjectGetOwnPropNames || id == Builtin.ObjectGetOwnPropSymbols {
@@ -15404,7 +15460,9 @@ pub fn callMember(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 popTemp(&mut st)
                 return r
             }
-            if st.objects[o].isMap || st.objects[o].isSet {
+            if (st.objects[o].isMap || st.objects[o].isSet)
+                && (isMapSetMethodName(name) || name == symIteratorKey())
+                && !mapSetOverride(st, o, name) {
                 let argVals = evalArgs(prog, argsIdx, &mut st, scope)
                 // An argument expression that threw ABORTS the call: without this the
                 // callee still ran with the arguments evaluated so far, so
@@ -16123,6 +16181,35 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                 if funcHandle(baseVal) < 0 && !isUndefinedValue(baseVal) {
                     let selfObj2 = objHandle(thisVal)
                     if selfObj2 >= 0 {
+                        // class X extends Map: the spec reads the adder off the
+                        // instance under construction, so X.prototype.set must
+                        // see every entry. The throwaway would use the native's
+                        // own; build it empty and fill through `this` instead.
+                        var fillId = Builtin.Map
+                        var fillMapSet = false
+                        if let Option.Some(bn) = nativeHandle(baseVal) {
+                            if let Native.Fn(bid) = bn {
+                                if bid == Builtin.Map || bid == Builtin.Set {
+                                    fillId = bid
+                                    fillMapSet = true
+                                }
+                            }
+                        }
+                        if fillMapSet {
+                            var emptyArgs: Vec<JSValue> = Vec.new()
+                            let built = constructValue(prog, &mut st, baseVal, emptyArgs, baseVal)
+                            if st.throwing {
+                                return JSValue.Undefined
+                            }
+                            let bh = objHandle(built)
+                            if bh >= 0 {
+                                adoptBuiltinSlots(&mut st, selfObj2, bh)
+                            }
+                            if argVals.len() > 0 {
+                                mapSetFill(fillId, selfObj2, argVals[0], &mut st)
+                            }
+                            return JSValue.Undefined
+                        }
                         let built = constructValue(prog, &mut st, baseVal, argVals, baseVal)
                         if st.throwing {
                             return JSValue.Undefined
@@ -16241,9 +16328,22 @@ fn evalCall(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Interp, 
                 if isSuperName(bname) {
                     let baseVal = scopeLookup(st, scope, bname)
                     let bf = funcHandle(baseVal)
+                    var baseProto: i64 = -1
                     if bf >= 0 {
-                        let baseProto = getFuncProto(&mut st, bf)
-                        let m = getMember(st, baseProto, name)
+                        baseProto = getFuncProto(&mut st, bf)
+                    } else {
+                        // a native base (class X extends Map): the method is a
+                        // stored property of the constructor's prototype object
+                        let bag = propertyBagOf(&mut st, baseVal)
+                        if bag >= 0 {
+                            baseProto = objHandle(getMember(st, bag, "prototype"))
+                        }
+                    }
+                    if baseProto >= 0 {
+                        let m = getMemberDyn(prog, baseProto, name, &mut st)
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
                         let thisVal = scopeLookup(st, scope, "this")
                         let argVals = evalArgs(prog, argsIdx, &mut st, scope)
                         // An argument expression that threw ABORTS the call: without this the

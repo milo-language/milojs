@@ -1,0 +1,11 @@
+caught: abrupt calls: 1 closed: true
+set caught: d
+TypeError
+TypeError
+TypeError
+TypeError
+0 0 true
+2 2
+x y 2 2
+v
+true undefined

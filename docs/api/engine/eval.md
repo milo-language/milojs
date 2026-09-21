@@ -184,7 +184,7 @@ which callNativeProg cannot make, because both arrive there.
 ### `callNativeProg`
 
 ```milo
-pub fn callNativeProg(prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn callNativeProg(_prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue
 ```
 
 _Undocumented._
@@ -571,6 +571,16 @@ The value-level half of a property read: everything after the object
 expression has been evaluated. Split out of evalMemberExpr so the bytecode VM
 reads a property through the same primitive-receiver rules (a number's
 __proto__, a string's length, a boxed wrapper) instead of a second copy.
+
+### `napi_call_function`
+
+```milo
+pub fn napi_call_function(_env: *u8, recv: i64, func: i64, argc: i64, argv: *u8, result: *u8): i32
+```
+
+Node-API's synchronous callback into JavaScript. This adapter lives beside
+callValue rather than in napi.milo because the evaluator already imports the
+Node-API layer; importing the evaluator back from there would create a cycle.
 
 ### `nativeErrorName`
 

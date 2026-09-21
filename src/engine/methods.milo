@@ -1127,6 +1127,38 @@ pub fn typedArrayOverride(st: &Interp, o: i64, key: &string): bool {
     return false
 }
 
+// True when reading `key` off Map/Set instance `o` must NOT reach the native:
+// an own property, a subclass prototype method, or a patched builtin prototype
+// entry shadows it. Without this a `class X extends Map { set() {} }` override
+// and `Map.prototype.set = fn` were both silently bypassed, and any method the
+// subclass ADDED came back undefined because mapMethod owned every call.
+pub fn mapSetOverride(st: &Interp, o: i64, key: &string): bool {
+    var builtin = st.setProtoObj
+    if st.objects[o].isMap {
+        builtin = st.mapProtoObj
+    }
+    if objOwnIndex(st, o, key) >= 0 {
+        return true
+    }
+    var cur = st.objects[o].proto
+    while cur >= 0 && cur != builtin {
+        if objHas(st, cur, key) {
+            return true
+        }
+        cur = st.objects[cur].proto
+    }
+    if cur < 0 {
+        // the builtin prototype is not on the chain at all (setPrototypeOf)
+        return true
+    }
+    let idx = objOwnIndex(st, cur, key)
+    if idx < 0 {
+        return true
+    }
+    let h = objHandle(st.objects[cur].props[idx].value)
+    return h < 0 || !st.objects[h].isBound || st.objExtras[st.objects[h].extra].boundMethod != key
+}
+
 // [[Construct]] over any value. `new proxy(...)` with no construct trap has to
 // reach the TARGET's [[Construct]], which may be another proxy's trap, and
 // Reflect.construct has to be able to pass a newTarget that is not the callee —

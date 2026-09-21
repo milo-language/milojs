@@ -3,7 +3,7 @@ system: backlog
 purpose: the open list. What is broken or missing, why it is not trivial, and what to do next
 key-files: src/engine/eval.milo, bench/ab.sh, src/engine/builtins.milo, src/engine/parser.milo, src/engine/methods.milo, src/engine/runtime.milo, src/engine/driver.milo, src/engine/bytecode.milo, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, lib/http.js, bench/run.sh, bench/arith.js
 update-when: an item lands (delete it), or a sweep/probe finds a new gap (add it)
-last-verified: 2026-09-20 (timers unref entry deleted: Timer.refed is now honoured by runEventLoop. Previous note: re-verified after the explicit &mut call-argument migration: every bare argument bound to a &mut parameter now reads '&mut x', a spelling change only; no behaviour this doc describes changes. Previous note: darwin-cliff entry extended with the load-sensitive readdir case and the claim-commit record correction. Previous note: re-verified after mode B: capturing method-call args now compile with scope-backed declared locals, so the call-arg-capture entry direction in the flush note is resolved; the flush-cost entry stands. Previous note: flush-gap soundness fix recorded: entry added for its bench cost; the capture-reject entry direction is unchanged. Previous note: re-verified after the literals-and-operators batch: prim/unslow/binslow/short-circuit opcodes, with in/instanceof/loose-eq coercion moved into evalBinValues as their single home. Previous note: re-verified after Op.CallMember: method calls in compiled bodies route through callMember with AST-evaluated arguments, capturing arguments are rejected (call-arg-capture) pending scope-backed locals; no entry here changes. Previous note: re-verified after the raw-f64 lane landed in bytecode.milo and its dispatch in eval.milo; no entry here describes the boxed-only VM. Previous note: re-verified after the vm stats witness landed in bytecode.milo: rejection sites now carry reason tags, which does not change any entry here; the coverage residue ranking lives in docs/conformance/vm-coverage.json. Previous note: re-verified for the sweeps emitting per-case pass lists; entries unaffected. Previous note: interpStackBytes added to driver.milo, and the darwin deep-recursion entry below records the half it could not fix; other entries re-checked unchanged. Previous note: re-checked against the evalUnArm change: the unary operator is now decided into a UnOp before the operand is evaluated, which fixes a dangling AST borrow and changes no behaviour this doc describes)
+last-verified: 2026-09-20 (map iterator hang entry deleted: the Map/Set constructor drives the iterator lazily and closes it on an abrupt entry; timers unref entry deleted: Timer.refed is now honoured by runEventLoop. Previous note: re-verified after the explicit &mut call-argument migration: every bare argument bound to a &mut parameter now reads '&mut x', a spelling change only; no behaviour this doc describes changes. Previous note: darwin-cliff entry extended with the load-sensitive readdir case and the claim-commit record correction. Previous note: re-verified after mode B: capturing method-call args now compile with scope-backed declared locals, so the call-arg-capture entry direction in the flush note is resolved; the flush-cost entry stands. Previous note: flush-gap soundness fix recorded: entry added for its bench cost; the capture-reject entry direction is unchanged. Previous note: re-verified after the literals-and-operators batch: prim/unslow/binslow/short-circuit opcodes, with in/instanceof/loose-eq coercion moved into evalBinValues as their single home. Previous note: re-verified after Op.CallMember: method calls in compiled bodies route through callMember with AST-evaluated arguments, capturing arguments are rejected (call-arg-capture) pending scope-backed locals; no entry here changes. Previous note: re-verified after the raw-f64 lane landed in bytecode.milo and its dispatch in eval.milo; no entry here describes the boxed-only VM. Previous note: re-verified after the vm stats witness landed in bytecode.milo: rejection sites now carry reason tags, which does not change any entry here; the coverage residue ranking lives in docs/conformance/vm-coverage.json. Previous note: re-verified for the sweeps emitting per-case pass lists; entries unaffected. Previous note: interpStackBytes added to driver.milo, and the darwin deep-recursion entry below records the half it could not fix; other entries re-checked unchanged. Previous note: re-checked against the evalUnArm change: the unary operator is now decided into a UnOp before the operand is evaluated, which fixes a dangling AST borrow and changes no behaviour this doc describes)
 -->
 
 # milojs backlog
@@ -79,30 +79,6 @@ scheduler's own context switch (the windows arm already has its own), then
 delete the darwin branch of `interpStackBytes`. The alternative that does not
 need milo — shrinking the ~7 KB per-frame cost — is the same work the bytecode
 VM stage already owns.
-
-## Engine: an abrupt completion from a Map iterator HANGS
-
-`built-ins/Map/iterator-item-first-entry-returns-abrupt.js` is the one test262
-crash in the budget, and it is a hang, not a segfault — the harness kills it with
-SIGTERM and the sweep classifies a signal death as a crash. It reproduces
-standalone, so it needs no corpus to work on:
-
-```sh
-cat ~/git/test262/harness/{assert,sta,compareArray}.js \
-    ~/git/test262/test/built-ins/Map/iterator-item-first-entry-returns-abrupt.js > /tmp/case.js
-timeout 8 .dev/mj-engine /tmp/case.js; echo $?      # 124
-```
-
-`new Map(iterable)` where the first entry's own iterator throws: the abrupt
-completion is not unwinding the construction loop, so it spins. Two QuickJS cases
-die the same way (also SIGTERM, also budgeted), and it is worth checking whether
-they are this bug before treating them as three.
-
-Why it is not a one-liner: the loop is inside the Map constructor's builtin arm,
-which reads entries through the generic iteration path, and that path signals a
-throw by setting `st.throwing` rather than by returning a completion — so the fix
-is a missed `st.throwing` check, and finding WHICH one is the work. See the
-section below.
 
 ## Exceptions propagate on a hand-checked flag, and nothing gates it
 

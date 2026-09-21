@@ -94,6 +94,18 @@ pub fn mapMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &m
 
 _Undocumented._
 
+### `mapSetOverride`
+
+```milo
+pub fn mapSetOverride(st: &Interp, o: i64, key: &string): bool
+```
+
+True when reading `key` off Map/Set instance `o` must NOT reach the native:
+an own property, a subclass prototype method, or a patched builtin prototype
+entry shadows it. Without this a `class X extends Map { set() {} }` override
+and `Map.prototype.set = fn` were both silently bypassed, and any method the
+subclass ADDED came back undefined because mapMethod owned every call.
+
 ### `msFloorSec`
 
 ```milo

@@ -80,7 +80,7 @@ fell off its end.
 ### `runChunkNumeric`
 
 ```milo
-pub fn runChunkNumeric(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSValue>
+pub fn runChunkNumeric(_prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSValue>
 ```
 
 The raw-f64 lane. Runs a numericOnly chunk entirely on an f64 stack: no JS

@@ -1,0 +1,23 @@
+true true undefined
+TypeError
+patched 1 2 true
+20
+patched 3 4 true
+40
+TypeError 'null' returned for property 'set' of object '#<Map>' is not a function
+0
+TypeError '5' returned for property 'add' of object '#<Set>' is not a function
+foo1
+bar bar
+D.set 1
+D.set 3
+D.set 5
+8 12 3 d H true true 1,3,5
+E.add x
+E.add y
+2 xy
+G2
+1 2
+own
+0
+undefined
