@@ -8969,17 +8969,19 @@ fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): 
                 // these shapes can be. Their completion value is undefined,
                 // so `last` correctly stays Undefined.
                 var items: Vec<JSValue> = Vec.new()
+                let spreadBase = st.tempRoots.len()
                 spreadInto(prog, &mut items, cloneValue(va), &mut st)
                 // hold the values in a rooted array: genYield parks this task,
                 // and a collect while it is parked would sweep anything the
                 // plain Vec is the only reference to
                 let hold = newArray(&mut st)
-                pushTemp(&mut st, JSValue.Obj(hold))
                 var hi: i64 = 0
                 while hi < items.len() {
                     arrPush(&mut st, hold, cloneValue(items[hi]))
                     hi = hi + 1
                 }
+                truncateTemps(&mut st, spreadBase)
+                pushTemp(&mut st, JSValue.Obj(hold))
                 var k: i64 = 0
                 while !st.throwing && k < arrLen(st, hold) {
                     let _sent = genYield(arrGet(st, hold, k), &mut st)
@@ -9636,12 +9638,15 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                         Expr.Spread(inner) => {
                         let sv = evalExpr(prog, inner, &mut st, scope)
                         var tmp: Vec<JSValue> = Vec.new()
+                        let tmpBase = st.tempRoots.len()
+                        rootIfHeap(&mut st, sv)
                         spreadInto(prog, &mut tmp, sv, &mut st)
                         var t: i64 = 0
                         while t < tmp.len() {
                             arrPush(&mut st, arr, cloneValue(tmp[t]))
                             t = t + 1
                         }
+                        truncateTemps(&mut st, tmpBase)
                     }
                         _ => {
                             let v = evalExpr(prog, elemIdx, &mut st, scope)
@@ -9890,7 +9895,20 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
 // [Symbol.iterator] by driving its next(). Driving calls back into user code, so
 // this needs the program and a mutable interpreter — which is why it is not the
 // immutable helper it once was.
+// `out` is a Milo Vec the collector cannot see, and every iterator step below
+// runs user code: values already collected into it were freed and their slots
+// reused (a URLSearchParams spread came back as a circular structure under
+// every-allocation collection). Each pushed heap value is temp-rooted until
+// the spread completes.
+// The roots stay pushed on return, because the caller still holds `out`
+// while it allocates the array or arguments that will own the values: the
+// caller records st.tempRoots.len() before the call and truncates once the
+// values are reachable from something the collector can see.
 fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp) {
+    spreadIntoArms(prog, &mut out, v, &mut st)
+}
+
+fn spreadIntoArms(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp) {
     let h = objHandle(v)
     // a String wrapper iterates as its string does, by code point. Its index
     // properties would make an array-like fallback plausible, but the spec
@@ -9929,7 +9947,9 @@ fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp)
             if sh < 0 || truthy(getMemberDyn(prog, sh, "done", &mut st)) || st.throwing {
                 guard = 100000000
             } else {
-                out.push(getMemberDyn(prog, sh, "value", &mut st))
+                let gv = getMemberDyn(prog, sh, "value", &mut st)
+                rootIfHeap(&mut st, gv)
+                out.push(gv)
                 if st.throwing {
                     guard = 100000000
                 }
@@ -10003,7 +10023,9 @@ fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp)
                     } else if sh < 0 || truthy(getMemberDyn(prog, sh, "done", &mut st)) || st.throwing {
                         guard = 100000000
                     } else {
-                        out.push(getMemberDyn(prog, sh, "value", &mut st))
+                        let iv = getMemberDyn(prog, sh, "value", &mut st)
+                        rootIfHeap(&mut st, iv)
+                        out.push(iv)
                         if st.throwing {
                             guard = 100000000
                         }
@@ -10089,6 +10111,7 @@ fn iterableToArray(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     if let JSValue.Str(sv) = v {
         if !isSymbolStr(sv) {
             var chars: Vec<JSValue> = Vec.new()
+            let charsBase = st.tempRoots.len()
             spreadInto(prog, &mut chars, cloneValue(v), &mut st)
             let sarr = newArray(&mut st)
             pushTemp(&mut st, JSValue.Obj(sarr))
@@ -10097,7 +10120,7 @@ fn iterableToArray(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
                 arrPush(&mut st, sarr, cloneValue(chars[ci]))
                 ci = ci + 1
             }
-            popTemp(&mut st)
+            truncateTemps(&mut st, charsBase)
             return JSValue.Obj(sarr)
         }
     }
@@ -10112,6 +10135,7 @@ fn iterableToArray(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
         return cloneValue(v)
     }
     var items: Vec<JSValue> = Vec.new()
+    let itemsBase = st.tempRoots.len()
     spreadInto(prog, &mut items, cloneValue(v), &mut st)
     let arr = newArray(&mut st)
     pushTemp(&mut st, JSValue.Obj(arr))
@@ -10120,7 +10144,7 @@ fn iterableToArray(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
         arrPush(&mut st, arr, cloneValue(items[i]))
         i = i + 1
     }
-    popTemp(&mut st)
+    truncateTemps(&mut st, itemsBase)
     return JSValue.Obj(arr)
 }
 
