@@ -15,9 +15,9 @@
 //
 // The report is COMMITTED evidence. After a sweep, run `node tools/gen-facts.mjs`
 // so the numbers in status.md/README are recompiled from it, and commit both.
-import { readdirSync, readFileSync, writeFileSync, statSync, mkdtempSync, mkdirSync, existsSync } from "fs";
+import { readdirSync, readFileSync, writeFileSync, statSync, mkdtempSync, mkdirSync, existsSync, copyFileSync, unlinkSync } from "fs";
 import { execFileSync } from "child_process";
-import { join } from "path";
+import { join, dirname } from "path";
 import { homedir } from "node:os";
 
 // The report is committed evidence, so it must not carry the machine it was
@@ -161,6 +161,18 @@ const HOST_HOOK = `var $262 = {
 const tmp = mkdtempSync(join(tmpdir(), "t262-"));
 const casePath = join(tmp, "case.js");
 
+// A dynamic-import case loads `./x_FIXTURE.js` relative to ITSELF, and the case
+// runs from the temp dir, so its directory's fixtures are copied alongside.
+// Names repeat across directories (empty_FIXTURE.js), so the previous set is
+// removed first. Without this every such case failed "Cannot find module".
+let stagedDir = "";
+function stageFixtures(dir: string) {
+  if (dir === stagedDir) return;
+  for (const e of readdirSync(tmp)) if (e.endsWith("_FIXTURE.js")) unlinkSync(join(tmp, e));
+  for (const e of readdirSync(dir)) if (e.endsWith("_FIXTURE.js")) copyFileSync(join(dir, e), join(tmp, e));
+  stagedDir = dir;
+}
+
 type Res = "pass" | "fail" | "skip";
 function runOne(file: string): { res: Res; why: string } {
   const src = readFileSync(file, "utf-8");
@@ -178,6 +190,7 @@ function runOne(file: string): { res: Res; why: string } {
   const strict = meta.flags.has("onlyStrict");
   const source = (strict ? '"use strict";\n' : "") + (meta.flags.has("raw") ? src : body + src);
   writeFileSync(casePath, source);
+  stageFixtures(dirname(file));
 
   let out = "";
   let exitCode = 0;
