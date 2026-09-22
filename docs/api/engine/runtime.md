@@ -204,22 +204,6 @@ language has no bitcast, so this reads/writes the stack slot through a raw
 pointer (unsafe, like std's other pointer work). Little-endian host assumed —
 the same assumption the integer paths below already make.
 
-### `getFuncProto`
-
-```milo
-pub fn getFuncProto(st: &mut Interp, fnIdx: i64): i64
-```
-
-_Undocumented._
-
-### `getFuncStatics`
-
-```milo
-pub fn getFuncStatics(st: &mut Interp, fnIdx: i64, envIdx: i64): i64
-```
-
-_Undocumented._
-
 ### `getNativeProps`
 
 ```milo
@@ -278,15 +262,21 @@ pub fn isWrapperObj(st: &Interp, h: i64): bool
 
 _Undocumented._
 
-### `linkProtoConstructor`
+### `makeClosure`
 
 ```milo
-pub fn linkProtoConstructor(st: &mut Interp, proto: i64, fnIdx: i64, envIdx: i64)
+pub fn makeClosure(st: &mut Interp, fnIdx: i64, env: i64): JSValue
 ```
 
-`Foo.prototype.constructor` — non-enumerable, so it stays out of for-in and
-Object.keys on every instance that inherits it. Needs the constructor's
-closure env, which getFuncProto doesn't have, so callers pass it in.
+The one place a new closure value is minted. The function object is the
+closure's identity, so every evaluation of a function expression, declaration
+or class gets its own, even in the same scope. Everything that already holds a
+closure copies the value rather than rebuilding it from its parts.
+
+The object is callable-flavoured (isFunctionLike), which is what makes an
+inherited lookup on it reach Function.prototype rather than Object.prototype.
+name/length/prototype are NOT created here: propertyBagOf materialises them on
+first use, so a closure that nobody inspects costs one object.
 
 ### `mapFind`
 

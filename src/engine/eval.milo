@@ -20,19 +20,19 @@ from "./value" import {
     isStr, toStr, toNum, toInt32, toUint32, jsEquals, jsStrictEquals, strLess, objHandle, numToStr,
     cloneValue, funcHandle, jsNan, truthy, nativeHandle, isNullish, strToNum, jsInfinity,
     jsParseFloatPrefix, jsParsePrefixNum, uriEncode, uriHasBadEscape, uriDecode, parseIsoDate, jsInf,
-    funcEnv, pad2, pad3,
+    funcEnv, funcObjOf, pad2, pad3,
     JSValue, Native, Builtin, i64ToStr, daysFromCivil, nativeEq, isNativeValue
 }
 from "./runtime" import {
     objOwnIndex, propIsAccessor, accGetter, accSetter, arrLen, arrGet, pushTemp, popTemp,
     getNativeProps, objGet, newObject, ensureExtra, arrIsHole, asArrayIndex, scopeHasOwn,
     scopeLookup, objSet, newArray, enumOrder, arrPush, isSymbolKey, taWidth, taName, taLoad, taStore,
-    nativeBufferLen, objHas, getFuncStatics, nativeBufferGet, nativeBufferSet, scopeDefine, arrSet,
+    nativeBufferLen, objHas, makeClosure, nativeBufferGet, nativeBufferSet, scopeDefine, arrSet,
     setArrayLength, scopeAssign, scopeTryLookup, mapPut, objSetNonEnumerable, isPromise, newPromise,
     objDeleteKey, objDefineAccessor, newScope, pushActive, popActive, scopeHas, nativePropsOf,
-    getFuncProto, bufferNativeViewHandle, bufferBytesHandle, isPromiseCtor, arrMarkHole, gInterp,
+    bufferNativeViewHandle, bufferBytesHandle, isPromiseCtor, arrMarkHole, gInterp,
     saveExecCtx, restoreExecCtx, objDefineFnProtoAttr, scopeHasBelowGlobal, maybeGc,
-    Interp, Timer, Microtask, Reaction, PendingFetch, collect, linkProtoConstructor, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn, TA_MAX, TA_I64, TA_U64, taIsBigKind, taLoadBig, taStoreBig, isPrivateKey, scopeOwnIndex
+    Interp, Timer, Microtask, Reaction, PendingFetch, collect, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn, TA_MAX, TA_I64, TA_U64, taIsBigKind, taLoadBig, taStoreBig, isPrivateKey, scopeOwnIndex
 }
 from "./strutil" import {
     strSlice
@@ -404,7 +404,7 @@ fn toPrimitiveDefault(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     // a function has no valueOf that yields a primitive, so ToPrimitive falls to
     // its toString — which is its SOURCE. `"" + fn` prints the text.
     match v {
-        JSValue.Func(df, _de) => {
+        JSValue.Func(df, _de, _fo) => {
             return JSValue.Str(funcSourceText(prog, df))
         }
         JSValue.Native(dn) => {
@@ -523,7 +523,7 @@ pub fn toStrProg(prog: &Prog, v: &JSValue, st: &mut Interp): string {
     // and `"" + fn` both print the text, and value.milo has neither the source
     // registry nor the native name table to answer that.
     match v {
-        JSValue.Func(vf, _ve) => {
+        JSValue.Func(vf, _ve, _fo) => {
             return funcSourceText(prog, vf)
         }
         JSValue.Native(vn) => {
@@ -1666,7 +1666,7 @@ fn finishBind(prog: &Prog, st: &mut Interp, bo: i64, target: &JSValue, nBound: i
     var arity: i64 = 0
     var nm = ""
     match target {
-        JSValue.Func(tf, _te) => {
+        JSValue.Func(tf, _te, _fo) => {
             arity = funcArity(prog, tf)
             nm = prog.funcs[tf].name.clone()
         }
@@ -2294,7 +2294,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             }
             return JSValue.Str("[object " + objectTag(st, o) + "]")
         }
-        if let JSValue.Func(fi, _fe) = recv {
+        if let JSValue.Func(fi, _fe, _fo) = recv {
             return JSValue.Str("[object " + funcTag(prog, fi) + "]")
         }
         return JSValue.Str("[object " + objectTypeTag(recv) + "]")
@@ -2688,7 +2688,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             }
             return callValue(prog, m, args, JSValue.Obj(o), &mut st)
         }
-        JSValue.Func(bf, benv) => {
+        JSValue.Func(bf, _benv, _bfo) => {
             if name == "toString" {
                 return JSValue.Str(funcSourceText(prog, bf))
             }
@@ -2700,7 +2700,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
                 // through propertyBagOf, so `name`/`length` are materialised
                 // first — hasOwnProperty must agree with
                 // getOwnPropertyDescriptor about what a function owns
-                let statics = propertyBagOf(&mut st, JSValue.Func(bf, benv))
+                let statics = propertyBagOf(&mut st, recv)
                 return JSValue.Bool(objOwnIndex(st, statics, key) >= 0)
             }
             // Function.prototype.apply.call(fn, thisArg, args) lands here with
@@ -2729,7 +2729,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
                         ai = ai + 1
                     }
                 }
-                return callFunctionViaMethod(prog, bf, benv, rest, thisArg, &mut st)
+                return callFunctionViaMethod(prog, recv, rest, thisArg, &mut st)
             }
             if name == "bind" {
                 let bo = newObject(&mut st)
@@ -2741,19 +2741,19 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
                     bi = bi + 1
                 }
                 let ex = ensureExtra(&mut st, bo)
-                st.objExtras[ex].boundTarget = JSValue.Func(bf, benv)
+                st.objExtras[ex].boundTarget = cloneValue(recv)
                 if args.len() > 0 {
                     st.objExtras[ex].boundThis = cloneValue(args[0])
                 }
                 let nb0 = extra.len()
                 st.objExtras[ex].boundArgs = extra
-                finishBind(prog, &mut st, bo, JSValue.Func(bf, benv), nb0)
+                finishBind(prog, &mut st, bo, recv, nb0)
                 return JSValue.Obj(bo)
             }
-            let statics = getFuncStatics(&mut st, bf, benv)
+            let statics = propertyBagOf(&mut st, recv)
             let m = getMember(st, statics, name)
             if isCallable(m) {
-                return callValue(prog, m, args, JSValue.Func(bf, benv), &mut st)
+                return callValue(prog, m, args, cloneValue(recv), &mut st)
             }
             return JSValue.Undefined
         }
@@ -2960,7 +2960,7 @@ fn objectTypeTag(v: &JSValue): string {
             }
             return "String"
         }
-        JSValue.Func(_f, _e) => {
+        JSValue.Func(_f, _e, _fo) => {
             return "Function"
         }
         JSValue.Native(_n) => {
@@ -3470,9 +3470,9 @@ fn readLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
                 JSValue.Obj(o) => {
                     return getMember(st, o, name)
                 }
-                JSValue.Func(fIdx, fe) => {
+                JSValue.Func(_fIdx, _fe, _fo) => {
                     // a class static read as an lvalue (C.count++)
-                    let statics = getFuncStatics(&mut st, fIdx, fe)
+                    let statics = propertyBagOf(&mut st, ov)
                     return getMemberDyn(prog, statics, name, &mut st)
                 }
                 _ => {
@@ -3491,8 +3491,8 @@ fn readLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
                 JSValue.Obj(o) => {
                     return getMember(st, o, key)
                 }
-                JSValue.Func(fIdx, fe) => {
-                    let statics = getFuncStatics(&mut st, fIdx, fe)
+                JSValue.Func(_fIdx, _fe, _fo) => {
+                    let statics = propertyBagOf(&mut st, ov)
                     return getMemberDyn(prog, statics, key, &mut st)
                 }
                 _ => {
@@ -3517,9 +3517,9 @@ fn writeLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64, value
                 JSValue.Obj(o) => {
                     setMember(&mut st, o, name.clone(), value)
                 }
-                JSValue.Func(fIdx, fe) => {
+                JSValue.Func(_fIdx, _fe, _fo) => {
                     // a class static written as an lvalue (C.count++)
-                    let statics = getFuncStatics(&mut st, fIdx, fe)
+                    let statics = propertyBagOf(&mut st, ov)
                     // setMemberDyn so a `static set x(v)` accessor is invoked;
                     // the plain set overwrote the accessor with a data property
                     setMemberDyn(prog, statics, name.clone(), value, &mut st)
@@ -3539,8 +3539,8 @@ fn writeLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64, value
                 JSValue.Obj(o) => {
                     setMember(&mut st, o, key, value)
                 }
-                JSValue.Func(fIdx, fe) => {
-                    let statics = getFuncStatics(&mut st, fIdx, fe)
+                JSValue.Func(_fIdx, _fe, _fo) => {
+                    let statics = propertyBagOf(&mut st, ov)
                     setMemberDyn(prog, statics, key, value, &mut st)
                 }
                 _ => {
@@ -7785,23 +7785,20 @@ fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
     match val {
         JSValue.Obj(o) => {
             match ctor {
-                JSValue.Func(fIdx, _e) => {
-                    if st.objects[o].ctor == fIdx {
-                        return true
-                    }
+                JSValue.Func(_fIdx, _e, fo) => {
                     // a subclass instance is also an instance of every base, so
                     // walk the prototype chain: Dog.prototype's proto is
-                    // Animal.prototype (linked by instantiateClass)
-                    if fIdx < st.funcProtos.len() {
-                        let target = st.funcProtos[fIdx]
-                        if target >= 0 {
-                            var p = st.objects[o].proto
-                            while p >= 0 {
-                                if p == target {
-                                    return true
-                                }
-                                p = st.objects[p].proto
+                    // Animal.prototype (linked by instantiateClass). A function
+                    // whose `prototype` was never materialised cannot be in
+                    // anyone's chain, so reading it without creating it is exact.
+                    let target = objHandle(objGet(st, fo, "prototype"))
+                    if target >= 0 {
+                        var p = st.objects[o].proto
+                        while p >= 0 {
+                            if p == target {
+                                return true
                             }
+                            p = st.objects[p].proto
                         }
                     }
                     return false
@@ -7883,7 +7880,7 @@ fn typeofStr(v: &JSValue): string {
         JSValue.BigInt(_s) => {
             return "bigint"
         }
-        JSValue.Func(_f, _e) => {
+        JSValue.Func(_f, _e, _fo) => {
             return "function"
         }
         JSValue.Obj(_o) => {
@@ -8291,14 +8288,11 @@ pub fn memberOfValue(prog: &Prog, ov: JSValue, name: &string, st: &mut Interp): 
             }
             return stringPrimitiveMember(&mut st, s, name)
         }
-        JSValue.Func(fIdx, fe) => {
-            if name == "prototype" {
-                return JSValue.Obj(getFuncProto(&mut st, fIdx))
-            }
+        JSValue.Func(_fIdx, _fe, _fo) => {
             // `fn.constructor === Function`: functions are not objects in
             // this value model, so nothing linked them to Function.
             if name == "constructor" {
-                let statics1 = getFuncStatics(&mut st, fIdx, fe)
+                let statics1 = propertyBagOf(&mut st, ov)
                 if objOwnIndex(st, statics1, name) < 0 {
                     return JSValue.Native(Native.Fn(Builtin.FunctionCtor))
                 }
@@ -8307,16 +8301,16 @@ pub fn memberOfValue(prog: &Prog, ov: JSValue, name: &string, st: &mut Interp): 
             // when invoked directly; this is the extraction form real
             // bundles use (var slice = Array.prototype.slice; slice.call).
             if name == "call" || name == "apply" || name == "bind" {
-                let statics0 = getFuncStatics(&mut st, fIdx, fe)
+                let statics0 = propertyBagOf(&mut st, ov)
                 if objOwnIndex(st, statics0, name) < 0 {
-                    return makeBoundMethod(&mut st, JSValue.Func(fIdx, fe), name.clone())
+                    return makeBoundMethod(&mut st, cloneValue(ov), name.clone())
                 }
             }
             // through the bag, so a REDEFINED length/name is honoured:
             // these are ordinary own properties now, and reading them
             // from the FuncDef ignored any defineProperty on them
             if name == "length" || name == "name" {
-                let nbag = propertyBagOf(&mut st, JSValue.Func(fIdx, fe))
+                let nbag = propertyBagOf(&mut st, ov)
                 let ni = objOwnIndex(st, nbag, name)
                 if ni >= 0 {
                     return cloneValue(st.objects[nbag].props[ni].value)
@@ -8327,10 +8321,10 @@ pub fn memberOfValue(prog: &Prog, ov: JSValue, name: &string, st: &mut Interp): 
                     return getMember(st, st.functionProtoObj, name)
                 }
             }
-            // propertyBagOf, not getFuncStatics: this is the lookup a
-            // borrowed `fn.hasOwnProperty("name")` ends up querying, and
-            // it has to see the materialised name/length
-            let statics = propertyBagOf(&mut st, JSValue.Func(fIdx, fe))
+            // propertyBagOf, not the raw function object: this is the lookup
+            // a borrowed `fn.hasOwnProperty("name")` ends up querying, and it
+            // has to see the materialised name/length/prototype
+            let statics = propertyBagOf(&mut st, ov)
             // getMemberDyn, not getMember: a `static get v()` is stored on
             // the statics object as an accessor, and the plain read never
             // invoked it — every static getter returned undefined
@@ -8424,15 +8418,12 @@ fn evalIndexExpr(prog: &Prog, objIdx: ExprId, keyIdx: ExprId, st: &mut Interp, s
                 }
                 return getMemberDyn(prog, o, key, &mut st)
             }
-            JSValue.Func(fIdx, fe) => {
+            JSValue.Func(_fIdx, _fe, _fo) => {
                 // computed read of a property assigned onto a function, e.g.
                 // statuses[404] after statuses[code] = message
-                if key == "prototype" {
-                    return JSValue.Obj(getFuncProto(&mut st, fIdx))
-                }
-                let statics = propertyBagOf(&mut st, JSValue.Func(fIdx, fe))
+                let statics = propertyBagOf(&mut st, ov)
                 if (key == "call" || key == "apply" || key == "bind") && objOwnIndex(st, statics, key) < 0 {
-                    return makeBoundMethod(&mut st, JSValue.Func(fIdx, fe), key.clone())
+                    return makeBoundMethod(&mut st, cloneValue(ov), key.clone())
                 }
                 // getMemberDyn, like the dotted form: a computed read must
                 // reach static accessors and the inherited Object.prototype
@@ -8541,34 +8532,13 @@ pub fn setMemberOfValue(prog: &Prog, ov: JSValue, key: string, v: JSValue, st: &
             let bag = getNativeProps(&mut st, nid)
             setMemberDyn(prog, bag, key, cloneValue(v), &mut st)
         }
-        JSValue.Func(sf, senv) => {
-            if key == "prototype" {
-                // `Child.prototype = Object.create(Parent.prototype)` —
-                // the ES5 inheritance idiom. Replacing the prototype
-                // object is what makes instances inherit from Parent.
-                let newProto = objHandle(v)
-                if newProto >= 0 {
-                    while st.funcProtos.len() <= sf {
-                        st.funcProtos.push(-1)
-                    }
-                    st.funcProtos[sf] = newProto
-                    // the bag may already carry a materialised
-                    // `prototype` for descriptor queries; leaving it
-                    // behind would make getOwnPropertyDescriptor
-                    // disagree with a plain read
-                    let sbag = getFuncStatics(&mut st, sf, senv)
-                    if objOwnIndex(st, sbag, "prototype") >= 0 {
-                        objSet(&mut st, sbag, "prototype", JSValue.Obj(newProto))
-                        objSetNonEnumerable(&mut st, sbag, "prototype")
-                    }
-                }
-            } else {
-                let statics = getFuncStatics(&mut st, sf, senv)
-                // setMemberDyn, not objSet: a `static set x(v)` accessor
-                // has to be invoked, and objSet would replace it with a
-                // plain data property
-                setMemberDyn(prog, statics, key, cloneValue(v), &mut st)
-            }
+        JSValue.Func(_sf, _senv, _sfo) => {
+            // `prototype` is an ordinary own property of the function object,
+            // so `Child.prototype = Object.create(Parent.prototype)` is a plain
+            // write. setMemberDyn, not objSet: a `static set x(v)` accessor has
+            // to be invoked, and objSet would replace it with a data property.
+            let statics = propertyBagOf(&mut st, ov)
+            setMemberDyn(prog, statics, key, cloneValue(v), &mut st)
         }
         _ => {
             // A primitive receiver has nowhere to put the property: the spec
@@ -9120,7 +9090,7 @@ fn evalNewArms(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inte
             return constructPromise(prog, &mut st, argVals)
         }
         match calleeVal {
-            JSValue.Func(fIdx, envIdx) => {
+            JSValue.Func(_fIdx, _envIdx, _fo) => {
                 // arrows and methods are NOT constructors. `new` on one is a
                 // TypeError, and every one of them used to build an object
                 // and run the body against it instead.
@@ -9129,10 +9099,10 @@ fn evalNewArms(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inte
                 // anything __markNotConstructor recorded are equally not
                 // constructors, and Reflect.construct already rejected all
                 // of them while `new` on the same value quietly succeeded.
-                if !valueIsConstructor(prog, st, JSValue.Func(fIdx, envIdx)) {
+                if !valueIsConstructor(prog, st, calleeVal) {
                     return throwErr(&mut st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor")
                 }
-                pushTemp(&mut st, JSValue.Func(fIdx, envIdx))
+                pushTemp(&mut st, cloneValue(calleeVal))
                 let argVals = evalArgs(prog, argsIdx, &mut st, scope)
                 // An argument expression that threw ABORTS the call: without this the
                 // callee still ran with the arguments evaluated so far, so
@@ -9141,33 +9111,24 @@ fn evalNewArms(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inte
                 if st.throwing {
                     return JSValue.Undefined
                 }
+                // link the instance to the constructor's prototype (for
+                // shared methods and instanceof)
+                let proto = funcPrototypeObj(&mut st, calleeVal)
                 let obj = newObject(&mut st)
-                // record the constructor (for instanceof) and link the
-                // instance to the constructor's prototype (for shared methods)
-                st.objects[obj].ctor = fIdx
-                let proto = getFuncProto(&mut st, fIdx)
-                linkProtoConstructor(&mut st, proto, fIdx, envIdx)
                 st.objects[obj].proto = proto
                 pushTemp(&mut st, JSValue.Obj(obj))
-                st.newTarget = JSValue.Func(fIdx, envIdx)
-                let result = callFunction(prog, fIdx, envIdx, argVals, JSValue.Obj(obj), &mut st)
+                st.newTarget = cloneValue(calleeVal)
+                let result = callFunction(prog, calleeVal, argVals, JSValue.Obj(obj), &mut st)
                 st.newTarget = JSValue.Undefined
                 popTemp(&mut st)
                 popTemp(&mut st)
                 // A constructor that returns an object OR a function replaces
                 // the new instance. express's Router is a factory that returns
                 // an inner function; discarding it yielded an empty object.
-                match result {
-                    JSValue.Obj(r) => {
-                        return JSValue.Obj(r)
-                    }
-                    JSValue.Func(rf, renv) => {
-                        return JSValue.Func(rf, renv)
-                    }
-                    _ => {
-                        return JSValue.Obj(obj)
-                    }
+                if objHandle(result) >= 0 || funcHandle(result) >= 0 {
+                    return result
                 }
+                return JSValue.Obj(obj)
             }
             JSValue.Native(nativeId) => {
                 if !nativeIsConstructor(nativeId) {
@@ -9249,34 +9210,21 @@ fn evalNewArms(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inte
                         nargs.push(cloneValue(callArgs[cj]))
                         cj = cj + 1
                     }
-                    match btarget {
-                        JSValue.Func(tf, te) => {
-                            let binst = newObject(&mut st)
-                            st.objects[binst].ctor = tf
-                            let bproto = getFuncProto(&mut st, tf)
-                            linkProtoConstructor(&mut st, bproto, tf, te)
-                            st.objects[binst].proto = bproto
-                            pushTemp(&mut st, JSValue.Obj(binst))
-                            st.newTarget = JSValue.Func(tf, te)
-                            let bres = callFunction(prog, tf, te, nargs, JSValue.Obj(binst), &mut st)
-                            st.newTarget = JSValue.Undefined
-                            popTemp(&mut st)
-                            match bres {
-                                JSValue.Obj(br) => {
-                                    return JSValue.Obj(br)
-                                }
-                                JSValue.Func(brf, bre) => {
-                                    return JSValue.Func(brf, bre)
-                                }
-                                _ => {
-                                    return JSValue.Obj(binst)
-                                }
-                            }
+                    if funcHandle(btarget) >= 0 {
+                        let bproto = funcPrototypeObj(&mut st, btarget)
+                        let binst = newObject(&mut st)
+                        st.objects[binst].proto = bproto
+                        pushTemp(&mut st, JSValue.Obj(binst))
+                        st.newTarget = cloneValue(btarget)
+                        let bres = callFunction(prog, btarget, nargs, JSValue.Obj(binst), &mut st)
+                        st.newTarget = JSValue.Undefined
+                        popTemp(&mut st)
+                        if objHandle(bres) >= 0 || funcHandle(bres) >= 0 {
+                            return bres
                         }
-                        _ => {
-                            return callValue(prog, btarget, nargs, JSValue.Undefined, &mut st)
-                        }
+                        return JSValue.Obj(binst)
                     }
+                    return callValue(prog, btarget, nargs, JSValue.Undefined, &mut st)
                 }
                 if st.objExtras[st.objects[co].extra].napiFn >= 0 {
                     let argVals = evalArgs(prog, argsIdx, &mut st, scope)
@@ -9778,8 +9726,8 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             }
             // non-nullish function/native base is a property carrier too
             match ov {
-                JSValue.Func(fIdx, fe) => {
-                    let statics = getFuncStatics(&mut st, fIdx, fe)
+                JSValue.Func(_fIdx, _fe, _fo) => {
+                    let statics = propertyBagOf(&mut st, ov)
                     return getMemberDyn(prog, statics, key, &mut st)
                 }
                 JSValue.Native(nid) => {
@@ -9838,36 +9786,11 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     }
                     return stringPrimitiveMember(&mut st, s, name)
                 }
-                JSValue.Func(fIdx, fe) => {
+                JSValue.Func(_fIdx, _fe, _fo) => {
                     // a non-nullish function base reads like `.` does: a function
                     // is a property carrier (fn?._def, fn?.name). This was the
                     // missing case — @trpc's `procedure?._def.type`.
-                    if name == "prototype" {
-                        return JSValue.Obj(getFuncProto(&mut st, fIdx))
-                    }
-                    if name == "constructor" {
-                        let statics2 = getFuncStatics(&mut st, fIdx, fe)
-                        if objOwnIndex(st, statics2, name) < 0 {
-                            return JSValue.Native(Native.Fn(Builtin.FunctionCtor))
-                        }
-                    }
-                    // through the bag, so a REDEFINED length/name is honoured:
-                    // these are ordinary own properties now, and reading them
-                    // from the FuncDef ignored any defineProperty on them
-                    if name == "length" || name == "name" {
-                        let nbag = propertyBagOf(&mut st, JSValue.Func(fIdx, fe))
-                        let ni = objOwnIndex(st, nbag, name)
-                        if ni >= 0 {
-                            return cloneValue(st.objects[nbag].props[ni].value)
-                        }
-                        // deleted: the read continues up the chain to
-                        // Function.prototype, whose name is "" and length 0
-                        if st.functionProtoObj >= 0 {
-                            return getMember(st, st.functionProtoObj, name)
-                        }
-                    }
-                    let statics = getFuncStatics(&mut st, fIdx, fe)
-                    return getMemberDyn(prog, statics, name, &mut st)
+                    return memberOfValue(prog, cloneValue(ov), name, &mut st)
                 }
                 JSValue.Native(nid) => {
                     let bag = getNativeProps(&mut st, nid)
@@ -9885,7 +9808,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             }
         }
         Expr.FuncExpr(f) => {
-            return JSValue.Func(f, scope)
+            return makeClosure(&mut st, f, scope)
         }
     }
 }
@@ -10228,7 +10151,7 @@ fn rootIfHeap(st: &mut Interp, v: &JSValue) {
         JSValue.Obj(_o) => {
             pushTemp(&mut st, cloneValue(v))
         }
-        JSValue.Func(_f, _e) => {
+        JSValue.Func(_f, _e, _fo) => {
             pushTemp(&mut st, cloneValue(v))
         }
         JSValue.Native(_n) => {
@@ -10681,7 +10604,7 @@ fn inspectInner(st: &Interp, v: &JSValue, depth: i64, indentLvl: i64, stack: &mu
             // console.log shows a BigInt with the trailing `n` (String() does not)
             return s + "n"
         }
-        JSValue.Func(fidx, _env) => {
+        JSValue.Func(fidx, _env, _fo) => {
             return inspectFuncLabelAt(fidx)
         }
         JSValue.Obj(o) => {
@@ -10969,7 +10892,7 @@ pub fn inspectTop(st: &Interp, v: &JSValue): string {
         JSValue.BigInt(s) => {
             return s + "n"
         }
-        JSValue.Func(fidx, _env) => {
+        JSValue.Func(fidx, _env, _fo) => {
             return inspectFuncLabelAt(fidx)
         }
         JSValue.Str(s) => {
@@ -10993,7 +10916,8 @@ pub fn inspectTop(st: &Interp, v: &JSValue): string {
 // V8-style stack trace can name the file each frame belongs to. Wrapping rather
 // than editing callFunctionBody's many early returns keeps the push and pop
 // paired without touching its control flow.
-pub fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
+pub fn callFunction(prog: &Prog, callee: &JSValue, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
+    let fIdx = funcHandle(callee)
     // A class constructor may only be reached through `new` (or a super() call,
     // which goes through the construct path and so has a new.target). Calling one
     // as a plain function silently ran its body and returned undefined, which is
@@ -11015,7 +10939,7 @@ pub fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
     if fIdx >= 0 && fIdx < prog.funcs.len() {
         st.strict = prog.funcs[fIdx].isStrict
     }
-    let r = callFunctionBody(prog, fIdx, envIdx, argVals, thisVal, &mut st)
+    let r = callFunctionBody(prog, callee, argVals, thisVal, &mut st)
     st.strict = savedStrict
     let _popped = st.fnFileStack.pop()
     return r
@@ -11035,8 +10959,9 @@ pub fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
 // argument, per call, and a compiled body cannot reach it any other way: every
 // identifier it mentions is a chunk slot, and the subset has no closure, no
 // `with` and no direct eval to smuggle a reference out of the frame.
-pub fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JSValue>, thisVal: &JSValue, st: &mut Interp, wantArguments: bool): i64 {
-    let callScope = newScope(&mut st, envIdx)
+pub fn bindActivationScope(prog: &Prog, callee: &JSValue, argVals: &Vec<JSValue>, thisVal: &JSValue, st: &mut Interp, wantArguments: bool): i64 {
+    let fIdx = funcHandle(callee)
+    let callScope = newScope(&mut st, funcEnv(callee))
     // arrows have no own `this` — it stays lexical (resolved up the scope chain)
     if !prog.funcs[fIdx].isArrow {
         // A non-strict function called with no receiver gets globalThis, not
@@ -11067,7 +10992,7 @@ pub fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JS
         // "[Function: localhostIPv4]" and hung.
         let selfName = prog.funcs[fIdx].name.clone()
         if selfName.len() > 0 && !prog.funcs[fIdx].isMethod {
-            scopeDefine(&mut st, callScope, selfName, JSValue.Func(fIdx, envIdx))
+            scopeDefine(&mut st, callScope, selfName, cloneValue(callee))
         }
     }
     var j: i64 = 0
@@ -11131,7 +11056,8 @@ pub fn callGuardTripped(st: &mut Interp): bool {
     return false
 }
 
-fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
+fn callFunctionBody(prog: &Prog, callee: &JSValue, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
+    let fIdx = funcHandle(callee)
     // See funcCallTicks in runtime.milo: the VM watches this to know user code ran.
     st.funcCallTicks = st.funcCallTicks + 1
     // R1: an async call runs its body on its own activation and returns at that
@@ -11145,12 +11071,12 @@ fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
     // it and hand back a promise with no next().
     if prog.funcs[fIdx].isAsync && prog.funcs[fIdx].isGenerator && !st.suppressGenSpawn {
         st.suppressAsyncSpawn = false
-        return makeGenerator(fIdx, envIdx, argVals, thisVal, true, &mut st)
+        return makeGenerator(callee, argVals, thisVal, true, &mut st)
     }
     if prog.funcs[fIdx].isAsync && !alreadyOnActivation {
         let caller = schedulerCurrent()
         if caller as i64 != 0 {
-            return spawnActivation(fIdx, envIdx, argVals, thisVal, &mut st, caller)
+            return spawnActivation(callee, argVals, thisVal, &mut st, caller)
         }
     }
     if callGuardTripped(&mut st) {
@@ -11159,7 +11085,7 @@ fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
     let genBody = st.suppressGenSpawn
     st.suppressGenSpawn = false
     if prog.funcs[fIdx].isGenerator && !genBody {
-        return makeGenerator(fIdx, envIdx, argVals, thisVal, false, &mut st)
+        return makeGenerator(callee, argVals, thisVal, false, &mut st)
     }
     st.callDepth = st.callDepth + 1
     // Whether this body runs as bytecode is decided BEFORE the frame is built,
@@ -11167,7 +11093,7 @@ fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
     // `var` and no nested function declaration to hoist, and usually no
     // `arguments` to materialise.
     let cid = bodyChunkOf(prog, fIdx)
-    let callScope = bindActivationScope(prog, fIdx, envIdx, argVals, thisVal, &mut st, cid < 0 || chunkUsesArguments(cid))
+    let callScope = bindActivationScope(prog, callee, argVals, thisVal, &mut st, cid < 0 || chunkUsesArguments(cid))
     // root the frame across the whole call so a GC inside the body (or a nested
     // call) can't reclaim it
     pushActive(&mut st, callScope)
@@ -11238,9 +11164,9 @@ fn callFunctionBody(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, 
 // Function.prototype.call/apply keeps a method-dispatch frame live around the
 // ordinary JS call. Charge that extra native frame to the recursion budget so a
 // recursive adapter path cannot reach the C stack before callFunction's guard.
-fn callFunctionViaMethod(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
+fn callFunctionViaMethod(prog: &Prog, callee: &JSValue, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
     st.callDepth = st.callDepth + 1
-    let result = callFunction(prog, fIdx, envIdx, argVals, thisVal, &mut st)
+    let result = callFunction(prog, callee, argVals, thisVal, &mut st)
     st.callDepth = st.callDepth - 1
     return result
 }
@@ -12158,7 +12084,7 @@ pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec
         return cr
     }
     match ctor {
-        JSValue.Func(tf, te) => {
+        JSValue.Func(_tf, _te, _tfo) => {
             // OrdinaryCreateFromConstructor takes the prototype from newTarget,
             // which is the only thing a differing newTarget changes. For an
             // ordinary function it is read BEFORE the body runs, so a `prototype`
@@ -12167,10 +12093,8 @@ pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec
             if st.throwing {
                 return JSValue.Undefined
             }
+            let fproto = funcPrototypeObj(&mut st, ctor)
             let inst = newObject(&mut st)
-            st.objects[inst].ctor = tf
-            let fproto = getFuncProto(&mut st, tf)
-            linkProtoConstructor(&mut st, fproto, tf, te)
             if protoFromNewTarget >= 0 {
                 st.objects[inst].proto = protoFromNewTarget
             } else {
@@ -12179,7 +12103,7 @@ pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec
             pushTemp(&mut st, JSValue.Obj(inst))
             let saved = cloneValue(st.newTarget)
             st.newTarget = cloneValue(newTarget)
-            let res = callFunction(prog, tf, te, argVals, JSValue.Obj(inst), &mut st)
+            let res = callFunction(prog, ctor, argVals, JSValue.Obj(inst), &mut st)
             st.newTarget = saved
             popTemp(&mut st)
             match res {
@@ -12871,7 +12795,7 @@ fn endActivation(st: &mut Interp) {
             st.actTask.remove(i)
             st.actCreator.remove(i)
             st.actNotified.remove(i)
-            st.actEnv.remove(i)
+            st.actFn.remove(i)
             st.actArgs.remove(i)
             st.actThis.remove(i)
             st.actPromise.remove(i)
@@ -12887,7 +12811,7 @@ fn endActivation(st: &mut Interp) {
 // The caller parks straight after spawning. Tasks are cooperative and only one
 // runs at a time, so the body cannot start before that park — there is no race
 // between spawning and waiting.
-fn spawnActivation(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp, caller: *u8): JSValue {
+fn spawnActivation(callee: &JSValue, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp, caller: *u8): JSValue {
     let p = newPromise(&mut st, 0, JSValue.Undefined)
     var rootedArgs: Vec<JSValue> = Vec.new()
     var ri: i64 = 0
@@ -12897,11 +12821,12 @@ fn spawnActivation(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSVal
     }
     let rootedThis = cloneValue(thisVal)
     var args = argVals
+    let taskCallee = cloneValue(callee)
     let body = Task.spawnWithStack(move(): void => {
         // gProg/gInterp rather than captured references: a task body cannot hold
         // a borrow from the frame that spawned it (docs/proposal-task-shared-state.md)
         gInterp.suppressAsyncSpawn = true
-        let r = callFunction(gProg, fIdx, envIdx, args, thisVal, &mut gInterp)
+        let r = callFunction(gProg, taskCallee, args, thisVal, &mut gInterp)
         if gInterp.throwing {
             let err = cloneValue(gInterp.thrownValue)
             gInterp.throwing = false
@@ -12946,7 +12871,7 @@ fn spawnActivation(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSVal
     st.actTask.push(body.raw())
     st.actCreator.push(caller)
     st.actNotified.push(false)
-    st.actEnv.push(envIdx)
+    st.actFn.push(cloneValue(callee))
     st.actArgs.push(rootedArgs)
     st.actThis.push(rootedThis)
     st.actPromise.push(p)
@@ -13174,7 +13099,9 @@ fn generatorProtoHandle(st: &mut Interp): i64 {
     return gp
 }
 
-fn makeGenerator(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, isAsync: bool, st: &mut Interp): JSValue {
+fn makeGenerator(callee: &JSValue, argVals: Vec<JSValue>, thisVal: JSValue, isAsync: bool, st: &mut Interp): JSValue {
+    let fIdx = funcHandle(callee)
+    let envIdx = funcEnv(callee)
     let g = newObject(&mut st)
     st.objects[g].isGenerator = true
     st.objects[g].isAsyncGenerator = isAsync
@@ -13184,12 +13111,13 @@ fn makeGenerator(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue
     // Without the link a generator object had no prototype at all, so
     // `gen().map(f)` was undefined while `[].values().map(f)` worked: every other
     // iterator in the engine already reaches that prototype.
-    let gproto = getFuncProto(&mut st, fIdx)
+    // A `prototype` that is not an object (reassigned by the program) falls
+    // back to %GeneratorPrototype%, as OrdinaryCreateFromConstructor says.
+    let gproto = funcPrototypeObj(&mut st, callee)
     if gproto >= 0 {
-        if st.objects[gproto].proto < 0 {
-            st.objects[gproto].proto = generatorProtoHandle(&mut st)
-        }
         st.objects[g].proto = gproto
+    } else {
+        st.objects[g].proto = generatorProtoHandle(&mut st)
     }
     var rootedArgs: Vec<JSValue> = Vec.new()
     var ri: i64 = 0
@@ -13227,7 +13155,7 @@ fn makeGenerator(fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue
     // The generator object is rooted across this: a default expression runs user
     // code, which can allocate and collect, and nothing else refers to `g` yet.
     pushTemp(&mut st, JSValue.Obj(g))
-    let gscope = bindActivationScope(gProg, fIdx, envIdx, argVals, thisVal, &mut st, true)
+    let gscope = bindActivationScope(gProg, callee, argVals, thisVal, &mut st, true)
     st.genScope[gi] = gscope
     if let Option.Some(unpack) = gProg.funcs[fIdx].paramPrelude {
         pushActive(&mut st, gscope)
@@ -14232,7 +14160,7 @@ fn serveHttpOnce(prog: &Prog, st: &mut Interp): bool {
 fn dispatchUncaught(prog: &Prog, st: &mut Interp): bool {
     let handler = scopeLookup(st, 0, "__dispatchUncaught")
     match handler {
-        JSValue.Func(fIdx, envIdx) => {
+        JSValue.Func(_fIdx, _envIdx, _fo) => {
             // Cleared before re-entering JS: the callee runs on a clean frame,
             // and the flag is restored by the caller if nothing handled it.
             let thrown = cloneValue(st.thrownValue)
@@ -14240,7 +14168,7 @@ fn dispatchUncaught(prog: &Prog, st: &mut Interp): bool {
             st.thrownValue = JSValue.Undefined
             var args: Vec<JSValue> = Vec.new()
             args.push(cloneValue(thrown))
-            let r = callFunction(prog, fIdx, envIdx, args, JSValue.Undefined, &mut st)
+            let r = callFunction(prog, handler, args, JSValue.Undefined, &mut st)
             if st.throwing {
                 // The handler itself threw; that one is genuinely fatal.
                 return false
@@ -14494,14 +14422,14 @@ fn primitiveProtoHandle(st: &mut Interp, v: &JSValue): i64 {
     }
 }
 
-fn propertyBagOf(st: &mut Interp, v: &JSValue): i64 {
+pub fn propertyBagOf(st: &mut Interp, v: &JSValue): i64 {
     let o = objHandle(v)
     if o >= 0 {
         return o
     }
     let f = funcHandle(v)
     if f >= 0 {
-        let bag = getFuncStatics(&mut st, f, funcEnv(v))
+        let bag = funcObjOf(v)
         // `name` and `length` are real OWN properties of a function, and
         // test262 checks that with getOwnPropertyDescriptor rather than by
         // reading them. They were synthesised on read only, so every descriptor
@@ -14520,22 +14448,27 @@ fn propertyBagOf(st: &mut Interp, v: &JSValue): i64 {
             if objOwnIndex(st, bag, "name") < 0 {
                 objDefineBuiltinAttr(&mut st, bag, "name", JSValue.Str(gProg.funcs[f].name.clone()))
             }
-            // `prototype` is an OWN property too, and it was the one every
-            // descriptor query missed: hasOwnProperty(F, "prototype") was false
-            // and getOwnPropertyNames(F) omitted it, on ordinary functions and
-            // classes alike. Reads still resolve through st.funcProtos, which
-            // stays the single source of truth — this materialises the same
-            // object so that describing the function agrees with reading it.
+            // `prototype` is an ordinary OWN property, created here with the
+            // rest so that reading it, describing it and listing it agree.
             // Only a CONSTRUCTOR carries one. A built-in function that is not
             // a constructor has no `prototype` own property at all, and
             // test262 asserts hasOwnProperty("prototype") === false on every
             // one of them — so this cannot simply be "every non-arrow".
             // A generator is the exception in the other direction: not a
             // constructor, but it does have a prototype (the object its
-            // iterator inherits from).
-            if valueIsConstructor(gProg, st, v) || gProg.funcs[f].isGenerator {
+            // iterator inherits from), which inherits %GeneratorPrototype% and
+            // has no `constructor` of its own.
+            let isGen = gProg.funcs[f].isGenerator
+            if valueIsConstructor(gProg, st, v) || isGen {
                 if objOwnIndex(st, bag, "prototype") < 0 {
-                    objDefineFnProtoAttr(&mut st, bag, "prototype", JSValue.Obj(getFuncProto(&mut st, f)))
+                    let p = newObject(&mut st)
+                    if isGen {
+                        st.objects[p].proto = generatorProtoHandle(&mut st)
+                    } else {
+                        objSet(&mut st, p, "constructor", cloneValue(v))
+                        objSetNonEnumerable(&mut st, p, "constructor")
+                    }
+                    objDefineFnProtoAttr(&mut st, bag, "prototype", JSValue.Obj(p))
                 }
             }
         }
@@ -14545,6 +14478,18 @@ fn propertyBagOf(st: &mut Interp, v: &JSValue): i64 {
         return getNativeProps(&mut st, n)
     }
     return -1
+}
+
+// The object `new F()` links its instance to: F's own `prototype` when that is
+// an object, else -1 (the default, Object.prototype), which is what
+// OrdinaryCreateFromConstructor falls back to after a program assigns a
+// primitive there. Materialises the property on first use.
+pub fn funcPrototypeObj(st: &mut Interp, fnVal: &JSValue): i64 {
+    let bag = propertyBagOf(&mut st, fnVal)
+    if bag < 0 {
+        return -1
+    }
+    return objHandle(objGet(st, bag, "prototype"))
 }
 
 // The module currently executing, for error messages. Empty at top level.
@@ -14804,19 +14749,28 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
     // one; the super binding lives here too, so it can't be seen by siblings.
     let classScope = newScope(&mut st, scope)
     pushActive(&mut st, classScope)
-    let classVal = JSValue.Func(ctorFn, classScope)
+    let classVal = makeClosure(&mut st, ctorFn, classScope)
+    // An anonymous class value lives only on this frame until it is returned,
+    // and the heritage, computed keys and static initialisers below all run
+    // user code; the scoped root keeps its function object (and through it the
+    // prototype every method is installed on) alive across them.
+    let tempBase = st.tempRoots.len()
+    pushTemp(&mut st, cloneValue(classVal))
     let className = prog.classes[classIdx].name.clone()
     if className.len() > 0 {
-        scopeDefine(&mut st, classScope, className, JSValue.Func(ctorFn, classScope))
+        scopeDefine(&mut st, classScope, className, cloneValue(classVal))
     }
-    let proto = getFuncProto(&mut st, ctorFn)
-    linkProtoConstructor(&mut st, proto, ctorFn, classScope)
+    // Materialised before any static is installed: getOwnPropertyNames on a
+    // class lists length, name, prototype first, and only then the statics.
+    let ownStatics = propertyBagOf(&mut st, classVal)
+    let proto = funcPrototypeObj(&mut st, classVal)
     let superName = prog.classes[classIdx].superName.clone()
     if superName.len() > 0 {
         var baseVal = JSValue.Undefined
         if prog.classes[classIdx].superExpr >= 0 {
             baseVal = evalExpr(prog, ExprId { index: prog.classes[classIdx].superExpr }, &mut st, scope)
             if st.throwing {
+                truncateTemps(&mut st, tempBase)
                 return JSValue.Undefined
             }
         } else {
@@ -14827,15 +14781,18 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
         // at class creation, not at the first `new`
         if !(baseVal is JSValue.Null) {
             if !valueIsConstructor(prog, st, baseVal) {
+                truncateTemps(&mut st, tempBase)
                 return throwErr(&mut st, "TypeError", "Class extends value " + classErrDisplay(prog, &mut st, baseVal) + " is not a constructor or null")
             }
             let hbag = propertyBagOf(&mut st, baseVal)
             if hbag >= 0 {
                 let hp = getMemberDyn(prog, hbag, "prototype", &mut st)
                 if st.throwing {
+                    truncateTemps(&mut st, tempBase)
                     return JSValue.Undefined
                 }
                 if objHandle(hp) < 0 && !(hp is JSValue.Null) && funcHandle(hp) < 0 {
+                    truncateTemps(&mut st, tempBase)
                     return throwErr(&mut st, "TypeError", "Class extends value does not have valid prototype property " + toStr(hp))
                 }
             }
@@ -14847,18 +14804,19 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
             st.objects[proto].proto = -1
             st.objects[proto].protoNull = true
         } else if baseFn >= 0 {
-            let baseProto = getFuncProto(&mut st, baseFn)
-            st.objects[proto].proto = baseProto
+            // the heritage check above admitted an object, a function or null
+            let bpv = objGet(st, propertyBagOf(&mut st, baseVal), "prototype")
+            if bpv is JSValue.Null {
+                st.objects[proto].protoNull = true
+            } else if objHandle(bpv) >= 0 {
+                st.objects[proto].proto = objHandle(bpv)
+            } else {
+                st.objects[proto].proto = funcObjOf(bpv)
+            }
             // Statics are inherited too: `class D extends B {}` makes D.staticOfB
             // resolve. Only the instance side was linked, so a static method or
             // accessor declared on the base was invisible on the subclass.
-            var baseEnv: i64 = -1
-            if let JSValue.Func(_bf, be) = baseVal {
-                baseEnv = be
-            }
-            let baseStatics = getFuncStatics(&mut st, baseFn, baseEnv)
-            let ownStatics = getFuncStatics(&mut st, ctorFn, classScope)
-            st.objects[ownStatics].proto = baseStatics
+            st.objects[ownStatics].proto = funcObjOf(baseVal)
         } else {
             // A BUILT-IN base (class E extends TypeError, class A extends Array)
             // is not a user function, so funcHandle answers -1 and neither chain
@@ -14872,7 +14830,6 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
                 if baseProtoH >= 0 {
                     st.objects[proto].proto = baseProtoH
                 }
-                let ownStatics = getFuncStatics(&mut st, ctorFn, classScope)
                 st.objects[ownStatics].proto = baseBag
             }
         }
@@ -14887,11 +14844,11 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
             mName = toStr(evalExpr(prog, keyExprId, &mut st, classScope))
         }
         let mFn = prog.classes[classIdx].members[i].fnIdx
-        let mv = JSValue.Func(mFn, classScope)
+        let mv = makeClosure(&mut st, mFn, classScope)
         let mKind = prog.classes[classIdx].members[i].kind
         var target = proto
         if prog.classes[classIdx].members[i].isStatic {
-            target = getFuncStatics(&mut st, ctorFn, classScope)
+            target = ownStatics
         }
         if mKind > 0 {
             let existing = objOwnIndex(st, target, mName)
@@ -14930,7 +14887,7 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
             sfName = toStrProg(prog, kv, &mut st)
         }
         let sfInit = prog.classes[classIdx].staticFieldInits[sf]
-        let statics = getFuncStatics(&mut st, ctorFn, classScope)
+        let statics = ownStatics
         let sfVal = evalExpr(prog, sfInit, &mut st, classScope)
         if sfName.len() == 0 {
             // a `static { }` block, not a field: run it with `this` bound to the
@@ -14942,14 +14899,15 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
         }
         sf = sf + 1
     }
+    truncateTemps(&mut st, tempBase)
     popActive(&mut st)
     return classVal
 }
 
 pub fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
     match fnVal {
-        JSValue.Func(fIdx, envIdx) => {
-            return callFunction(prog, fIdx, envIdx, args, thisVal, &mut st)
+        JSValue.Func(_fIdx, _envIdx, _fo) => {
+            return callFunction(prog, fnVal, args, thisVal, &mut st)
         }
         JSValue.Native(id) => {
             return callNativeAsFunction(prog, id, args, &mut st)
@@ -15184,7 +15142,7 @@ fn promiseMethod(o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): J
 
 pub fn isCallable(v: &JSValue): bool {
     match v {
-        JSValue.Func(_f, _e) => {
+        JSValue.Func(_f, _e, _fo) => {
             return true
         }
         JSValue.Native(_i) => {
@@ -15673,7 +15631,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
             // override (a Func) still wins and falls through.
             if isWrapperObj(st, o) && objOwnIndex(st, o, name) < 0 {
                 var wrapperOverridden = false
-                if let JSValue.Func(_wf, _we) = getMemberDyn(prog, o, name, &mut st) {
+                if let JSValue.Func(_wf, _we, _fo) = getMemberDyn(prog, o, name, &mut st) {
                     wrapperOverridden = true
                 }
                 if !wrapperOverridden {
@@ -15705,7 +15663,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
             // while the arguments run; the boundary truncates the root
             rootIfHeap(&mut st, m)
             match m {
-                JSValue.Func(fIdx, envIdx) => {
+                JSValue.Func(_fIdx, _envIdx, _fo) => {
                     let argVals = evalArgs(prog, argsIdx, &mut st, scope)
                     // An argument expression that threw ABORTS the call: without this the
                     // callee still ran with the arguments evaluated so far, so
@@ -15714,7 +15672,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                     if st.throwing {
                         return JSValue.Undefined
                     }
-                    let r = callFunction(prog, fIdx, envIdx, argVals, JSValue.Obj(o), &mut st)
+                    let r = callFunction(prog, m, argVals, JSValue.Obj(o), &mut st)
                     popTemp(&mut st)
                     return r
                 }
@@ -15835,7 +15793,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
             }
             return throwErr(&mut st, "TypeError", name.clone() + " is not a function")
         }
-        JSValue.Func(bf, benv) => {
+        JSValue.Func(bf, _benv, _bfo) => {
             // method call on a function value: either a static (Class.make())
             // or .call/.apply, which retarget `this`
             //
@@ -15843,7 +15801,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
             // call() {} }` then `C.call()` must run the static, not
             // Function.prototype.call, which silently returned undefined.
             if name == "call" || name == "apply" || name == "bind" {
-                let ownStatics = getFuncStatics(&mut st, bf, benv)
+                let ownStatics = propertyBagOf(&mut st, recv)
                 if objOwnIndex(st, ownStatics, name) >= 0 {
                     let own = getMemberDyn(prog, ownStatics, name, &mut st)
                     if isCallableIn(st, own) {
@@ -15855,7 +15813,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                         if st.throwing {
                             return JSValue.Undefined
                         }
-                        return callValue(prog, own, argVals, JSValue.Func(bf, benv), &mut st)
+                        return callValue(prog, own, argVals, cloneValue(recv), &mut st)
                     }
                 }
             }
@@ -15877,13 +15835,13 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 let bo = newObject(&mut st)
                 st.objects[bo].isBound = true
                 let ex = ensureExtra(&mut st, bo)
-                st.objExtras[ex].boundTarget = JSValue.Func(bf, benv)
+                st.objExtras[ex].boundTarget = cloneValue(recv)
                 if argVals.len() > 0 {
                     st.objExtras[ex].boundThis = cloneValue(argVals[0])
                 }
                 let nb0 = extra.len()
                 st.objExtras[ex].boundArgs = extra
-                finishBind(prog, &mut st, bo, JSValue.Func(bf, benv), nb0)
+                finishBind(prog, &mut st, bo, recv, nb0)
                 return JSValue.Obj(bo)
             }
             if name == "call" || name == "apply" {
@@ -15919,9 +15877,9 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                         ai = ai + 1
                     }
                 }
-                return callFunctionViaMethod(prog, bf, benv, rest, thisArg, &mut st)
+                return callFunctionViaMethod(prog, recv, rest, thisArg, &mut st)
             }
-            let statics = getFuncStatics(&mut st, bf, benv)
+            let statics = propertyBagOf(&mut st, recv)
             // A function's statics bag inherits Object.prototype, not
             // Function.prototype, so `fn.toString()` resolved to the type-tag
             // method and answered "[object Function]" for every function. An own
@@ -15946,7 +15904,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 if st.throwing {
                     return JSValue.Undefined
                 }
-                return callValue(prog, m, argVals, JSValue.Func(bf, benv), &mut st)
+                return callValue(prog, m, argVals, cloneValue(recv), &mut st)
             }
             // a static whose value is a callable object (a bound method, or a
             // generator returned by an accessor) is still callable
@@ -15959,7 +15917,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 if st.throwing {
                     return JSValue.Undefined
                 }
-                return callValue(prog, m, argVals, JSValue.Func(bf, benv), &mut st)
+                return callValue(prog, m, argVals, cloneValue(recv), &mut st)
             }
             return throwErr(&mut st, "TypeError", name.clone() + " is not a function")
         }
@@ -16188,12 +16146,12 @@ pub fn evalInOperator(prog: &Prog, key: string, ov: JSValue, st: &mut Interp): J
             }
             return JSValue.Bool(false)
         }
-        JSValue.Func(fIdx, fenv) => {
-            // every function carries these whether or not they were ever stored
-            if key == "prototype" || key == "name" || key == "length" || key == "call" || key == "apply" || key == "bind" || key == "constructor" {
+        JSValue.Func(_fIdx, _fenv, _fo) => {
+            // inherited from Function.prototype whether or not they were stored
+            if key == "call" || key == "apply" || key == "bind" || key == "constructor" {
                 return JSValue.Bool(true)
             }
-            var fcur = getFuncStatics(&mut st, fIdx, fenv)
+            var fcur = propertyBagOf(&mut st, ov)
             while fcur >= 0 {
                 if objHas(st, fcur, key) {
                     return JSValue.Bool(true)
@@ -16488,7 +16446,7 @@ fn evalCallArms(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Inte
                     let bf = funcHandle(baseVal)
                     var baseProto: i64 = -1
                     if bf >= 0 {
-                        baseProto = getFuncProto(&mut st, bf)
+                        baseProto = funcPrototypeObj(&mut st, baseVal)
                     } else {
                         // a native base (class X extends Map): the method is a
                         // stored property of the constructor's prototype object
@@ -16609,7 +16567,7 @@ fn evalCallArms(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Inte
 // what makes `x(boom())` on a non-function report the TypeError.
 pub fn isPlainCallable(st: &Interp, v: &JSValue): bool {
     match v {
-        JSValue.Func(_f, _e) => {
+        JSValue.Func(_f, _e, _fo) => {
             return true
         }
         JSValue.Native(_id) => {
@@ -17766,6 +17724,20 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
         }
         Stmt.FuncDecl(f) => {
             let name = prog.funcs[f].name.clone()
+            // A body-level declaration was already created by the hoist, and
+            // evaluating the statement must not mint a second closure: code
+            // before it holds the hoisted one, and `h === h` across the
+            // declaration has to stay true. A block-level one has no binding
+            // yet (the block scope is fresh), so it is created here, once per
+            // evaluation of the block.
+            var fv = JSValue.Undefined
+            let own = scopeOwnIndex(st, scope, name)
+            if own >= 0 && funcHandle(st.scopes[scope].vars[own].value) == f && funcEnv(st.scopes[scope].vars[own].value) == scope {
+                fv = cloneValue(st.scopes[scope].vars[own].value)
+            }
+            if funcHandle(fv) < 0 {
+                fv = makeClosure(&mut st, f, scope)
+            }
             // Annex B B.3.3: a function declared inside a BLOCK also writes its
             // value to the var-scoped binding the hoist created for it, which is
             // what keeps it visible after the block. Only a scope that RECORDED the
@@ -17774,13 +17746,13 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             var s = st.scopes[scope].parent
             while s >= 0 {
                 if nameInList(st.scopes[s].annexBFns, name) {
-                    scopeDefine(&mut st, s, name.clone(), JSValue.Func(f, scope))
+                    scopeDefine(&mut st, s, name.clone(), cloneValue(fv))
                     s = -1
                 } else {
                     s = st.scopes[s].parent
                 }
             }
-            scopeDefine(&mut st, scope, name, JSValue.Func(f, scope))
+            scopeDefine(&mut st, scope, name, fv)
             return Flow.Normal
         }
         Stmt.Empty => {
@@ -18117,7 +18089,8 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64, nested: bool,
             let fname = prog.funcs[fIdx].name.clone()
             if fname.len() > 0 {
                 if !nested {
-                    scopeDefine(&mut st, scope, fname, JSValue.Func(fIdx, scope))
+                    let hv = makeClosure(&mut st, fIdx, scope)
+                    scopeDefine(&mut st, scope, fname, hv)
                 } else if !nameInList(shadow, fname) {
                     // Annex B B.3.3: the hoist creates the var-scoped binding but
                     // leaves it UNDEFINED. The function value is written when the

@@ -67,7 +67,7 @@ the decimal string of a BigInt, or "" for anything else
 ### `bindActivationScope`
 
 ```milo
-pub fn bindActivationScope(prog: &Prog, fIdx: i64, envIdx: i64, argVals: &Vec<JSValue>, thisVal: &JSValue, st: &mut Interp, wantArguments: bool): i64
+pub fn bindActivationScope(prog: &Prog, callee: &JSValue, argVals: &Vec<JSValue>, thisVal: &JSValue, st: &mut Interp, wantArguments: bool): i64
 ```
 
 One activation's scope: `this`, `new.target`, the self-name of a named function
@@ -126,7 +126,7 @@ _Undocumented._
 ### `callFunction`
 
 ```milo
-pub fn callFunction(prog: &Prog, fIdx: i64, envIdx: i64, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue
+pub fn callFunction(prog: &Prog, callee: &JSValue, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue
 ```
 
 Records the called function's source file for the duration of the call, so a
@@ -328,6 +328,17 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow
 ```
 
 _Undocumented._
+
+### `funcPrototypeObj`
+
+```milo
+pub fn funcPrototypeObj(st: &mut Interp, fnVal: &JSValue): i64
+```
+
+The object `new F()` links its instance to: F's own `prototype` when that is
+an object, else -1 (the default, Object.prototype), which is what
+OrdinaryCreateFromConstructor falls back to after a program assigns a
+primitive there. Materialises the property on first use.
 
 ### `funcSourceText`
 
@@ -684,6 +695,14 @@ _Undocumented._
 
 ```milo
 pub fn preventExtOf(prog: &Prog, st: &mut Interp, v: &JSValue, seal: bool): bool
+```
+
+_Undocumented._
+
+### `propertyBagOf`
+
+```milo
+pub fn propertyBagOf(st: &mut Interp, v: &JSValue): i64
 ```
 
 _Undocumented._

@@ -23,18 +23,19 @@ from "std/io" import {
 }
 from "../engine/value" import {
     toStr,
-    JSValue, cloneValue, toNum, truthy
+    JSValue, cloneValue, toNum, truthy, funcHandle
 }
 from "../engine/runtime" import {
     setArrayLength, arrLen, arrGet, arrSet, newPromise, objHasInChain, objHas, objDefineAccessor,
     Interp, gInterp, newObject, newArray, objGet, objSet, objSetNonEnumerable,
-    ensureExtra, scopeLookup, getFuncProto, bufferBytesHandle,
+    ensureExtra, scopeLookup, bufferBytesHandle,
     bufferNativeViewHandle, nativeBufferLen, nativeBufferPtr, nativeBufferSet
 }
 from "std/os" import {
     malloc, memset
 }
 from "./modules" import { fileExists }
+from "../engine/eval" import { funcPrototypeObj }
 from "std/platform" import { pipe, write, read }
 from "std/event" import { setNonblocking }
 from "std/unicode" import { encodeCodepoint }
@@ -439,7 +440,7 @@ pub fn napi_typeof(_env: *u8, value: i64, result: *u8): i32 {
         JSValue.BigInt(_s) => {
             napiWriteI32(result, 9)
         }
-        JSValue.Func(_f, _e) => {
+        JSValue.Func(_f, _e, _fo) => {
             napiWriteI32(result, 7)
         }
         JSValue.Native(_i) => {
@@ -1096,14 +1097,11 @@ fn napiNewBufferView(length: i64, source: *u8): i64 {
 }
 
 fn napiBufferPrototype(): i64 {
-    match scopeLookup(gInterp, 0, "Buffer") {
-        JSValue.Func(fnIdx, _env) => {
-            return getFuncProto(&mut gInterp, fnIdx)
-        }
-        _ => {
-            return -1
-        }
+    let bufCtor = scopeLookup(gInterp, 0, "Buffer")
+    if funcHandle(bufCtor) < 0 {
+        return -1
     }
+    return funcPrototypeObj(&mut gInterp, bufCtor)
 }
 
 fn napiWrapBufferView(view: i64): i64 {

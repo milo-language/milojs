@@ -1,0 +1,25 @@
+for-var distinct false false
+for-var props 1 undefined 0
+class protos false false
+instanceof true false true
+patch A only 2 1
+f().prototype false false
+constructor link true true
+class constructor link true
+map 2 one two
+set 2 true false
+weakmap true false 1
+Object.is true false
+indexOf -1 1 true false
+hoisted per call true
+hoisted stable true
+block decl per entry false
+delete name  false
+[ 'length', 'name', 'prototype' ]
+[ 'length', 'name', 'prototype', 's' ]
+[ 'constructor', 'm' ]
+[ 'length', 'name' ]
+ctor props b a s before,after
+bound false false function
+replaced proto new true false
+no prototype undefined undefined

@@ -227,12 +227,10 @@ fn cmplMembers(st: &Interp, base: &string, prefix: &string, out: &mut Vec<string
         JSValue.Str(s) => {
             cmplAddAll(&mut out, &mut kinds, cmplStringMethods(), prefix, CMPL_BUILTIN)
         }
-        JSValue.Func(fi, env) => {
-            // statics (`class C { static make() {} }`) live in a side object made
-            // lazily, so a function that never got one still has index -1
-            if fi < st.funcStatics.len() && st.funcStatics[fi] >= 0 {
-                cmplObjectProps(st, st.funcStatics[fi], prefix, &mut out, &mut kinds)
-            }
+        JSValue.Func(_fi, _env, fo) => {
+            // statics (`class C { static make() {} }`) are own properties of
+            // the function object
+            cmplObjectProps(st, fo, prefix, &mut out, &mut kinds)
             cmplAddAll(&mut out, &mut kinds, cmplFunctionMethods(), prefix, CMPL_BUILTIN)
         }
         JSValue.Native(nid) => {

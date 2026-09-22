@@ -18,12 +18,12 @@ from "./value" import {
 from "./runtime" import {
     objGet, getNativeProps, f64ToBits, f32ToBits, bitsToF64, bitsToF32, mapFind, mapPut, pushTemp,
     popTemp, newObject, ensureExtra, newArray, arrPush, arrLen, objSet, nativePropsOf, objHas,
-    objOwnIndex, taWidth, arrIsHole, arrMarkHole, arrGet, objDeleteKey, arrHasIndex, getFuncProto,
-    linkProtoConstructor, setArrayLength, sameValueZero, arrSet,
+    objOwnIndex, taWidth, arrIsHole, arrMarkHole, arrGet, objDeleteKey, arrHasIndex,
+    setArrayLength, sameValueZero, arrSet,
     Interp
 }
 from "./eval" import {
-    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, makeError, throwErr, taIsDetached, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, valueIsArrayLike, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, isSymbolStr, ARRAY_LIKE_MAX
+    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, makeError, throwErr, taIsDetached, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, valueIsArrayLike, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, funcPrototypeObj, isSymbolStr, ARRAY_LIKE_MAX
 }
 from "./ast" import { Prog }
 from "std/datetime" import { DateTime }
@@ -2105,15 +2105,13 @@ fn constructWithLength(prog: &Prog, ctor: &JSValue, len: i64, st: &mut Interp): 
         st.newTarget = savedTarget
         return r
     }
+    let proto = funcPrototypeObj(&mut st, ctor)
     let inst = newObject(&mut st)
-    st.objects[inst].ctor = f
-    let proto = getFuncProto(&mut st, f)
-    linkProtoConstructor(&mut st, proto, f, funcEnv(ctor))
     st.objects[inst].proto = proto
     pushTemp(&mut st, JSValue.Obj(inst))
     let savedTarget = cloneValue(st.newTarget)
     st.newTarget = cloneValue(ctor)
-    let result = callFunction(prog, f, funcEnv(ctor), cargs, JSValue.Obj(inst), &mut st)
+    let result = callFunction(prog, ctor, cargs, JSValue.Obj(inst), &mut st)
     st.newTarget = savedTarget
     popTemp(&mut st)
     match result {

@@ -356,8 +356,12 @@ pub enum JSValue {
     Bool(bool),
     Number(f64),
     Str(string),
-    // (funcs index, captured scope index) — the closure's environment link
-    Func(i64, i64),
+    // (funcs index, captured scope index, function object). The third field is
+    // an index into Interp.objects: the closure's IDENTITY and its property bag,
+    // minted once by makeClosure. fnIdx and env stay inline so the call path
+    // needs no load through the object; the object repeats them for holders of
+    // only the object (the collector, a prototype's `constructor`).
+    Func(i64, i64, i64),
     // heap object handle — index into Interp.objects (stable, GC-managed)
     Obj(i64),
     // a built-in function or constructor (see callNative)
@@ -440,8 +444,8 @@ pub fn cloneValue(v: &JSValue): JSValue {
         JSValue.BigInt(s) => {
             return JSValue.BigInt(s.clone())
         }
-        JSValue.Func(f, env) => {
-            return JSValue.Func(f, env)
+        JSValue.Func(f, env, fo) => {
+            return JSValue.Func(f, env, fo)
         }
         JSValue.Obj(o) => {
             return JSValue.Obj(o)
@@ -657,7 +661,7 @@ pub fn toStr(v: &JSValue): string {
             // String(10n) is "10" (no trailing "n")
             return s.clone()
         }
-        JSValue.Func(_f, _env) => {
+        JSValue.Func(_f, _env, _fo) => {
             return "function"
         }
         JSValue.Obj(_o) => {
@@ -1625,7 +1629,7 @@ pub fn objHandle(v: &JSValue): i64 {
 // function index if v is a user function, else -1
 pub fn funcHandle(v: &JSValue): i64 {
     match v {
-        JSValue.Func(f, _e) => {
+        JSValue.Func(f, _e, _fo) => {
             return f
         }
         _ => {
@@ -1650,11 +1654,24 @@ pub fn isNullish(v: &JSValue): bool {
 }
 
 // The closure env (scope index) of a function value, or -1 for non-functions.
-// Function statics are keyed by (fnIdx, env) so per-call closures stay distinct.
 pub fn funcEnv(v: &JSValue): i64 {
     match v {
-        JSValue.Func(_f, e) => {
+        JSValue.Func(_f, e, _fo) => {
             return e
+        }
+        _ => {
+            return -1
+        }
+    }
+}
+
+// The function object (identity and property bag) of a closure value, or -1
+// for non-functions. Reading properties goes through propertyBagOf instead,
+// which materialises name/length/prototype on first use.
+pub fn funcObjOf(v: &JSValue): i64 {
+    match v {
+        JSValue.Func(_f, _e, fo) => {
+            return fo
         }
         _ => {
             return -1
@@ -1914,7 +1931,7 @@ pub fn toNum(v: &JSValue): f64 {
             // Number(10n) is 10; large magnitudes lose precision past 2^53, as in JS
             return strToNum(s)
         }
-        JSValue.Func(_f, _env) => {
+        JSValue.Func(_f, _env, _fo) => {
             return jsNan()
         }
         JSValue.Obj(_o) => {
@@ -1947,7 +1964,7 @@ pub fn truthy(v: &JSValue): bool {
             // 0n is the only falsy BigInt
             return s != "0"
         }
-        JSValue.Func(_f, _env) => {
+        JSValue.Func(_f, _env, _fo) => {
             return true
         }
         JSValue.Obj(_o) => {
@@ -2061,12 +2078,12 @@ pub fn jsStrictEquals(a: &JSValue, b: &JSValue): bool {
                 }
             }
         }
-        JSValue.Func(x, e) => {
+        JSValue.Func(_x, _e, fo1) => {
             match b {
-                JSValue.Func(y, e2) => {
-                    // identity is the closure instance, not the source literal: two
-                    // closures of the same fn from different calls (envs) differ
-                    return x == y && e == e2
+                JSValue.Func(_y, _e2, fo2) => {
+                    // identity is the closure instance, not the source literal or
+                    // its env: two evaluations of one literal in one scope differ
+                    return fo1 == fo2
                 }
                 _ => {
                     return false
@@ -2130,10 +2147,10 @@ pub fn jsEquals(a: &JSValue, b: &JSValue): bool {
                 }
             }
         }
-        JSValue.Func(f1, e1) => {
+        JSValue.Func(_f1, _e1, fo1) => {
             match b {
-                JSValue.Func(f2, e2) => {
-                    return f1 == f2 && e1 == e2
+                JSValue.Func(_f2, _e2, fo2) => {
+                    return fo1 == fo2
                 }
                 _ => {
                     return false
@@ -2169,7 +2186,7 @@ pub fn jsEquals(a: &JSValue, b: &JSValue): bool {
                 JSValue.Null => {
                     return false
                 }
-                JSValue.Func(_f, _e) => {
+                JSValue.Func(_f, _e, _fo) => {
                     return false
                 }
                 JSValue.Obj(_o) => {

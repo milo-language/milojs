@@ -168,7 +168,7 @@ pub fn milojs_value_kind(context: i64, value: i64): i32 {
         JSValue.Number(_v) => { return 3 }
         JSValue.Str(_v) => { return 4 }
         JSValue.Obj(_v) => { return 5 }
-        JSValue.Func(_f, _e) => { return 6 }
+        JSValue.Func(_f, _e, _fo) => { return 6 }
         JSValue.Native(_n) => { return 6 }
         JSValue.BigInt(_v) => { return 7 }
     }

@@ -353,14 +353,6 @@ struct Scope {
     parent: i64,
     vars: Vec<Binding>,
     mark: bool,
-    // per-activation function-object statics: for each function whose closure env
-    // IS this scope, fnStatKeys[k] is its fnIdx and fnStatVals[k] its static-
-    // property object. Keyed here (not globally by fnIdx) so two closures of the
-    // same literal from different calls have separate properties and identity.
-    // Lifetime is the scope's: reusing a freed scope slot resets both, so a
-    // recycled env index can never surface a dead closure's statics.
-    fnStatKeys: Vec<i64>,
-    fnStatVals: Vec<i64>,
     // Annex B B.3.3: names for which the hoist created a var-scoped placeholder on
     // behalf of a function declared inside a nested BLOCK. When that declaration is
     // evaluated, the value is written back here as well as into the block scope, so
@@ -688,8 +680,11 @@ struct JSObj {
     // absent index; far-out elements live as numeric keys in props.
     logicalLen: i64,
     isArray: bool,
-    // the user-function index that `new`'d this object (for instanceof), or -1
-    ctor: i64,
+    // Set only on a closure's function object (see makeClosure): the FuncDef
+    // index and captured scope its JSValue.Func carries, so the collector can
+    // reach the env from the object alone. -1 on every other object.
+    fnIdx: i64,
+    fnEnv: i64,
     // the object's prototype (index into objects), or -1 — the fallback for
     // property lookup; set by `new F()` to F's prototype object
     proto: i64,
@@ -811,10 +806,6 @@ pub struct Interp {
     // rather than a Vec + free-list: stale reuse is the failure this table is
     // most exposed to, and the arena turns it into a checked None.
     accessors: Arena<Accessor>,
-    // fnIdx → its `.prototype` object (index), created lazily; a GC root
-    funcProtos: Vec<i64>,
-    // fnIdx → its static-property object, created lazily; also a GC root
-    funcStatics: Vec<i64>,
     // compiled regexes, indexed by JSObj.regexId (never freed — interp-lifetime)
     regexes: Vec<Regex>,
     // CommonJS module registry. The whole graph is parsed into one shared Prog
@@ -975,9 +966,10 @@ pub struct Interp {
     actCreator: Vec<*u8>,
     actNotified: Vec<bool>,
     // GC roots for an activation whose body has not yet bound its arguments into
-    // a scope: until then the closure env and argument values are reachable only
-    // from the spawned task's closure, which the collector cannot see.
-    actEnv: Vec<i64>,
+    // a scope: until then the callee (its function object and closure env) and
+    // the argument values are reachable only from the spawned task's closure,
+    // which the collector cannot see.
+    actFn: Vec<JSValue>,
     actArgs: Vec<Vec<JSValue>>,
     actThis: Vec<JSValue>,
     // The promise each live activation will settle. Until the body ends, that
@@ -1100,18 +1092,18 @@ pub struct Interp {
 // that main() overwrites with makeInterp().
 pub var gInterp: Interp = Interp {
     scopes: Vec.new(), freeList: Vec.new(), active: Vec.new(),
-    nonCtorFns: Vec.new(), strict: false, objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: Arena { id: 0, data: Vec.new(), gens: Vec.new(), freeList: Vec.new(), live: 0 }, funcProtos: Vec.new(), funcStatics: Vec.new(), regexes: Vec.new(), tempRoots: Vec.new(), vmStack: Vec.new(), vmSp: 0, funcCallTicks: 0, hostRoots: Vec.new(), hostRootLive: Vec.new(),
+    nonCtorFns: Vec.new(), strict: false, objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: Arena { id: 0, data: Vec.new(), gens: Vec.new(), freeList: Vec.new(), live: 0 }, regexes: Vec.new(), tempRoots: Vec.new(), vmStack: Vec.new(), vmSp: 0, funcCallTicks: 0, hostRoots: Vec.new(), hostRootLive: Vec.new(),
     modPaths: Vec.new(), modBlocks: Vec.new(), modStrict: Vec.new(), modExports: Vec.new(), modState: Vec.new(), modDirStack: Vec.new(), modPathStack: Vec.new(), fnFileStack: Vec.new(),
     throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 10000,
     rngState: 88172645463325252,
-    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, nativeKeys: Vec.new(), nativeProps: Vec.new(), resolverProps: Vec.new(), dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, objectProtoPristine: true, symbolCounter: 0, anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actEnv: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), inspectMaxDepth: 2, parseFailed: false, hadUnhandledRejection: false, gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false, builtinGlobals: 0
+    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, nativeKeys: Vec.new(), nativeProps: Vec.new(), resolverProps: Vec.new(), dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, objectProtoPristine: true, symbolCounter: 0, anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actFn: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), inspectMaxDepth: 2, parseFailed: false, hadUnhandledRejection: false, gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false, builtinGlobals: 0
 }
 
 fn allocObj(st: &mut Interp, isArray: bool): i64 {
     st.allocSinceGc = st.allocSinceGc + 1
     let obj = JSObj {
-        props: Vec.new(), elems: Vec.new(), holes: Vec.new(), logicalLen: -1, isArray: isArray, ctor: -1, proto: -1, protoNull: false, isArguments: false, lengthNonWritable: false, isError: false, frozen: false, fnStatInit: false, noExtend: false, sealed: false, isGlobal: false, isArrayBuffer: false, abDetached: false, isDataView: false, promiseState: -1, isBound: false, isEnv: false, isFunctionLike: false, isDate: false, isMap: false, isSet: false, isProxy: false, isGenerator: false, isAsyncGenerator: false, extra: 0, mark: false, free: false
+        props: Vec.new(), elems: Vec.new(), holes: Vec.new(), logicalLen: -1, isArray: isArray, fnIdx: -1, fnEnv: -1, proto: -1, protoNull: false, isArguments: false, lengthNonWritable: false, isError: false, frozen: false, fnStatInit: false, noExtend: false, sealed: false, isGlobal: false, isArrayBuffer: false, abDetached: false, isDataView: false, promiseState: -1, isBound: false, isEnv: false, isFunctionLike: false, isDate: false, isMap: false, isSet: false, isProxy: false, isGenerator: false, isAsyncGenerator: false, extra: 0, mark: false, free: false
     }
     // reuse a freed slot if one exists (indices are stable — handles hold them),
     // otherwise grow the arena
@@ -2001,10 +1993,6 @@ pub fn objHasInChain(st: &Interp, o: i64, key: &string): bool {
     return false
 }
 
-// The .prototype object for a function, created on first access and cached
-// (a GC root via funcProtos). Grows the sparse map as needed.
-// Property bag for a function's own (static) properties. Separate from
-// funcProtos, which holds what instances inherit.
 // Lazily created property bag for a native constructor.
 // nativeKeys/nativeProps are one association list, not a map keyed by an id: a
 // Native is a variant, not an integer, so there is nothing to index a Vec with.
@@ -2089,59 +2077,21 @@ pub fn getNativeProps(st: &mut Interp, n: &Native): i64 {
     return o
 }
 
-pub fn getFuncStatics(st: &mut Interp, fnIdx: i64, envIdx: i64): i64 {
-    // no valid closure env (e.g. a synthesized value): fall back to the global
-    // fnIdx-keyed slot — collisions there are the pre-existing, rarer behavior
-    if envIdx < 0 || envIdx >= st.scopes.len() {
-        while st.funcStatics.len() <= fnIdx {
-            st.funcStatics.push(-1)
-        }
-        if st.funcStatics[fnIdx] < 0 {
-            let o = newObject(&mut st)
-            st.funcStatics[fnIdx] = o
-        }
-        return st.funcStatics[fnIdx]
-    }
-    var k: i64 = 0
-    let n = st.scopes[envIdx].fnStatKeys.len()
-    while k < n {
-        if st.scopes[envIdx].fnStatKeys[k] == fnIdx {
-            return st.scopes[envIdx].fnStatVals[k]
-        }
-        k = k + 1
-    }
-    let o = newObject(&mut st)
-    st.scopes[envIdx].fnStatKeys.push(fnIdx)
-    st.scopes[envIdx].fnStatVals.push(o)
-    return o
-}
-
-pub fn getFuncProto(st: &mut Interp, fnIdx: i64): i64 {
-    while st.funcProtos.len() <= fnIdx {
-        st.funcProtos.push(-1)
-    }
-    if st.funcProtos[fnIdx] < 0 {
-        let p = newObject(&mut st)
-        st.funcProtos[fnIdx] = p
-    }
-    return st.funcProtos[fnIdx]
-}
-
-// `Foo.prototype.constructor` — non-enumerable, so it stays out of for-in and
-// Object.keys on every instance that inherits it. Needs the constructor's
-// closure env, which getFuncProto doesn't have, so callers pass it in.
-pub fn linkProtoConstructor(st: &mut Interp, proto: i64, fnIdx: i64, envIdx: i64) {
-    var i: i64 = 0
-    while i < st.objects[proto].props.len() {
-        if st.objects[proto].props[i].key == "constructor" {
-            return
-        }
-        i = i + 1
-    }
-    st.objects[proto].props.push(Prop {
-        key: "constructor", value: JSValue.Func(fnIdx, envIdx), acc: Option.None, writable: true, enumerable: false, configurable: true
-    }
-    )
+// The one place a new closure value is minted. The function object is the
+// closure's identity, so every evaluation of a function expression, declaration
+// or class gets its own, even in the same scope. Everything that already holds a
+// closure copies the value rather than rebuilding it from its parts.
+//
+// The object is callable-flavoured (isFunctionLike), which is what makes an
+// inherited lookup on it reach Function.prototype rather than Object.prototype.
+// name/length/prototype are NOT created here: propertyBagOf materialises them on
+// first use, so a closure that nobody inspects costs one object.
+pub fn makeClosure(st: &mut Interp, fnIdx: i64, env: i64): JSValue {
+    let fo = allocObj(&mut st, false)
+    st.objects[fo].fnIdx = fnIdx
+    st.objects[fo].fnEnv = env
+    st.objects[fo].isFunctionLike = true
+    return JSValue.Func(fnIdx, env, fo)
 }
 
 pub fn arrLen(st: &Interp, obj: i64): i64 {
@@ -2159,7 +2109,7 @@ pub fn newScope(st: &mut Interp, parent: i64): i64 {
     st.allocSinceGc = st.allocSinceGc + 1
     let sc = Scope {
         parent: parent, vars: Vec.new(), mark: false,
-        fnStatKeys: Vec.new(), fnStatVals: Vec.new(), annexBFns: Vec.new(), withObj: -1,
+        annexBFns: Vec.new(), withObj: -1,
         dispRecv: Vec.new(), dispFn: Vec.new()
     }
     if st.freeList.len() > 0 {
@@ -2195,8 +2145,8 @@ pub fn popTemp(st: &mut Interp) {
 // closure/object graphs terminate.
 fn markValue(st: &mut Interp, v: &JSValue) {
     match v {
-        JSValue.Func(_f, envIdx) => {
-            markScope(&mut st, envIdx)
+        JSValue.Func(_f, envIdx, fo) => {
+            drainMarks(&mut st, fo, envIdx)
         }
         JSValue.Obj(objIdx) => {
             markObject(&mut st, objIdx)
@@ -2230,9 +2180,9 @@ struct MarkTarget {
 // Mirrors markValue's cases exactly, but yields handles instead of a value.
 fn markTargetOf(v: &JSValue): MarkTarget {
     match v {
-        JSValue.Func(_f, envIdx) => {
+        JSValue.Func(_f, envIdx, fo) => {
             return MarkTarget {
-                obj: -1, scope: envIdx
+                obj: fo, scope: envIdx
             }
         }
         JSValue.Obj(o) => {
@@ -2417,6 +2367,10 @@ fn markObjectShallow(st: &mut Interp, i: i64, objs: &mut Vec<i64>, scopes: &mut 
     if proto >= 0 {
         objs.push(proto)
     }
+    // a function object keeps its closure's scope alive
+    if st.objects[i].fnEnv >= 0 {
+        scopes.push(st.objects[i].fnEnv)
+    }
 }
 
 // Mark one scope live and APPEND what it reaches to the worklists.
@@ -2449,13 +2403,6 @@ fn markScopeShallow(st: &mut Interp, i: i64, objs: &mut Vec<i64>, scopes: &mut V
         pushMarkTargets(st.scopes[i].dispRecv[dk], &mut objs, &mut scopes)
         pushMarkTargets(st.scopes[i].dispFn[dk], &mut objs, &mut scopes)
         dk = dk + 1
-    }
-    // this scope's per-instance function statics are roots for anything they hold
-    var fk: i64 = 0
-    let fn2 = st.scopes[i].fnStatVals.len()
-    while fk < fn2 {
-        objs.push(st.scopes[i].fnStatVals[fk])
-        fk = fk + 1
     }
     if parent >= 0 {
         scopes.push(parent)
@@ -2513,8 +2460,9 @@ pub fn collect(st: &mut Interp) {
     // frees objects out from under an activation that is only parked, which
     // surfaces as a use-after-free when it resumes.
     var av: i64 = 0
-    while av < st.actEnv.len() {
-        markScope(&mut st, st.actEnv[av])
+    while av < st.actFn.len() {
+        let afv = cloneValue(st.actFn[av])
+        markValue(&mut st, afv)
         var ag: i64 = 0
         while ag < st.actArgs[av].len() {
             let argv = cloneValue(st.actArgs[av][ag])
@@ -2594,14 +2542,6 @@ pub fn collect(st: &mut Interp) {
     if st.genProtoObj >= 0 {
         markObject(&mut st, st.genProtoObj)
     }
-    // every function's .prototype object is a root (methods live on it)
-    var fp: i64 = 0
-    while fp < st.funcProtos.len() {
-        if st.funcProtos[fp] >= 0 {
-            markObject(&mut st, st.funcProtos[fp])
-        }
-        fp = fp + 1
-    }
     // pending timer callbacks and queued microtasks are roots — nothing else
     // references them until they run
     var tm: i64 = 0
@@ -2670,14 +2610,6 @@ pub fn collect(st: &mut Interp) {
             markObject(&mut st, st.resolverProps[rp])
         }
         rp = rp + 1
-    }
-    // as are static-property bags
-    var fs: i64 = 0
-    while fs < st.funcStatics.len() {
-        if st.funcStatics[fs] >= 0 {
-            markObject(&mut st, st.funcStatics[fs])
-        }
-        fs = fs + 1
     }
     var freed: i64 = 0
     var s: i64 = 0

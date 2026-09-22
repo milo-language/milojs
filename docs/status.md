@@ -70,7 +70,7 @@ keeps in step with the reports.
 
 | set | count |
 |---|---:|
-| engine (`tests/*.js`) | <!--fact:fixtures-engine-->279<!--/fact--> |
+| engine (`tests/*.js`) | <!--fact:fixtures-engine-->281<!--/fact--> |
 | runtime (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->68<!--/fact--> |
 | Milo invariants | <!--fact:fixtures-milo-->3<!--/fact--> + <!--fact:fixtures-milo-errors-->8<!--/fact--> |
 | node-oracle exemptions | <!--fact:fixtures-node-exempt-->7<!--/fact--> |
@@ -80,7 +80,7 @@ conformance percentages.
 
 ## Size
 
-<!--fact:loc-milo-->49.9k<!--/fact--> lines of Milo, <!--fact:loc-js-->18.8k<!--/fact--> of JavaScript, <!--fact:loc-total-->68.7k<!--/fact--> total. No V8,
+<!--fact:loc-milo-->49.8k<!--/fact--> lines of Milo, <!--fact:loc-js-->18.8k<!--/fact--> of JavaScript, <!--fact:loc-total-->68.6k<!--/fact--> total. No V8,
 JavaScriptCore, or C JavaScript engine underneath. Layering: <!--fact:layering-exempt-edges-->4<!--/fact--> registered
 engine to runtime edges, <!--fact:layering-host-globals-->0<!--/fact--> host natives in the engine bootstrap.
 Node-API entry points: <!--fact:napi-entry-points-->84<!--/fact-->, ten of them stubs.

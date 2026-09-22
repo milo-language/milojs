@@ -1217,7 +1217,7 @@ pub fn mjJsonOmitted(v: &JSValue): bool {
         JSValue.Undefined => {
             return true
         }
-        JSValue.Func(_f, _e) => {
+        JSValue.Func(_f, _e, _fo) => {
             return true
         }
         JSValue.Native(_id) => {
@@ -1397,7 +1397,7 @@ fn mjPushStringified(out: &mut string, v: &JSValue, st: &Interp) {
         JSValue.Undefined => {
             out.pushStr("null")
         }
-        JSValue.Func(_f, _e) => {
+        JSValue.Func(_f, _e, _fo) => {
             out.pushStr("null")
         }
         JSValue.Native(_id) => {

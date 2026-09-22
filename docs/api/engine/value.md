@@ -47,7 +47,6 @@ pub fn funcEnv(v: &JSValue): i64
 ```
 
 The closure env (scope index) of a function value, or -1 for non-functions.
-Function statics are keyed by (fnIdx, env) so per-call closures stay distinct.
 
 ### `funcHandle`
 
@@ -56,6 +55,16 @@ pub fn funcHandle(v: &JSValue): i64
 ```
 
 function index if v is a user function, else -1
+
+### `funcObjOf`
+
+```milo
+pub fn funcObjOf(v: &JSValue): i64
+```
+
+The function object (identity and property bag) of a closure value, or -1
+for non-functions. Reading properties goes through propertyBagOf instead,
+which materialises name/length/prototype on first use.
 
 ### `hexDigitVal`
 

@@ -1873,7 +1873,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     vmFlushOuter(&mut st, ch, base, curScope)
                     dirty = false
                     var handled = false
-                    if let JSValue.Func(fIdx, envIdx) = calleeVal {
+                    if let JSValue.Func(fIdx, _envIdx, _fo) = calleeVal {
                         let cid2 = bodyChunkOf(prog, fIdx)
                         // A CLASS constructor takes the slow path even when its body
                         // compiles: callFunction is where "cannot be invoked without
@@ -1894,7 +1894,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                                 st.suppressAsyncSpawn = false
                                 st.suppressGenSpawn = false
                                 st.callDepth = st.callDepth + 1
-                                let callScope = bindActivationScope(prog, fIdx, envIdx, argVals, JSValue.Undefined, &mut st, gChunks[cid2].usesArguments)
+                                let callScope = bindActivationScope(prog, calleeVal, argVals, JSValue.Undefined, &mut st, gChunks[cid2].usesArguments)
                                 pushActive(&mut st, callScope)
                                 // The callee's frame goes ABOVE this one's operands,
                                 // so every live value in every frame stays below vmSp
