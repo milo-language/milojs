@@ -1157,6 +1157,97 @@ pub fn mapSetOverride(st: &Interp, o: i64, key: &string): bool {
     return h < 0 || !st.objects[h].isBound || st.objExtras[st.objects[h].extra].boundMethod != key
 }
 
+pub fn isWeakMethodName(n: &string): bool {
+    return n == "get" || n == "set" || n == "has" || n == "delete" || n == "add"
+}
+
+// CanBeHeldWeakly: an object, a function, or a symbol Symbol.for did not
+// register (a registered one is reachable by name forever, so it could never
+// be collected and the spec refuses it).
+fn canBeHeldWeakly(st: &Interp, v: &JSValue): bool {
+    match v {
+        JSValue.Obj(_h) => {
+            return true
+        }
+        JSValue.Func(_f, _e, _o) => {
+            return true
+        }
+        JSValue.Native(_n) => {
+            return true
+        }
+        JSValue.Sym(id) => {
+            return id >= st.symRegistered.len() || !st.symRegistered[id]
+        }
+        _ => {
+            return false
+        }
+    }
+}
+
+// WeakMap.prototype.set / WeakSet.prototype.add with the key check; throws on
+// a key that cannot be held weakly.
+pub fn weakPut(st: &mut Interp, o: i64, key: JSValue, val: JSValue) {
+    if !canBeHeldWeakly(st, key) {
+        // QuickJS's wording, not node's ("Invalid value used as weak map key"):
+        // the QuickJS corpus asserts the message text and both of its weak
+        // collection cases are in the ratcheted pass set
+        if st.objExtras[st.objects[o].extra].weakKind == 1 {
+            let _t = throwErr(&mut st, "TypeError", "invalid value used as WeakMap key")
+        } else {
+            let _t = throwErr(&mut st, "TypeError", "invalid value used as WeakSet key")
+        }
+        return
+    }
+    mapPut(&mut st, o, key, val)
+}
+
+// WeakMap/WeakSet methods. The receiver has already passed its brand check.
+// A key that cannot be held weakly is never present, so get/has/delete answer
+// "absent" for it rather than throwing; only set/add reject it.
+pub fn weakMethod(o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    let isMapKind = st.objExtras[st.objects[o].extra].weakKind == 1
+    var key = JSValue.Undefined
+    if args.len() > 0 {
+        key = cloneValue(args[0])
+    }
+    if (name == "set" && isMapKind) || (name == "add" && !isMapKind) {
+        var val = JSValue.Bool(true)
+        if isMapKind && args.len() > 1 {
+            val = cloneValue(args[1])
+        }
+        weakPut(&mut st, o, key, val)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        return JSValue.Obj(o)
+    }
+    if !canBeHeldWeakly(st, key) {
+        if name == "get" {
+            return JSValue.Undefined
+        }
+        return JSValue.Bool(false)
+    }
+    let at = mapFind(st, o, key)
+    if name == "get" && isMapKind {
+        if at < 0 {
+            return JSValue.Undefined
+        }
+        return cloneValue(st.objExtras[st.objects[o].extra].mapVals[at])
+    }
+    if name == "has" {
+        return JSValue.Bool(at >= 0)
+    }
+    if name == "delete" {
+        if at < 0 {
+            return JSValue.Bool(false)
+        }
+        let _k = st.objExtras[st.objects[o].extra].mapKeys.remove(at)
+        let _v = st.objExtras[st.objects[o].extra].mapVals.remove(at)
+        return JSValue.Bool(true)
+    }
+    return JSValue.Undefined
+}
+
 // [[Construct]] over any value. `new proxy(...)` with no construct trap has to
 // reach the TARGET's [[Construct]], which may be another proxy's trap, and
 // Reflect.construct has to be able to pass a newTarget that is not the callee —

@@ -1,0 +1,51 @@
+WeakMap.prototype:
+  constructor 0 WeakMap true false true
+  delete 1 delete true false true
+  get 1 get true false true
+  set 2 set true false true
+  has 1 has true false true
+WeakSet.prototype:
+  constructor 0 WeakSet true false true
+  delete 1 delete true false true
+  has 1 has true false true
+  add 1 add true false true
+0 WeakMap 0 WeakSet
+WeakMap WeakSet
+map patch leaves weakmap alone: one two
+true true
+true false true false
+[object WeakMap] [object WeakSet] [object WeakMap]
+identity: true true true
+computed: one true
+undefined undefined undefined undefined undefined undefined
+set primitive: TypeError
+set string: TypeError
+set null: TypeError
+set registered symbol: TypeError
+set local symbol: true
+get local symbol: 3
+add primitive: TypeError
+add returns receiver: true
+absent primitive: undefined false false false false
+delete: true false undefined false true false
+get on Map: TypeError
+set on Map: TypeError
+has on WeakSet: TypeError
+add on WeakMap: TypeError
+has on Set: TypeError
+get on plain: TypeError
+get on undefined: TypeError
+Object.create receiver: TypeError
+Object.create set receiver: TypeError
+call without new: TypeError
+bad entry: TypeError
+bad key in ctor: TypeError
+bad ws ctor: TypeError
+override: patched:two
+restored: two
+ctor adder calls: 2 2
+subclass: sub:40 true true [object WeakMap]
+subclass set: 2 true
+deleted has: TypeError
+in: false
+put back: true

@@ -86,6 +86,14 @@ pub fn isTypedArrayMethodName(n: &string): bool
 
 _Undocumented._
 
+### `isWeakMethodName`
+
+```milo
+pub fn isWeakMethodName(n: &string): bool
+```
+
+_Undocumented._
+
 ### `mapMethod`
 
 ```milo
@@ -191,3 +199,22 @@ pub fn typedArrayOverride(st: &Interp, o: i64, key: &string): bool
 ```
 
 _Undocumented._
+
+### `weakMethod`
+
+```milo
+pub fn weakMethod(o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue
+```
+
+WeakMap/WeakSet methods. The receiver has already passed its brand check.
+A key that cannot be held weakly is never present, so get/has/delete answer
+"absent" for it rather than throwing; only set/add reject it.
+
+### `weakPut`
+
+```milo
+pub fn weakPut(st: &mut Interp, o: i64, key: JSValue, val: JSValue)
+```
+
+WeakMap.prototype.set / WeakSet.prototype.add with the key check; throws on
+a key that cannot be held weakly.

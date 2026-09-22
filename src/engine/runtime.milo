@@ -583,6 +583,10 @@ struct JSObjExtra {
     // Map/Set insertion-ordered entries (isMap/isSet stay inline)
     mapKeys: Vec<JSValue>,
     mapVals: Vec<JSValue>,
+    // WeakMap (1) / WeakSet (2) keep their entries in mapKeys/mapVals but are
+    // NOT isMap/isSet: every isMap site (iteration, size, spread, inspect) must
+    // not see them. 0 on everything else.
+    weakKind: i64,
     // Promise settled value + pending reactions (promiseState stays inline: the
     // -1/0/1/2 discriminator is read on every await/then without needing payload)
     promiseValue: JSValue,
@@ -644,6 +648,7 @@ pub fn defaultExtra(): JSObjExtra {
         proxyHandler: JSValue.Undefined,
         mapKeys: Vec.new(),
         mapVals: Vec.new(),
+        weakKind: 0,
         promiseValue: JSValue.Undefined,
         reactions: Vec.new(),
         promiseResolved: false,
@@ -2362,8 +2367,9 @@ fn markObjectShallow(st: &mut Interp, i: i64, objs: &mut Vec<i64>, scopes: &mut 
             r = r + 1
         }
     }
-    // a Map/Set keeps its entries alive
-    if st.objects[i].isMap || st.objects[i].isSet {
+    // a Map/Set keeps its entries alive, and so does a WeakMap/WeakSet: there
+    // are no weak references, so its keys are held strongly (docs/backlog.md)
+    if st.objects[i].isMap || st.objects[i].isSet || (st.objects[i].extra != 0 && st.objExtras[st.objects[i].extra].weakKind != 0) {
         var mk: i64 = 0
         while mk < st.objExtras[st.objects[i].extra].mapKeys.len() {
             pushMarkTargets(st.objExtras[st.objects[i].extra].mapKeys[mk], &mut objs, &mut scopes)

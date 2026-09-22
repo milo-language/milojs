@@ -3,7 +3,7 @@ system: status
 purpose: current conformance numbers, product gate state, and what is next
 key-files: docs/conformance/node-compat.json, docs/node-compat.md, scripts/test262-sweep.ts, scripts/quickjs-sweep.ts, scripts/node-compat-sweep.ts
 update-when: a sweep is rerun or a product gate changes state
-last-verified: 2026-09-20 (re-verified after the sweep fixture staging and the import() argument work: numbers here are compiled by gen-facts from the committed reports, test262 sample 1187/1470 at 8c4f8dc. Previous note: re-verified after Op.CallMember: every published number held exactly (test262 1182, quickjs 104, node 581, all per-case). Previous note: re-verified for the per-case pass lists and the new pass-set ratchet; every published number reproduced identically on the reseeded corpus checkouts. Previous note: node-compat re-measured with the confirm pass; node-compat.md is the table alone now, so the whole-suite totals and the peer comparison are cited here rather than there)
+last-verified: 2026-09-22 (re-verified after WeakMap/WeakSet became their own natives: Builtin.WeakMap/WeakSet with BRAND_WEAKMAP/BRAND_WEAKSET, entries in the Map side table under JSObjExtra.weakKind (not isMap/isSet), the prelude class is gone, and buildNativeProto installs constructor first to match node's property order. Previous note: re-verified after the sweep fixture staging and the import() argument work: numbers here are compiled by gen-facts from the committed reports, test262 sample 1187/1470 at 8c4f8dc. Previous note: re-verified after Op.CallMember: every published number held exactly (test262 1182, quickjs 104, node 581, all per-case). Previous note: re-verified for the per-case pass lists and the new pass-set ratchet; every published number reproduced identically on the reseeded corpus checkouts. Previous note: node-compat re-measured with the confirm pass; node-compat.md is the table alone now, so the whole-suite totals and the peer comparison are cited here rather than there)
 -->
 
 # milojs status
@@ -70,7 +70,7 @@ keeps in step with the reports.
 
 | set | count |
 |---|---:|
-| engine (`tests/*.js`) | <!--fact:fixtures-engine-->282<!--/fact--> |
+| engine (`tests/*.js`) | <!--fact:fixtures-engine-->283<!--/fact--> |
 | runtime (`tests/runtime/*.js`) | <!--fact:fixtures-runtime-->68<!--/fact--> |
 | Milo invariants | <!--fact:fixtures-milo-->3<!--/fact--> + <!--fact:fixtures-milo-errors-->8<!--/fact--> |
 | node-oracle exemptions | <!--fact:fixtures-node-exempt-->7<!--/fact--> |
@@ -80,7 +80,7 @@ conformance percentages.
 
 ## Size
 
-<!--fact:loc-milo-->50.1k<!--/fact--> lines of Milo, <!--fact:loc-js-->18.8k<!--/fact--> of JavaScript, <!--fact:loc-total-->68.9k<!--/fact--> total. No V8,
+<!--fact:loc-milo-->50.3k<!--/fact--> lines of Milo, <!--fact:loc-js-->18.7k<!--/fact--> of JavaScript, <!--fact:loc-total-->69.0k<!--/fact--> total. No V8,
 JavaScriptCore, or C JavaScript engine underneath. Layering: <!--fact:layering-exempt-edges-->4<!--/fact--> registered
 engine to runtime edges, <!--fact:layering-host-globals-->0<!--/fact--> host natives in the engine bootstrap.
 Node-API entry points: <!--fact:napi-entry-points-->84<!--/fact-->, ten of them stubs.
@@ -117,7 +117,7 @@ that gate fail until the bullet is deleted.
 |---|---|
 | 0, green and measurable | **RED**. `linux-arm64` release job aborts on the runtime smoke test with `free(): invalid pointer`, exit 134, since `0f167c5`. Engine binary clean. Rolling tarballs stuck at 2026-08-15. |
 | 1, embeddable engine preview | partial. C ABI builds, handles survive forced GC, no native-function registration. Reports are now pinned and committed. |
-| 2, credible QuickJS alternative | partial. Every constructor has a real prototype OBJECT, but Map/Set/RegExp/Date/DataView still dispatch their methods by whitelist and ignore an override written onto that prototype (measured per receiver in `docs/milojs-quickjs-plan.md` lane 2). Raw arena indices remain. |
+| 2, credible QuickJS alternative | partial. Every constructor has a real prototype OBJECT. Array, String, the Error family, Map/Set and WeakMap/WeakSet dispatch through it and honour an override; RegExp/Date/DataView and the typed arrays still dispatch their methods by whitelist and ignore an override written onto that prototype (measured per receiver in `docs/milojs-quickjs-plan.md` lane 2). Raw arena indices remain. |
 | 3, Node runtime preview | partial. A real express 4 app boots and serves byte-identical output. See `docs/node-compat.md` for the surface. |
 | 4, performance architecture | **partial, and measured for the first time.** Bytecode VM owns its call frames; recursion depth 2156 to 10000. Tree walker stays as fallback and differential oracle. Against <!--fact:bench-peer-->bun 1.3.10<!--/fact--> on <!--fact:bench-count-->13<!--/fact--> paired microbenches: median **<!--fact:bench-median-->410x<!--/fact-->**, worst **<!--fact:bench-worst-->1907.7x<!--/fact-->** (`<!--fact:bench-worst-name-->callFn<!--/fact-->`), best **<!--fact:bench-best-->57.6x<!--/fact-->** (`<!--fact:bench-best-name-->arith<!--/fact-->`). Every bench carries a ceiling in `docs/conformance/bench-budget.json`, enforced by `tools/check-bench-budget.mjs`; before this the gate was a sentence and a VM that made everything 3x slower would have passed it. |
 

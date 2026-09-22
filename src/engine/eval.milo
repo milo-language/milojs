@@ -9,7 +9,7 @@ from "./bytecode" import {
     tryRunFor, bodyChunkOf, chunkUsesArguments, runChunk, runChunkNumeric, chunkIsNumeric
 }
 from "./methods" import {
-    mapSetOverride,
+    mapSetOverride, weakMethod, weakPut, isWeakMethodName,
     dateMethod, mapMethod, dataViewMethod, isDataViewMethodName, dataViewProto, arrayMethod, arrayMethodGeneric, isArrayMethod, arrayIterNext, typedArrayMethod, typedArrayOverride, typedArrayDataPtr, typedArrayFromBytes, bytesFromTypedArray, isTypedArrayMethodName, taIntegrityBlocked
 }
 from "./ast" import {
@@ -1085,6 +1085,10 @@ pub let BRAND_SET: i64 = 13
 // accepted anything, which reads to the caller as a call that worked.
 pub let BRAND_PROMISE: i64 = 14
 pub let BRAND_REGEXP: i64 = 15
+// WeakMap/WeakSet brand on weakKind, never on isMap/isSet: a Map is not a
+// WeakMap receiver, which is how `WeakMap.prototype.get.call(new Map)` throws.
+pub let BRAND_WEAKMAP: i64 = 16
+pub let BRAND_WEAKSET: i64 = 17
 
 fn brandMatches(st: &Interp, brand: i64, recv: &JSValue): bool {
     if brand == 0 {
@@ -1155,6 +1159,12 @@ fn brandMatches(st: &Interp, brand: i64, recv: &JSValue): bool {
     }
     if brand == BRAND_SET {
         return st.objects[h].isSet
+    }
+    if brand == BRAND_WEAKMAP {
+        return st.objExtras[st.objects[h].extra].weakKind == 1
+    }
+    if brand == BRAND_WEAKSET {
+        return st.objExtras[st.objects[h].extra].weakKind == 2
     }
     if brand == BRAND_PROMISE {
         return st.objects[h].promiseState >= 0
@@ -1448,6 +1458,7 @@ fn builtinIsConstructor(id: Builtin): bool {
     }
     return id == Builtin.Proxy || id == Builtin.ObjectCtor || id == Builtin.String || id == Builtin.Number || id == Builtin.Boolean
         || id == Builtin.Date || id == Builtin.Map || id == Builtin.Set || id == Builtin.RegExp
+        || id == Builtin.WeakMap || id == Builtin.WeakSet
         || id == Builtin.ArrayBuffer || id == Builtin.DataView || id == Builtin.FunctionCtor
 }
 
@@ -1513,6 +1524,12 @@ fn brandName(brand: i64): string {
     }
     if brand == BRAND_SET {
         return "Set"
+    }
+    if brand == BRAND_WEAKMAP {
+        return "WeakMap"
+    }
+    if brand == BRAND_WEAKSET {
+        return "WeakSet"
     }
     if brand == BRAND_PROMISE {
         return "Promise"
@@ -2548,6 +2565,9 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             if st.objects[o].isMap || st.objects[o].isSet {
                 return mapMethod(prog, o, name, args, &mut st)
             }
+            if st.objExtras[st.objects[o].extra].weakKind != 0 && isWeakMethodName(name) {
+                return weakMethod(o, name, args, &mut st)
+            }
             // a bound regex/buffer/typed-array method re-dispatches through here,
             // so these must be reachable or an extracted method silently does
             // nothing (no throw, no result — the process just unwinds)
@@ -2922,6 +2942,12 @@ fn objectTag(st: &Interp, o: i64): string {
     }
     if st.objects[o].isSet {
         return "Set"
+    }
+    if st.objExtras[st.objects[o].extra].weakKind == 1 {
+        return "WeakMap"
+    }
+    if st.objExtras[st.objects[o].extra].weakKind == 2 {
+        return "WeakSet"
     }
     if st.objects[o].promiseState >= 0 {
         return "Promise"
@@ -3734,6 +3760,7 @@ fn nativeRequiresNew(n: &Native): bool {
         }
         Native.Fn(b) => {
             return b == Builtin.Map || b == Builtin.Set || b == Builtin.Proxy
+                || b == Builtin.WeakMap || b == Builtin.WeakSet
                 || b == Builtin.DataView || b == Builtin.ArrayBuffer
         }
         _ => {
@@ -3819,6 +3846,11 @@ fn mapSetFill(id: Builtin, o: i64, src: &JSValue, st: &mut Interp) {
     if id == Builtin.Map {
         adderName = "set"
         hostName = "Map"
+    } else if id == Builtin.WeakMap {
+        adderName = "set"
+        hostName = "WeakMap"
+    } else if id == Builtin.WeakSet {
+        hostName = "WeakSet"
     }
     let adder = getMemberDyn(gProg, o, adderName, &mut st)
     if st.throwing {
@@ -3940,8 +3972,11 @@ fn mapSetFill(id: Builtin, o: i64, src: &JSValue, st: &mut Interp) {
 // it, so a patched Map.prototype.set sees every entry; `fast` says it is still
 // the pristine native and mapPut can stand in for the call.
 fn mapSetAddEntry(id: Builtin, o: i64, e: JSValue, adder: &JSValue, fast: bool, st: &mut Interp) {
-    if id == Builtin.Set {
-        if fast {
+    let weak = id == Builtin.WeakMap || id == Builtin.WeakSet
+    if id == Builtin.Set || id == Builtin.WeakSet {
+        if fast && weak {
+            weakPut(&mut st, o, e, JSValue.Bool(true))
+        } else if fast {
             mapPut(&mut st, o, e, JSValue.Bool(true))
         } else {
             var aArgs: Vec<JSValue> = Vec.new()
@@ -3963,7 +3998,9 @@ fn mapSetAddEntry(id: Builtin, o: i64, e: JSValue, adder: &JSValue, fast: bool, 
         let pv = getMemberDyn(gProg, pair, "1", &mut st)
         popTemp(&mut st)
         if !st.throwing {
-            if fast {
+            if fast && weak {
+                weakPut(&mut st, o, pk, pv)
+            } else if fast {
                 mapPut(&mut st, o, pk, pv)
             } else {
                 var aArgs: Vec<JSValue> = Vec.new()
@@ -3985,6 +4022,12 @@ fn isPristineAdder(st: &Interp, adder: &JSValue, id: Builtin): bool {
     let ex = st.objects[h].extra
     if id == Builtin.Map {
         return st.objExtras[ex].boundBrand == BRAND_MAP && st.objExtras[ex].boundMethod == "set"
+    }
+    if id == Builtin.WeakMap {
+        return st.objExtras[ex].boundBrand == BRAND_WEAKMAP && st.objExtras[ex].boundMethod == "set"
+    }
+    if id == Builtin.WeakSet {
+        return st.objExtras[ex].boundBrand == BRAND_WEAKSET && st.objExtras[ex].boundMethod == "add"
     }
     return st.objExtras[ex].boundBrand == BRAND_SET && st.objExtras[ex].boundMethod == "add"
 }
@@ -4444,6 +4487,25 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return throwErr(&mut st, "TypeError", "Object.defineProperties called on non-object")
         }
         if !objectDefineProperties(&mut st, o, descs) {
+            return JSValue.Undefined
+        }
+        return JSValue.Obj(o)
+    }
+    if id == Builtin.WeakMap || id == Builtin.WeakSet {
+        let o = newObject(&mut st)
+        let wbag = getNativeProps(&mut st, Native.Fn(id))
+        st.objects[o].proto = objHandle(objGet(st, wbag, "prototype"))
+        let we = ensureExtra(&mut st, o)
+        st.objExtras[we].weakKind = 2
+        if id == Builtin.WeakMap {
+            st.objExtras[we].weakKind = 1
+        }
+        pushTemp(&mut st, JSValue.Obj(o))
+        if argVals.len() > 0 {
+            mapSetFill(id, o, argVals[0], &mut st)
+        }
+        popTemp(&mut st)
+        if st.throwing {
             return JSValue.Undefined
         }
         return JSValue.Obj(o)
@@ -10838,6 +10900,18 @@ fn inspectObjBody(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut V
     if st.objects[o].isMap || st.objects[o].isSet {
         return inspectMapSet(st, o, depth, indentLvl, &mut stack, targets)
     }
+    // node cannot enumerate a weak collection either, so it prints no entries
+    let wk = st.objExtras[st.objects[o].extra].weakKind
+    if wk != 0 {
+        var wname = "WeakSet"
+        if wk == 1 {
+            wname = "WeakMap"
+        }
+        if depth > st.inspectMaxDepth {
+            return "[" + wname + "]"
+        }
+        return wname + " { <items unknown> }"
+    }
     if st.objects[o].isFunctionLike {
         return inspectFuncLabel(toStr(objGet(st, o, "name")))
     }
@@ -12099,6 +12173,7 @@ fn adoptBuiltinSlots(st: &mut Interp, dst: i64, src: i64) {
     let se = st.objects[src].extra
     st.objExtras[de].mapKeys = cloneValueVec(st.objExtras[se].mapKeys)
     st.objExtras[de].mapVals = cloneValueVec(st.objExtras[se].mapVals)
+    st.objExtras[de].weakKind = st.objExtras[se].weakKind
     st.objExtras[de].promiseValue = cloneValue(st.objExtras[se].promiseValue)
     st.objExtras[de].boxed = cloneValue(st.objExtras[se].boxed)
     st.objExtras[de].regexId = st.objExtras[se].regexId
@@ -16420,7 +16495,7 @@ fn evalCallArms(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Inte
                         var fillMapSet = false
                         if let Option.Some(bn) = nativeHandle(baseVal) {
                             if let Native.Fn(bid) = bn {
-                                if bid == Builtin.Map || bid == Builtin.Set {
+                                if bid == Builtin.Map || bid == Builtin.Set || bid == Builtin.WeakMap || bid == Builtin.WeakSet {
                                     fillId = bid
                                     fillMapSet = true
                                 }

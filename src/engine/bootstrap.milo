@@ -18,7 +18,7 @@ from "./runtime" import {
     Interp
 }
 from "./eval" import {
-    arityLookup, builtinArityOn, builtinCtorArity, builtinStaticArity, ctorArityData, dateProtoMethodNames, getMember, makeBoundMethod, makeBoundMethodOn, nativeErrorName, staticArityData, symIteratorKey, symToPrimitiveKey, symToStringTagKey, BRAND_BIGINT, BRAND_BOOLEAN, BRAND_CALLABLE, BRAND_DATE, BRAND_MAP, BRAND_NUMBER, BRAND_SET, BRAND_PROMISE, BRAND_REGEXP, BRAND_STRING, BRAND_STRING_GENERIC, BRAND_SYMBOL
+    arityLookup, builtinArityOn, builtinCtorArity, builtinStaticArity, ctorArityData, dateProtoMethodNames, getMember, makeBoundMethod, makeBoundMethodOn, nativeErrorName, staticArityData, symIteratorKey, symToPrimitiveKey, symToStringTagKey, BRAND_BIGINT, BRAND_BOOLEAN, BRAND_CALLABLE, BRAND_DATE, BRAND_MAP, BRAND_NUMBER, BRAND_SET, BRAND_WEAKMAP, BRAND_WEAKSET, BRAND_PROMISE, BRAND_REGEXP, BRAND_STRING, BRAND_STRING_GENERIC, BRAND_SYMBOL
 }
 
 // A bound method that first checks its receiver really is of `brand`. See
@@ -281,6 +281,8 @@ fn buildNativeProto(st: &mut Interp, nativeId: Builtin, names: &Vec<string>): i6
     var host = ""
     if nativeId == Builtin.Map {
         host = "Map"
+    } else if nativeId == Builtin.WeakMap {
+        host = "WeakMap"
     }
     // Every Map/Set prototype method brand-checks its receiver against the
     // internal slot rather than coercing it, so `Set.prototype.clear.call(0)` is
@@ -291,11 +293,19 @@ fn buildNativeProto(st: &mut Interp, nativeId: Builtin, names: &Vec<string>): i6
         brand = BRAND_MAP
     } else if nativeId == Builtin.Set {
         brand = BRAND_SET
+    } else if nativeId == Builtin.WeakMap {
+        brand = BRAND_WEAKMAP
+    } else if nativeId == Builtin.WeakSet {
+        brand = BRAND_WEAKSET
     } else if nativeId == Builtin.Promise {
         brand = BRAND_PROMISE
     } else if nativeId == Builtin.RegExp {
         brand = BRAND_REGEXP
     }
+    // constructor first: node lists it first in every builtin prototype's
+    // Object.getOwnPropertyNames, and that order is observable
+    objSet(&mut st, proto, "constructor", JSValue.Native(Native.Fn(nativeId)))
+    objSetNonEnumerable(&mut st, proto, "constructor")
     var i: i64 = 0
     while i < names.len() {
         let m = makeBoundMethodOn(&mut st, JSValue.Undefined, names[i].clone(), host.clone())
@@ -306,8 +316,6 @@ fn buildNativeProto(st: &mut Interp, nativeId: Builtin, names: &Vec<string>): i6
         objSetNonEnumerable(&mut st, proto, names[i])
         i = i + 1
     }
-    objSet(&mut st, proto, "constructor", JSValue.Native(Native.Fn(nativeId)))
-    objSetNonEnumerable(&mut st, proto, "constructor")
     let bag = getNativeProps(&mut st, Native.Fn(nativeId))
     objDefineProtoAttr(&mut st, bag, "prototype", JSValue.Obj(proto))
     return proto
@@ -411,6 +419,23 @@ fn setupRemainingProtos(st: &mut Interp) {
     let setSizeGetter = makeBrandedMethod(&mut st, "__setSize", BRAND_SET)
     objDefineAccessor(&mut st, st.setProtoObj, "size", setSizeGetter, JSValue.Undefined)
     objSetNonEnumerable(&mut st, st.setProtoObj, "size")
+
+    // node's order, which Object.getOwnPropertyNames reports. They share no
+    // dispatcher with Map/Set: WeakMap was once the Map native itself, so
+    // patching Map.prototype.get changed WeakMap#get.
+    var weakMapNames: Vec<string> = Vec.new()
+    weakMapNames.push("delete")
+    weakMapNames.push("get")
+    weakMapNames.push("set")
+    weakMapNames.push("has")
+    let wmp = buildNativeProto(&mut st, Builtin.WeakMap, weakMapNames)
+    objDefineBuiltinAttr(&mut st, wmp, symToStringTagKey(), JSValue.Str("WeakMap"))
+    var weakSetNames: Vec<string> = Vec.new()
+    weakSetNames.push("delete")
+    weakSetNames.push("has")
+    weakSetNames.push("add")
+    let wsp = buildNativeProto(&mut st, Builtin.WeakSet, weakSetNames)
+    objDefineBuiltinAttr(&mut st, wsp, symToStringTagKey(), JSValue.Str("WeakSet"))
 
     var promNames: Vec<string> = Vec.new()
     promNames.push("then")
@@ -916,10 +941,12 @@ pub fn setupGlobals(st: &mut Interp) {
     }
     scopeDefine(&mut st, 0, "Map", JSValue.Native(Native.Fn(Builtin.Map)))
     nameGlobalCtor(&mut st, "Map", Builtin.Map)
-    scopeDefine(&mut st, 0, "WeakMap", JSValue.Native(Native.Fn(Builtin.Map)))
+    scopeDefine(&mut st, 0, "WeakMap", JSValue.Native(Native.Fn(Builtin.WeakMap)))
+    nameGlobalCtor(&mut st, "WeakMap", Builtin.WeakMap)
     scopeDefine(&mut st, 0, "Set", JSValue.Native(Native.Fn(Builtin.Set)))
     nameGlobalCtor(&mut st, "Set", Builtin.Set)
-    scopeDefine(&mut st, 0, "WeakSet", JSValue.Native(Native.Fn(Builtin.Set)))
+    scopeDefine(&mut st, 0, "WeakSet", JSValue.Native(Native.Fn(Builtin.WeakSet)))
+    nameGlobalCtor(&mut st, "WeakSet", Builtin.WeakSet)
     // Array.prototype.<m> as a bound-method value, so the ES5 idiom
     // Array.prototype.slice.call(arguments) resolves
     let arrayProto = newObject(&mut st)

@@ -112,6 +112,8 @@ pub enum Builtin {
     ObjectDefineProperties,
     Map,
     Set,
+    WeakMap,
+    WeakSet,
     ObjectGetOwnPropNames,
     ArrayFrom,
     ProcessExit,
