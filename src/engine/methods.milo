@@ -16,14 +16,14 @@ from "./value" import {
     JSValue, Builtin, Native
 }
 from "./runtime" import {
-    objGet, getNativeProps, f64ToBits, f32ToBits, bitsToF64, bitsToF32, mapFind, mapPut, pushTemp,
+    objGet, getNativeProps, bigToRawBits, rawBitsToBig, f64ToBits, f32ToBits, bitsToF64, bitsToF32, mapFind, mapPut, pushTemp,
     popTemp, newObject, ensureExtra, newArray, arrPush, arrLen, objSet, nativePropsOf, objHas,
     objOwnIndex, taWidth, arrIsHole, arrMarkHole, arrGet, objDeleteKey, arrHasIndex,
     setArrayLength, sameValueZero, arrSet,
     Interp
 }
 from "./eval" import {
-    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, makeError, throwErr, taIsDetached, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, valueIsArrayLike, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, funcPrototypeObj, ARRAY_LIKE_MAX
+    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, makeError, throwErr, taIsDetached, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, valueIsArrayLike, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, toPrimitiveNumber, isSymbolValue, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, funcPrototypeObj, ARRAY_LIKE_MAX
 }
 from "./ast" import { Prog }
 from "std/datetime" import { DateTime }
@@ -36,6 +36,125 @@ pub fn dataViewProto(st: &mut Interp): i64 {
 
 pub fn isDataViewMethodName(n: &string): bool {
     return n == "getInt8" || n == "getUint8" || n == "getInt16" || n == "getUint16" || n == "getInt32" || n == "getUint32" || n == "getFloat32" || n == "getFloat64" || n == "setInt8" || n == "setUint8" || n == "setInt16" || n == "setUint16" || n == "setInt32" || n == "setUint32" || n == "setFloat32" || n == "setFloat64"
+        || n == "getBigInt64" || n == "setBigInt64" || n == "getBigUint64" || n == "setBigUint64" || n == "getFloat16" || n == "setFloat16"
+}
+
+// IEEE-754 binary16 from a double, rounding to nearest with ties to even, the
+// way setFloat16 and Math.f16round must. Worked on the double's own bits so no
+// intermediate rounding (through f32, say) can double-round.
+fn f64ToF16Bits(x: f64): i64 {
+    let bits = f64ToBits(x)
+    let sign = (bits >> 48) & 32768
+    let exp = (bits >> 52) & 2047
+    let frac = bits & 4503599627370495
+    if exp == 2047 {
+        if frac != 0 {
+            return 32256
+        }
+        return sign | 31744
+    }
+    if exp == 0 {
+        // a double subnormal is far below half's smallest subnormal
+        return sign
+    }
+    let he = exp - 1023 + 15
+    let m = frac | 4503599627370496
+    if he >= 1 {
+        var q = m >> 42
+        let rem = m & 4398046511103
+        let half: i64 = 2199023255552
+        if rem > half || (rem == half && (q & 1) == 1) {
+            q = q + 1
+        }
+        var e2 = he
+        if q == 2048 {
+            q = 1024
+            e2 = e2 + 1
+        }
+        if e2 >= 31 {
+            return sign | 31744
+        }
+        return sign | (e2 << 10) | (q & 1023)
+    }
+    if he < -10 {
+        return sign
+    }
+    let shift = 42 + (1 - he)
+    var q = m >> shift
+    let rem = m & (((1 as i64) << shift) - 1)
+    let half = (1 as i64) << (shift - 1)
+    if rem > half || (rem == half && (q & 1) == 1) {
+        q = q + 1
+    }
+    // q reaching 1024 is exactly the smallest normal's encoding
+    return sign | q
+}
+
+fn f16BitsToF64(h: i64): f64 {
+    let neg = (h & 32768) != 0
+    let e = (h >> 10) & 31
+    let f = h & 1023
+    var v: f64 = 0.0
+    if e == 0 {
+        v = (f as f64) * 0.000000059604644775390625
+    } else if e == 31 {
+        if f != 0 {
+            return jsNan()
+        }
+        v = 1.0 / 0.0
+    } else {
+        v = ((1024 + f) as f64) * Math.pow(2.0, (e - 25) as f64)
+    }
+    if neg {
+        // times -1, not 0 - v: the latter turns -0 into +0
+        return v * -1.0
+    }
+    return v
+}
+
+// ToBigInt, as setBigInt64/setBigUint64 need it: a Number is a TypeError, not
+// a conversion (only the BigInt() function converts one). Throws and answers
+// "0" on failure.
+fn toBigIntDigits(prog: &Prog, st: &mut Interp, v: &JSValue): string {
+    match v {
+        JSValue.BigInt(bs) => {
+            return bs.clone()
+        }
+        JSValue.Bool(b) => {
+            if b {
+                return "1"
+            }
+            return "0"
+        }
+        JSValue.Str(_s) => {
+            var cargs: Vec<JSValue> = Vec.new()
+            cargs.push(cloneValue(v))
+            let r = callValue(prog, JSValue.Native(Native.Fn(Builtin.BigInt)), cargs, JSValue.Undefined, &mut st)
+            if let JSValue.BigInt(rs) = r {
+                return rs.clone()
+            }
+            return "0"
+        }
+        JSValue.Obj(_h) => {
+            let p = toPrimitiveNumber(prog, v, &mut st)
+            if st.throwing {
+                return "0"
+            }
+            if objHandle(p) >= 0 {
+                let _t = throwErr(&mut st, "TypeError", "Cannot convert object to a BigInt")
+                return "0"
+            }
+            return toBigIntDigits(prog, &mut st, p)
+        }
+        _ => {
+            var shown = "value"
+            if !isSymbolValue(v) {
+                shown = toStr(v)
+            }
+            let _t = throwErr(&mut st, "TypeError", "Cannot convert " + shown + " to a BigInt")
+            return "0"
+        }
+    }
 }
 
 // DataView get/set. Default endianness is BIG-endian (the littleEndian arg
@@ -56,7 +175,16 @@ pub fn dataViewMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, s
         width = 8
         isFloat = true
     }
-    if name == "getInt8" || name == "setInt8" || name == "getInt16" || name == "setInt16" || name == "getInt32" || name == "setInt32" {
+    let isBig = name == "getBigInt64" || name == "setBigInt64" || name == "getBigUint64" || name == "setBigUint64"
+    let isF16 = name == "getFloat16" || name == "setFloat16"
+    if isBig {
+        width = 8
+    } else if isF16 {
+        width = 2
+        isFloat = true
+    }
+    if name == "getInt8" || name == "setInt8" || name == "getInt16" || name == "setInt16" || name == "getInt32" || name == "setInt32"
+        || name == "getBigInt64" || name == "setBigInt64" {
         signed = true
     }
     // "set..." starts with 's' (115), "get..." with 'g'
@@ -89,7 +217,17 @@ pub fn dataViewMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, s
     // running after it. Reading the argument only at the store site put the two
     // in the wrong order.
     var value: f64 = 0.0
-    if isSet && args.len() > 1 {
+    var bigDigits = "0"
+    if isSet && isBig {
+        var bv = JSValue.Undefined
+        if args.len() > 1 {
+            bv = cloneValue(args[1])
+        }
+        bigDigits = toBigIntDigits(prog, &mut st, bv)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+    } else if isSet && args.len() > 1 {
         value = toNumProg(prog, args[1], &mut st)
         if st.throwing {
             return JSValue.Undefined
@@ -115,7 +253,11 @@ pub fn dataViewMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, s
             littleEndian = truthy(args[2])
         }
         var bits: i64 = 0
-        if isFloat {
+        if isBig {
+            bits = bigToRawBits(bigDigits)
+        } else if isF16 {
+            bits = f64ToF16Bits(value)
+        } else if isFloat {
             if width == 8 {
                 bits = f64ToBits(value)
             } else {
@@ -148,6 +290,12 @@ pub fn dataViewMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, s
         }
         bits = bits | ((st.objExtras[st.objects[buf].extra].bytes[absPos + i] as i64) << shift)
         i = i + 1
+    }
+    if isBig {
+        return JSValue.BigInt(rawBitsToBig(bits, signed))
+    }
+    if isF16 {
+        return JSValue.Number(f16BitsToF64(bits))
     }
     if isFloat {
         if width == 8 {

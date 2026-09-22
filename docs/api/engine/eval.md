@@ -975,6 +975,14 @@ honoured and a symbol is the spec's TypeError rather than NaN. The mirror of
 toStrProg. Loose equality never reaches here (it compares symbols by
 identity first), so every caller is a spec ToNumber position.
 
+### `toPrimitiveNumber`
+
+```milo
+pub fn toPrimitiveNumber(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue
+```
+
+_Undocumented._
+
 ### `toPropertyKey`
 
 ```milo

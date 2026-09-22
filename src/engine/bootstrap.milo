@@ -218,31 +218,11 @@ fn setupBufferProtos(st: &mut Interp) {
 
     let dvProto = newObject(&mut st)
     st.objects[dvProto].proto = st.objectProtoObj
-    var dvNames: Vec<string> = Vec.new()
-    dvNames.push("getInt8")
-    dvNames.push("getUint8")
-    dvNames.push("getInt16")
-    dvNames.push("getUint16")
-    dvNames.push("getInt32")
-    dvNames.push("getUint32")
-    dvNames.push("getFloat32")
-    dvNames.push("getFloat64")
-    dvNames.push("setInt8")
-    dvNames.push("setUint8")
-    dvNames.push("setInt16")
-    dvNames.push("setUint16")
-    dvNames.push("setInt32")
-    dvNames.push("setUint32")
-    dvNames.push("setFloat32")
-    dvNames.push("setFloat64")
-    var d: i64 = 0
-    while d < dvNames.len() {
-        objSet(&mut st, dvProto, dvNames[d].clone(), makeBrandedMethod(&mut st, dvNames[d].clone(), 3))
-        objSetNonEnumerable(&mut st, dvProto, dvNames[d])
-        d = d + 1
-    }
+    objSet(&mut st, dvProto, "constructor", JSValue.Native(Native.Fn(Builtin.DataView)))
+    objSetNonEnumerable(&mut st, dvProto, "constructor")
     // buffer/byteLength/byteOffset are accessors here too, and reading one off
-    // anything that is not a DataView is a TypeError.
+    // anything that is not a DataView is a TypeError. Node's own-key order:
+    // the accessors, then each get/set pair.
     var dvAcc: Vec<string> = Vec.new()
     dvAcc.push("buffer")
     dvAcc.push("byteLength")
@@ -254,12 +234,22 @@ fn setupBufferProtos(st: &mut Interp) {
     var dq: i64 = 0
     while dq < dvAcc.len() {
         let dg = makeBrandedMethod(&mut st, dvGet[dq].clone(), 3)
+        objDefineBuiltinAttr(&mut st, objHandle(dg), "name", JSValue.Str("get " + dvAcc[dq].clone()))
+        objDefineBuiltinAttr(&mut st, objHandle(dg), "length", JSValue.Number(0.0))
         objDefineAccessor(&mut st, dvProto, dvAcc[dq].clone(), dg, JSValue.Undefined)
         objSetNonEnumerable(&mut st, dvProto, dvAcc[dq])
         dq = dq + 1
     }
-    objSet(&mut st, dvProto, "constructor", JSValue.Native(Native.Fn(Builtin.DataView)))
-    objSetNonEnumerable(&mut st, dvProto, "constructor")
+    for dk in ["Int8", "Uint8", "Int16", "Uint16", "Int32", "Uint32", "Float32", "Float64", "BigInt64", "BigUint64", "Float16"] {
+        for dp in ["get", "set"] {
+            let dn = dp + dk
+            objSet(&mut st, dvProto, dn.clone(), makeBrandedMethod(&mut st, dn.clone(), 3))
+            objSetNonEnumerable(&mut st, dvProto, dn)
+        }
+    }
+    objDefineBuiltinAttr(&mut st, dvProto, symToStringTagKey(), JSValue.Str("DataView"))
+    st.dataViewProtoObj = dvProto
+    st.dataViewProtoPristine = true
     let dvBag = getNativeProps(&mut st, Native.Fn(Builtin.DataView))
     objDefineProtoAttr(&mut st, dvBag, "prototype", JSValue.Obj(dvProto))
 }

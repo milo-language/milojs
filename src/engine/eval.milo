@@ -385,7 +385,7 @@ pub fn makeWrapper(st: &mut Interp, v: &JSValue): JSValue {
     return JSValue.Obj(o)
 }
 
-fn toPrimitiveNumber(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
+pub fn toPrimitiveNumber(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     let bh = objHandle(v)
     if bh >= 0 && isWrapperObj(st, bh) {
         return boxedPrimitive(st, bh)
@@ -957,9 +957,6 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
             return makeBoundMethod(&mut st, JSValue.Obj(o), key.clone())
         }
         if st.objects[o].isArrayBuffer && (key == "slice" || key == "resize" || key == "transfer") {
-            return makeBoundMethod(&mut st, JSValue.Obj(o), key.clone())
-        }
-        if st.objects[o].isDataView && isDataViewMethodName(key) {
             return makeBoundMethod(&mut st, JSValue.Obj(o), key.clone())
         }
         if st.objects[o].isAsyncGenerator && key == symAsyncIteratorKey() {
@@ -3462,6 +3459,9 @@ fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
     }
     if o == st.regexProtoObj {
         st.regexProtoPristine = false
+    }
+    if o == st.dataViewProtoObj {
+        st.dataViewProtoPristine = false
     }
     if o == st.objectProtoObj {
         st.objectProtoPristine = false
@@ -15729,6 +15729,19 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                     popTemp(&mut st)
                     return ownR
                 }
+            }
+            // The Array guard for DataView: a view still linked to an untouched
+            // DataView.prototype, with no own property of the name, can only
+            // reach the native accessor methods, so call them directly.
+            if st.objects[o].isDataView && st.dataViewProtoPristine && st.objects[o].proto == st.dataViewProtoObj
+                && isDataViewMethodName(name) && objOwnIndex(st, o, name) < 0 {
+                let argVals = evalArgs(prog, argsIdx, &mut st, scope)
+                if st.throwing {
+                    return JSValue.Undefined
+                }
+                let r = dataViewMethod(prog, o, name, argVals, &mut st)
+                popTemp(&mut st)
+                return r
             }
             // ArrayBuffer methods (resize/transfer/slice) live in
             // callBuiltinByName; route them there rather than duplicating
