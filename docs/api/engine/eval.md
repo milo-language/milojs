@@ -716,6 +716,15 @@ pub fn propertyBagOf(st: &mut Interp, v: &JSValue): i64
 
 _Undocumented._
 
+### `regexIsPlain`
+
+```milo
+pub fn regexIsPlain(st: &Interp, h: i64): bool
+```
+
+A real regex that can take the native paths: RegExp.prototype untouched,
+still its prototype, and no own `exec`, which every RegExpExec reads first.
+
 ### `registerUsing`
 
 ```milo

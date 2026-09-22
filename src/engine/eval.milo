@@ -38,13 +38,13 @@ from "./runtime" import {
     newSymbol, symbolFor, symbolKeyFor, symDescValue, symbolDisplay
 }
 from "./strutil" import {
-    strSlice
+    strSlice, jsIndexOf
 }
 from "./builtins" import {
     strCodePoints, utf16Length, utf16Slice, mjStringifyFast, jsTrim, stringFromUtf16Units,
     mjNextRandom, mjFloor, mjCeil, mjRound, mjTrunc, mjAbs, mjSign,
     isRegexAccessorName,
-    stringMethod, jsCharAt, mjStringifyVal, mjJsonParse, mjJsonOmitted, numToIndex, regexMethod, isRegexMethodName, makeRegex, regexArgFor, stringRegexOp, stringOpNeedsRegexArg, isStringRegexOp, primitiveMethod, isStringMethodName, isPrimitiveMethodName
+    stringMethod, jsCharAt, mjStringifyVal, mjJsonParse, mjJsonOmitted, numToIndex, regexMethod, isRegexMethodName, makeRegex, regexArgFor, stringRegexOp, primitiveMethod, isStringMethodName, isPrimitiveMethodName
 }
 from "./bigint" import {
     bnStrFrom, bnShl, bnShr, bnBitwise,
@@ -954,9 +954,6 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
         // builtin methods are dispatched by name, not stored as properties, so
         // reading one as a value needs a bound method synthesised here
         if st.objects[o].promiseState >= 0 && (key == "then" || key == "catch" || key == "finally") {
-            return makeBoundMethod(&mut st, JSValue.Obj(o), key.clone())
-        }
-        if st.objExtras[st.objects[o].extra].regexId >= 0 && isRegexMethodName(key) {
             return makeBoundMethod(&mut st, JSValue.Obj(o), key.clone())
         }
         if st.objects[o].isArrayBuffer && (key == "slice" || key == "resize" || key == "transfer") {
@@ -2174,14 +2171,8 @@ fn isBuiltinAccessorName(n: &string): bool {
     return n == "__speciesSelf" || n == "__mapSize" || n == "__setSize" || n == "__taLength" || n == "__taByteLength" || n == "__taByteOffset" || n == "__taBuffer" || n == "__dvByteLength" || n == "__dvByteOffset" || n == "__dvBuffer"
 }
 
-// Invoke a builtin method by name against an already-evaluated receiver+args.
-// The spec runs match/replace/search/split THROUGH the argument: String.prototype
-// .replace looks for a @@replace method on its first argument and hands the whole
-// operation over. milojs implements the String side and has RegExp.prototype's
-// symbol methods delegate back to it, which works for a real regex and fails for
-// anything else -- a custom matcher object was simply ignored and the argument
-// stringified. This restores the spec's direction for the case that was broken,
-// without disturbing the regex path that the rest of the engine is built on.
+// Which RegExp.prototype symbol method a String.prototype regex operation hands
+// itself to (see stringRegexProtocol).
 fn stringSymbolOpKey(name: &string): string {
     if name == "match" {
         return symKey(WK_MATCH)
@@ -2201,41 +2192,182 @@ fn stringSymbolOpKey(name: &string): string {
     return ""
 }
 
-// The argument's own symbol method, when it has one and is NOT a regex (a regex
-// goes down the engine's own path, which is both faster and the implementation
-// those symbol methods delegate to -- consulting it here would be a loop).
-fn stringOpSymbolMethod(prog: &Prog, st: &mut Interp, name: &string, args: &Vec<JSValue>): JSValue {
-    let key = stringSymbolOpKey(name)
-    if key.len() == 0 || args.len() == 0 {
-        return JSValue.Undefined
+
+// A real regex that can take the native paths: RegExp.prototype untouched,
+// still its prototype, and no own `exec`, which every RegExpExec reads first.
+pub fn regexIsPlain(st: &Interp, h: i64): bool {
+    return st.regexProtoPristine && h >= 0 && st.objExtras[st.objects[h].extra].regexId >= 0
+        && st.objects[h].proto == st.regexProtoObj && objOwnIndex(st, h, "exec") < 0
+}
+
+fn isRegexSymbolOpKey(n: &string): bool {
+    let id = symIdOfKey(n)
+    return id == WK_MATCH || id == WK_MATCH_ALL || id == WK_REPLACE || id == WK_SEARCH || id == WK_SPLIT
+}
+
+// The names callMember may send straight to regexMethod on a plain regex.
+fn isRegexFastName(n: &string): bool {
+    return n == "exec" || n == "test" || n == "toString" || n == "compile" || isRegexSymbolOpKey(n)
+}
+
+// RegExp.prototype.test and the @@match/@@matchAll/@@replace/@@search/@@split
+// methods. A plain regex runs the native implementation; any other object
+// runs the spec's algorithm, self-hosted in engine-prelude.js, which calls the
+// receiver's own `exec` the way the spec's RegExpExec does. The native paths
+// never read `exec`, which is exactly why they are only valid on a plain regex.
+fn regexProtoOp(prog: &Prog, recv: &JSValue, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+    var display = keyFunctionName(st, name)
+    var implName = ""
+    let id = symIdOfKey(name)
+    if name == "__reTest" {
+        display = "test"
+        implName = "test"
+    } else if id == WK_MATCH {
+        implName = "match"
+    } else if id == WK_MATCH_ALL {
+        implName = "matchAll"
+    } else if id == WK_REPLACE {
+        implName = "replace"
+    } else if id == WK_SEARCH {
+        implName = "search"
+    } else {
+        implName = "split"
     }
-    let h = objHandle(args[0])
-    if h < 0 {
-        return JSValue.Undefined
+    let h = objHandle(recv)
+    if h < 0 && funcHandle(recv) < 0 {
+        return throwErr(&mut st, "TypeError", "RegExp.prototype." + display + " called on incompatible receiver " + toStr(recv))
     }
-    let m = getMemberDyn(prog, h, key, &mut st)
-    if st.throwing || !isCallableIn(st, m) {
-        return JSValue.Undefined
+    // matchAll on a non-global regex yields one match and stops, which the
+    // native iterator (built for String.prototype.matchAll, where the spec
+    // rejects that case) does not do.
+    if regexIsPlain(st, h) && !(id == WK_MATCH_ALL && !st.regexes[st.objExtras[st.objects[h].extra].regexId].flagG) {
+        if name == "__reTest" {
+            return regexMethod(&mut st, h, "test", args)
+        }
+        return regexMethod(&mut st, h, name, args)
     }
-    // A REGEX resolving to RegExp.prototype's own symbol method goes down the
-    // engine's path instead: those methods delegate back to the String operation,
-    // so calling one here would loop. An OVERRIDE -- which is the whole point,
-    // `class R extends RegExp { [Symbol.match]() {...} }` -- is a different
-    // object and is honoured.
-    // A bound-method value is rebuilt on every read, so identity comparison
-    // against RegExp.prototype's copy does not work. What distinguishes the
-    // engine's own delegating method is its recorded name: it IS the symbol key.
-    // Calling it from here would delegate straight back to this String operation
-    // and recurse until the stack died -- which is exactly what happened before
-    // this check replaced the identity one.
-    let mh = objHandle(m)
-    if mh >= 0 && st.objExtras[st.objects[mh].extra].boundMethod == key.clone() {
-        return JSValue.Undefined
+    let spec = objHandle(scopeLookup(st, 0, "__reSpec"))
+    var f = JSValue.Undefined
+    if spec >= 0 {
+        f = objGet(st, spec, implName)
     }
-    return m
+    if !isCallableIn(st, f) {
+        return throwErr(&mut st, "TypeError", "RegExp.prototype." + display + " needs the engine prelude")
+    }
+    var fargs: Vec<JSValue> = Vec.new()
+    fargs.push(cloneValue(recv))
+    var i: i64 = 0
+    while i < args.len() {
+        fargs.push(cloneValue(args[i]))
+        i = i + 1
+    }
+    return callValue(prog, f, fargs, JSValue.Undefined, &mut st)
+}
+
+// String.prototype.match/matchAll/replace/replaceAll/search/split, in the
+// spec's direction: the argument's @@match (etc.) does the work, looked up and
+// called whatever it is, and a string argument is made into a RegExp whose
+// @@match is invoked. Only a plain regex, or a fresh one while RegExp.prototype
+// is pristine, skips the lookup for the native implementation. None means the
+// operation takes its literal-string form (replace/split with a non-regex).
+fn stringRegexProtocol(prog: &Prog, st: &mut Interp, sRef: &string, nameRef: &string, args: &Vec<JSValue>): Option<JSValue> {
+    // copied before anything below re-enters the interpreter: either may point
+    // into AST storage that a require can move
+    let sv = sRef.clone()
+    let nm = nameRef.clone()
+    let key = stringSymbolOpKey(nm)
+    if key.len() == 0 {
+        return Option.None
+    }
+    var arg0 = JSValue.Undefined
+    if args.len() > 0 {
+        arg0 = cloneValue(args[0])
+    }
+    let h = objHandle(arg0)
+    if h >= 0 {
+        if regexIsPlain(st, h) && objOwnIndex(st, h, key) < 0 {
+            return Option.Some(stringRegexOp(prog, sv, nm, args, &mut st))
+        }
+        // replaceAll and matchAll reject a non-global regex before looking the
+        // method up; IsRegExp consults @@match first, then [[RegExpMatcher]]
+        if nm == "replaceAll" || nm == "matchAll" {
+            let mm = getMemberDyn(prog, h, symKey(WK_MATCH), &mut st)
+            if st.throwing {
+                return Option.Some(JSValue.Undefined)
+            }
+            var isRe = st.objExtras[st.objects[h].extra].regexId >= 0
+            if !isUndefinedValue(mm) {
+                isRe = truthy(mm)
+            }
+            if isRe {
+                let fl = getMemberDyn(prog, h, "flags", &mut st)
+                if st.throwing {
+                    return Option.Some(JSValue.Undefined)
+                }
+                if isNullish(fl) {
+                    return Option.Some(throwErr(&mut st, "TypeError", "String.prototype." + nm.clone() + " called with a RegExp whose flags are " + toStr(fl)))
+                }
+                let fs = toStrProg(prog, fl, &mut st)
+                if st.throwing {
+                    return Option.Some(JSValue.Undefined)
+                }
+                if jsIndexOf(fs, "g", 0) < 0 {
+                    if nm == "replaceAll" {
+                        return Option.Some(throwErr(&mut st, "TypeError", "replaceAll must be called with a global RegExp"))
+                    }
+                    return Option.Some(throwErr(&mut st, "TypeError", "String.prototype.matchAll called with a non-global RegExp argument"))
+                }
+            }
+        }
+        pushTemp(&mut st, cloneValue(arg0))
+        let m = getMemberDyn(prog, h, key, &mut st)
+        popTemp(&mut st)
+        if st.throwing {
+            return Option.Some(JSValue.Undefined)
+        }
+        if !isNullish(m) {
+            if !isCallableIn(st, m) {
+                return Option.Some(throwErr(&mut st, "TypeError", toStr(m) + " is not a function"))
+            }
+            var callArgs: Vec<JSValue> = Vec.new()
+            callArgs.push(JSValue.Str(sv.clone()))
+            var i: i64 = 1
+            while i < args.len() {
+                callArgs.push(cloneValue(args[i]))
+                i = i + 1
+            }
+            return Option.Some(callValue(prog, m, callArgs, arg0, &mut st))
+        }
+    }
+    if nm == "match" || nm == "search" || nm == "matchAll" {
+        let ra = regexArgFor(&mut st, nm, args)
+        if st.regexProtoPristine {
+            return Option.Some(stringRegexOp(prog, sv, nm, ra, &mut st))
+        }
+        let rx = cloneValue(ra[0])
+        pushTemp(&mut st, cloneValue(rx))
+        let rm = getMemberDyn(prog, objHandle(rx), key, &mut st)
+        if st.throwing {
+            popTemp(&mut st)
+            return Option.Some(JSValue.Undefined)
+        }
+        if !isCallableIn(st, rm) {
+            popTemp(&mut st)
+            return Option.Some(throwErr(&mut st, "TypeError", toStr(rm) + " is not a function"))
+        }
+        var rArgs: Vec<JSValue> = Vec.new()
+        rArgs.push(JSValue.Str(sv.clone()))
+        let r = callValue(prog, rm, rArgs, rx, &mut st)
+        popTemp(&mut st)
+        return Option.Some(r)
+    }
+    return Option.None
 }
 
 pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSValue>, st: &mut Interp): JSValue {
+    if name == "__reTest" || isRegexSymbolOpKey(name) {
+        return regexProtoOp(prog, recv, name, args, &mut st)
+    }
     // the accessor properties on the builtin prototypes; brandOk has already
     // rejected an incompatible receiver by the time this runs
     if isBuiltinAccessorName(name) {
@@ -2448,23 +2580,8 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             if isArrayMethod(name) && !isStringMethodName(name) {
                 return arrayMethodGeneric(prog, JSValue.Str(sv.clone()), name, args, &mut st)
             }
-            let symOp = stringOpSymbolMethod(prog, &mut st, name, args)
-            if isCallableIn(st, symOp) {
-                var symArgs: Vec<JSValue> = Vec.new()
-                symArgs.push(JSValue.Str(sv.clone()))
-                var sa: i64 = 1
-                while sa < args.len() {
-                    symArgs.push(cloneValue(args[sa]))
-                    sa = sa + 1
-                }
-                return callValue(prog, symOp, symArgs, cloneValue(args[0]), &mut st)
-            }
-            if stringOpNeedsRegexArg(st, name, args) {
-                let ra = regexArgFor(&mut st, name, args)
-                return stringRegexOp(prog, sv, name, ra, &mut st)
-            }
-            if isStringRegexOp(st, name, args) {
-                return stringRegexOp(prog, sv, name, args, &mut st)
+            if let Option.Some(rr) = stringRegexProtocol(prog, &mut st, sv, name, args) {
+                return rr
             }
             if name == "concat" {
                 return JSValue.Str(strConcatProg(prog, sv, args, &mut st))
@@ -3342,6 +3459,9 @@ fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
     }
     if o == st.dateProtoObj {
         st.dateProtoPristine = false
+    }
+    if o == st.regexProtoObj {
+        st.regexProtoPristine = false
     }
     if o == st.objectProtoObj {
         st.objectProtoPristine = false
@@ -12246,6 +12366,23 @@ fn adoptBuiltinSlots(st: &mut Interp, dst: i64, src: i64) {
     st.objExtras[de].promiseValue = cloneValue(st.objExtras[se].promiseValue)
     st.objExtras[de].boxed = cloneValue(st.objExtras[se].boxed)
     st.objExtras[de].regexId = st.objExtras[se].regexId
+    // A regex keeps source/flags/lastIndex as own data properties here, so a
+    // `class R extends RegExp` instance needs them moved too: without them its
+    // flags read as undefined and every spec algorithm saw a non-global regex.
+    if st.objExtras[se].regexId >= 0 {
+        var rp: i64 = 0
+        while rp < st.objects[src].props.len() {
+            let pk = st.objects[src].props[rp].key.clone()
+            if objOwnIndex(st, dst, pk) < 0 && st.objects[src].props[rp].acc.isNone() {
+                objSet(&mut st, dst, pk.clone(), cloneValue(st.objects[src].props[rp].value))
+                let di = objOwnIndex(st, dst, pk)
+                st.objects[dst].props[di].writable = st.objects[src].props[rp].writable
+                st.objects[dst].props[di].enumerable = st.objects[src].props[rp].enumerable
+                st.objects[dst].props[di].configurable = st.objects[src].props[rp].configurable
+            }
+            rp = rp + 1
+        }
+    }
     st.objExtras[de].taBuf = st.objExtras[se].taBuf
     st.objExtras[de].taKind = st.objExtras[se].taKind
     st.objExtras[de].taOffset = st.objExtras[se].taOffset
@@ -15547,25 +15684,9 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 }
                 return throwErr(&mut st, "TypeError", name.clone() + " is not a function")
             }
-            // the argument's own @@replace/@@match/@@split, when it has one
-            let symOp2 = stringOpSymbolMethod(prog, &mut st, name, argVals)
-            if isCallableIn(st, symOp2) {
-                var symArgs2: Vec<JSValue> = Vec.new()
-                symArgs2.push(JSValue.Str(s.clone()))
-                var sb: i64 = 1
-                while sb < argVals.len() {
-                    symArgs2.push(cloneValue(argVals[sb]))
-                    sb = sb + 1
-                }
-                return callValue(prog, symOp2, symArgs2, cloneValue(argVals[0]), &mut st)
-            }
-            // regex-based string ops when the first arg is a RegExp
-            if stringOpNeedsRegexArg(st, name, argVals) {
-                let ra = regexArgFor(&mut st, name, argVals)
-                return stringRegexOp(prog, s, name, ra, &mut st)
-            }
-            if isStringRegexOp(st, name, argVals) {
-                return stringRegexOp(prog, s, name, argVals, &mut st)
+            // the regex half of match/replace/split/search/matchAll
+            if let Option.Some(rr) = stringRegexProtocol(prog, &mut st, s, name, argVals) {
+                return rr
             }
             if name == "concat" {
                 return JSValue.Str(strConcatProg(prog, s, argVals, &mut st))
@@ -15624,31 +15745,14 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 popTemp(&mut st)
                 return r
             }
-            if st.objExtras[st.objects[o].extra].regexId >= 0 {
-                // A regex is still an ORDINARY object: a property the program put on
-                // it wins over the builtin dispatcher. Every method call on a regex
-                // used to go straight to regexMethod, which knows only the regex
-                // methods, so `re[Symbol.iterator] = fn; re[Symbol.iterator]()`
-                // found nothing and quietly answered undefined.
-                if objOwnIndex(st, o, name) >= 0 {
-                    let userFn = getMemberDyn(prog, o, name, &mut st)
-                    if isCallableIn(st, userFn) {
-                        rootIfHeap(&mut st, userFn)
-                        let uArgs = evalArgs(prog, argsIdx, &mut st, scope)
-                        if st.throwing {
-                            popTemp(&mut st)
-                            return JSValue.Undefined
-                        }
-                        let ur = callValue(prog, userFn, uArgs, JSValue.Obj(o), &mut st)
-                        popTemp(&mut st)
-                        return ur
-                    }
-                }
+            // The Array guard again: while RegExp.prototype is untouched, a regex
+            // whose proto is still RegExp.prototype and which has no own property
+            // of the name (nor an own exec, which test and the symbol methods
+            // call) can only reach the native, so call it directly. Anything else
+            // takes the ordinary chain below, so an override, a subclass method
+            // or a method the program added is what runs.
+            if regexIsPlain(st, o) && isRegexFastName(name) && objOwnIndex(st, o, name) < 0 {
                 let argVals = evalArgs(prog, argsIdx, &mut st, scope)
-                // An argument expression that threw ABORTS the call: without this the
-                // callee still ran with the arguments evaluated so far, so
-                // `arr.push(boom())` pushed a value and a Promise executor's
-                // `resolve(boom())` settled the promise with undefined.
                 if st.throwing {
                     return JSValue.Undefined
                 }

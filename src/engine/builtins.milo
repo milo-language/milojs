@@ -2001,8 +2001,9 @@ pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>):
         }
         return throwErr(&mut st, "TypeError", "Method RegExp.prototype." + name.clone() + " called on incompatible receiver")
     }
-    // RegExp.prototype[@@match](str) and friends: delegate to the String method
-    // that actually implements the operation in this engine
+    // RegExp.prototype[@@match](str) and friends on a PLAIN regex (regexProtoOp
+    // decided that): the native operation, called directly rather than through
+    // String.prototype, which a program may have replaced
     var strOp = ""
     if name == symKey(WK_MATCH) {
         strOp = "match"
@@ -2030,7 +2031,7 @@ pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>):
                 return JSValue.Undefined
             }
         }
-        return callBuiltinByName(gProg, recvStr, strOp, sArgs, &mut st)
+        return stringRegexOp(gProg, toStr(recvStr), strOp, sArgs, &mut st)
     }
     let rid = st.objExtras[st.objects[o].extra].regexId
     // exec/test ToString their argument, and that conversion can run user code
@@ -2535,36 +2536,6 @@ fn regexStrMatchAll(st: &mut Interp, s: &string, rid: i64): JSValue {
 //
 // The flag properties stay OWN properties of each instance (that is where this
 // engine resolves them); the prototype carries the methods.
-// The regex-taking String operations. These used to live only on evalExpr's
-// method-call path, so `s.match(/re/)` worked while
-// `String.prototype.match.call(s, /re/)` returned undefined and
-// `String.prototype.split.call(s, /,/)` returned the string unsplit —
-// callBuiltinByName goes straight to stringMethod, which knows nothing about
-// regexes. Both paths call this now.
-pub fn isStringRegexOp(st: &Interp, name: &string, args: &Vec<JSValue>): bool {
-    if args.len() == 0 {
-        return false
-    }
-    if regexIdOf(st, args[0]) < 0 {
-        return false
-    }
-    return name == "replace" || name == "replaceAll" || name == "match" || name == "matchAll" || name == "split" || name == "search"
-}
-
-// match/matchAll/search have NO non-regex form: the spec builds a RegExp from
-// whatever it is handed. `"a1b".match("\\d")` is ["1"], not undefined, and
-// passing a plain string is the common way to write it. replace/split do have
-// literal-string forms, so they are deliberately absent here.
-pub fn stringOpNeedsRegexArg(st: &Interp, name: &string, args: &Vec<JSValue>): bool {
-    if !(name == "match" || name == "matchAll" || name == "search") {
-        return false
-    }
-    if args.len() == 0 {
-        return true
-    }
-    return regexIdOf(st, args[0]) < 0
-}
-
 // The argument re-made as a RegExp, with matchAll keeping the /g the spec
 // requires of it.
 pub fn regexArgFor(st: &mut Interp, name: &string, args: &Vec<JSValue>): Vec<JSValue> {

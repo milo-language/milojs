@@ -27,9 +27,6 @@ const GAPS = [
   { id: "bigint64-from", probe: `typeof BigInt64Array.from !== "function"` },
   { id: "intl",
     probe: `new Date(0).toLocaleString("de-DE") === new Date(0).toLocaleString("en-US")` },
-  { id: "regexp-symbols",
-    probe: `(function(){ class R extends RegExp { [Symbol.match](){ return "CUSTOM"; } }
-             return "abc".match(new R("b")) !== "CUSTOM"; })()` },
 ];
 
 const dir = mkdtempSync(join(tmpdir(), "gaps-"));

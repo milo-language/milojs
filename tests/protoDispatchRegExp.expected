@@ -1,0 +1,64 @@
+constructor,exec,dotAll,flags,global,hasIndices,ignoreCase,multiline,source,sticky,unicode,unicodeSets,compile,toString,test
+  exec 1 exec true false true
+  dotAll get get dotAll 0 undefined false true
+  flags get get flags 0 undefined false true
+  global get get global 0 undefined false true
+  hasIndices get get hasIndices 0 undefined false true
+  ignoreCase get get ignoreCase 0 undefined false true
+  multiline get get multiline 0 undefined false true
+  source get get source 0 undefined false true
+  sticky get get sticky 0 undefined false true
+  unicode get get unicode 0 undefined false true
+  unicodeSets get get unicodeSets 0 undefined false true
+  compile 2 compile true false true
+  toString 0 toString true false true
+  test 1 test true false true
+  Symbol(Symbol.match) 1 [Symbol.match] true false true
+  Symbol(Symbol.matchAll) 1 [Symbol.matchAll] true false true
+  Symbol(Symbol.replace) 2 [Symbol.replace] true false true
+  Symbol(Symbol.search) 1 [Symbol.search] true false true
+  Symbol(Symbol.split) 2 [Symbol.split] true false true
+identity: true true true
+computed: true x
+own method: own true false
+exec on plain: TypeError
+compile on plain: TypeError
+test on primitive: TypeError
+match on primitive: TypeError
+test on exec-less object: TypeError
+test on exec object: true
+exec returning a primitive: TypeError
+toString generic: /src/fl
+Object.create receiver: TypeError
+Object.create test: TypeError
+test override: patched test patched test
+test via exec: true
+replace via exec: a+b+c
+match via exec: [ '1', '22' ]
+search via exec: 2
+split via exec: [ 'a', 'b' ]
+matchAll via exec: [ '11', '23' ]
+string arg via exec: 7
+exec calls: true [ 'o@0', '-@0', '-@2', '-@4' ]
+own exec: true a<FAKE> FAKE 1
+custom: match:abc replace:abc:R search:abc split:abc:3
+custom matchAll: matchAll:abc
+IsRegExp flags: TypeError
+IsRegExp global: ok
+non-callable @@match: TypeError
+split override: [ 'patched split', 'a,b', 2 ]
+split restored: [ 'a', 'b' ]
+substitution: a[cb|bc|a|d|$|$3|b0|$<n>]d
+named: 01/2020
+fn replacer: a<114>b<234>
+subclass slots: a g true 0
+subclass exec: bonono 4 true [object RegExp]
+subclass symbol: CUSTOM
+replaceAll non-global: TypeError
+matchAll non-global: TypeError
+replaceAll global: bb
+matchAll iterator: [object RegExp String Iterator] 1
+deleted test: TypeError
+in: false
+put back: true
+deleted @@match: TypeError

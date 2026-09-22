@@ -72,28 +72,6 @@ pub fn isStringMethodName(n: &string): bool
 
 _Undocumented._
 
-### `isStringRegexOp`
-
-```milo
-pub fn isStringRegexOp(st: &Interp, name: &string, args: &Vec<JSValue>): bool
-```
-
-RegExp.prototype. Like the buffer family and Date before it, this object did
-not exist: `RegExp.prototype` read as undefined, so every test262 case that
-starts from the prototype — and there are many, since the flag accessors and
-the @@match/@@replace/@@split family all live there — failed before testing
-anything. Instances now link it, which is also what makes
-`Object.getPrototypeOf(/x/) === RegExp.prototype` hold.
-
-The flag properties stay OWN properties of each instance (that is where this
-engine resolves them); the prototype carries the methods.
-The regex-taking String operations. These used to live only on evalExpr's
-method-call path, so `s.match(/re/)` worked while
-`String.prototype.match.call(s, /re/)` returned undefined and
-`String.prototype.split.call(s, /,/)` returned the string unsplit —
-callBuiltinByName goes straight to stringMethod, which knows nothing about
-regexes. Both paths call this now.
-
 ### `jsTrim`
 
 ```milo
@@ -240,6 +218,15 @@ _Undocumented._
 pub fn regexArgFor(st: &mut Interp, name: &string, args: &Vec<JSValue>): Vec<JSValue>
 ```
 
+RegExp.prototype. Like the buffer family and Date before it, this object did
+not exist: `RegExp.prototype` read as undefined, so every test262 case that
+starts from the prototype — and there are many, since the flag accessors and
+the @@match/@@replace/@@split family all live there — failed before testing
+anything. Instances now link it, which is also what makes
+`Object.getPrototypeOf(/x/) === RegExp.prototype` hold.
+
+The flag properties stay OWN properties of each instance (that is where this
+engine resolves them); the prototype carries the methods.
 The argument re-made as a RegExp, with matchAll keeping the /g the spec
 requires of it.
 
@@ -283,17 +270,6 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
 
 Dispatch a String method by name. Callback-taking methods don't exist on
 strings, so this needs nothing from eval — only heap access for split.
-
-### `stringOpNeedsRegexArg`
-
-```milo
-pub fn stringOpNeedsRegexArg(st: &Interp, name: &string, args: &Vec<JSValue>): bool
-```
-
-match/matchAll/search have NO non-regex form: the spec builds a RegExp from
-whatever it is handed. `"a1b".match("\\d")` is ["1"], not undefined, and
-passing a plain string is the common way to write it. replace/split do have
-literal-string forms, so they are deliberately absent here.
 
 ### `stringRegexOp`
 

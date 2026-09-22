@@ -6,6 +6,7 @@
 // The `length` each built-in carries is looked up from the tables that stay in
 // eval.milo, because the call paths there need them too.
 
+from "./strutil" import { strSlice }
 from "./value" import {
     objHandle, cloneValue, jsNan, jsInfinity,
     JSValue, Builtin, Native, symKey, wellKnownSymName, WK_COUNT, WK_MATCH, WK_MATCH_ALL, WK_REPLACE,
@@ -475,72 +476,68 @@ fn setupRemainingProtos(st: &mut Interp) {
 fn setupRegexProto(st: &mut Interp) {
     let rp = newObject(&mut st)
     st.objects[rp].proto = st.objectProtoObj
-    var names: Vec<string> = Vec.new()
-    names.push("exec")
-    names.push("test")
-    names.push("__regexpToString")
-    names.push("compile")
-    // String.prototype.match/replace/search/split are the real implementations
-    // here; these delegate to them, which is the direction the spec runs in
-    // reverse. Having them at all is what lets code feature-detect a regex.
-    names.push(symKey(WK_MATCH))
-    names.push(symKey(WK_MATCH_ALL))
-    names.push(symKey(WK_REPLACE))
-    names.push(symKey(WK_SEARCH))
-    names.push(symKey(WK_SPLIT))
-    var i: i64 = 0
-    while i < names.len() {
-        // Branded, so `RegExp.prototype.exec.call({})` is the TypeError the spec
-        // requires rather than a call that quietly answers undefined. The RegExp
-        // prototype is built here rather than through buildNativeProto, so it did
-        // not pick up the brand the Map and Set prototypes get.
-        let rm = makeBoundMethod(&mut st, JSValue.Undefined, names[i].clone())
-        // toString is the exception: it is GENERIC, reading `source` and `flags`
-        // off whatever object it is given, so `RegExp.prototype.toString.call({
-        // source: "x", flags: "y" })` is "/x/y" and not a TypeError. Branding it
-        // with the rest broke that.
-        if names[i] != "__regexpToString" {
-            st.objExtras[st.objects[objHandle(rm)].extra].boundBrand = BRAND_REGEXP
-        }
-        // installed under its real name; the internal one only selects the
-        // generic implementation in callBuiltinByName
-        var installAs = names[i].clone()
-        if installAs == "__regexpToString" {
-            installAs = "toString"
-        }
-        objSet(&mut st, rp, installAs.clone(), rm)
-        objSetNonEnumerable(&mut st, rp, installAs)
-        i = i + 1
-    }
-    // The flag family is an ACCESSOR on the prototype in the spec, while this
-    // engine keeps them as own data properties on each instance. Both can hold:
-    // the getter is registered under an internal name, so an instance's own
-    // property still wins on a normal read and only a read through the prototype
-    // itself reaches the accessor.
-    var flagNames: Vec<string> = Vec.new()
-    flagNames.push("source")
-    flagNames.push("flags")
-    flagNames.push("global")
-    flagNames.push("ignoreCase")
-    flagNames.push("multiline")
-    flagNames.push("sticky")
-    flagNames.push("unicode")
-    flagNames.push("unicodeSets")
-    flagNames.push("dotAll")
-    flagNames.push("hasIndices")
-    var f: i64 = 0
-    while f < flagNames.len() {
-        let getter = makeBoundMethod(&mut st, JSValue.Undefined, "__reGet_" + flagNames[f].clone())
-        st.objExtras[st.objects[objHandle(getter)].extra].boundBrand = BRAND_REGEXP
-        objDefineAccessor(&mut st, rp, flagNames[f].clone(), getter, JSValue.Undefined)
-        objSetNonEnumerable(&mut st, rp, flagNames[f])
-        f = f + 1
-    }
     objSet(&mut st, rp, "constructor", JSValue.Native(Native.Fn(Builtin.RegExp)))
     objSetNonEnumerable(&mut st, rp, "constructor")
+    // node's own-key order. The flag family are ACCESSORS on the prototype in the
+    // spec, while this engine keeps them as own data properties on each instance.
+    // Both can hold: the getter is registered under an internal name, so an
+    // instance's own property still wins on a normal read and only a read through
+    // the prototype itself reaches the accessor.
+    var keys: Vec<string> = Vec.new()
+    keys.push("exec")
+    for fl in ["dotAll", "flags", "global", "hasIndices", "ignoreCase", "multiline", "source", "sticky", "unicode", "unicodeSets"] {
+        keys.push("@" + fl)
+    }
+    keys.push("compile")
+    keys.push("toString")
+    keys.push("test")
+    keys.push(symKey(WK_MATCH))
+    keys.push(symKey(WK_MATCH_ALL))
+    keys.push(symKey(WK_REPLACE))
+    keys.push(symKey(WK_SEARCH))
+    keys.push(symKey(WK_SPLIT))
+    var i: i64 = 0
+    while i < keys.len() {
+        let k = keys[i].clone()
+        if k[0] == 64 {
+            let fl = strSlice(k, 1, k.len())
+            let getter = makeBoundMethod(&mut st, JSValue.Undefined, "__reGet_" + fl.clone())
+            st.objExtras[st.objects[objHandle(getter)].extra].boundBrand = BRAND_REGEXP
+            objDefineBuiltinAttr(&mut st, objHandle(getter), "name", JSValue.Str("get " + fl.clone()))
+            objDefineBuiltinAttr(&mut st, objHandle(getter), "length", JSValue.Number(0.0))
+            objDefineAccessor(&mut st, rp, fl.clone(), getter, JSValue.Undefined)
+            objSetNonEnumerable(&mut st, rp, fl)
+        } else {
+            // Only exec and compile need [[RegExpMatcher]]. test and the symbol
+            // methods are generic over objects and reach the regex through
+            // Get(R, "exec"), so they check only for an object receiver (see
+            // regexProtoOp); toString is generic as well, reading source and
+            // flags off whatever object it is handed. The generic ones travel
+            // under an internal name so the dispatcher can tell them apart from
+            // a same-named method on another prototype.
+            var internal = k.clone()
+            if k == "toString" {
+                internal = "__regexpToString"
+            } else if k == "test" {
+                internal = "__reTest"
+            }
+            let rm = makeBoundMethod(&mut st, JSValue.Undefined, internal.clone())
+            if k == "exec" || k == "compile" {
+                st.objExtras[st.objects[objHandle(rm)].extra].boundBrand = BRAND_REGEXP
+            }
+            if internal != k {
+                objDefineBuiltinAttr(&mut st, objHandle(rm), "name", JSValue.Str(k.clone()))
+                objDefineBuiltinAttr(&mut st, objHandle(rm), "length", JSValue.Number(builtinArityOn("", k) as f64))
+            }
+            objSet(&mut st, rp, k.clone(), rm)
+            objSetNonEnumerable(&mut st, rp, k)
+        }
+        i = i + 1
+    }
     let rbag = getNativeProps(&mut st, Native.Fn(Builtin.RegExp))
     objDefineProtoAttr(&mut st, rbag, "prototype", JSValue.Obj(rp))
     st.regexProtoObj = rp
+    st.regexProtoPristine = true
 }
 
 fn setupErrorProtos(st: &mut Interp) {
