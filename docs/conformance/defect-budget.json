@@ -12,10 +12,9 @@
     ]
   },
   "test262": {
-    "crashes": 1,
+    "crashes": 0,
     "parseFailures": 23,
     "known": [
-      "crash: built-ins/Map/iterator-item-first-entry-returns-abrupt.js HANGS -- SIGTERM from the harness timeout, not a segfault. Reproduces standalone: harness + case under .dev/mj-engine never returns. An abrupt completion from the first entry's iterator is not unwinding the Map construction loop.",
       "parseFailures: 23 of 292 failures are syntax the parser does not accept; the rest are semantics."
     ]
   },

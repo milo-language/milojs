@@ -15,8 +15,7 @@ Expr.Ident:fname 1
 Expr.Member:name 4
 Expr.OptMember:name 2
 fn callBuiltinByName:name 1
-fn callMember:name 1
-fn coercedStringArgs:name 1
+fn callMemberArms:name 1
 fn definePropOf:key 1
 fn evalAssignExpr:name 1
 fn evalBinArm:op 1
