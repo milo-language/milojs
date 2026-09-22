@@ -462,8 +462,14 @@ pub fn symIdOfKey(key: &string): i64 {
     }
     var id: i64 = 0
     var i: i64 = 1
+    // Raw bytes can still reach a key (readFileSync, a non-UTF-8 literal), so a
+    // 0xFF lead is not proof: anything but symKey's exact digits is a string.
     while i < key.len() {
-        id = id * 10 + (key[i] - '0') as i64
+        let c = key[i]
+        if c < '0' || c > '9' || i > 18 {
+            return -1
+        }
+        id = id * 10 + (c - '0') as i64
         i = i + 1
     }
     return id
