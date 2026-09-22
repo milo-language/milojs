@@ -47,6 +47,7 @@ UPDATE=0
 # file:proven:unknown:errors — proven is a gating FLOOR, errors a gating CEILING, unknown
 # is recorded for drift reporting only.
 EXPECTED="
+src/engine/methods.milo:0:14:0
 src/engine/strutil.milo:13:4:0
 "
 
@@ -54,23 +55,15 @@ src/engine/strutil.milo:13:4:0
 # regression: a listed file that starts proving again fails the gate, so the list
 # only shrinks. Same shape as tests/.node-oracle-exempt.
 #
-# src/engine/methods.milo — `milo prove` loads a module twice when the file it is
-#   given sits in a subdirectory AND takes part in an import cycle, so './eval'
-#   resolves to a partial duplicate and the run dies with
-#   "'symConcatSpreadableKey' not found in './eval'". Reproduced on milo 0.2.0
-#   (dev 5ac3cdc4) and on current main; does NOT reproduce before src/ gained
-#   subdirectories, and does NOT reproduce for a cycle-free file in the same
-#   subdirectory. Its two contract-bearing fns (arrayLikeLength,
-#   arrayLikeOwnLength) take Prog and Interp, so unlike the string helpers now in
-#   src/engine/strutil.milo they cannot be lifted out of the cycle. Blocked on the
-#   milo fix.
+# (empty) methods.milo was listed here until milo 0.2.0 (dev 628c55dc) stopped
+# double-loading a module that sits in a subdirectory and an import cycle; it now
+# loads and is ratcheted in EXPECTED, proving 0 of its 14 (callees with no ensures).
 BLOCKED="
-src/engine/methods.milo
 "
 
 fail=0
 actual=""
-files=$(grep -rlE '^[[:space:]]*(requires|ensures|invariant)' --include='*.milo' . | sed 's|^\./||' | sort)
+files=$(grep -rlE '^[[:space:]]*(requires|ensures|invariant)' --include='*.milo' --exclude-dir=.claude --exclude-dir=.dev --exclude-dir=node_modules . | sed 's|^\./||' | sort)
 
 if [ -z "$files" ]; then
     echo "no contract-bearing .milo files found — the discovery glob is broken"
