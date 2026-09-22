@@ -173,6 +173,18 @@ Smaller compat leftovers found alongside, none gated yet:
 66 test262 files, leave them); `tests/run.sh` wedges in its `wait` after a
 SIGKILLed fixture (three orphaned runners seen on 2026-09-20).
 
+## fs: `readFileSync(path)` with no encoding returns a string, not a Buffer
+
+`lib/fs.js` readFileSync returns whatever `__readFileSync` hands back, which is
+a Milo string, so `typeof` is `"string"`, `Buffer.isBuffer` is false and any
+binary file is decoded as text. Node returns a Buffer whenever no encoding is
+given. Found in the closure-identity A/B: `test-fs-promises-file-handle-write.js`
+went from pass to fail, and the old pass was false. The base runtime rejected
+with `undefined` (the reason was lost, so the harness saw nothing), and the
+closure change started reporting the real `AssertionError`. The fix is not a
+`Buffer.from(s)` wrapper: the bytes have to come from the host as bytes, or a
+non-UTF-8 file is corrupted before JS sees it.
+
 ## http: no keep-alive, so every response closes its connection
 
 `Connection: close` goes out on every response and the socket is destroyed after
