@@ -24,11 +24,14 @@ CACHE="${MILOJS_PKG_CACHE:-.dev/pkgcorpus}"
 BIN="${MILOJS_RUNTIME_BIN:-.dev/mj-runtime}"
 BASELINE="tools/packages-baseline.txt"
 
-# Seeds, not the corpus: npm pulls in ~130 packages transitively and roughly 50
-# of those ship a runnable test entry. Pinning the seeds keeps the number
-# comparable across runs; an npm update can move it, which is why the baseline
-# records what it was measured against.
-SEEDS="tape@5.9.0 deep-equal@2.2.3 object-keys@1.1.1 is-arguments@1.2.0 safe-buffer@5.2.1 mime-types@3.0.1 qs@6.14.0 semver@7.7.2"
+# The WHOLE tree is pinned, not just the seeds: tools/pkgcorpus/package-lock.json
+# is installed with `npm ci`. Seeds alone let npm pick fresh transitive versions
+# on every clean install, and CI installs clean every run: is-core-module 2.17.0
+# stopped shipping its test files, which silently removed ~500 assertions from
+# CI's count and read as a milojs regression (2026-09-22). A cache whose lockfile
+# differs from the committed one is reinstalled, so the corpus moves only when
+# that file does.
+LOCKDIR="tools/pkgcorpus"
 
 if [ ! -x "$BIN" ]; then
   echo "check-packages: no runtime binary at $BIN (run tools/dev.sh first)" >&2
@@ -36,12 +39,12 @@ if [ ! -x "$BIN" ]; then
 fi
 BIN="$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")"
 
-if [ ! -d "$CACHE/node_modules" ]; then
-  echo "check-packages: installing corpus into $CACHE (first run, needs network)"
+if [ ! -d "$CACHE/node_modules" ] || ! cmp -s "$LOCKDIR/package-lock.json" "$CACHE/package-lock.json"; then
+  echo "check-packages: installing the pinned corpus into $CACHE (needs network)"
   mkdir -p "$CACHE" || exit 1
-  ( cd "$CACHE" && [ -f package.json ] || npm init -y >/dev/null 2>&1 )
-  if ! ( cd "$CACHE" && npm i --no-audit --no-fund --silent $SEEDS >/dev/null 2>&1 ); then
-    echo "check-packages: skipped — corpus not installed and npm install failed (offline?)"
+  cp "$LOCKDIR/package.json" "$LOCKDIR/package-lock.json" "$CACHE/" || exit 1
+  if ! ( cd "$CACHE" && npm ci --no-audit --no-fund --silent >/dev/null 2>&1 ); then
+    echo "check-packages: skipped — corpus not installed and npm ci failed (offline?)"
     exit 0
   fi
 fi

@@ -1,0 +1,15 @@
+{
+  "name": "milojs-pkgcorpus",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "deep-equal": "^2.2.3",
+    "is-arguments": "^1.2.0",
+    "mime-types": "^3.0.1",
+    "object-keys": "^1.1.1",
+    "qs": "^6.14.0",
+    "safe-buffer": "^5.2.1",
+    "semver": "^7.7.2",
+    "tape": "^5.9.0"
+  }
+}
