@@ -23,7 +23,7 @@ from "./runtime" import {
     Interp
 }
 from "./eval" import {
-    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, makeError, throwErr, taIsDetached, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, valueIsArrayLike, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, funcPrototypeObj, isSymbolStr, ARRAY_LIKE_MAX
+    timeClip, isoFromMillis, utcFromLocalSec, localOffsetSecAt, symIteratorKey, makeArrayIterator, callValue, sameValue, makeError, throwErr, taIsDetached, taOutOfBounds, dataViewByteLen, getMemberDyn, arrGetDyn, valueIsArrayLike, toNumProg, getMember, isCallableIn, isUndefinedValue, isCallable, toStrProg, joinArrayProg, symConcatSpreadableKey, taCurrentLen, taElemValue, taSetElem, taElem, typedArrayProtoFor, arrayBufferProto, makeTypedArray, symSpeciesKey, valueIsConstructor, setMemberDyn, evalInOperator, callFunction, funcPrototypeObj, ARRAY_LIKE_MAX
 }
 from "./ast" import { Prog }
 from "std/datetime" import { DateTime }
@@ -1871,15 +1871,7 @@ ensures result >= -1 && result <= ARRAY_LIKE_MAX
     if st.throwing {
         return -1
     }
-    // ToLength on a Symbol is a TypeError, not NaN: the tests read `length` from a
-    // poisoned object precisely to check the abrupt completion propagates.
-    if let JSValue.Str(ls) = cloneValue(lenVal) {
-        if isSymbolStr(ls) {
-            st.throwing = true
-            st.thrownValue = makeError(&mut st, "TypeError", "Cannot convert a Symbol value to a number")
-            return -1
-        }
-    }
+    // toNumProg, not toNum: ToLength on a Symbol is a TypeError, not NaN
     let raw = toNumProg(prog, lenVal, &mut st)
     if st.throwing {
         return -1

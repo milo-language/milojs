@@ -440,6 +440,9 @@ pub fn napi_typeof(_env: *u8, value: i64, result: *u8): i32 {
         JSValue.BigInt(_s) => {
             napiWriteI32(result, 9)
         }
+        JSValue.Sym(_id) => {
+            napiWriteI32(result, 5)
+        }
         JSValue.Func(_f, _e, _fo) => {
             napiWriteI32(result, 7)
         }

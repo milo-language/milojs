@@ -3,7 +3,7 @@ system: milojs-embedding
 purpose: how to link libmilojs.a into a C program: inputs, build, and where the callable API is listed
 key-files: src/libmilojs.milo, include/milojs.h, examples/embed/hello.c, tests/run-embed.sh
 update-when: an ABI function lands or the build inputs change
-last-verified: 2026-09-22 (re-verified after the closure function-object commit: JSValue.Func carries a third field, an index of a real JSObj that is the closure's identity and its property bag, minted only by makeClosure; Interp.funcProtos, Interp.funcStatics and Scope.fnStatKeys/fnStatVals are gone, `.prototype` is an ordinary own property of that object, and JSObj.ctor is replaced by fnIdx/fnEnv; libmilojs.milo only gained the third pattern field in its typeof mapping, and the C ABI is unchanged. Previous note: re-verified after the ToNumber(Symbol) commit (toNumProg throws for a symbol, toNumArg retired, numArgsProg feeds Math/isNaN/Date setters/Number methods, toStrArg for parseInt and string arguments); nothing this doc describes changes. Previous note: re-verified after the import-list commit: every name a file used without importing it is now listed in its import block (the milo compiler enforces the list from 2026-09-20; scripts/fix-imports.ts there added them), a spelling change only; nothing this doc describes changes. Previous note: key file change was the explicit &mut spelling only; ABI and build inputs unchanged)
+last-verified: 2026-09-22 (re-verified after the symbol primitive commit: JSValue gains Sym(id), symbols live in Interp.symDescs/symHasDesc/symRegistered plus a Symbol.for registry, well-known symbols are fixed ids WK_* registered first, and a symbol property key is spelled only by symKey/symIdOfKey (0xFF then the decimal id), so no string can collide with one; Symbol.for/keyFor are natives. milojs_value_kind answers MILOJS_VALUE_SYMBOL (8), documented below. Previous note: re-verified after the closure function-object commit: JSValue.Func carries a third field, an index of a real JSObj that is the closure's identity and its property bag, minted only by makeClosure; Interp.funcProtos, Interp.funcStatics and Scope.fnStatKeys/fnStatVals are gone, `.prototype` is an ordinary own property of that object, and JSObj.ctor is replaced by fnIdx/fnEnv; libmilojs.milo only gained the third pattern field in its typeof mapping, and the C ABI is unchanged. Previous note: re-verified after the ToNumber(Symbol) commit (toNumProg throws for a symbol, toNumArg retired, numArgsProg feeds Math/isNaN/Date setters/Number methods, toStrArg for parseInt and string arguments); nothing this doc describes changes. Previous note: re-verified after the import-list commit: every name a file used without importing it is now listed in its import block (the milo compiler enforces the list from 2026-09-20; scripts/fix-imports.ts there added them), a spelling change only; nothing this doc describes changes. Previous note: key file change was the explicit &mut spelling only; ABI and build inputs unchanged)
 -->
 
 # Embedding milojs in C
@@ -71,6 +71,9 @@ Every function returns `int32_t` status (`MILOJS_STATUS_OK` is 0) unless noted.
 | `milojs_value_release(ctx, val)` | release one handle |
 | `milojs_exception_length(ctx)` | pending exception's message length |
 | `milojs_exception_copy(ctx, uint8_t *out, int64_t cap)` | copy it out |
+
+`milojs_value_kind` answers `MILOJS_VALUE_SYMBOL` (8) for a symbol; no accessor
+reads one, and the string accessors answer negative for it.
 
 Strings are UTF-8 and not NUL-terminated: call the `_length` function, allocate,
 then call the `_copy` function.

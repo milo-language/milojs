@@ -22,6 +22,7 @@ enum milojs_value_kind {
     MILOJS_VALUE_OBJECT = 5,
     MILOJS_VALUE_FUNCTION = 6,
     MILOJS_VALUE_BIGINT = 7,
+    MILOJS_VALUE_SYMBOL = 8,
 };
 
 #endif

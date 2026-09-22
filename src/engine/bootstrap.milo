@@ -8,12 +8,13 @@
 
 from "./value" import {
     objHandle, cloneValue, jsNan, jsInfinity,
-    JSValue, Builtin, Native
+    JSValue, Builtin, Native, symKey, wellKnownSymName, WK_COUNT, WK_MATCH, WK_MATCH_ALL, WK_REPLACE,
+    WK_SEARCH, WK_SPLIT, WK_SPECIES, WK_IS_CONCAT_SPREADABLE
 }
 from "./runtime" import {
     ensureExtra, objSet, objSetNonEnumerable, newObject, objDefineAccessor, TA_MAX, objSetFrozenOwn,
     taWidth, getNativeProps, objDefineProtoAttr, objSetBuiltinAttr, taName, objDefineBuiltinAttr,
-    scopeDefine, objOwnIndex, objGet,
+    scopeDefine, objOwnIndex, objGet, newSymbol,
     Interp
 }
 from "./eval" import {
@@ -360,6 +361,14 @@ fn setupRemainingProtos(st: &mut Interp) {
     symBrand.push("valueOf")
     symBrand.push("toString")
     brandProtoMethods(&mut st, sp, BRAND_SYMBOL, symBrand)
+    // @@toPrimitive and @@toStringTag share name/length's attributes: not
+    // writable, not enumerable, configurable
+    let symToPrim = makeBrandedMethod(&mut st, symToPrimitiveKey(), BRAND_SYMBOL)
+    objDefineBuiltinAttr(&mut st, sp, symToPrimitiveKey(), symToPrim)
+    let symDescGetter = makeBrandedMethod(&mut st, "description", BRAND_SYMBOL)
+    objDefineAccessor(&mut st, sp, "description", symDescGetter, JSValue.Undefined)
+    objSetNonEnumerable(&mut st, sp, "description")
+    objDefineBuiltinAttr(&mut st, sp, symToStringTagKey(), JSValue.Str("Symbol"))
 
     // Map and Set share one method list here because they share a dispatcher;
     // only the names each actually answers are listed per side.
@@ -449,11 +458,11 @@ fn setupRegexProto(st: &mut Interp) {
     // String.prototype.match/replace/search/split are the real implementations
     // here; these delegate to them, which is the direction the spec runs in
     // reverse. Having them at all is what lets code feature-detect a regex.
-    names.push("@@sym:Symbol.match:0")
-    names.push("@@sym:Symbol.matchAll:0")
-    names.push("@@sym:Symbol.replace:0")
-    names.push("@@sym:Symbol.search:0")
-    names.push("@@sym:Symbol.split:0")
+    names.push(symKey(WK_MATCH))
+    names.push(symKey(WK_MATCH_ALL))
+    names.push(symKey(WK_REPLACE))
+    names.push(symKey(WK_SEARCH))
+    names.push(symKey(WK_SPLIT))
     var i: i64 = 0
     while i < names.len() {
         // Branded, so `RegExp.prototype.exec.call({})` is the TypeError the spec
@@ -799,23 +808,16 @@ pub fn setupGlobals(st: &mut Interp) {
     scopeDefine(&mut st, 0, "Symbol", JSValue.Native(Native.Fn(Builtin.Symbol)))
     nameGlobalCtor(&mut st, "Symbol", Builtin.Symbol)
     let symbolCtorObj = getNativeProps(&mut st, Native.Fn(Builtin.Symbol))
-    objSet(&mut st, symbolCtorObj, "iterator", JSValue.Str(symIteratorKey()))
-    // other well-known symbols — interned keys like @@iterator, counter 0
-    objSet(&mut st, symbolCtorObj, "asyncIterator", JSValue.Str("@@sym:Symbol.asyncIterator:0"))
-    objSet(&mut st, symbolCtorObj, "toPrimitive", JSValue.Str(symToPrimitiveKey()))
-    objSet(&mut st, symbolCtorObj, "toStringTag", JSValue.Str(symToStringTagKey()))
-    objSet(&mut st, symbolCtorObj, "hasInstance", JSValue.Str("@@sym:Symbol.hasInstance:0"))
-    // the regex protocol symbols, which RegExp.prototype implements
-    objSet(&mut st, symbolCtorObj, "match", JSValue.Str("@@sym:Symbol.match:0"))
-    objSet(&mut st, symbolCtorObj, "matchAll", JSValue.Str("@@sym:Symbol.matchAll:0"))
-    objSet(&mut st, symbolCtorObj, "replace", JSValue.Str("@@sym:Symbol.replace:0"))
-    objSet(&mut st, symbolCtorObj, "search", JSValue.Str("@@sym:Symbol.search:0"))
-    objSet(&mut st, symbolCtorObj, "split", JSValue.Str("@@sym:Symbol.split:0"))
-    objSet(&mut st, symbolCtorObj, "species", JSValue.Str(symSpeciesKey()))
-    objSet(&mut st, symbolCtorObj, "isConcatSpreadable", JSValue.Str(symConcatSpreadableKey()))
-    objSet(&mut st, symbolCtorObj, "unscopables", JSValue.Str("@@sym:Symbol.unscopables:0"))
-    objSet(&mut st, symbolCtorObj, "dispose", JSValue.Str("@@sym:Symbol.dispose:0"))
-    objSet(&mut st, symbolCtorObj, "asyncDispose", JSValue.Str("@@sym:Symbol.asyncDispose:0"))
+    // the well-known symbols: non-writable, non-enumerable, non-configurable
+    var wk: i64 = 0
+    while wk < WK_COUNT {
+        objSetFrozenOwn(&mut st, symbolCtorObj, wellKnownSymName(wk), JSValue.Sym(wk), false)
+        wk = wk + 1
+    }
+    objSet(&mut st, symbolCtorObj, "for", JSValue.Native(Native.Fn(Builtin.SymbolFor)))
+    objSetNonEnumerable(&mut st, symbolCtorObj, "for")
+    objSet(&mut st, symbolCtorObj, "keyFor", JSValue.Native(Native.Fn(Builtin.SymbolKeyFor)))
+    objSetNonEnumerable(&mut st, symbolCtorObj, "keyFor")
     let dateCtorObj = getNativeProps(&mut st, Native.Fn(Builtin.Date))
     objSet(&mut st, dateCtorObj, "now", JSValue.Native(Native.Fn(Builtin.DateNow)))
     objSet(&mut st, dateCtorObj, "UTC", JSValue.Native(Native.Fn(Builtin.DateUtc)))
@@ -993,11 +995,24 @@ pub fn setupGlobals(st: &mut Interp) {
 }
 
 pub fn symSpeciesKey(): string {
-    return "@@sym:Symbol.species:0"
+    return symKey(WK_SPECIES)
 }
 
 pub fn symConcatSpreadableKey(): string {
-    return "@@sym:Symbol.isConcatSpreadable:0"
+    return symKey(WK_IS_CONCAT_SPREADABLE)
+}
+
+// Register the well-known symbols as ids 0..WK_COUNT, before anything else can
+// mint a symbol, so JSValue.Sym(WK_ITERATOR) and friends name the right entry.
+pub fn registerWellKnownSymbols(st: &mut Interp) {
+    var id: i64 = 0
+    while id < WK_COUNT {
+        let got = newSymbol(&mut st, "Symbol." + wellKnownSymName(id), true)
+        if got != id {
+            print("milojs: well-known symbol table out of order")
+        }
+        id = id + 1
+    }
 }
 
 fn strProtoMethodNames(): Vec<string> {

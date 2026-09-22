@@ -473,16 +473,6 @@ pub fn isSuperName(name: &string): bool
 
 _Undocumented._
 
-### `isSymbolStr`
-
-```milo
-pub fn isSymbolStr(s: &string): bool
-```
-
-Symbol test on the raw string. The JSValue-level isSymbolValue cannot be used
-from inside a `match` arm on that same value: matching moves it, so reading the
-original binding afterwards sees a zeroed slot and the test silently fails.
-
 ### `isSymbolValue`
 
 ```milo
@@ -506,6 +496,15 @@ pub fn joinArrayProg(prog: &Prog, st: &mut Interp, o: i64, sep: &string): string
 ```
 
 _Undocumented._
+
+### `keyFunctionName`
+
+```milo
+pub fn keyFunctionName(st: &Interp, key: &string): string
+```
+
+SetFunctionName's spelling of a property key: a symbol-keyed method is named
+"[desc]", or "" for a symbol with no description.
 
 ### `localOffsetSecAt`
 
@@ -660,7 +659,7 @@ pub fn ownStringKeys(st: &Interp, h: i64, enumOut: &mut Vec<bool>, propOut: &mut
 ```
 
 [[OwnPropertyKeys]] over any value, as raw keys — symbols included, in the
-"@@sym:" spelling they are stored under. A proxy consults its ownKeys trap
+symKey spelling they are stored under. A proxy consults its ownKeys trap
 and with no trap forwards to its target, which may itself be a proxy.
 The ONE answer to "which own string keys does this object have, and which of
 them are enumerable", in [[OwnPropertyKeys]] order: integer indices first, then
@@ -823,14 +822,13 @@ The table, embedded at compile time. A fn rather than a global because a
 global string needs an initializer that runs, and the embeddable library is
 built with --no-entry (same reason src/engine/uniprops.milo spells its data upData()).
 
-### `symbolDisplay`
+### `symIdOf`
 
 ```milo
-pub fn symbolDisplay(s: &string): string
+pub fn symIdOf(v: &JSValue): i64
 ```
 
-What a symbol shows as: Symbol(desc). Without this the internal representation
-leaks out of String(sym) and sym.toString().
+The symbol id of v, or -1 when v is not a symbol.
 
 ### `symIteratorKey`
 
@@ -958,15 +956,26 @@ honoured and a symbol is the spec's TypeError rather than NaN. The mirror of
 toStrProg. Loose equality never reaches here (it compares symbols by
 identity first), so every caller is a spec ToNumber position.
 
+### `toPropertyKey`
+
+```milo
+pub fn toPropertyKey(st: &Interp, v: &JSValue): string
+```
+
+ToPropertyKey for a computed member key. A primitive WRAPPER unwraps, which is
+what makes `o[Object(sym)]` the symbol's own key; any other object still
+takes toStr's "[object Object]" without running a user toString (see
+docs/backlog.md).
+
 ### `toStrArg`
 
 ```milo
 pub fn toStrArg(prog: &Prog, v: &JSValue, st: &mut Interp): string
 ```
 
-ToString in an argument position, where a symbol is the spec's TypeError.
-toStrProg itself cannot throw for one: String(sym) reaches it and answers
-the descriptive string.
+ToString proper, where a symbol (or a symbol wrapper) is the spec's TypeError.
+toStrProg does not throw for one: it doubles as ToPropertyKey, and answers a
+symbol's property key.
 
 ### `toStrProg`
 

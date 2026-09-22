@@ -21,7 +21,9 @@ from "./value" import {
     cloneValue, funcHandle, jsNan, truthy, nativeHandle, isNullish, strToNum, jsInfinity,
     jsParseFloatPrefix, jsParsePrefixNum, uriEncode, uriHasBadEscape, uriDecode, parseIsoDate, jsInf,
     funcEnv, funcObjOf, pad2, pad3,
-    JSValue, Native, Builtin, i64ToStr, daysFromCivil, nativeEq, isNativeValue
+    JSValue, Native, Builtin, i64ToStr, daysFromCivil, nativeEq, isNativeValue, symKey, symIdOfKey, propKeyValue,
+    WK_ASYNC_ITERATOR, WK_HAS_INSTANCE, WK_ITERATOR, WK_MATCH, WK_MATCH_ALL, WK_REPLACE, WK_SEARCH, WK_SPLIT,
+    WK_TO_PRIMITIVE, WK_TO_STRING_TAG, WK_DISPOSE, WK_ASYNC_DISPOSE
 }
 from "./runtime" import {
     objOwnIndex, propIsAccessor, accGetter, accSetter, arrLen, arrGet, pushTemp, popTemp,
@@ -32,7 +34,8 @@ from "./runtime" import {
     objDeleteKey, objDefineAccessor, newScope, pushActive, popActive, scopeHas, nativePropsOf,
     bufferNativeViewHandle, bufferBytesHandle, isPromiseCtor, arrMarkHole, gInterp,
     saveExecCtx, restoreExecCtx, objDefineFnProtoAttr, scopeHasBelowGlobal, maybeGc,
-    Interp, Timer, Microtask, Reaction, PendingFetch, collect, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn, TA_MAX, TA_I64, TA_U64, taIsBigKind, taLoadBig, taStoreBig, isPrivateKey, scopeOwnIndex
+    Interp, Timer, Microtask, Reaction, PendingFetch, collect, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn, TA_MAX, TA_I64, TA_U64, taIsBigKind, taLoadBig, taStoreBig, isPrivateKey, scopeOwnIndex,
+    newSymbol, symbolFor, symbolKeyFor, symDescValue, symbolDisplay
 }
 from "./strutil" import {
     strSlice
@@ -344,20 +347,19 @@ pub fn makeWrapper(st: &mut Interp, v: &JSValue): JSValue {
     var protoNative: Option<Builtin> = Option.None
     match v {
         JSValue.Str(sv) => {
-            if isSymbolStr(sv) {
-                protoNative = Option.Some(Builtin.Symbol)
-            } else {
-                st.objects[o].proto = st.stringProtoObj
-                var idx: i64 = 0
-                let cps = strCodePoints(sv)
-                while idx < cps.len() {
-                    // enumerable, unlike length: Object.keys(Object("ab")) is
-                    // ["0","1"] and for-in visits the indices
-                    objSetFrozenOwn(&mut st, o, numToStr(idx as f64), JSValue.Str(cps[idx].clone()), true)
-                    idx = idx + 1
-                }
-                objSetFrozenOwn(&mut st, o, "length", JSValue.Number(utf16Length(sv) as f64), false)
+            st.objects[o].proto = st.stringProtoObj
+            var idx: i64 = 0
+            let cps = strCodePoints(sv)
+            while idx < cps.len() {
+                // enumerable, unlike length: Object.keys(Object("ab")) is
+                // ["0","1"] and for-in visits the indices
+                objSetFrozenOwn(&mut st, o, numToStr(idx as f64), JSValue.Str(cps[idx].clone()), true)
+                idx = idx + 1
             }
+            objSetFrozenOwn(&mut st, o, "length", JSValue.Number(utf16Length(sv) as f64), false)
+        }
+        JSValue.Sym(_id) => {
+            protoNative = Option.Some(Builtin.Symbol)
         }
         JSValue.Number(_n) => {
             protoNative = Option.Some(Builtin.Number)
@@ -539,13 +541,25 @@ pub fn toStrProg(prog: &Prog, v: &JSValue, st: &mut Interp): string {
     return toStr(p)
 }
 
-// ToString in an argument position, where a symbol is the spec's TypeError.
-// toStrProg itself cannot throw for one: String(sym) reaches it and answers
-// the descriptive string.
+// ToString proper, where a symbol (or a symbol wrapper) is the spec's TypeError.
+// toStrProg does not throw for one: it doubles as ToPropertyKey, and answers a
+// symbol's property key.
 pub fn toStrArg(prog: &Prog, v: &JSValue, st: &mut Interp): string {
     if isSymbolValue(v) {
         let _t = throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a string")
         return ""
+    }
+    // a symbol WRAPPER unwraps to its symbol through ToPrimitive and throws too
+    if objHandle(v) >= 0 {
+        let p = toPrimitiveString(prog, v, &mut st)
+        if st.throwing {
+            return ""
+        }
+        if isSymbolValue(p) {
+            let _t2 = throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a string")
+            return ""
+        }
+        return toStr(p)
     }
     return toStrProg(prog, v, &mut st)
 }
@@ -563,6 +577,10 @@ pub fn toNumProg(prog: &Prog, v: &JSValue, st: &mut Interp): f64 {
         return toNum(v)
     }
     let p = toPrimitiveNumber(prog, v, &mut st)
+    if isSymbolValue(p) {
+        let _t2 = throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a number")
+        return jsNan()
+    }
     return toNum(p)
 }
 
@@ -831,7 +849,7 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
         if !isUndefinedValue(trap) {
             var args: Vec<JSValue> = Vec.new()
             args.push(cloneValue(target))
-            args.push(JSValue.Str(key.clone()))
+            args.push(propKeyValue(key))
             args.push(JSValue.Obj(o))
             let r = callTrap(prog, &mut st, o, trap, args)
             if st.throwing {
@@ -1099,11 +1117,11 @@ fn brandMatches(st: &Interp, brand: i64, recv: &JSValue): bool {
             prim = boxedPrimitive(st, wh)
         }
         match prim {
-            JSValue.Str(ps) => {
-                if isSymbolStr(ps) {
-                    return brand == BRAND_SYMBOL
-                }
+            JSValue.Str(_ps) => {
                 return brand == BRAND_STRING
+            }
+            JSValue.Sym(_pid) => {
+                return brand == BRAND_SYMBOL
             }
             JSValue.Number(_pn) => {
                 return brand == BRAND_NUMBER
@@ -1637,6 +1655,17 @@ pub fn builtinArityOn(host: &string, n: &string): i64 {
     if n == "set" && (host == "Map" || host == "WeakMap") {
         return 2
     }
+    // the symbol-keyed built-in methods, which a name table cannot spell
+    let wk = symIdOfKey(n)
+    if wk >= 0 {
+        if wk == WK_REPLACE || wk == WK_SPLIT {
+            return 2
+        }
+        if wk == WK_ITERATOR || wk == WK_ASYNC_ITERATOR {
+            return 0
+        }
+        return 1
+    }
     return builtinArity(n)
 }
 
@@ -1700,7 +1729,7 @@ pub fn makeBoundMethodOn(st: &mut Interp, recv: JSValue, name: string, host: str
     // of each per method, with verifyProperty, so they must be real own
     // properties with the spec's attributes and not synthesised on read
     objDefineBuiltinAttr(&mut st, bo, "length", JSValue.Number(builtinArityOn(host, name) as f64))
-    objDefineBuiltinAttr(&mut st, bo, "name", JSValue.Str(name))
+    objDefineBuiltinAttr(&mut st, bo, "name", JSValue.Str(keyFunctionName(st, name)))
     return JSValue.Obj(bo)
 }
 
@@ -2119,19 +2148,19 @@ fn isBuiltinAccessorName(n: &string): bool {
 // without disturbing the regex path that the rest of the engine is built on.
 fn stringSymbolOpKey(name: &string): string {
     if name == "match" {
-        return "@@sym:Symbol.match:0"
+        return symKey(WK_MATCH)
     }
     if name == "matchAll" {
-        return "@@sym:Symbol.matchAll:0"
+        return symKey(WK_MATCH_ALL)
     }
     if name == "replace" || name == "replaceAll" {
-        return "@@sym:Symbol.replace:0"
+        return symKey(WK_REPLACE)
     }
     if name == "search" {
-        return "@@sym:Symbol.search:0"
+        return symKey(WK_SEARCH)
     }
     if name == "split" {
-        return "@@sym:Symbol.split:0"
+        return symKey(WK_SPLIT)
     }
     return ""
 }
@@ -2288,9 +2317,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             // wins over the built-in tag: class { get [Symbol.toStringTag](){…} }
             let tag = getMemberDyn(prog, o, symToStringTagKey(), &mut st)
             if let JSValue.Str(ts) = tag {
-                if !isSymbolStr(ts) {
-                    return JSValue.Str("[object " + ts + "]")
-                }
+                return JSValue.Str("[object " + ts + "]")
             }
             return JSValue.Str("[object " + objectTag(st, o) + "]")
         }
@@ -2317,11 +2344,20 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             }
         }
     }
+    // a Symbol.prototype method reached with a symbol WRAPPER receiver runs on
+    // the symbol it wraps; only the branded names get here with one
+    let rwo = objHandle(recv)
+    if rwo >= 0 && isSymbolMethodName(name) && isWrapperObj(st, rwo) {
+        let wsid = symIdOf(boxedPrimitive(st, rwo))
+        if wsid >= 0 {
+            return symbolMethod(&mut st, wsid, name)
+        }
+    }
     match recv {
+        JSValue.Sym(sid) => {
+            return symbolMethod(&mut st, sid, name)
+        }
         JSValue.Str(sv) => {
-            if isSymbolStr(sv) && name == "toString" {
-                return JSValue.Str(symbolDisplay(sv))
-            }
             // Array.prototype.map.call("abc", f) — an array method a string does
             // NOT also define runs generically over the string's units. Names
             // both sides share (slice, indexOf, concat, at…) stay with the
@@ -2574,10 +2610,8 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
                 // a Symbol WRAPPER prints its description, not the object tag:
                 // Symbol.prototype.toString.call(Object(sym)) is "Symbol(x)"
                 if isWrapperObj(st, o) {
-                    if let JSValue.Str(ws) = boxedPrimitive(st, o) {
-                        if isSymbolStr(ws) {
-                            return JSValue.Str(symbolDisplay(ws))
-                        }
+                    if let JSValue.Sym(wid) = boxedPrimitive(st, o) {
+                        return JSValue.Str(symbolDisplay(st, wid))
                     }
                 }
                 // Array.prototype.toString is join(","), not the type tag. The
@@ -2849,11 +2883,11 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
 fn objectTag(st: &Interp, o: i64): string {
     if isWrapperObj(st, o) {
         match st.objExtras[st.objects[o].extra].boxed {
-            JSValue.Str(bs) => {
-                if isSymbolStr(bs) {
-                    return "Symbol"
-                }
+            JSValue.Str(_bs) => {
                 return "String"
+            }
+            JSValue.Sym(_bid) => {
+                return "Symbol"
             }
             JSValue.Number(_bn) => {
                 return "Number"
@@ -2952,13 +2986,11 @@ fn objectTypeTag(v: &JSValue): string {
         JSValue.Number(_n) => {
             return "Number"
         }
-        JSValue.Str(s) => {
-            // symbols are interned strings in this engine, so the tag has to come
-            // from the marker rather than the value kind
-            if isSymbolStr(s) {
-                return "Symbol"
-            }
+        JSValue.Str(_s) => {
             return "String"
+        }
+        JSValue.Sym(_id) => {
+            return "Symbol"
         }
         JSValue.Func(_f, _e, _fo) => {
             return "Function"
@@ -2993,7 +3025,7 @@ pub fn setMemberDyn(prog: &Prog, o: i64, key: string, v: JSValue, st: &mut Inter
         if !isUndefinedValue(trap) {
             var args: Vec<JSValue> = Vec.new()
             args.push(cloneValue(target))
-            args.push(JSValue.Str(key.clone()))
+            args.push(propKeyValue(key))
             args.push(cloneValue(v))
             args.push(JSValue.Obj(o))
             let r = callTrap(prog, &mut st, o, trap, args)
@@ -3486,7 +3518,7 @@ fn readLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
             pushTemp(&mut st, cloneValue(ov))
             let kv = evalExpr(prog, keyIdx, &mut st, scope)
             popTemp(&mut st)
-            let key = toStr(kv)
+            let key = toPropertyKey(st, kv)
             match ov {
                 JSValue.Obj(o) => {
                     return getMember(st, o, key)
@@ -3534,7 +3566,7 @@ fn writeLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64, value
             pushTemp(&mut st, cloneValue(ov))
             let kv = evalExpr(prog, keyIdx, &mut st, scope)
             popTemp(&mut st)
-            let key = toStr(kv)
+            let key = toPropertyKey(st, kv)
             match ov {
                 JSValue.Obj(o) => {
                     setMember(&mut st, o, key, value)
@@ -3744,8 +3776,9 @@ pub fn callNativeProg(_prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut
             // test262 watches it with an observer object.
             // toStrProg falls back to Object.prototype.toString for an object
             // with no own or inherited toString, which is what the probe was
-            // guarding against.
-            return JSValue.Str(toStrProg(gProg, argVals[0], &mut st))
+            // guarding against. toStrArg, not toStrProg: a symbol wrapper
+            // unwraps to a symbol there, and String() of that throws.
+            return JSValue.Str(toStrArg(gProg, argVals[0], &mut st))
         }
     }
     return callNative(n, argVals, &mut st)
@@ -3809,13 +3842,11 @@ fn mapSetFill(id: Builtin, o: i64, src: &JSValue, st: &mut Interp) {
         }
     } else if isStr(src) {
         let sv = toStr(src)
-        if !isSymbolStr(sv) {
-            let cps = strCodePoints(sv)
-            var ci: i64 = 0
-            while ci < cps.len() && !st.throwing {
-                mapSetAddEntry(id, o, JSValue.Str(cps[ci].clone()), adder, fast, &mut st)
-                ci = ci + 1
-            }
+        let cps = strCodePoints(sv)
+        var ci: i64 = 0
+        while ci < cps.len() && !st.throwing {
+            mapSetAddEntry(id, o, JSValue.Str(cps[ci].clone()), adder, fast, &mut st)
+            ci = ci + 1
         }
     } else {
         // Drive Symbol.iterator one entry at a time. Materializing through
@@ -4115,9 +4146,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if argVals.len() == 0 {
             return JSValue.Number(0.0)
         }
-        // ToNumber of a SYMBOL is a TypeError, not NaN. Symbols are interned
-        // strings here, so toNum happily parsed one as a failed number and every
-        // "reject a symbol argument" case read as a quiet NaN instead.
+        // ToNumber of a SYMBOL is a TypeError, not NaN
         if isSymbolValue(argVals[0]) {
             return throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a number")
         }
@@ -4142,6 +4171,9 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         match cloneValue(argVals[0]) {
             JSValue.BigInt(s) => {
                 return JSValue.BigInt(s.clone())
+            }
+            JSValue.Sym(bsid) => {
+                return throwErr(&mut st, "TypeError", "Cannot convert " + symbolDisplay(st, bsid) + " to a BigInt")
             }
             JSValue.Bool(b) => {
                 if b {
@@ -4181,12 +4213,10 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if argVals.len() == 0 {
             return JSValue.Str("")
         }
-        // String(sym) is the one conversion the spec allows for a symbol, and it
-        // must show Symbol(desc) rather than the internal tagged string
-        if let JSValue.Str(sv) = argVals[0] {
-            if isSymbolStr(sv) {
-                return JSValue.Str(symbolDisplay(sv))
-            }
+        // String(sym) is the one conversion the spec allows for a symbol
+        // (SymbolDescriptiveString); a symbol WRAPPER still throws, below
+        if let JSValue.Sym(sid) = argVals[0] {
+            return JSValue.Str(symbolDisplay(st, sid))
         }
         // arrays coerce to their join, not "[object Object]"
         let a0h = objHandle(argVals[0])
@@ -4207,7 +4237,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         // through the Prog: String(fn) is the function's SOURCE, and a plain
         // object's user toString has to run
-        return JSValue.Str(toStrProg(gProg, argVals[0], &mut st))
+        return JSValue.Str(toStrArg(gProg, argVals[0], &mut st))
     }
     if id == Builtin.Boolean {
         if argVals.len() == 0 {
@@ -4365,14 +4395,44 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         return JSValue.Number(jsParsePrefixNum(text, radix))
     }
     if id == Builtin.Symbol {
-        // Symbols are modelled as unique strings; enough for the well-known
-        // ones used as property keys, not for real symbol semantics
-        var desc = ""
-        if argVals.len() > 0 {
-            desc = toStr(argVals[0])
+        // Symbol() and Symbol(undefined) have NO description, which reads back
+        // as undefined; Symbol("") has the empty one
+        if argVals.len() == 0 || isUndefinedValue(argVals[0]) {
+            return JSValue.Sym(newSymbol(&mut st, "", false))
         }
-        st.symbolCounter = st.symbolCounter + 1
-        return JSValue.Str("@@sym:" + desc + ":" + i64ToStr(st.symbolCounter))
+        let desc = toStrArg(gProg, argVals[0], &mut st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        return JSValue.Sym(newSymbol(&mut st, desc, true))
+    }
+    if id == Builtin.SymbolFor {
+        var key = "undefined"
+        if argVals.len() > 0 {
+            key = toStrArg(gProg, argVals[0], &mut st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+        }
+        return JSValue.Sym(symbolFor(&mut st, key))
+    }
+    if id == Builtin.SymbolKeyFor {
+        var kid: i64 = -1
+        if argVals.len() > 0 {
+            kid = symIdOf(argVals[0])
+        }
+        if kid < 0 {
+            var shown = "undefined"
+            if argVals.len() > 0 {
+                if objHandle(argVals[0]) >= 0 || funcHandle(argVals[0]) >= 0 {
+                    shown = "#<Object>"
+                } else {
+                    shown = toStr(argVals[0])
+                }
+            }
+            return throwErr(&mut st, "TypeError", shown + " is not a symbol")
+        }
+        return symbolKeyFor(st, kid)
     }
     if id == Builtin.ObjectDefineProperties {
         if argVals.len() < 2 {
@@ -4420,9 +4480,8 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if argVals.len() == 0 || isNullish(argVals[0]) {
             return throwErr(&mut st, "TypeError", "Cannot convert undefined or null to object")
         }
-        // Two views of the same [[OwnPropertyKeys]] list: symbols are stored as
-        // "@@sym:"-prefixed string keys, and a symbol value IS that string, so
-        // the two differ only in which half of the list they keep.
+        // Two views of the same [[OwnPropertyKeys]] list, differing only in
+        // which half of it they keep.
         let wantSymbols = id == Builtin.ObjectGetOwnPropSymbols
         let arr = newArray(&mut st)
         if argVals.len() > 0 {
@@ -4434,8 +4493,8 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             }
             var ki: i64 = 0
             while ki < keys.len() {
-                if isSymbolStr(keys[ki]) == wantSymbols {
-                    arrPush(&mut st, arr, JSValue.Str(keys[ki].clone()))
+                if isSymbolKey(keys[ki]) == wantSymbols {
+                    arrPush(&mut st, arr, propKeyValue(keys[ki]))
                 }
                 ki = ki + 1
             }
@@ -5971,9 +6030,6 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         // the quoted form only because a bare string is the whole value — node
         // quotes it here and NOT in console.log, which is why the two differ.
         if let JSValue.Str(sv) = argVals[0] {
-            if isSymbolStr(sv) {
-                return JSValue.Str(symbolDisplay(sv))
-            }
             return JSValue.Str(inspectQuoteStr(sv))
         }
         // node's second argument is an options object, and `depth` is the one
@@ -6590,7 +6646,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         var ki: i64 = 0
         while ki < keys.len() {
-            arrPush(&mut st, arr, JSValue.Str(keys[ki].clone()))
+            arrPush(&mut st, arr, propKeyValue(keys[ki]))
             ki = ki + 1
         }
         popTemp(&mut st)
@@ -6751,23 +6807,21 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             pushTemp(&mut st, JSValue.Obj(arr))
             // a string enumerates as its characters, keyed by index
             if let JSValue.Str(sv) = cloneValue(argVals[0]) {
-                if !isSymbolStr(sv) {
-                    var si: i64 = 0
-                    let slen = utf16Length(sv)
-                    while si < slen {
-                        let ch = JSValue.Str(strSlice(sv, si, si + 1))
-                        if wantPairs {
-                            let spair = newArray(&mut st)
-                            pushTemp(&mut st, JSValue.Obj(spair))
-                            arrPush(&mut st, spair, JSValue.Str(i64ToStr(si)))
-                            arrPush(&mut st, spair, ch)
-                            popTemp(&mut st)
-                            arrPush(&mut st, arr, JSValue.Obj(spair))
-                        } else {
-                            arrPush(&mut st, arr, ch)
-                        }
-                        si = si + 1
+                var si: i64 = 0
+                let slen = utf16Length(sv)
+                while si < slen {
+                    let ch = JSValue.Str(strSlice(sv, si, si + 1))
+                    if wantPairs {
+                        let spair = newArray(&mut st)
+                        pushTemp(&mut st, JSValue.Obj(spair))
+                        arrPush(&mut st, spair, JSValue.Str(i64ToStr(si)))
+                        arrPush(&mut st, spair, ch)
+                        popTemp(&mut st)
+                        arrPush(&mut st, arr, JSValue.Obj(spair))
+                    } else {
+                        arrPush(&mut st, arr, ch)
                     }
+                    si = si + 1
                 }
             }
             if let JSValue.Obj(o) = cloneValue(argVals[0]) {
@@ -6850,13 +6904,11 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             // own keys. Neither has a property bag, and indexing the heap with
             // the -1 that stands for "none" crashed the engine outright.
             if let JSValue.Str(sv) = cloneValue(argVals[0]) {
-                if !isSymbolStr(sv) {
-                    var si: i64 = 0
-                    let slen = utf16Length(sv)
-                    while si < slen {
-                        arrPush(&mut st, arr, JSValue.Str(i64ToStr(si)))
-                        si = si + 1
-                    }
+                var si: i64 = 0
+                let slen = utf16Length(sv)
+                while si < slen {
+                    arrPush(&mut st, arr, JSValue.Str(i64ToStr(si)))
+                    si = si + 1
                 }
             }
             let keysBag = propertyBagOf(&mut st, argVals[0])
@@ -7880,6 +7932,9 @@ fn typeofStr(v: &JSValue): string {
         JSValue.BigInt(_s) => {
             return "bigint"
         }
+        JSValue.Sym(_id) => {
+            return "symbol"
+        }
         JSValue.Func(_f, _e, _fo) => {
             return "function"
         }
@@ -8162,13 +8217,9 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Inter
         return evalBin(op, ea, eb)
     }
     // A SYMBOL has no implicit conversion: ToString and ToNumber of one both
-    // throw, and only `String(sym)` and `sym.toString()` are allowed. Symbols are
-    // modelled here as tagged strings, so `"x" + sym` took the ordinary
-    // concatenation path and produced "x@@sym:s:3", leaking the internal tag into
-    // user output. Equality compares without converting and stays allowed.
-    let symbolic = isSymbolValue(va) || isSymbolValue(vb)
-    if symbolic && op != "===" && op != "!==" && op != "==" && op != "!=" {
-    return throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a string")
+    // throw. Equality compares without converting and stays allowed.
+    if (isSymbolValue(va) || isSymbolValue(vb)) && op != "===" && op != "!==" && op != "==" && op != "!=" {
+        return symbolOperandError(&mut st, op)
     }
     let coerces = op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "<" || op == ">" || op == "<=" || op == ">="
     if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0 || funcHandle(va) >= 0 || funcHandle(vb) >= 0 || isNativeValue(va) || isNativeValue(vb)) {
@@ -8189,9 +8240,22 @@ fn evalBinaryExpr(prog: &Prog, op: &string, a: ExprId, b: ExprId, st: &mut Inter
         }
         popTemp(&mut st)
         popTemp(&mut st)
+        // a symbol WRAPPER reaches its symbol only through ToPrimitive
+        if isSymbolValue(pa) || isSymbolValue(pb) {
+            return symbolOperandError(&mut st, op)
+        }
         return evalBin(op, pa, pb)
     }
     return evalBin(op, va, vb)
+}
+
+// `+` converts a symbol operand with ToString, every other operator with
+// ToNumber; node words the TypeError after whichever one it was.
+fn symbolOperandError(st: &mut Interp, op: &string): JSValue {
+    if op == "+" {
+        return throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a string")
+    }
+    return throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a number")
 }
 
 // Hot recursive nodes bypass the full dispatcher. The fallback contains large
@@ -8287,6 +8351,9 @@ pub fn memberOfValue(prog: &Prog, ov: JSValue, name: &string, st: &mut Interp): 
                 }
             }
             return stringPrimitiveMember(&mut st, s, name)
+        }
+        JSValue.Sym(sid) => {
+            return symbolPrimitiveMember(&mut st, sid, name)
         }
         JSValue.Func(_fIdx, _fe, _fo) => {
             // `fn.constructor === Function`: functions are not objects in
@@ -8400,7 +8467,7 @@ fn evalIndexExpr(prog: &Prog, objIdx: ExprId, keyIdx: ExprId, st: &mut Interp, s
         if st.throwing {
             return JSValue.Undefined
         }
-        let key = toStr(kv)
+        let key = toPropertyKey(st, kv)
         match ov {
             JSValue.Obj(o) => {
                 // buf[i] indexes a Buffer's bytes (it is a plain object, not a
@@ -8442,6 +8509,9 @@ fn evalIndexExpr(prog: &Prog, objIdx: ExprId, keyIdx: ExprId, st: &mut Interp, s
                     }
                 }
                 return getMember(st, bag, key)
+            }
+            JSValue.Sym(sid) => {
+                return symbolPrimitiveMember(&mut st, sid, key)
             }
             JSValue.Str(s) => {
                 // s["slice"] is the METHOD, not s[NaN] — asArrayIndex rejects
@@ -8604,13 +8674,9 @@ pub fn evalBinValues(prog: &Prog, op: &string, va: JSValue, vb: JSValue, st: &mu
     // to keep the hot number/string path free of overhead. Equality
     // (==/!=/===/!==) is excluded — it has its own object rules.
     // A SYMBOL has no implicit conversion: ToString and ToNumber of one both
-    // throw, and only `String(sym)` and `sym.toString()` are allowed. Symbols are
-    // modelled here as tagged strings, so `"x" + sym` took the ordinary
-    // concatenation path and produced "x@@sym:s:3", leaking the internal tag into
-    // user output. Equality compares without converting and stays allowed.
-    let symbolic = isSymbolValue(va) || isSymbolValue(vb)
-    if symbolic && op != "===" && op != "!==" && op != "==" && op != "!=" {
-    return throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a string")
+    // throw. Equality compares without converting and stays allowed.
+    if (isSymbolValue(va) || isSymbolValue(vb)) && op != "===" && op != "!==" && op != "==" && op != "!=" {
+        return symbolOperandError(&mut st, op)
     }
     let coerces = op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**" || op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>" || op == "<" || op == ">" || op == "<=" || op == ">="
     if coerces && (objHandle(va) >= 0 || objHandle(vb) >= 0 || funcHandle(va) >= 0 || funcHandle(vb) >= 0 || isNativeValue(va) || isNativeValue(vb)) {
@@ -8634,6 +8700,10 @@ pub fn evalBinValues(prog: &Prog, op: &string, va: JSValue, vb: JSValue, st: &mu
         }
         popTemp(&mut st)
         popTemp(&mut st)
+        // a symbol WRAPPER reaches its symbol only through ToPrimitive
+        if isSymbolValue(pa) || isSymbolValue(pb) {
+            return symbolOperandError(&mut st, op)
+        }
         return evalBin(op, pa, pb)
     }
     return evalBin(op, va, vb)
@@ -8989,7 +9059,7 @@ pub fn evalUnValue(prog: &Prog, op: &string, va: JSValue, st: &mut Interp): JSVa
             // it should be -1. The compiled Op.Neg got this right and the
             // evaluator did not, which is how the two disagreed.
             if objHandle(va) >= 0 {
-                return JSValue.Number(-toNum(toPrimitiveNumber(prog, va, &mut st)))
+                return JSValue.Number(-toNumProg(prog, va, &mut st))
             }
             return JSValue.Number(-toNum(va))
         }
@@ -9002,10 +9072,6 @@ pub fn evalUnValue(prog: &Prog, op: &string, va: JSValue, st: &mut Interp): JSVa
             let th = objHandle(va)
             if th >= 0 && (st.objects[th].isBound || st.objects[th].isFunctionLike) {
                 return JSValue.Str("function")
-            }
-            // symbols are unique strings internally; typeof still says symbol
-            if isSymbolValue(va) {
-                return JSValue.Str("symbol")
             }
             return JSValue.Str(typeofStr(va))
         }
@@ -9023,7 +9089,7 @@ pub fn evalUnValue(prog: &Prog, op: &string, va: JSValue, st: &mut Interp): JSVa
             // unary plus is ToNumber, which ToPrimitive(number)s an object
             // first (so +new Date(0) is its epoch ms, not NaN)
             if objHandle(va) >= 0 {
-                return JSValue.Number(toNum(toPrimitiveNumber(prog, va, &mut st)))
+                return JSValue.Number(toNumProg(prog, va, &mut st))
             }
             return JSValue.Number(toNum(va))
         }
@@ -9031,11 +9097,11 @@ pub fn evalUnValue(prog: &Prog, op: &string, va: JSValue, st: &mut Interp): JSVa
             // ToInt32 goes through ToNumber, so an object is ToPrimitive'd first:
             // `~[1]` is -2, not -1. toInt32 alone read the object as 0.
             if objHandle(va) >= 0 {
-                let prim = toPrimitiveNumber(prog, va, &mut st)
+                let pn = toNumProg(prog, va, &mut st)
                 if st.throwing {
                     return JSValue.Undefined
                 }
-                let rp = (0 - toInt32(prim)) - 1
+                let rp = (0 - toInt32(JSValue.Number(pn))) - 1
                 return JSValue.Number(rp as f64)
             }
             let r = (0 - toInt32(va)) - 1
@@ -9412,7 +9478,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             // across both — else obj[f()] = g() writes into a reused slot
             pushTemp(&mut st, cloneValue(ov))
             let kv = evalExpr(prog, keyIdx, &mut st, scope)
-            let key = toStr(kv)
+            let key = toPropertyKey(st, kv)
             let v = evalExpr(prog, valIdx, &mut st, scope)
             popTemp(&mut st)
             return setMemberOfValue(prog, ov, key, v, &mut st)
@@ -9430,7 +9496,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             while i < n {
                 var key = prog.objLits[litIdx.index][i].key.clone()
                 if let Option.Some(keyExprId) = prog.objLits[litIdx.index][i].keyExpr {
-                    key = toStr(evalExpr(prog, keyExprId, &mut st, scope))
+                    key = toPropertyKey(st, evalExpr(prog, keyExprId, &mut st, scope))
                 }
                 let valIdx = prog.objLits[litIdx.index][i].val
                 let v = evalExpr(prog, valIdx, &mut st, scope)
@@ -9504,6 +9570,22 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                             }
                             objSet(&mut st, obj, pk, pv)
                         }
+                        // CopyDataProperties takes the enumerable SYMBOL keys
+                        // too, after the strings; enumOrder leaves them out
+                        var sy: i64 = 0
+                        while sy < st.objects[src].props.len() && !st.throwing {
+                            if isSymbolKey(st.objects[src].props[sy].key) && st.objects[src].props[sy].enumerable {
+                                let syk = st.objects[src].props[sy].key.clone()
+                                var syv = JSValue.Undefined
+                                if propIsAccessor(st, src, sy) {
+                                    syv = getMemberDyn(prog, src, syk.clone(), &mut st)
+                                } else {
+                                    syv = cloneValue(st.objects[src].props[sy].value)
+                                }
+                                objSet(&mut st, obj, syk, syv)
+                            }
+                            sy = sy + 1
+                        }
                     }
                 } else if prog.objLits[litIdx.index][i].isProtoSetter {
                     // `{ __proto__: v }` SETS the prototype. A value that is
@@ -9539,14 +9621,9 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             if st.throwing {
                 return JSValue.Undefined
             }
-            // String(sym) is legal, `${sym}` is not — the template's implicit
+            // String(sym) is legal, `${sym}` is not: the template's implicit
             // ToString has no symbol case, so it throws where String() does not
-            if let JSValue.Str(hs) = cloneValue(hv) {
-                if isSymbolStr(hs) {
-                    return throwErr(&mut st, "TypeError", "Cannot convert a Symbol value to a string")
-                }
-            }
-            return JSValue.Str(toStrProg(prog, hv, &mut st))
+            return JSValue.Str(toStrArg(prog, hv, &mut st))
         }
         Expr.TemplateStrings(litIdx, rawIdx) => {
             // cooked chunks, plus the parallel un-escaped chunks as `raw`
@@ -9719,7 +9796,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             pushTemp(&mut st, cloneValue(ov))
             let kv = evalExpr(prog, keyIdx, &mut st, scope)
             popTemp(&mut st)
-            let key = toStr(kv)
+            let key = toPropertyKey(st, kv)
             let o = objHandle(ov)
             if o >= 0 {
                 return getMemberDyn(prog, o, key, &mut st)
@@ -9786,6 +9863,9 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     }
                     return stringPrimitiveMember(&mut st, s, name)
                 }
+                JSValue.Sym(sid) => {
+                    return symbolPrimitiveMember(&mut st, sid, name)
+                }
                 JSValue.Func(_fIdx, _fe, _fo) => {
                     // a non-nullish function base reads like `.` does: a function
                     // is a property carrier (fn?._def, fn?.name). This was the
@@ -9842,12 +9922,10 @@ fn spreadIntoArms(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Int
     // string's characters.
     if h >= 0 && isWrapperObj(st, h) && objOwnIndex(st, h, symIteratorKey()) < 0 {
         if let JSValue.Str(bs) = boxedPrimitive(st, h) {
-            if !isSymbolStr(bs) {
-                for cp in strCodePoints(bs) {
-                    out.push(JSValue.Str(cp.clone()))
-                }
-                return
+            for cp in strCodePoints(bs) {
+                out.push(JSValue.Str(cp.clone()))
             }
+            return
         }
     }
     // typed arrays are iterable by element
@@ -10032,20 +10110,18 @@ fn iterableToArray(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     // ["a","b"]. spreadInto already knows how to walk one, which is why `[..."ab"]`
     // worked while the Set constructor did not.
     if let JSValue.Str(sv) = v {
-        if !isSymbolStr(sv) {
-            var chars: Vec<JSValue> = Vec.new()
-            let charsBase = st.tempRoots.len()
-            spreadInto(prog, &mut chars, cloneValue(v), &mut st)
-            let sarr = newArray(&mut st)
-            pushTemp(&mut st, JSValue.Obj(sarr))
-            var ci: i64 = 0
-            while ci < chars.len() {
-                arrPush(&mut st, sarr, cloneValue(chars[ci]))
-                ci = ci + 1
-            }
-            truncateTemps(&mut st, charsBase)
-            return JSValue.Obj(sarr)
+        var chars: Vec<JSValue> = Vec.new()
+        let charsBase = st.tempRoots.len()
+        spreadInto(prog, &mut chars, cloneValue(v), &mut st)
+        let sarr = newArray(&mut st)
+        pushTemp(&mut st, JSValue.Obj(sarr))
+        var ci: i64 = 0
+        while ci < chars.len() {
+            arrPush(&mut st, sarr, cloneValue(chars[ci]))
+            ci = ci + 1
         }
+        truncateTemps(&mut st, charsBase)
+        return JSValue.Obj(sarr)
     }
     let h = objHandle(v)
     if h < 0 || st.objects[h].isArray {
@@ -10270,9 +10346,11 @@ fn inspectQuoteStr(s: &string): string {
 
 // node leaves a key bare only when it matches /^[a-zA-Z_][a-zA-Z_0-9]*$/ — note
 // that `$` is NOT in that set, so `{ $x: 1 }` prints as `{ '$x': 1 }`.
-fn inspectKeyStr(k: &string): string {
-    if isSymbolStr(k) {
-        return "[" + symbolDisplay(k) + "]"
+fn inspectKeyStr(st: &Interp, k: &string): string {
+    // node 25 prints a symbol key bare, `{ Symbol(a): 1 }`, with no brackets
+    let sid = symIdOfKey(k)
+    if sid >= 0 {
+        return symbolDisplay(st, sid)
     }
     var ok = k.len() > 0
     var i: i64 = 0
@@ -10590,12 +10668,10 @@ fn circularMarkOf(targets: &Vec<i64>, o: i64): i64 {
 fn inspectInner(st: &Interp, v: &JSValue, depth: i64, indentLvl: i64, stack: &mut Vec<i64>, targets: &Vec<i64>): string {
     match v {
         JSValue.Str(s) => {
-            // a symbol is a tagged string internally; console.log shows it as
-            // Symbol(desc) without quotes, not the raw "@@sym:..." form
-            if isSymbolStr(s) {
-                return symbolDisplay(s)
-            }
             return inspectQuoteStr(s)
+        }
+        JSValue.Sym(id) => {
+            return symbolDisplay(st, id)
         }
         JSValue.Number(n) => {
             return inspectNum(n)
@@ -10828,9 +10904,10 @@ fn inspectObjBody(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut V
         let prim = boxedPrimitive(st, o)
         match prim {
             JSValue.Str(ws) => {
-                if !isSymbolStr(ws) {
-                    return "[String: " + inspectQuoteStr(ws) + "]"
-                }
+                return "[String: " + inspectQuoteStr(ws) + "]"
+            }
+            JSValue.Sym(wid) => {
+                return "[Symbol: " + symbolDisplay(st, wid) + "]"
             }
             JSValue.Number(wn) => {
                 return "[Number: " + numToStr(wn) + "]"
@@ -10857,14 +10934,19 @@ fn inspectObjBody(st: &Interp, o: i64, depth: i64, indentLvl: i64, stack: &mut V
         nullProtoTag = "[Object: null prototype] "
     }
     var parts: Vec<string> = Vec.new()
-    var i: i64 = 0
-    while i < st.objects[o].props.len() {
-        if st.objects[o].props[i].enumerable {
-            let key = st.objects[o].props[i].key.clone()
-            let val = cloneValue(st.objects[o].props[i].value)
-            parts.push(inspectKeyStr(key) + ": " + inspectInner(st, val, depth + 1, indentLvl + 2, &mut stack, targets))
+    // two passes: node lists the symbol keys after every string key
+    var pass: i64 = 0
+    while pass < 2 {
+        var i: i64 = 0
+        while i < st.objects[o].props.len() {
+            if st.objects[o].props[i].enumerable && isSymbolKey(st.objects[o].props[i].key) == (pass == 1) {
+                let key = st.objects[o].props[i].key.clone()
+                let val = cloneValue(st.objects[o].props[i].value)
+                parts.push(inspectKeyStr(st, key) + ": " + inspectInner(st, val, depth + 1, indentLvl + 2, &mut stack, targets))
+            }
+            i = i + 1
         }
-        i = i + 1
+        pass = pass + 1
     }
     if parts.len() == 0 {
         return nullProtoTag + "{}"
@@ -10896,12 +10978,11 @@ pub fn inspectTop(st: &Interp, v: &JSValue): string {
             return inspectFuncLabelAt(fidx)
         }
         JSValue.Str(s) => {
-            // a bare string logs unquoted (console.log("hi") → hi), but a symbol
-            // (a tagged string) logs as Symbol(desc), not its "@@sym:..." form
-            if isSymbolStr(s) {
-                return symbolDisplay(s)
-            }
+            // a bare string logs unquoted (console.log("hi") → hi)
             return s.clone()
+        }
+        JSValue.Sym(id) => {
+            return symbolDisplay(st, id)
         }
         _ => {
             return toStr(v)
@@ -11541,7 +11622,7 @@ pub fn getOwnPropDescOf(prog: &Prog, st: &mut Interp, v: &JSValue, key: &string)
         }
         var args: Vec<JSValue> = Vec.new()
         args.push(cloneValue(target))
-        args.push(JSValue.Str(key.clone()))
+        args.push(propKeyValue(key))
         let r = callTrap(prog, &mut st, o, trap, args)
         if st.throwing {
             return JSValue.Undefined
@@ -11861,7 +11942,7 @@ pub fn definePropOf(prog: &Prog, st: &mut Interp, v: &JSValue, key: &string, d: 
         }
         var args: Vec<JSValue> = Vec.new()
         args.push(cloneValue(target))
-        args.push(JSValue.Str(key.clone()))
+        args.push(propKeyValue(key))
         args.push(JSValue.Obj(d))
         let r = callTrap(prog, &mut st, o, trap, args)
         if st.throwing {
@@ -12234,7 +12315,7 @@ fn reflectGet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, rece
         }
         var args: Vec<JSValue> = Vec.new()
         args.push(cloneValue(tv))
-        args.push(JSValue.Str(keyCopy.clone()))
+        args.push(propKeyValue(keyCopy))
         args.push(cloneValue(receiver))
         let r = callTrap(prog, &mut st, o, trap, args)
         if st.throwing {
@@ -12290,7 +12371,7 @@ fn reflectSet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, v: &
         }
         var args: Vec<JSValue> = Vec.new()
         args.push(cloneValue(tv))
-        args.push(JSValue.Str(keyCopy.clone()))
+        args.push(propKeyValue(keyCopy))
         args.push(cloneValue(v))
         args.push(cloneValue(receiver))
         let r = callTrap(prog, &mut st, o, trap, args)
@@ -12385,7 +12466,7 @@ fn reflectSet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, v: &
 }
 
 // [[OwnPropertyKeys]] over any value, as raw keys — symbols included, in the
-// "@@sym:" spelling they are stored under. A proxy consults its ownKeys trap
+// symKey spelling they are stored under. A proxy consults its ownKeys trap
 // and with no trap forwards to its target, which may itself be a proxy.
 // The ONE answer to "which own string keys does this object have, and which of
 // them are enumerable", in [[OwnPropertyKeys]] order: integer indices first, then
@@ -12497,11 +12578,12 @@ pub fn ownKeysOf(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string> {
         var i: i64 = 0
         while i < arrLen(st, rh) {
             let kv = arrGet(st, rh, i)
-            // a symbol IS a "@@sym:"-prefixed string here, so the only legal
-            // trap-result element type is Str
             match cloneValue(kv) {
                 JSValue.Str(s) => {
                     out.push(s)
+                }
+                JSValue.Sym(sid) => {
+                    out.push(symKey(sid))
                 }
                 _ => {
                     let _t = throwErr(&mut st, "TypeError", "'ownKeys' on proxy: trap result must contain only string and symbol keys")
@@ -12576,7 +12658,7 @@ pub fn ownKeysOf(prog: &Prog, st: &mut Interp, v: &JSValue): Vec<string> {
         var pi: i64 = 0
         while pi < st.objects[h].props.len() {
             let k = st.objects[h].props[pi].key.clone()
-            if isSymbolStr(k) {
+            if isSymbolKey(k) {
                 out.push(k)
             }
             pi = pi + 1
@@ -12598,7 +12680,7 @@ fn proxyOwnEnumKeys(prog: &Prog, st: &mut Interp, o: i64): Vec<string> {
     }
     var i: i64 = 0
     while i < keyList.len() {
-        if !isSymbolStr(keyList[i]) {
+        if !isSymbolKey(keyList[i]) {
             let d = getOwnPropDescOf(prog, &mut st, self, keyList[i])
             if st.throwing {
                 return out
@@ -12647,74 +12729,80 @@ pub fn makeError(st: &mut Interp, kind: string, msg: string): JSValue {
 }
 
 pub fn isSymbolValue(v: &JSValue): bool {
+    return symIdOf(v) >= 0
+}
+
+// The symbol id of v, or -1 when v is not a symbol.
+pub fn symIdOf(v: &JSValue): i64 {
     match v {
-        JSValue.Str(s) => {
-            if s.len() < 6 {
-                return false
-            }
-            return s[0] == '@' && s[1] == '@' && s[2] == 's' && s[3] == 'y' && s[4] == 'm' && s[5] == ':'
+        JSValue.Sym(id) => {
+            return id
         }
         _ => {
-            return false
+            return -1
         }
     }
 }
 
-// The well-known @@iterator key. Symbols are interned strings, so this is just a
-// fixed one; counter 0 is reserved because user symbols start at 1.
+// A Symbol.prototype method applied to the primitive `id`. valueOf and
+// @@toPrimitive answer the symbol itself; that is what makes `obj[Object(sym)]`
+// the symbol's own key rather than its display string.
+fn isSymbolMethodName(name: &string): bool {
+    return name == "toString" || name == "valueOf" || name == "description" || name == symToPrimitiveKey()
+}
+
+fn symbolMethod(st: &mut Interp, id: i64, name: &string): JSValue {
+    if name == "toString" {
+        return JSValue.Str(symbolDisplay(st, id))
+    }
+    if name == "valueOf" || name == symToPrimitiveKey() {
+        return JSValue.Sym(id)
+    }
+    if name == "description" {
+        return symDescValue(st, id)
+    }
+    return JSValue.Undefined
+}
+
+// ToPropertyKey for a computed member key. A primitive WRAPPER unwraps, which is
+// what makes `o[Object(sym)]` the symbol's own key; any other object still
+// takes toStr's "[object Object]" without running a user toString (see
+// docs/backlog.md).
+pub fn toPropertyKey(st: &Interp, v: &JSValue): string {
+    let h = objHandle(v)
+    if h >= 0 && isWrapperObj(st, h) {
+        return toStr(boxedPrimitive(st, h))
+    }
+    return toStr(v)
+}
+
+// SetFunctionName's spelling of a property key: a symbol-keyed method is named
+// "[desc]", or "" for a symbol with no description.
+pub fn keyFunctionName(st: &Interp, key: &string): string {
+    let id = symIdOfKey(key)
+    if id < 0 {
+        return key.clone()
+    }
+    if !st.symHasDesc[id] {
+        return ""
+    }
+    return "[" + st.symDescs[id] + "]"
+}
+
 fn symAsyncIteratorKey(): string {
-    return "@@sym:Symbol.asyncIterator:0"
+    return symKey(WK_ASYNC_ITERATOR)
 }
 
 pub fn symIteratorKey(): string {
-    return "@@sym:Symbol.iterator:0"
+    return symKey(WK_ITERATOR)
 }
 
 pub fn symToPrimitiveKey(): string {
-    return "@@sym:Symbol.toPrimitive:0"
+    return symKey(WK_TO_PRIMITIVE)
 }
 
 pub fn symToStringTagKey(): string {
-    return "@@sym:Symbol.toStringTag:0"
-}
-
-// Symbol test on the raw string. The JSValue-level isSymbolValue cannot be used
-// from inside a `match` arm on that same value: matching moves it, so reading the
-// original binding afterwards sees a zeroed slot and the test silently fails.
-pub fn isSymbolStr(s: &string): bool {
-    if s.len() < 6 {
-        return false
-    }
-    return s[0] == '@' && s[1] == '@' && s[2] == 's' && s[3] == 'y' && s[4] == 'm' && s[5] == ':'
-}
-
-// The description inside "@@sym:<desc>:<counter>". The counter is what makes two
-// same-description symbols distinct, so it is stripped from the LAST colon —
-// a description may itself contain colons.
-fn symbolDescription(s: &string): string {
-    var cut = s.len()
-    var i = s.len() - 1
-    var found = false
-    while i >= 6 && !found {
-        if s[i] == ':' {
-            cut = i
-            found = true
-        }
-        i = i - 1
-    }
-    var out = String.withCapacity(cut)
-    var j: i64 = 6
-    while j < cut {
-        out.push(s[j])
-        j = j + 1
-    }
-    return out
-}
-
-// What a symbol shows as: Symbol(desc). Without this the internal representation
-// leaks out of String(sym) and sym.toString().
-pub fn symbolDisplay(s: &string): string {
-    return "Symbol(" + symbolDescription(s) + ")"
+    return symKey(WK_TO_STRING_TAG)
 }
 
 fn serviceFetches(st: &mut Interp) {
@@ -14241,7 +14329,7 @@ fn proxyDelete(prog: &Prog, o: i64, key: string, st: &mut Interp): JSValue {
     if !isUndefinedValue(trap) {
         var dargs: Vec<JSValue> = Vec.new()
         dargs.push(cloneValue(target))
-        dargs.push(JSValue.Str(key.clone()))
+        dargs.push(propKeyValue(key))
         let r = callTrap(prog, &mut st, o, trap, dargs)
         if st.throwing {
             return JSValue.Undefined
@@ -14349,7 +14437,7 @@ fn evalDelete(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
             pushTemp(&mut st, cloneValue(ov))
             let kv = evalExpr(prog, keyIdx, &mut st, scope)
             popTemp(&mut st)
-            let key = toStr(kv)
+            let key = toPropertyKey(st, kv)
             let o = propertyBagOf(&mut st, ov)
             if o >= 0 {
                 if st.objects[o].isProxy {
@@ -14401,11 +14489,11 @@ fn makeArrayFromCtor(st: &mut Interp, argVals: &Vec<JSValue>): JSValue {
 // difference is the whole of what get-proto and reflect.getprototypeof test.
 fn primitiveProtoHandle(st: &mut Interp, v: &JSValue): i64 {
     match v {
-        JSValue.Str(sv) => {
-            if isSymbolStr(sv) {
-                return nativeProtoHandle(&mut st, Builtin.Symbol)
-            }
+        JSValue.Str(_sv) => {
             return st.stringProtoObj
+        }
+        JSValue.Sym(_sid) => {
+            return nativeProtoHandle(&mut st, Builtin.Symbol)
         }
         JSValue.Number(_n) => {
             return nativeProtoHandle(&mut st, Builtin.Number)
@@ -14620,14 +14708,27 @@ fn stringPrimitiveMember(st: &mut Interp, value: &string, key: &string): JSValue
     // "abc"[Symbol.iterator] as a VALUE. for-of and spread over a string never
     // needed it (they walk the code points directly), so reading it answered
     // undefined until get-intrinsic tried to call it.
-    if key == symIteratorKey() && !isSymbolStr(value) {
+    if key == symIteratorKey() {
         return makeBoundMethod(&mut st, JSValue.Str(value.clone()), "__stringIterator")
-    }
-    if key == "description" && isSymbolStr(value) {
-        return JSValue.Str(symbolDescription(value))
     }
     if st.stringProtoObj >= 0 {
         return getMember(st, st.stringProtoObj, key)
+    }
+    return JSValue.Undefined
+}
+
+// A property read on a symbol primitive: `description` answers from the symbol
+// table, everything else from Symbol.prototype.
+fn symbolPrimitiveMember(st: &mut Interp, id: i64, key: &string): JSValue {
+    if key == "description" {
+        return symDescValue(st, id)
+    }
+    let sp = nativeProtoHandle(&mut st, Builtin.Symbol)
+    if key == "__proto__" {
+        return JSValue.Obj(sp)
+    }
+    if sp >= 0 {
+        return getMember(st, sp, key)
     }
     return JSValue.Undefined
 }
@@ -15213,7 +15314,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
     // answered undefined for `d[Symbol.toPrimitive]("number")`, dropping both the
     // method and its `this`. Only symbol keys take this path, so nothing that
     // works today changes route.
-    if isSymbolStr(name) && objHandle(recv) >= 0 {
+    if isSymbolKey(name) && objHandle(recv) >= 0 {
         let symM = getMemberDyn(prog, objHandle(recv), name.clone(), &mut st)
         if st.throwing {
             return JSValue.Undefined
@@ -15921,6 +16022,20 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
             }
             return throwErr(&mut st, "TypeError", name.clone() + " is not a function")
         }
+        JSValue.Sym(sid) => {
+            // Symbol.prototype's methods, including @@toPrimitive, with the
+            // symbol itself as `this`
+            let sm = symbolPrimitiveMember(&mut st, sid, name)
+            if !isCallableIn(st, sm) {
+                return throwErr(&mut st, "TypeError", keyFunctionName(st, name) + " is not a function")
+            }
+            rootIfHeap(&mut st, sm)
+            let symArgs = evalArgs(prog, argsIdx, &mut st, scope)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            return callValue(prog, sm, symArgs, cloneValue(recv), &mut st)
+        }
         _ => {
             return throwErr(&mut st, "TypeError", "Cannot read properties of a non-object (reading '" + name.clone() + "')")
         }
@@ -16066,7 +16181,7 @@ pub fn evalInOperator(prog: &Prog, key: string, ov: JSValue, st: &mut Interp): J
                 if !isUndefinedValue(trap) {
                     var hargs: Vec<JSValue> = Vec.new()
                     hargs.push(cloneValue(target))
-                    hargs.push(JSValue.Str(key.clone()))
+                    hargs.push(propKeyValue(key))
                     let r = callTrap(prog, &mut st, o, trap, hargs)
                     if st.throwing {
                         return JSValue.Undefined
@@ -16495,7 +16610,7 @@ fn evalCallArms(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Inte
                 return JSValue.Undefined
             }
             let kv = evalExpr(prog, keyIdx, &mut st, scope)
-            let key = toStr(kv)
+            let key = toPropertyKey(st, kv)
             return callMember(prog, recv, key, argsIdx, &mut st, scope)
         }
         Expr.OptMember(objIdx, name) => {
@@ -16521,7 +16636,7 @@ fn evalCallArms(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Inte
                 return JSValue.Undefined
             }
             let kv = evalExpr(prog, keyIdx, &mut st, scope)
-            let key = toStr(kv)
+            let key = toPropertyKey(st, kv)
             return callMember(prog, recv, key, argsIdx, &mut st, scope)
         }
         _ => {
@@ -16789,12 +16904,12 @@ pub fn registerUsing(prog: &Prog, st: &mut Interp, scopeIdx: i64, name: &string)
     // `await using` looks for [Symbol.asyncDispose] first and falls back to the
     // sync one; a plain `using` finds no asyncDispose and takes the same path, so
     // the two forms need no marker to tell apart here.
-    var ud = getMemberDyn(prog, uh, "@@sym:Symbol.asyncDispose:0", &mut st)
+    var ud = getMemberDyn(prog, uh, symKey(WK_ASYNC_DISPOSE), &mut st)
     if st.throwing {
         return
     }
     if !isCallable(ud) {
-        ud = getMemberDyn(prog, uh, "@@sym:Symbol.dispose:0", &mut st)
+        ud = getMemberDyn(prog, uh, symKey(WK_DISPOSE), &mut st)
     }
     if st.throwing {
         return
@@ -17382,7 +17497,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                     // taking them from here too listed every own property twice.
                     // What is left is exactly the keys the property table cannot
                     // hold -- array elements and typed-array indices.
-                    if fEnum[fi] && fProp[fi] < 0 && !isSymbolStr(fKeys[fi]) {
+                    if fEnum[fi] && fProp[fi] < 0 && !isSymbolKey(fKeys[fi]) {
                         keys.push(fKeys[fi].clone())
                     }
                     fi = fi + 1

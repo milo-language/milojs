@@ -278,6 +278,15 @@ pub fn parseIsoDate(s: &string): f64
 Parse the ISO-8601 forms JS accepts from a string: YYYY-MM-DD with an optional
 THH:MM:SS(.mmm)(Z). Anything else is NaN, matching Invalid Date.
 
+### `propKeyValue`
+
+```milo
+pub fn propKeyValue(key: &string): JSValue
+```
+
+A property key as the JS value it names: the symbol for a symbol key, else
+the string. What Reflect.ownKeys and getOwnPropertySymbols hand back.
+
 ### `strLess`
 
 ```milo
@@ -295,6 +304,27 @@ pub fn strToNum(s: &string): f64
 ToNumber on a string. Surrounding whitespace is ignored ("  12  " is 12, and
 an all-whitespace string is 0), and the 0x/0o/0b radix prefixes are honored —
 none of which plain parseFloat does.
+
+### `symIdOfKey`
+
+```milo
+pub fn symIdOfKey(key: &string): i64
+```
+
+The symbol id a property key encodes, or -1 for a string key.
+
+### `symKey`
+
+```milo
+pub fn symKey(id: i64): string
+```
+
+The property key a symbol is stored under: a 0xFF byte, then the decimal id.
+0xFF never occurs in valid UTF-8, and JS strings here are UTF-8 (a lone
+surrogate is stored as U+FFFD), so no string key can collide with a symbol
+key. Two host paths still admit undecoded bytes; see docs/backlog.md,
+"symbols are never collected". symKey and symIdOfKey are the only code that
+knows this encoding; everything else asks them.
 
 ### `toInt32`
 
@@ -360,6 +390,15 @@ pub fn uriHasBadEscape(s: &string): bool
 ```
 
 A '%' not followed by two hex digits is a URIError in JS, not a literal.
+
+### `wellKnownSymName`
+
+```milo
+pub fn wellKnownSymName(id: i64): string
+```
+
+The property name of well-known symbol `id` on the Symbol constructor
+("iterator" for Symbol.iterator); its description is "Symbol." + this.
 
 ### `wsRunAt`
 

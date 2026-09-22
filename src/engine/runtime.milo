@@ -19,7 +19,7 @@ from "std/sync" import {
 }
 from "./value" import {
     cloneValue, jsStrictEquals,
-    JSValue, Native, Builtin, i64ToStr, roundHalfAwayFromZero, cloneNative, nativeEq
+    JSValue, Native, Builtin, i64ToStr, roundHalfAwayFromZero, cloneNative, nativeEq, symIdOfKey
 }
 from "./bigint" import {
     bnMod, bnAdd, bnToRadix
@@ -934,8 +934,14 @@ pub struct Interp {
     // resumes. Without the flag, walking the chain on every new-property write
     // cost 11-13% on the write benches.
     objectProtoPristine: bool,
-    // monotonic counter behind Symbol(); symbols are unique strings here
-    symbolCounter: i64,
+    // The symbol table, indexed by symbol id (JSValue.Sym). symHasDesc false is
+    // Symbol(), whose description is undefined rather than "". symRegistered
+    // marks the Symbol.for ones, which symRegistry maps key -> id. Entries live
+    // as long as the interpreter: symbols are not collected.
+    symDescs: Vec<string>,
+    symHasDesc: Vec<bool>,
+    symRegistered: Vec<bool>,
+    symRegistry: HashMap<string, i64>,
     // set the first time a Proxy is constructed. The member paths have to look
     // for a proxy in the prototype chain, which is a walk per read/write miss;
     // this keeps that walk out of every program that never uses Proxy at all.
@@ -1097,7 +1103,7 @@ pub var gInterp: Interp = Interp {
     throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 10000,
     rngState: 88172645463325252,
-    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, nativeKeys: Vec.new(), nativeProps: Vec.new(), resolverProps: Vec.new(), dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, objectProtoPristine: true, symbolCounter: 0, anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actFn: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), inspectMaxDepth: 2, parseFailed: false, hadUnhandledRejection: false, gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false, builtinGlobals: 0
+    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, nativeKeys: Vec.new(), nativeProps: Vec.new(), resolverProps: Vec.new(), dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, objectProtoPristine: true, symDescs: Vec.new(), symHasDesc: Vec.new(), symRegistered: Vec.new(), symRegistry: HashMap.new(), anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actFn: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), inspectMaxDepth: 2, parseFailed: false, hadUnhandledRejection: false, gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false, builtinGlobals: 0
 }
 
 fn allocObj(st: &mut Interp, isArray: bool): i64 {
@@ -1791,16 +1797,53 @@ pub fn asArrayIndex(key: &string): i64 {
 // JS own-property enumeration order: integer-index keys ascending first, then
 // the remaining string keys in insertion order. Returns prop indices into
 // st.objects[o].props in that order. Symbol-keyed props (stored with the
-// "@@sym:" prefix, including internal ones like Symbol.iterator) are omitted —
+// symKey encoding, including internal ones like Symbol.iterator) are omitted —
 // string-key enumeration never yields symbols in JS. Enumeration sites
 // (Object.keys/values/entries, for-in, spread, Object.assign) iterate these
 // instead of 0..len so `{ 2:a, 1:b, 10:c, x:d }` enumerates 1,2,10,x and a
 // symbol key never leaks into keys()/for-in/JSON — matching V8/node.
-// A property key is a symbol iff it carries the "@@sym:" sentinel prefix that
-// symbol values stringify to (see makeSymbol in eval.milo). Kept here so
-// runtime.milo stays free of an eval.milo import cycle.
 pub fn isSymbolKey(s: &string): bool {
-    return s.len() >= 6 && s[0] == '@' && s[1] == '@' && s[2] == 's' && s[3] == 'y' && s[4] == 'm' && s[5] == ':'
+    return symIdOfKey(s) >= 0
+}
+
+pub fn newSymbol(st: &mut Interp, desc: string, hasDesc: bool): i64 {
+    let id = st.symDescs.len()
+    st.symDescs.push(desc)
+    st.symHasDesc.push(hasDesc)
+    st.symRegistered.push(false)
+    return id
+}
+
+// Symbol.for(key): the one registered symbol for key, minted on first use.
+pub fn symbolFor(st: &mut Interp, key: &string): i64 {
+    if let Option.Some(id) = st.symRegistry.get(key) {
+        return id
+    }
+    let id = newSymbol(&mut st, key.clone(), true)
+    st.symRegistered[id] = true
+    st.symRegistry.insert(key.clone(), id)
+    return id
+}
+
+// Symbol.keyFor(sym): the registry key, or undefined for an unregistered symbol.
+pub fn symbolKeyFor(st: &Interp, id: i64): JSValue {
+    if st.symRegistered[id] {
+        return JSValue.Str(st.symDescs[id].clone())
+    }
+    return JSValue.Undefined
+}
+
+// sym.description: undefined for Symbol(), which is not the same as Symbol("").
+pub fn symDescValue(st: &Interp, id: i64): JSValue {
+    if st.symHasDesc[id] {
+        return JSValue.Str(st.symDescs[id].clone())
+    }
+    return JSValue.Undefined
+}
+
+// What String(sym) and sym.toString() give: Symbol(desc).
+pub fn symbolDisplay(st: &Interp, id: i64): string {
+    return "Symbol(" + st.symDescs[id] + ")"
 }
 
 pub fn isPrivateKey(k: &string): bool {

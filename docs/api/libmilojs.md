@@ -65,7 +65,7 @@ pub fn milojs_value_kind(context: i64, value: i64): i32
 ```
 
 0 undefined, 1 null, 2 bool, 3 number, 4 string, 5 object,
-6 function/native, 7 bigint.
+6 function/native, 7 bigint, 8 symbol.
 
 ### `milojs_value_number`
 

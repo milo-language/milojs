@@ -1,0 +1,79 @@
+symbol symbol object
+true false false
+true false
+true true true
+k undefined ""
+undefined null 42
+Symbol.iterator Symbol.asyncIterator
+Symbol(k) Symbol(k) Symbol() Symbol()
+true true
+Symbol(k)
+true
+[Symbol.toPrimitive] 1
+Symbol [object Symbol]
+[object Symbol]
+function undefined false true
+concat throws TypeError Cannot convert a Symbol value to a string
+concat-r throws TypeError Cannot convert a Symbol value to a string
+template throws TypeError Cannot convert a Symbol value to a string
+unary+ throws TypeError Cannot convert a Symbol value to a number
+unary- throws TypeError Cannot convert a Symbol value to a number
+bitnot throws TypeError Cannot convert a Symbol value to a number
+arith throws TypeError Cannot convert a Symbol value to a number
+compare throws TypeError Cannot convert a Symbol value to a number
+wrapper concat throws TypeError Cannot convert a Symbol value to a string
+wrapper template throws TypeError Cannot convert a Symbol value to a string
+wrapper plus throws TypeError Cannot convert a Symbol value to a number
+String(wrapper) throws TypeError Cannot convert a Symbol value to a string
+Number throws TypeError Cannot convert a Symbol value to a number
+BigInt throws TypeError Cannot convert Symbol(k) to a BigInt
+new throws TypeError Symbol is not a constructor
+Symbol(sym) throws TypeError Cannot convert a Symbol value to a string
+join throws TypeError Cannot convert a Symbol value to a string
+object true k false
+true
+true true
+via wrapper
+true false app
+app undefined undefined
+true symbol
+undefined undefined
+keyFor(str) throws TypeError app is not a symbol
+1 2 3 4 true true
+[ 'k', 'Symbol(k)' ]
+{"k":3,"Symbol(k)":4}
+[ 'k', 'Symbol(k)' ]
+2 true
+[ 'k', 'Symbol(k)' ]
+true true
+1
+0 [ '@@sym:1', 'Symbol(k)', '@@sym:x:1', '@@sym:Symbol.iterator:0' ]
+{"@@sym:1":1,"Symbol(k)":2,"@@sym:x:1":3,"@@sym:Symbol.iterator:0":4}
+string @@sym:x:1 a@@sym:x:1
+[ 'string', 'string', 'string', 'string' ]
+undefined false true
+7
+1
+[ '1', '2', 'b', 'a', Symbol(u), Symbol(t) ]
+[ '1', '2', 'b', 'a' ]
+[ Symbol(u), Symbol(t) ]
+[ '1', '2', 'b', 'a' ]
+[ [ '1', 'one' ], [ '2', 'two' ], [ 'b', 'b' ], [ 'a', 'a' ] ]
+tv undefined tv undefined 1
+{"b":1}
+[null,1,null]
+undefined {"n":[null]}
+Symbol(k) Symbol() Symbol() Symbol(Symbol.iterator)
+[ Symbol(k), Symbol() ]
+{ plain: 2, Symbol(k): 1, Symbol(): 3 }
+[Symbol: Symbol(k)]
+{ v: Symbol(k) }
+sym str 3 false
+3 true
+1 true
+called
+static getter
+true function
+false false false
+[ 1, 2 ]
+Symbol(a:b:1) a:b:1

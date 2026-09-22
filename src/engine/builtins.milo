@@ -19,17 +19,18 @@ from "./strutil" import {
 }
 from "./eval" import {
     isSymbolValue, isUndefinedValue,
-    toStrProg, callBuiltinByName, makeError, throwErr, isCallable, isSymbolStr, symbolDisplay, isBigIntVal, bigStrOf, callValue, makeArrayIterator, taCurrentLen, taElemValue
+    toStrProg, callBuiltinByName, makeError, throwErr, isCallable, isBigIntVal, bigStrOf, callValue, makeArrayIterator, taCurrentLen, taElemValue
 }
 from "./value" import {
     toNum, toStr, isFiniteF, objHandle, jsNan, i64ToStr, cloneValue, numToStr, numToFixed,
     numToExponential, numToPrecision, numToRadix,
-    JSValue, hexDigitVal, wsRunAt, wsRunBefore, truthy
+    JSValue, hexDigitVal, wsRunAt, wsRunBefore, truthy, symKey,
+    WK_MATCH, WK_MATCH_ALL, WK_REPLACE, WK_SEARCH, WK_SPLIT
 }
 from "./runtime" import {
     newArray, arrPush, arrLen, isWrapperObj, objHasInChain, propIsAccessor, enumOrder, pushTemp,
     popTemp, ensureExtra, objSetNonEnumerable, objSetNonConfigurable, objGet,
-    Interp, newObject, objSet
+    Interp, newObject, objSet, symbolDisplay
 }
 from "std/math" import {
     Math
@@ -1283,9 +1284,6 @@ fn mjPushFast(out: &mut string, v: &JSValue, st: &Interp, stack: &mut Vec<i64>):
             return true
         }
         JSValue.Str(s) => {
-            if isSymbolStr(s) {
-                return false
-            }
             mjPushJsonEscaped(&mut out, s)
             return true
         }
@@ -1395,6 +1393,9 @@ fn mjPushStringified(out: &mut string, v: &JSValue, st: &Interp) {
             out.pushStr("null")
         }
         JSValue.Undefined => {
+            out.pushStr("null")
+        }
+        JSValue.Sym(_id) => {
             out.pushStr("null")
         }
         JSValue.Func(_f, _e, _fo) => {
@@ -2003,15 +2004,15 @@ pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>):
     // RegExp.prototype[@@match](str) and friends: delegate to the String method
     // that actually implements the operation in this engine
     var strOp = ""
-    if name == "@@sym:Symbol.match:0" {
+    if name == symKey(WK_MATCH) {
         strOp = "match"
-    } else if name == "@@sym:Symbol.matchAll:0" {
+    } else if name == symKey(WK_MATCH_ALL) {
         strOp = "matchAll"
-    } else if name == "@@sym:Symbol.replace:0" {
+    } else if name == symKey(WK_REPLACE) {
         strOp = "replace"
-    } else if name == "@@sym:Symbol.search:0" {
+    } else if name == symKey(WK_SEARCH) {
         strOp = "search"
-    } else if name == "@@sym:Symbol.split:0" {
+    } else if name == symKey(WK_SPLIT) {
         strOp = "split"
     }
     if strOp.len() > 0 {
@@ -2686,7 +2687,7 @@ pub fn isRegexMethodName(n: &string): bool {
     if n.len() > 8 && strSlice(n.clone(), 0, 8) == "__reGet_" {
         return true
     }
-    if n == "@@sym:Symbol.match:0" || n == "@@sym:Symbol.matchAll:0" || n == "@@sym:Symbol.replace:0" || n == "@@sym:Symbol.search:0" || n == "@@sym:Symbol.split:0" {
+    if n == symKey(WK_MATCH) || n == symKey(WK_MATCH_ALL) || n == symKey(WK_REPLACE) || n == symKey(WK_SEARCH) || n == symKey(WK_SPLIT) {
         return true
     }
     return n == "test" || n == "exec" || n == "toString" || n == "compile"
@@ -2761,11 +2762,9 @@ pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>, st: &
     if name == "valueOf" {
         return cloneValue(recv)
     }
-    // symbols are interned strings, so a direct sym.toString() lands here before
-    // the builtin-method path and would otherwise leak the internal form
-    if let JSValue.Str(sv) = recv {
-        if isSymbolStr(sv) && name == "toString" {
-            return JSValue.Str(symbolDisplay(sv))
+    if let JSValue.Sym(sid) = recv {
+        if name == "toString" {
+            return JSValue.Str(symbolDisplay(st, sid))
         }
     }
     if name == "toExponential" {

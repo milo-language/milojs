@@ -245,14 +245,11 @@ pub fn isSymbolKey(s: &string): bool
 JS own-property enumeration order: integer-index keys ascending first, then
 the remaining string keys in insertion order. Returns prop indices into
 st.objects[o].props in that order. Symbol-keyed props (stored with the
-"@@sym:" prefix, including internal ones like Symbol.iterator) are omitted —
+symKey encoding, including internal ones like Symbol.iterator) are omitted —
 string-key enumeration never yields symbols in JS. Enumeration sites
 (Object.keys/values/entries, for-in, spread, Object.assign) iterate these
 instead of 0..len so `{ 2:a, 1:b, 10:c, x:d }` enumerates 1,2,10,x and a
 symbol key never leaks into keys()/for-in/JSON — matching V8/node.
-A property key is a symbol iff it carries the "@@sym:" sentinel prefix that
-symbol values stringify to (see makeSymbol in eval.milo). Kept here so
-runtime.milo stays free of an eval.milo import cycle.
 
 ### `isWrapperObj`
 
@@ -383,6 +380,14 @@ whose cb resolves later never settles and awaiting it yields undefined.
 
 ```milo
 pub fn newScope(st: &mut Interp, parent: i64): i64
+```
+
+_Undocumented._
+
+### `newSymbol`
+
+```milo
+pub fn newSymbol(st: &mut Interp, desc: string, hasDesc: bool): i64
 ```
 
 _Undocumented._
@@ -688,6 +693,38 @@ pub fn setArrayLength(st: &mut Interp, obj: i64, n: i64)
 ```
 
 _Undocumented._
+
+### `symbolDisplay`
+
+```milo
+pub fn symbolDisplay(st: &Interp, id: i64): string
+```
+
+What String(sym) and sym.toString() give: Symbol(desc).
+
+### `symbolFor`
+
+```milo
+pub fn symbolFor(st: &mut Interp, key: &string): i64
+```
+
+Symbol.for(key): the one registered symbol for key, minted on first use.
+
+### `symbolKeyFor`
+
+```milo
+pub fn symbolKeyFor(st: &Interp, id: i64): JSValue
+```
+
+Symbol.keyFor(sym): the registry key, or undefined for an unregistered symbol.
+
+### `symDescValue`
+
+```milo
+pub fn symDescValue(st: &Interp, id: i64): JSValue
+```
+
+sym.description: undefined for Symbol(), which is not the same as Symbol("").
 
 ### `taIsBigKind`
 

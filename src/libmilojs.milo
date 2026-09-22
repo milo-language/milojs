@@ -155,7 +155,7 @@ pub fn milojs_eval(context: i64, source: *u8, sourceLength: i64, outValue: *i64)
 }
 
 // 0 undefined, 1 null, 2 bool, 3 number, 4 string, 5 object,
-// 6 function/native, 7 bigint.
+// 6 function/native, 7 bigint, 8 symbol.
 pub fn milojs_value_kind(context: i64, value: i64): i32 {
     let idx = mjEmbedValueIndex(context, value)
     if idx < 0 {
@@ -171,6 +171,7 @@ pub fn milojs_value_kind(context: i64, value: i64): i32 {
         JSValue.Func(_f, _e, _fo) => { return 6 }
         JSValue.Native(_n) => { return 6 }
         JSValue.BigInt(_v) => { return 7 }
+        JSValue.Sym(_v) => { return 8 }
     }
 }
 

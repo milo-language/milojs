@@ -107,6 +107,8 @@ pub enum Builtin {
     ParseInt,
     ParseFloat,
     Symbol,
+    SymbolFor,
+    SymbolKeyFor,
     ObjectDefineProperties,
     Map,
     Set,
@@ -370,6 +372,101 @@ pub enum JSValue {
     // string: "0", "123", "-456" — no leading zeros, "-" only for negatives.
     // A primitive (by value), not an object.
     BigInt(string),
+    // a symbol, by id: an index into Interp.symDescs. Identity IS the id, and
+    // the ids below WK_COUNT are the well-known symbols (Symbol.iterator, ...).
+    Sym(i64),
+}
+
+// Well-known symbol ids. bootstrap registers them first, in this order, so the
+// id of each is fixed and a native can build its key without an Interp.
+pub let WK_ASYNC_ITERATOR: i64 = 0
+pub let WK_HAS_INSTANCE: i64 = 1
+pub let WK_IS_CONCAT_SPREADABLE: i64 = 2
+pub let WK_ITERATOR: i64 = 3
+pub let WK_MATCH: i64 = 4
+pub let WK_MATCH_ALL: i64 = 5
+pub let WK_REPLACE: i64 = 6
+pub let WK_SEARCH: i64 = 7
+pub let WK_SPLIT: i64 = 8
+pub let WK_SPECIES: i64 = 9
+pub let WK_TO_PRIMITIVE: i64 = 10
+pub let WK_TO_STRING_TAG: i64 = 11
+pub let WK_UNSCOPABLES: i64 = 12
+pub let WK_DISPOSE: i64 = 13
+pub let WK_ASYNC_DISPOSE: i64 = 14
+pub let WK_COUNT: i64 = 15
+
+// The property name of well-known symbol `id` on the Symbol constructor
+// ("iterator" for Symbol.iterator); its description is "Symbol." + this.
+pub fn wellKnownSymName(id: i64): string {
+    if id == WK_ASYNC_ITERATOR {
+        return "asyncIterator"
+    } else if id == WK_HAS_INSTANCE {
+        return "hasInstance"
+    } else if id == WK_IS_CONCAT_SPREADABLE {
+        return "isConcatSpreadable"
+    } else if id == WK_ITERATOR {
+        return "iterator"
+    } else if id == WK_MATCH {
+        return "match"
+    } else if id == WK_MATCH_ALL {
+        return "matchAll"
+    } else if id == WK_REPLACE {
+        return "replace"
+    } else if id == WK_SEARCH {
+        return "search"
+    } else if id == WK_SPLIT {
+        return "split"
+    } else if id == WK_SPECIES {
+        return "species"
+    } else if id == WK_TO_PRIMITIVE {
+        return "toPrimitive"
+    } else if id == WK_TO_STRING_TAG {
+        return "toStringTag"
+    } else if id == WK_UNSCOPABLES {
+        return "unscopables"
+    } else if id == WK_DISPOSE {
+        return "dispose"
+    } else if id == WK_ASYNC_DISPOSE {
+        return "asyncDispose"
+    }
+    return ""
+}
+
+// The property key a symbol is stored under: a 0xFF byte, then the decimal id.
+// 0xFF never occurs in valid UTF-8, and JS strings here are UTF-8 (a lone
+// surrogate is stored as U+FFFD), so no string key can collide with a symbol
+// key. Two host paths still admit undecoded bytes; see docs/backlog.md,
+// "symbols are never collected". symKey and symIdOfKey are the only code that
+// knows this encoding; everything else asks them.
+pub fn symKey(id: i64): string {
+    var out = String.withCapacity(8)
+    out.push(255 as u8)
+    return out + i64ToStr(id)
+}
+
+// A property key as the JS value it names: the symbol for a symbol key, else
+// the string. What Reflect.ownKeys and getOwnPropertySymbols hand back.
+pub fn propKeyValue(key: &string): JSValue {
+    let id = symIdOfKey(key)
+    if id >= 0 {
+        return JSValue.Sym(id)
+    }
+    return JSValue.Str(key.clone())
+}
+
+// The symbol id a property key encodes, or -1 for a string key.
+pub fn symIdOfKey(key: &string): i64 {
+    if key.len() < 2 || key[0] != (255 as u8) {
+        return -1
+    }
+    var id: i64 = 0
+    var i: i64 = 1
+    while i < key.len() {
+        id = id * 10 + (key[i] - '0') as i64
+        i = i + 1
+    }
+    return id
 }
 
 pub fn cloneNative(n: &Native): Native {
@@ -443,6 +540,9 @@ pub fn cloneValue(v: &JSValue): JSValue {
         }
         JSValue.BigInt(s) => {
             return JSValue.BigInt(s.clone())
+        }
+        JSValue.Sym(id) => {
+            return JSValue.Sym(id)
         }
         JSValue.Func(f, env, fo) => {
             return JSValue.Func(f, env, fo)
@@ -660,6 +760,11 @@ pub fn toStr(v: &JSValue): string {
         JSValue.BigInt(s) => {
             // String(10n) is "10" (no trailing "n")
             return s.clone()
+        }
+        JSValue.Sym(id) => {
+            // ToPropertyKey, not ToString: ToString of a symbol throws, and the
+            // callers that implement ToString check for a symbol before this
+            return symKey(id)
         }
         JSValue.Func(_f, _env, _fo) => {
             return "function"
@@ -1931,6 +2036,10 @@ pub fn toNum(v: &JSValue): f64 {
             // Number(10n) is 10; large magnitudes lose precision past 2^53, as in JS
             return strToNum(s)
         }
+        JSValue.Sym(_id) => {
+            // ToNumber of a symbol throws; the throwing callers test first
+            return jsNan()
+        }
         JSValue.Func(_f, _env, _fo) => {
             return jsNan()
         }
@@ -1963,6 +2072,9 @@ pub fn truthy(v: &JSValue): bool {
         JSValue.BigInt(s) => {
             // 0n is the only falsy BigInt
             return s != "0"
+        }
+        JSValue.Sym(_id) => {
+            return true
         }
         JSValue.Func(_f, _env, _fo) => {
             return true
@@ -2068,6 +2180,16 @@ pub fn jsStrictEquals(a: &JSValue, b: &JSValue): bool {
                 }
             }
         }
+        JSValue.Sym(x) => {
+            match b {
+                JSValue.Sym(y) => {
+                    return x == y
+                }
+                _ => {
+                    return false
+                }
+            }
+        }
         JSValue.Obj(x) => {
             match b {
                 JSValue.Obj(y) => {
@@ -2151,6 +2273,18 @@ pub fn jsEquals(a: &JSValue, b: &JSValue): bool {
             match b {
                 JSValue.Func(_f2, _e2, fo2) => {
                     return fo1 == fo2
+                }
+                _ => {
+                    return false
+                }
+            }
+        }
+        JSValue.Sym(x) => {
+            // a symbol is loosely equal only to itself (a wrapper object is
+            // unwrapped by the caller's ToPrimitive, not here)
+            match b {
+                JSValue.Sym(y) => {
+                    return x == y
                 }
                 _ => {
                     return false
