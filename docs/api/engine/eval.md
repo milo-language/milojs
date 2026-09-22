@@ -438,6 +438,16 @@ when it is not a valid index, and an invalid one is DROPPED rather than stored:
 they became ordinary properties, so they read back and turned up in
 Object.keys, which no real array index ever does.
 
+### `isDateMethodName`
+
+```milo
+pub fn isDateMethodName(n: &string): bool
+```
+
+dateProtoMethodNames as a predicate, without building the Vec: it runs on
+every call against a Date. The first-letter filter rejects most other names
+before any string compare (every Date method starts with get/set/to/valueOf).
+
 ### `isExtensibleOf`
 
 ```milo

@@ -850,8 +850,23 @@ pub fn setupGlobals(st: &mut Interp) {
     // Date.prototype methods as bound-method values, so
     // Date.prototype.toISOString.call(d) — qs's pattern — works
     let dateProto = newObject(&mut st)
+    objSet(&mut st, dateProto, "constructor", JSValue.Native(Native.Fn(Builtin.Date)))
+    objSetNonEnumerable(&mut st, dateProto, "constructor")
     for dm in dateProtoMethodNames() {
-        objSet(&mut st, dateProto, dm.clone(), makeBrandedMethod(&mut st, dm.clone(), BRAND_DATE))
+        if dm == "toGMTString" {
+            // the spec makes it the SAME function object as toUTCString, so its
+            // name is "toUTCString" and the two compare ===
+            objSet(&mut st, dateProto, dm.clone(), objGet(st, dateProto, "toUTCString"))
+        } else if dm == "toJSON" {
+            // generic: it calls this.toISOString on any object, so it carries no
+            // brand and travels under its own name (see callBuiltinByName)
+            let tj = makeBoundMethod(&mut st, JSValue.Undefined, "__dateToJSON")
+            objDefineBuiltinAttr(&mut st, objHandle(tj), "name", JSValue.Str("toJSON"))
+            objDefineBuiltinAttr(&mut st, objHandle(tj), "length", JSValue.Number(1.0))
+            objSet(&mut st, dateProto, dm.clone(), tj)
+        } else {
+            objSet(&mut st, dateProto, dm.clone(), makeBrandedMethod(&mut st, dm.clone(), BRAND_DATE))
+        }
         objSetNonEnumerable(&mut st, dateProto, dm)
     }
     // Date.prototype[@@toPrimitive]: the one built-in that prefers "string" for a
@@ -859,11 +874,13 @@ pub fn setupGlobals(st: &mut Interp) {
     // `date - 0` is numeric. Its absence made `d[Symbol.toPrimitive]("number")`
     // undefined -- code that calls it explicitly, and any polyfill checking for
     // it, saw a Date as having no primitive conversion at all.
-    objSet(&mut st, dateProto, symToPrimitiveKey(), makeBrandedMethod(&mut st, "__dateToPrimitive", BRAND_DATE))
-    objSetNonEnumerable(&mut st, dateProto, symToPrimitiveKey())
+    // Unbranded: the spec asks only for an object receiver, which the method
+    // checks itself. Not writable, like every @@toPrimitive.
+    let dtp = makeBoundMethod(&mut st, JSValue.Undefined, "__dateToPrimitive")
+    objDefineBuiltinAttr(&mut st, objHandle(dtp), "name", JSValue.Str("[Symbol.toPrimitive]"))
+    objDefineBuiltinAttr(&mut st, objHandle(dtp), "length", JSValue.Number(1.0))
+    objDefineBuiltinAttr(&mut st, dateProto, symToPrimitiveKey(), dtp)
     objDefineProtoAttr(&mut st, dateCtorObj, "prototype", JSValue.Obj(dateProto))
-    objSet(&mut st, dateProto, "constructor", JSValue.Native(Native.Fn(Builtin.Date)))
-    objSetNonEnumerable(&mut st, dateProto, "constructor")
     st.objects[dateProto].proto = st.objectProtoObj
     nameNativesOf(&mut st, dateCtorObj)
     // after nameNativesOf, which would otherwise overwrite it: Date.parse is the
@@ -872,6 +889,8 @@ pub fn setupGlobals(st: &mut Interp) {
     objDefineBuiltinAttr(&mut st, getNativeProps(&mut st, Native.Fn(Builtin.DateParse)), "length", JSValue.Number(1.0))
     st.dateProtoObj = dateProto
     st.dateCtorProps = dateCtorObj
+    // only now, so the setup writes above do not count as a user touch
+    st.dateProtoPristine = true
     scopeDefine(&mut st, 0, "Date", JSValue.Native(Native.Fn(Builtin.Date)))
     nameGlobalCtor(&mut st, "Date", Builtin.Date)
     // Function.prototype.{call,apply,bind} are bound-method values: invoking

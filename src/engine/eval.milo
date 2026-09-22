@@ -395,9 +395,6 @@ fn toPrimitiveNumber(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
         if let Option.Some(r) = trySymToPrimitive(prog, h, "number", &mut st) {
             return r
         }
-        if st.objects[h].isDate {
-            return JSValue.Number(st.objExtras[st.objects[h].extra].dateMs)
-        }
     }
     return toPrimitiveDefault(prog, v, &mut st)
 }
@@ -431,13 +428,9 @@ fn toPrimitiveDefault(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     if st.objects[h].isArray {
         return JSValue.Str(joinArrayProg(prog, &mut st, h, ","))
     }
-    // Date is the one built-in whose @@toPrimitive turns the DEFAULT hint into
-    // the STRING one, which is why `"" + d` is the date string and not the
-    // epoch number. Without this, fixing Date.prototype.valueOf to answer a
-    // number (it used to answer the ISO string) would have made `d + ""` worse.
-    if st.objects[h].isDate {
-        return toPrimitiveString(prog, v, &mut st)
-    }
+    // No Date arm here: Date.prototype[@@toPrimitive] (trySymToPrimitive above)
+    // is what turns the default hint into the string one, and once a program
+    // deletes it a date converts like any other object, valueOf first.
     pushTemp(&mut st, JSValue.Obj(h))
     let vf = getMemberDyn(prog, h, "valueOf", &mut st)
     if isCallableIn(st, vf) {
@@ -456,6 +449,39 @@ fn toPrimitiveDefault(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
             popTemp(&mut st)
             return r2
         }
+    }
+    popTemp(&mut st)
+    return noPrimitive(&mut st)
+}
+
+// OrdinaryToPrimitive: toString then valueOf when stringFirst, else the other
+// way round, each read off the object so an override is the one called.
+fn ordinaryToPrimitive(prog: &Prog, st: &mut Interp, h: i64, stringFirst: bool): JSValue {
+    pushTemp(&mut st, JSValue.Obj(h))
+    var i: i64 = 0
+    while i < 2 {
+        var mname = "valueOf"
+        if stringFirst == (i == 0) {
+            mname = "toString"
+        }
+        let f = getMemberDyn(prog, h, mname, &mut st)
+        if st.throwing {
+            popTemp(&mut st)
+            return JSValue.Undefined
+        }
+        if isCallableIn(st, f) {
+            var noA: Vec<JSValue> = Vec.new()
+            let r = callValue(prog, f, noA, JSValue.Obj(h), &mut st)
+            if st.throwing {
+                popTemp(&mut st)
+                return JSValue.Undefined
+            }
+            if objHandle(r) < 0 && funcHandle(r) < 0 {
+                popTemp(&mut st)
+                return r
+            }
+        }
+        i = i + 1
     }
     popTemp(&mut st)
     return noPrimitive(&mut st)
@@ -992,13 +1018,6 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
         }
         if st.objects[o].isError && (key == "toString" || key == "valueOf") {
             return makeBoundMethod(&mut st, JSValue.Obj(o), key.clone())
-        }
-        if st.objects[o].isDate {
-            for dn in dateProtoMethodNames() {
-                if dn == key {
-                    return makeBoundMethod(&mut st, JSValue.Obj(o), key.clone())
-                }
-            }
         }
     }
     // arr[Symbol.iterator] — a bound `values`, so arr[Symbol.iterator]() yields
@@ -2266,11 +2285,58 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
         if hint != "number" && hint != "string" && hint != "default" {
             return throwErr(&mut st, "TypeError", "Invalid hint: " + hint)
         }
+        // OrdinaryToPrimitive reads valueOf/toString off the receiver, so an
+        // override on Date.prototype (or an own one) is what `d - 0` calls. Only
+        // a pristine date with neither shadowed may skip the lookup.
+        let direct = st.dateProtoPristine && st.objects[dh].isDate && st.objects[dh].proto == st.dateProtoObj
+            && objOwnIndex(st, dh, "valueOf") < 0 && objOwnIndex(st, dh, "toString") < 0
         var dargs: Vec<JSValue> = Vec.new()
         if hint == "number" {
-            return dateMethod(&mut st, dh, "valueOf", dargs)
+            if direct {
+                return dateMethod(&mut st, dh, "valueOf", dargs)
+            }
+            return ordinaryToPrimitive(prog, &mut st, dh, false)
         }
-        return dateMethod(&mut st, dh, "toString", dargs)
+        if direct {
+            return dateMethod(&mut st, dh, "toString", dargs)
+        }
+        return ordinaryToPrimitive(prog, &mut st, dh, true)
+    }
+    // Date.prototype.toJSON is generic: ToPrimitive(this, number), null for a
+    // non-finite number, otherwise whatever this.toISOString() answers.
+    if name == "__dateToJSON" {
+        if isNullish(recv) {
+            return throwErr(&mut st, "TypeError", "Date.prototype.toJSON called on null or undefined")
+        }
+        var jo = cloneValue(recv)
+        if objHandle(jo) < 0 {
+            jo = makeWrapper(&mut st, recv)
+        }
+        pushTemp(&mut st, cloneValue(jo))
+        let tv = toPrimitiveNumber(prog, jo, &mut st)
+        if st.throwing {
+            popTemp(&mut st)
+            return JSValue.Undefined
+        }
+        if let JSValue.Number(tn) = tv {
+            if tn != tn || tn == 1.0 / 0.0 || tn == -1.0 / 0.0 {
+                popTemp(&mut st)
+                return JSValue.Null
+            }
+        }
+        let iso = getMemberDyn(prog, objHandle(jo), "toISOString", &mut st)
+        if st.throwing {
+            popTemp(&mut st)
+            return JSValue.Undefined
+        }
+        if !isCallableIn(st, iso) {
+            popTemp(&mut st)
+            return throwErr(&mut st, "TypeError", "toISOString is not a function")
+        }
+        var noArgs: Vec<JSValue> = Vec.new()
+        let r = callValue(prog, iso, noArgs, jo, &mut st)
+        popTemp(&mut st)
+        return r
     }
     // Error.prototype.toString: `name ?? "Error"` and `message ?? ""`, read off
     // whatever receiver it was given. It is not restricted to Errors -- the spec
@@ -2553,7 +2619,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             // Date-specific methods dispatch here (Date.prototype.toISOString.call);
             // toString/valueOf are left to the Object.prototype type-tag logic
             // below, so Object.prototype.toString.call(date) stays [object Date]
-            if st.objects[o].isDate {
+            if st.objects[o].isDate && (isDateMethodName(name) || name == "__dateToPrimitive") {
                 // `toString` and `valueOf` were excluded here, so a Date reached
                 // through a bound method value — which is every generic
                 // conversion, since ToPrimitive reads them off the prototype —
@@ -3273,6 +3339,9 @@ fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
     }
     if o == st.stringProtoObj {
         st.stringProtoPristine = false
+    }
+    if o == st.dateProtoObj {
+        st.dateProtoPristine = false
     }
     if o == st.objectProtoObj {
         st.objectProtoPristine = false
@@ -14829,6 +14898,20 @@ pub fn dataViewByteLen(st: &Interp, o: i64): i64 {
     return n
 }
 
+// dateProtoMethodNames as a predicate, without building the Vec: it runs on
+// every call against a Date. The first-letter filter rejects most other names
+// before any string compare (every Date method starts with get/set/to/valueOf).
+pub fn isDateMethodName(n: &string): bool {
+    if n.len() < 6 {
+        return false
+    }
+    let c = n[0]
+    if c != 103 && c != 115 && c != 116 && c != 118 {
+        return false
+    }
+    return n == "toString" || n == "toDateString" || n == "toTimeString" || n == "toISOString" || n == "toUTCString" || n == "toGMTString" || n == "getDate" || n == "setDate" || n == "getDay" || n == "getFullYear" || n == "setFullYear" || n == "getHours" || n == "setHours" || n == "getMilliseconds" || n == "setMilliseconds" || n == "getMinutes" || n == "setMinutes" || n == "getMonth" || n == "setMonth" || n == "getSeconds" || n == "setSeconds" || n == "getTime" || n == "setTime" || n == "getTimezoneOffset" || n == "getUTCDate" || n == "setUTCDate" || n == "getUTCDay" || n == "getUTCFullYear" || n == "setUTCFullYear" || n == "getUTCHours" || n == "setUTCHours" || n == "getUTCMilliseconds" || n == "setUTCMilliseconds" || n == "getUTCMinutes" || n == "setUTCMinutes" || n == "getUTCMonth" || n == "setUTCMonth" || n == "getUTCSeconds" || n == "setUTCSeconds" || n == "valueOf" || n == "getYear" || n == "setYear" || n == "toJSON" || n == "toLocaleString" || n == "toLocaleDateString" || n == "toLocaleTimeString"
+}
+
 pub fn dateProtoMethodNames(): Vec<string> {
     var out: Vec<string> = Vec.new()
     // the full Date.prototype surface, taken from node
@@ -15736,7 +15819,13 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 }
                 return JSValue.Str(en)
             }
-            if st.objects[o].isDate {
+            // The Array guard: while Date.prototype is untouched, a date whose
+            // proto is still Date.prototype and which has no own property of the
+            // name can only reach the native, so call it directly. Any write to
+            // Date.prototype retires this for good, and the ordinary chain walk
+            // below then finds whatever the program put there.
+            if st.objects[o].isDate && st.dateProtoPristine && st.objects[o].proto == st.dateProtoObj
+                && isDateMethodName(name) && name != "toJSON" && objOwnIndex(st, o, name) < 0 {
                 let argVals = evalArgs(prog, argsIdx, &mut st, scope)
                 // An argument expression that threw ABORTS the call: without this the
                 // callee still ran with the arguments evaluated so far, so

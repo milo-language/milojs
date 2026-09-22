@@ -1,0 +1,84 @@
+47 constructor,toString,toDateString,toTimeString,toISOString,toUTCString,toGMTString,getDate,setDate,getDay,getFullYear,setFullYear,getHours,setHours,getMilliseconds,setMilliseconds,getMinutes,setMinutes,getMonth,setMonth,getSeconds,setSeconds,getTime,setTime,getTimezoneOffset,getUTCDate,setUTCDate,getUTCDay,getUTCFullYear,setUTCFullYear,getUTCHours,setUTCHours,getUTCMilliseconds,setUTCMilliseconds,getUTCMinutes,setUTCMinutes,getUTCMonth,setUTCMonth,getUTCSeconds,setUTCSeconds,valueOf,getYear,setYear,toJSON,toLocaleString,toLocaleDateString,toLocaleTimeString
+  toString 0 toString true false true
+  toDateString 0 toDateString true false true
+  toTimeString 0 toTimeString true false true
+  toISOString 0 toISOString true false true
+  toUTCString 0 toUTCString true false true
+  toGMTString 0 toUTCString true false true
+  getDate 0 getDate true false true
+  setDate 1 setDate true false true
+  getDay 0 getDay true false true
+  getFullYear 0 getFullYear true false true
+  setFullYear 3 setFullYear true false true
+  getHours 0 getHours true false true
+  setHours 4 setHours true false true
+  getMilliseconds 0 getMilliseconds true false true
+  setMilliseconds 1 setMilliseconds true false true
+  getMinutes 0 getMinutes true false true
+  setMinutes 3 setMinutes true false true
+  getMonth 0 getMonth true false true
+  setMonth 2 setMonth true false true
+  getSeconds 0 getSeconds true false true
+  setSeconds 2 setSeconds true false true
+  getTime 0 getTime true false true
+  setTime 1 setTime true false true
+  getTimezoneOffset 0 getTimezoneOffset true false true
+  getUTCDate 0 getUTCDate true false true
+  setUTCDate 1 setUTCDate true false true
+  getUTCDay 0 getUTCDay true false true
+  getUTCFullYear 0 getUTCFullYear true false true
+  setUTCFullYear 3 setUTCFullYear true false true
+  getUTCHours 0 getUTCHours true false true
+  setUTCHours 4 setUTCHours true false true
+  getUTCMilliseconds 0 getUTCMilliseconds true false true
+  setUTCMilliseconds 1 setUTCMilliseconds true false true
+  getUTCMinutes 0 getUTCMinutes true false true
+  setUTCMinutes 3 setUTCMinutes true false true
+  getUTCMonth 0 getUTCMonth true false true
+  setUTCMonth 2 setUTCMonth true false true
+  getUTCSeconds 0 getUTCSeconds true false true
+  setUTCSeconds 2 setUTCSeconds true false true
+  valueOf 0 valueOf true false true
+  getYear 0 getYear true false true
+  setYear 1 setYear true false true
+  toJSON 1 toJSON true false true
+  toLocaleString 0 toLocaleString true false true
+  toLocaleDateString 0 toLocaleDateString true false true
+  toLocaleTimeString 0 toLocaleTimeString true false true
+toPrimitive: [Symbol.toPrimitive] 1 false false true
+own method: own true false true
+identity: true true true
+computed: 1580702706007 2020-02-03T04:05:06.007Z
+symbol: true 1580702706007
+getTime on plain: TypeError
+getTime on number: TypeError
+toISOString on Map: TypeError
+setTime on array: TypeError
+valueOf on undefined: TypeError
+Object.create receiver: TypeError
+Object.create toString: TypeError
+extracted: 1970
+extracted unbound: TypeError
+generic: true [object Date]
+override: 42 42 42
+other methods intact: 2020 2020-02-03T04:05:06.007Z
+restored: 1580702706007
+valueOf override: 1000 1000
+toJSON sees override: ISO! {"d":"ISO!"}
+subclass: sub 0 1 true true
+subclass tag: [object Date] 0
+deleted: TypeError
+in: false
+saved still works: true
+put back: number
+shadow: shadow true true
+null proto: TypeError
+custom proto: custom proto 0
+toJSON generic: fake
+toJSON non-finite: null null
+toJSON null: TypeError
+toJSON no toISOString: TypeError
+toPrimitive generic: 7 s
+toPrimitive primitive: TypeError
+toPrimitive bad hint: TypeError
+gmt: true Mon, 03 Feb 2020 04:05:06 GMT
