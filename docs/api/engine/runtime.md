@@ -781,3 +781,13 @@ pub fn taWidth(kind: i64): i64
 ```
 
 _Undocumented._
+
+### `touchedBuiltinProto`
+
+```milo
+pub fn touchedBuiltinProto(st: &mut Interp, obj: i64)
+```
+
+Lowest-level mutators invalidate builtin-prototype fast paths. Guarding here
+rather than only at setMember means defineProperty, delete and accessor
+installation are all covered without each remembering to do it.

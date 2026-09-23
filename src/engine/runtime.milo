@@ -1460,7 +1460,7 @@ pub fn objSetNonEnumerable(st: &mut Interp, obj: i64, key: &string) {
 // Lowest-level mutators invalidate builtin-prototype fast paths. Guarding here
 // rather than only at setMember means defineProperty, delete and accessor
 // installation are all covered without each remembering to do it.
-fn touchedBuiltinProto(st: &mut Interp, obj: i64) {
+pub fn touchedBuiltinProto(st: &mut Interp, obj: i64) {
     if obj == st.arrayProtoObj {
         st.arrayProtoPristine = false
     }
@@ -1480,6 +1480,9 @@ fn touchedBuiltinProto(st: &mut Interp, obj: i64) {
     if st.taProtoPristine && obj >= st.taProtoLo && obj <= st.taProtoHi
         && (obj == st.taProtoObj || st.objects[obj].proto == st.taProtoObj) {
         st.taProtoPristine = false
+    }
+    if obj == st.objectProtoObj {
+        st.objectProtoPristine = false
     }
 }
 

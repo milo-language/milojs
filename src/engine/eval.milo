@@ -26,7 +26,7 @@ from "./value" import {
     WK_TO_PRIMITIVE, WK_TO_STRING_TAG, WK_DISPOSE, WK_ASYNC_DISPOSE
 }
 from "./runtime" import {
-    objOwnIndex, propIsAccessor, accGetter, accSetter, arrLen, arrGet, pushTemp, popTemp,
+    objOwnIndex, touchedBuiltinProto, propIsAccessor, accGetter, accSetter, arrLen, arrGet, pushTemp, popTemp,
     getNativeProps, objGet, newObject, ensureExtra, arrIsHole, asArrayIndex, scopeHasOwn,
     scopeLookup, objSet, newArray, enumOrder, arrPush, isSymbolKey, taWidth, taName, taLoad, taStore,
     nativeBufferLen, objHas, makeClosure, nativeBufferGet, nativeBufferSet, scopeDefine, arrSet,
@@ -3452,28 +3452,7 @@ fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
     // Any write to a builtin prototype retires its fast dispatch path for the
     // rest of the run. Calls then resolve through the real chain so a replaced
     // method remains authoritative even if the original is restored later.
-    if o == st.arrayProtoObj {
-        st.arrayProtoPristine = false
-    }
-    if o == st.stringProtoObj {
-        st.stringProtoPristine = false
-    }
-    if o == st.dateProtoObj {
-        st.dateProtoPristine = false
-    }
-    if o == st.regexProtoObj {
-        st.regexProtoPristine = false
-    }
-    if o == st.dataViewProtoObj {
-        st.dataViewProtoPristine = false
-    }
-    if st.taProtoPristine && o >= st.taProtoLo && o <= st.taProtoHi
-        && (o == st.taProtoObj || st.objects[o].proto == st.taProtoObj) {
-        st.taProtoPristine = false
-    }
-    if o == st.objectProtoObj {
-        st.objectProtoPristine = false
-    }
+    touchedBuiltinProto(&mut st, o)
     // sloppy mode drops writes to a frozen object rather than throwing
     if st.objects[o].frozen {
         if st.strict {
