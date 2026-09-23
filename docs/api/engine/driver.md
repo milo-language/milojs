@@ -61,3 +61,14 @@ pub fn makeInterp(gcStats: bool, gcThreshold: i64, gcGrowth: i64): Interp
 ```
 
 _Undocumented._
+
+### `runPreludeSource`
+
+```milo
+pub fn runPreludeSource(src: &string, prog: &mut Prog, st: &mut Interp)
+```
+
+Parse and run a JS-written built-in (the engine prelude) as the first realm's
+prelude, so createRealm can run it again in each new realm. The embedding
+entry point's counterpart of the preloadGraph + runRealmPrelude pair the two
+binaries use.

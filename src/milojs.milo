@@ -64,6 +64,9 @@ from "./runtime/host" import {
 from "./runtime/modules" import {
     preloadGraph, dirOf, fileExists
 }
+from "./engine/realm" import {
+    runRealmPrelude
+}
 from "./engine/eval" import {
     getMember,
     runModule
@@ -361,12 +364,12 @@ fn main(): i32 {
         return 1
     }
     if enginePreludeIdx >= 0 {
-        hoistBlock(gProg, gInterp.modBlocks[enginePreludeIdx], &mut gInterp, gInterp.globalScope)
-        execBlock(gProg, gInterp.modBlocks[enginePreludeIdx], &mut gInterp, gInterp.globalScope)
+        // every later realm runs it too (createRealm)
+        runRealmPrelude(gProg, gInterp.modBlocks[enginePreludeIdx], &mut gInterp)
     }
     if temporalIdx >= 0 {
-        hoistBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, gInterp.globalScope)
-        execBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, gInterp.globalScope)
+        // every later realm runs it too (createRealm)
+        runRealmPrelude(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp)
     }
     if preludeIdx >= 0 {
         // run in global scope, so its declarations become globals

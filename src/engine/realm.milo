@@ -9,10 +9,19 @@
 // heap, the job and timer queues, and the call stack.
 
 from "./runtime" import {
-    Interp
+    Interp, newScope, markBuiltinGlobals, scopeLookup
 }
 from "./value" import {
     JSValue
+}
+from "./ast" import {
+    Prog, BlockId
+}
+from "./bootstrap" import {
+    setupGlobals
+}
+from "./eval" import {
+    hoistBlock, execBlock
 }
 
 // The scalar half of a realm: every field Interp caches under the same name.
@@ -273,4 +282,50 @@ pub fn isPromiseCtorObj(st: &Interp, o: i64): bool {
     }
     let r = st.objects[o].realm as i64
     return r != st.curRealm && o == st.realms[r].intr.promiseCtorObj
+}
+
+// Run one JS-written built-in block (the engine prelude, Temporal) in the
+// running realm's global scope, and remember it so createRealm runs it in every
+// later realm too.
+pub fn runRealmPrelude(prog: &Prog, block: BlockId, st: &mut Interp) {
+    st.realmPreludes.push(BlockId { index: block.index })
+    let g = st.globalScope
+    hoistBlock(prog, block, &mut st, g)
+    execBlock(prog, block, &mut st, g)
+}
+
+// A new realm: its own global scope and global object, every built-in installed
+// by the same bootstrap the first realm ran, then the same JS-written built-ins.
+// Answers the realm's index, or -1 with the exception pending. The running realm
+// is unchanged on return.
+pub fn createRealm(prog: &Prog, st: &mut Interp): i64 {
+    // registered before the bootstrap allocates anything, so the new global
+    // scope is a root from the first collection the bootstrap triggers
+    let g = newScope(&mut st, -1)
+    let r = addRealm(&mut st, g)
+    let prevRealm = enterRealm(&mut st, r)
+    // the built-ins are sloppy code at their top level, as when the first realm
+    // ran them, whatever the code asking for a realm is
+    let savedStrict = st.strict
+    st.strict = false
+    setupGlobals(&mut st)
+    var i: i64 = 0
+    while i < st.realmPreludes.len() && !st.throwing {
+        let block = BlockId { index: st.realmPreludes[i].index }
+        hoistBlock(prog, block, &mut st, g)
+        execBlock(prog, block, &mut st, g)
+        i = i + 1
+    }
+    markBuiltinGlobals(&mut st)
+    st.strict = savedStrict
+    let _ = enterRealm(&mut st, prevRealm)
+    if st.throwing {
+        return -1
+    }
+    return r
+}
+
+// Realm r's global object: what its `globalThis` is bound to.
+pub fn realmGlobalObject(st: &Interp, r: i64): JSValue {
+    return scopeLookup(st, realmGlobalScope(st, r), "globalThis")
 }

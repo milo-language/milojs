@@ -303,6 +303,17 @@ String` answered false while `String.prototype` read fine. get-intrinsic walks
 depends on it (a large slice of npm) died on "base intrinsic for
 %String.prototype.indexOf% exists, but the property is not available".
 
+### `evalScriptInRealm`
+
+```milo
+pub fn evalScriptInRealm(src: &string, r: i64, st: &mut Interp): JSValue
+```
+
+$262.evalScript: run `src` as a global SCRIPT of realm r and answer its
+completion value. Unlike indirect eval, `let`/`const`/`class` at its top
+level are bindings of that realm's global scope, visible to later scripts,
+which is what ScriptEvaluation does.
+
 ### `evalUnValue`
 
 ```milo

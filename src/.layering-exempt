@@ -81,6 +81,8 @@ global: __byteLength                 engine-intrinsic ArrayBuffer/TypedArray byt
 global: __callFrames                 engine-intrinsic the interpreter's own call stack, which is what Error.prototype.stack is built from
 global: __construct                  engine-intrinsic [[Construct]] on a callable; Reflect.construct and the prelude's class helpers call it
 global: __inspect                    engine-intrinsic the value formatter behind console.log, which is part of the engine's built-in global set
+global: __realmCreate                engine-intrinsic a new realm (its own intrinsics and global scope); test262's $262.createRealm is built on it, and realms are the language's, not the host's
+global: __realmEval                  engine-intrinsic ScriptEvaluation in the realm a global object belongs to; test262's $262.evalScript, no host in it
 global: __isConstructor              engine-intrinsic IsConstructor(); the prelude needs the spec predicate, not a heuristic
 global: __iteratorProto              engine-intrinsic %IteratorPrototype%, an intrinsic the prelude cannot reach any other way
 global: __markNotConstructor         engine-intrinsic marks a prelude-defined function non-constructable, as the spec requires of methods

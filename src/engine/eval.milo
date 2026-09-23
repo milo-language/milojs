@@ -27,12 +27,12 @@ from "./value" import {
 }
 from "./realm" import {
     enterRealm, calleeRealm, objRealm, globalScopeOfObj, realmBuiltinGlobals, realmObjectProto, realmFunctionProto, realmArrayProto,
-    isArrayCtorObj, isPromiseCtorObj
+    isArrayCtorObj, isPromiseCtorObj, createRealm, realmGlobalObject
 }
 from "./runtime" import {
     objOwnIndex, touchedBuiltinProto, propIsAccessor, accGetter, accSetter, arrLen, arrGet, pushTemp, popTemp,
     getNativeProps, objGet, newObject, ensureExtra, arrIsHole, asArrayIndex, scopeHasOwn,
-    scopeLookup, objSet, newArray, enumOrder, arrPush, isSymbolKey, taWidth, taName, taLoad, taStore,
+    nativeObjInRealm, scopeLookup, objSet, newArray, enumOrder, arrPush, isSymbolKey, taWidth, taName, taLoad, taStore,
     nativeBufferLen, objHas, makeClosure, nativeBufferGet, nativeBufferSet, scopeDefine, arrSet,
     setArrayLength, scopeAssign, scopeTryLookup, mapPut, objSetNonEnumerable, isPromise, newPromise,
     objDeleteKey, objDefineAccessor, newScope, pushActive, popActive, scopeHas, makeResolver, nativeValue,
@@ -6297,6 +6297,25 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Undefined
     }
+    // $262.createRealm(): a fresh realm, answered as its global object
+    if id == Builtin.RealmCreate {
+        let r = createRealm(gProg, &mut st)
+        if st.throwing || r < 0 {
+            return JSValue.Undefined
+        }
+        return realmGlobalObject(st, r)
+    }
+    // __realmEval(global, src): $262.evalScript for the realm owning `global`
+    if id == Builtin.RealmEval {
+        if argVals.len() < 2 || objHandle(argVals[0]) < 0 || !st.objects[objHandle(argVals[0])].isGlobal {
+            return throwErr(&mut st, "TypeError", "__realmEval expects a realm's global object")
+        }
+        let src = toStrProg(gProg, argVals[1], &mut st)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        return evalScriptInRealm(src, objRealm(st, objHandle(argVals[0])), &mut st)
+    }
     if id == Builtin.IsConstructor {
         if argVals.len() == 0 {
             return JSValue.Bool(false)
@@ -12416,7 +12435,69 @@ fn newTargetProto(prog: &Prog, st: &mut Interp, ctor: &JSValue, newTarget: &JSVa
     if ntBag < 0 {
         return -1
     }
-    return objHandle(getMemberDyn(prog, ntBag, "prototype", &mut st))
+    let p = objHandle(getMemberDyn(prog, ntBag, "prototype", &mut st))
+    if p >= 0 || st.throwing {
+        return p
+    }
+    // GetPrototypeFromConstructor: a newTarget whose `prototype` is not an
+    // object falls back to the constructor's default prototype IN NEWTARGET'S
+    // REALM. -1 (the caller's default) is already right when that realm is the
+    // running one, which for a builtin is the constructor's own.
+    let r = functionRealm(&mut st, newTarget)
+    if st.throwing || r < 0 || r == st.curRealm {
+        return -1
+    }
+    return defaultProtoInRealm(&mut st, ctor, r)
+}
+
+// GetFunctionRealm: a bound function or a proxy answers its target's realm, a
+// revoked proxy throws. -1 for a value that is not a function object.
+fn functionRealm(st: &mut Interp, f: &JSValue): i64 {
+    let o = objHandle(f)
+    if o >= 0 && st.objects[o].isProxy {
+        let t = proxyTargetOf(st, o)
+        if objHandle(t) < 0 && funcHandle(t) < 0 && !isNativeValue(t) {
+            let _ = throwErr(&mut st, "TypeError", "Cannot perform 'GetFunctionRealm' on a proxy that has been revoked")
+            return -1
+        }
+        return functionRealm(&mut st, t)
+    }
+    if o >= 0 && st.objects[o].isBound && st.objExtras[st.objects[o].extra].boundMethod.len() == 0 {
+        let t = cloneValue(st.objExtras[st.objects[o].extra].boundTarget)
+        return functionRealm(&mut st, t)
+    }
+    return calleeRealm(st, f)
+}
+
+// The prototype `ctor` gives an instance by default, taken from realm r
+// instead of ctor's own: r's %Map.prototype% for Map, and so on. -1 when there
+// is no counterpart, which leaves the caller's default in place.
+fn defaultProtoInRealm(st: &mut Interp, ctor: &JSValue, r: i64): i64 {
+    match ctor {
+        JSValue.Native(n, _fo) => {
+            let other = nativeObjInRealm(st, n, r)
+            if other < 0 {
+                return -1
+            }
+            return objHandle(objGet(st, other, "prototype"))
+        }
+        JSValue.Func(_f, _e, _fo) => {
+            // OrdinaryCreateFromConstructor(newTarget, "%Object.prototype%")
+            return realmObjectProto(st, r)
+        }
+        JSValue.Obj(o) => {
+            if isArrayCtorObj(st, o) {
+                return st.realms[r].intr.arrayProtoObj
+            }
+            if isPromiseCtorObj(st, o) {
+                return st.realms[r].intr.promiseProtoObj
+            }
+            return -1
+        }
+        _ => {
+            return -1
+        }
+    }
 }
 
 fn adoptBuiltinSlots(st: &mut Interp, dst: i64, src: i64) {
@@ -16044,14 +16125,18 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 }
                 popTemp(&mut st)
                 if mname.len() > 0 {
-                    if !brandOk(&mut st, o, mname, newThis) {
-                        return JSValue.Undefined
+                    // the builtin method runs in its own realm, as a direct
+                    // call to it does (see callValue)
+                    let prevRealm = enterRealm(&mut st, objRealm(st, o))
+                    var mr = JSValue.Undefined
+                    if brandOk(&mut st, o, mname, newThis) {
+                        let recvS = coerceGenericStringReceiver(prog, &mut st, o, newThis)
+                        if !st.throwing {
+                            mr = callBuiltinByName(prog, recvS, mname, rest, &mut st)
+                        }
                     }
-                    let recvS = coerceGenericStringReceiver(prog, &mut st, o, newThis)
-                    if st.throwing {
-                        return JSValue.Undefined
-                    }
-                    return callBuiltinByName(prog, recvS, mname, rest, &mut st)
+                    let _ = enterRealm(&mut st, prevRealm)
+                    return mr
                 }
                 // `.call` on a bind() RESULT cannot change the receiver — the
                 // binding already fixed it — and the pre-bound arguments still
@@ -16241,6 +16326,17 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                             return JSValue.Undefined
                         }
                         let r = callValue(prog, JSValue.Obj(fo), argVals, JSValue.Obj(o), &mut st)
+                        popTemp(&mut st)
+                        return r
+                    }
+                    // `g.Array(3)`: Array is a plain object constructor, callable
+                    // without `new`, and possibly another realm's
+                    if isArrayCtorObj(st, fo) {
+                        let argVals = evalArgs(prog, argsIdx, &mut st, scope)
+                        if st.throwing {
+                            return JSValue.Undefined
+                        }
+                        let r = callPlainValue(prog, JSValue.Obj(fo), argVals, &mut st)
                         popTemp(&mut st)
                         return r
                     }
@@ -16535,7 +16631,10 @@ pub fn funcSourceText(prog: &Prog, fIdx: i64): string {
     return "function " + prog.funcs[fIdx].name.clone() + "() { [native code] }"
 }
 
-pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
+// Parse `src` into the shared program as a script, or raise the SyntaxError
+// and answer a negative index. The SyntaxError is made in the running realm,
+// which for $262.evalScript is the realm the script was handed to.
+fn parseScriptSource(src: &string, st: &mut Interp): BlockId {
     // a fresh name per eval: two evals in one program must not overwrite each
     // other's text, or the first one's functions stringify from the second's
     let evalName = "<eval:" + numToStr(gProg.srcNames.len() as f64) + ">"
@@ -16552,7 +16651,8 @@ pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
         leftover = true
     }
     if ep.errored || ep.eofError || leftover {
-        return throwErr(&mut st, "SyntaxError", "Unexpected token in eval")
+        let _ = throwErr(&mut st, "SyntaxError", "Unexpected token in eval")
+        return BlockId { index: -1 }
     }
     // A top-level `return` is legal in a CommonJS module (node wraps the file in
     // a function) but not in eval, so this check belongs here rather than in the
@@ -16560,9 +16660,55 @@ pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
     var ri: i64 = 0
     while ri < gProg.blocks[top.index].len() {
         if let Stmt.Ret(_rv) = getStmt(gProg, gProg.blocks[top.index][ri]) {
-            return throwErr(&mut st, "SyntaxError", "Illegal return statement")
+            let _ = throwErr(&mut st, "SyntaxError", "Illegal return statement")
+            return BlockId { index: -1 }
         }
         ri = ri + 1
+    }
+    return top
+}
+
+// $262.evalScript: run `src` as a global SCRIPT of realm r and answer its
+// completion value. Unlike indirect eval, `let`/`const`/`class` at its top
+// level are bindings of that realm's global scope, visible to later scripts,
+// which is what ScriptEvaluation does.
+pub fn evalScriptInRealm(src: &string, r: i64, st: &mut Interp): JSValue {
+    let prevRealm = enterRealm(&mut st, r)
+    let savedStrict = st.strict
+    let top = parseScriptSource(src, &mut st)
+    var completion = JSValue.Undefined
+    if top.index >= 0 {
+        // parseProgram records the script's own "use strict" directive
+        st.strict = gProg.progStrict
+        let g = st.globalScope
+        hoistBlock(gProg, top, &mut st, g)
+        let n = gProg.blocks[top.index].len()
+        var i: i64 = 0
+        while i < n && !st.throwing {
+            let sIdx = gProg.blocks[top.index][i]
+            match getStmt(gProg, sIdx) {
+                Stmt.ExprStmt(e) => {
+                    completion = evalExpr(gProg, e, &mut st, g)
+                }
+                _ => {
+                    execStmt(gProg, sIdx, &mut st, g)
+                }
+            }
+            i = i + 1
+        }
+    }
+    st.strict = savedStrict
+    let _ = enterRealm(&mut st, prevRealm)
+    if st.throwing {
+        return JSValue.Undefined
+    }
+    return completion
+}
+
+pub fn runEvalSource(src: &string, st: &mut Interp, scope: i64): JSValue {
+    let top = parseScriptSource(src, &mut st)
+    if top.index < 0 {
+        return JSValue.Undefined
     }
     // `var` and function declarations belong to the CALLER's scope (that is what
     // makes `eval("var q = 6")` visible afterwards), but `let`, `const` and

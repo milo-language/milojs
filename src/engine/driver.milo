@@ -23,7 +23,7 @@ from "./runtime" import {
     Interp, newScope, collect, pushTemp, popTemp
 }
 from "./realm" import {
-    bootFirstRealm
+    bootFirstRealm, runRealmPrelude
 }
 from "./bootstrap" import {
     setupGlobals, registerWellKnownSymbols
@@ -72,7 +72,7 @@ pub fn makeInterp(gcStats: bool, gcThreshold: i64, gcGrowth: i64): Interp {
         throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
         optShort: false, pendingLabel: "", callDepthLimit: 10000,
         rngState: 88172645463325252,
-        allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, realms: Vec.new(), curRealm: 0, globalScope: 0, dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, dateProtoPristine: false, regexProtoPristine: false, dataViewProtoObj: -1, dataViewProtoPristine: false, taProtoObj: -1, taProtoLo: 0, taProtoHi: -1, taProtoPristine: false, objectProtoPristine: true, symDescs: Vec.new(), symHasDesc: Vec.new(), symRegistered: Vec.new(), symRegistry: HashMap.new(), anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actFn: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), inspectMaxDepth: 2, parseFailed: false, hadUnhandledRejection: false, gcThreshold: gcThreshold, gcMinThreshold: gcThreshold, gcGrowthFactor: gcGrowth, gcRuns: 0, gcStats: gcStats, builtinGlobals: 0
+        allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, realms: Vec.new(), curRealm: 0, realmPreludes: Vec.new(), globalScope: 0, dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, dateProtoPristine: false, regexProtoPristine: false, dataViewProtoObj: -1, dataViewProtoPristine: false, taProtoObj: -1, taProtoLo: 0, taProtoHi: -1, taProtoPristine: false, objectProtoPristine: true, symDescs: Vec.new(), symHasDesc: Vec.new(), symRegistered: Vec.new(), symRegistry: HashMap.new(), anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actFn: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), inspectMaxDepth: 2, parseFailed: false, hadUnhandledRejection: false, gcThreshold: gcThreshold, gcMinThreshold: gcThreshold, gcGrowthFactor: gcGrowth, gcRuns: 0, gcStats: gcStats, builtinGlobals: 0
     }
 }
 
@@ -87,6 +87,23 @@ pub fn bootInterp(st: &mut Interp) {
     bootFirstRealm(&mut st, globalScope)
     registerWellKnownSymbols(&mut st)
     setupGlobals(&mut st)
+}
+
+// Parse and run a JS-written built-in (the engine prelude) as the first realm's
+// prelude, so createRealm can run it again in each new realm. The embedding
+// entry point's counterpart of the preloadGraph + runRealmPrelude pair the two
+// binaries use.
+pub fn runPreludeSource(src: &string, prog: &mut Prog, st: &mut Interp) {
+    let toks = lex(src)
+    var p = PState { depth: 0, noIn: false,
+        toks: toks, pos: 0, curClass: "", privNames: Vec.new(), privOwners: Vec.new(), file: "<prelude>", errored: false, eofError: false, quiet: true, strict: false
+    }
+    let top = parseProgram(&mut p, &mut prog)
+    if p.errored {
+        let _ = throwErr(&mut st, "SyntaxError", "failed to parse the prelude")
+        return
+    }
+    runRealmPrelude(prog, top, &mut st)
 }
 
 // Evaluate one script into a persistent program and return its completion value.

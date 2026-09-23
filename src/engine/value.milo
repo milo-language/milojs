@@ -304,6 +304,11 @@ pub enum Builtin: i32 {
     // without side effects, and test262's isConstructor helper asks it of every
     // builtin (one not-a-constructor.js per method).
     IsConstructor,
+    // __realmCreate() / __realmEval(global, src): the engine side of test262's
+    // $262.createRealm and $262.evalScript. A new realm is answered as its
+    // global object, and a script is aimed at a realm through that object.
+    RealmCreate,
+    RealmEval,
     // __markNotConstructor(fn): records that a JS-defined built-in method has no
     // [[Construct]]. The prelude and lib/temporal.js implement real built-ins as
     // ordinary JS functions, which the engine cannot otherwise tell from user code

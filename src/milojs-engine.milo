@@ -67,6 +67,9 @@ from "./engine/ast" import {
 from "./runtime/modules" import {
     preloadGraph, dirOf, hasEsmSyntax, moduleIsStrict
 }
+from "./engine/realm" import {
+    runRealmPrelude
+}
 from "./engine/eval" import {
     runModule, runEventLoop, hoistBlock, execBlock, anyGenParked
 }
@@ -150,15 +153,15 @@ fn main(): i32 {
             // global scope so its declarations become globals
             let preludeIdx = preloadGraph("builtin:engine-prelude", &mut gProg, &mut gInterp)
             if preludeIdx >= 0 {
-                hoistBlock(gProg, gInterp.modBlocks[preludeIdx], &mut gInterp, gInterp.globalScope)
-                execBlock(gProg, gInterp.modBlocks[preludeIdx], &mut gInterp, gInterp.globalScope)
+                // every later realm runs it too (createRealm)
+                runRealmPrelude(gProg, gInterp.modBlocks[preludeIdx], &mut gInterp)
             }
             // Temporal, in its own file because it is large and self-contained;
             // same global scope, loaded after the prelude it depends on
             let temporalIdx = preloadGraph("builtin:temporal", &mut gProg, &mut gInterp)
             if temporalIdx >= 0 {
-                hoistBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, gInterp.globalScope)
-                execBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, gInterp.globalScope)
+                // every later realm runs it too (createRealm)
+                runRealmPrelude(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp)
             }
             markBuiltinGlobals(&mut gInterp)
             if gInterp.throwing {

@@ -29,7 +29,7 @@ import { tmpdir } from "os";
 // An unknown flag is refused, not ignored: `--files` was once passed here when
 // only node-compat-sweep had it, and this sweep quietly ran the WHOLE suite.
 {
-  const takesValue = new Set(["--dir", "--fails", "--json", "--limit", "--sample"]);
+  const takesValue = new Set(["--dir", "--fails", "--files", "--json", "--limit", "--sample"]);
   const flags = new Set(["-v"]);
   const a = process.argv.slice(2);
   for (let i = 0; i < a.length; i++) {
@@ -55,12 +55,18 @@ const arg = (name: string) => { const i = process.argv.indexOf(name); return i >
 const sampleN = arg("--sample") ? parseInt(arg("--sample")!) : null;
 const subDir = arg("--dir") ?? "";
 const limit = arg("--limit") ? parseInt(arg("--limit")!) : Infinity;
+// --files <path>: exactly the cases named in a newline-separated list, each
+// relative to the corpus's test/ directory or absolute. How a cross-cutting
+// subset is measured (every case that calls $262.createRealm, say), which no
+// directory or sample can select. Diagnostic, like --dir: it never writes the
+// committed report.
+const fileList = arg("--files");
 // A --dir or --limit run is a DIAGNOSTIC, not the published number, and writing
 // it to the committed report silently republished "built-ins/Date, 60.8%" as the
 // whole-suite figure the README cites. Only a full or sampled whole-suite run
 // may claim that path; anything narrower goes to .dev/ unless --json says
 // otherwise.
-const isCanonical = !subDir && limit === Infinity;
+const isCanonical = !subDir && limit === Infinity && !fileList;
 const jsonPath = arg("--json") ?? (isCanonical ? "docs/conformance/test262.json" : ".dev/test262-partial.json");
 // Every failing case with its reason, one JSON object per line. The bucket
 // listing above truncates at 8 examples per bucket, which is enough to name a
@@ -146,6 +152,18 @@ function walk(dir: string): string[] {
 
 const root = join(T262, "test", subDir);
 let files = walk(root);
+if (fileList) {
+  const want = readFileSync(fileList, "utf-8").split("\n").map((l) => l.trim()).filter(Boolean)
+    .map((f) => (f.startsWith("/") ? f : join(T262, "test", f)));
+  const known = new Set(files);
+  const absent = want.filter((f) => !known.has(f));
+  // a misspelled or moved case would otherwise silently shrink the run
+  if (absent.length) {
+    console.error(`test262-sweep: --files names ${absent.length} case(s) not in the corpus: ${absent.slice(0, 5).join(", ")}`);
+    process.exit(2);
+  }
+  files = [...new Set(want)].sort();
+}
 // Before sampling. status.md publishes the pass rate off a 1500-case sample of a
 // ~54k-file corpus, and without this the report cannot say what fraction that is
 // — the reader sees "1169/1470" and has no way to know it is under 3% of the
@@ -164,12 +182,23 @@ files = files.slice(0, limit);
 // they were counted as engine failures when nothing had been asked of the
 // engine yet. detachArrayBuffer goes through ArrayBuffer.prototype.transfer,
 // which is what actually detaches the source here.
-const HOST_HOOK = `var $262 = {
-  global: globalThis,
-  detachArrayBuffer: function (buffer) { buffer.transfer(); },
-  gc: function () {},
-  agent: undefined,
-};
+//
+// createRealm builds the same object again inside a fresh realm (the engine's
+// __realmCreate answers the new realm's global object) by evaluating this very
+// factory's source there, so the new $262's functions belong to the new realm.
+// evalScript runs a global script in the realm that owns the $262 it hangs off.
+const HOST_HOOK = `var $262 = (function make262() {
+  return {
+    global: globalThis,
+    detachArrayBuffer: function (buffer) { buffer.transfer(); },
+    gc: function () {},
+    agent: undefined,
+    evalScript: function (src) { return __realmEval(globalThis, src); },
+    createRealm: function () {
+      return __realmEval(__realmCreate(), "var $262 = (" + make262.toString() + ")(); $262");
+    },
+  };
+})();
 `;
 
 const tmp = mkdtempSync(join(tmpdir(), "t262-"));
@@ -325,6 +354,7 @@ if (jsonPath) {
     engine: tilde(ENGINE),
     selection: {
       directory: subDir || null,
+      files: fileList ?? null,
       available,
       sample: sampleN,
       limit: Number.isFinite(limit) ? limit : null,

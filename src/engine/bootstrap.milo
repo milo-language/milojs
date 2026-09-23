@@ -937,6 +937,8 @@ pub fn setupGlobals(st: &mut Interp) {
     // and console.log render identically
     scopeDefine(&mut st, g, "__inspect", nativeValue(&mut st, Native.Fn(Builtin.Inspect)))
     scopeDefine(&mut st, g, "__isConstructor", nativeValue(&mut st, Native.Fn(Builtin.IsConstructor)))
+    scopeDefine(&mut st, g, "__realmCreate", nativeValue(&mut st, Native.Fn(Builtin.RealmCreate)))
+    scopeDefine(&mut st, g, "__realmEval", nativeValue(&mut st, Native.Fn(Builtin.RealmEval)))
     scopeDefine(&mut st, g, "__markNotConstructor", nativeValue(&mut st, Native.Fn(Builtin.MarkNotCtor)))
     // The raw "wrap a value in a resolved promise" primitive, exposed under its
     // own name so the prelude can build the public Promise.resolve on top of it.

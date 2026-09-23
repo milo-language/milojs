@@ -26,6 +26,17 @@ pub fn calleeRealm(st: &Interp, v: &JSValue): i64
 The [[Realm]] of a callable: the realm its function object was allocated in,
 which a call has to enter. -1 for anything that is not a function object.
 
+### `createRealm`
+
+```milo
+pub fn createRealm(prog: &Prog, st: &mut Interp): i64
+```
+
+A new realm: its own global scope and global object, every built-in installed
+by the same bootstrap the first realm ran, then the same JS-written built-ins.
+Answers the realm's index, or -1 with the exception pending. The running realm
+is unchanged on return.
+
 ### `emptyRealm`
 
 ```milo
@@ -106,6 +117,14 @@ pub fn realmFunctionProto(st: &Interp, r: i64): i64
 
 _Undocumented._
 
+### `realmGlobalObject`
+
+```milo
+pub fn realmGlobalObject(st: &Interp, r: i64): JSValue
+```
+
+Realm r's global object: what its `globalThis` is bound to.
+
 ### `realmGlobalScope`
 
 ```milo
@@ -122,6 +141,16 @@ pub fn realmObjectProto(st: &Interp, r: i64): i64
 ```
 
 _Undocumented._
+
+### `runRealmPrelude`
+
+```milo
+pub fn runRealmPrelude(prog: &Prog, block: BlockId, st: &mut Interp)
+```
+
+Run one JS-written built-in block (the engine prelude, Temporal) in the
+running realm's global scope, and remember it so createRealm runs it in every
+later realm too.
 
 ### `saveRealm`
 

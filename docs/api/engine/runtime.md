@@ -375,6 +375,15 @@ pub fn nativeObjIfMade(st: &Interp, n: &Native): i64
 nativeObj without the side effect, for callers holding an immutable Interp:
 the object if it has been made, else -1.
 
+### `nativeObjInRealm`
+
+```milo
+pub fn nativeObjInRealm(st: &Interp, n: &Native, r: i64): i64
+```
+
+Realm r's canonical function object for builtin n, or -1 if r has not made
+one. Unlike nativeObj, any realm's, and never allocates.
+
 ### `nativeValue`
 
 ```milo
