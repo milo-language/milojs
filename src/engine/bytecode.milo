@@ -1873,13 +1873,15 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     vmFlushOuter(&mut st, ch, base, curScope)
                     dirty = false
                     var handled = false
-                    if let JSValue.Func(fIdx, _envIdx, _fo) = calleeVal {
+                    if let JSValue.Func(fIdx, _envIdx, cfo) = calleeVal {
                         let cid2 = bodyChunkOf(prog, fIdx)
                         // A CLASS constructor takes the slow path even when its body
                         // compiles: callFunction is where "cannot be invoked without
                         // 'new'" is raised, and an empty constructor body compiles, so
                         // a frame here would run it and answer undefined instead.
-                        if cid2 >= 0 && !prog.funcs[fIdx].isClassCtor {
+                        // So does a function of another realm: callFunction enters
+                        // its realm, and a frame here would run it in this one.
+                        if cid2 >= 0 && !prog.funcs[fIdx].isClassCtor && st.objects[cfo].realm as i64 == st.curRealm {
                             handled = true
                             // The same guard callFunctionBody applies. A frame here
                             // costs no native stack, so the depth counter is the only

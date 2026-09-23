@@ -25,6 +25,10 @@ from "./value" import {
     WK_ASYNC_ITERATOR, WK_HAS_INSTANCE, WK_ITERATOR, WK_MATCH, WK_MATCH_ALL, WK_REPLACE, WK_SEARCH, WK_SPLIT,
     WK_TO_PRIMITIVE, WK_TO_STRING_TAG, WK_DISPOSE, WK_ASYNC_DISPOSE
 }
+from "./realm" import {
+    enterRealm, calleeRealm, objRealm, globalScopeOfObj, realmBuiltinGlobals, realmObjectProto, realmFunctionProto, realmArrayProto,
+    isArrayCtorObj, isPromiseCtorObj
+}
 from "./runtime" import {
     objOwnIndex, touchedBuiltinProto, propIsAccessor, accGetter, accSetter, arrLen, arrGet, pushTemp, popTemp,
     getNativeProps, objGet, newObject, ensureExtra, arrIsHole, asArrayIndex, scopeHasOwn,
@@ -1027,8 +1031,9 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
     }
     // globalThis.x reads the global binding, so it stays in step with bare `x`
     if st.objects[o].isGlobal && objOwnIndex(st, o, key) < 0 {
-        if scopeHasOwn(st, st.globalScope, key) {
-            return scopeLookup(st, st.globalScope, key)
+        let gs = globalScopeOfObj(st, o)
+        if scopeHasOwn(st, gs, key) {
+            return scopeLookup(st, gs, key)
         }
     }
     if st.objects[o].isEnv && objOwnIndex(st, o, key) < 0 {
@@ -3320,8 +3325,9 @@ pub fn getMember(st: &Interp, o: i64, key: &string): JSValue {
     // (`globalThis.x += y`) read undefined for its own left-hand side while a
     // plain read of the same property worked.
     if st.objects[o].isGlobal && objOwnIndex(st, o, key) < 0 {
-        if scopeHasOwn(st, st.globalScope, key) {
-            return scopeLookup(st, st.globalScope, key)
+        let gs = globalScopeOfObj(st, o)
+        if scopeHasOwn(st, gs, key) {
+            return scopeLookup(st, gs, key)
         }
     }
     let nativeLen = nativeBufferLen(st, o)
@@ -3540,7 +3546,7 @@ fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
     }
     // globalThis.x = v defines/updates the global binding, not a detached property
     if st.objects[o].isGlobal {
-        scopeDefine(&mut st, st.globalScope, key, value)
+        scopeDefine(&mut st, globalScopeOfObj(st, o), key, value)
         return
     }
     if st.objects[o].isArray {
@@ -3967,13 +3973,21 @@ fn nativeRequiresNew(n: &Native): bool {
 // A native invoked as a PLAIN FUNCTION, as opposed to through `new` or from the
 // engine's own construction paths -- which is the distinction the guard needs and
 // which callNativeProg cannot make, because both arrive there.
-pub fn callNativeAsFunction(prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
+pub fn callNativeAsFunction(prog: &Prog, n: &Native, fo: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
+    // a builtin runs in the realm its function object belongs to: B's Array()
+    // makes a B array whoever calls it
+    if fo >= 0 && objRealm(st, fo) != st.curRealm {
+        let prevRealm = enterRealm(&mut st, objRealm(st, fo))
+        let r = callNativeAsFunction(prog, n, fo, argVals, &mut st)
+        let _ = enterRealm(&mut st, prevRealm)
+        return r
+    }
     // `Date()` without `new` is specified to ignore its arguments entirely and
     // return the CURRENT time as a string -- it is not `new Date()`. Returning a
     // Date object meant `typeof Date()` was "object" and string concatenation
     // with it went through the object's toString by accident rather than by rule.
     if nativeEq(n, Native.Fn(Builtin.Date)) {
-        let nowObj = objHandle(callNativeProg(prog, n, argVals, &mut st))
+        let nowObj = objHandle(callNativeProg(prog, n, fo, argVals, &mut st))
         if nowObj >= 0 {
             var noArgs: Vec<JSValue> = Vec.new()
             return dateMethod(&mut st, nowObj, "toString", noArgs)
@@ -3983,10 +3997,18 @@ pub fn callNativeAsFunction(prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st:
     if nativeRequiresNew(n) {
         return throwErr(&mut st, "TypeError", "Constructor " + nativeCtorName(n) + " requires 'new'")
     }
-    return callNativeProg(prog, n, argVals, &mut st)
+    return callNativeProg(prog, n, fo, argVals, &mut st)
 }
 
-pub fn callNativeProg(_prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
+// Every call of a builtin's native code funnels through here, so this is where
+// it enters the builtin's realm (fo is its function object, -1 when unknown).
+pub fn callNativeProg(prog: &Prog, n: &Native, fo: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
+    if fo >= 0 && objRealm(st, fo) != st.curRealm {
+        let prevRealm = enterRealm(&mut st, objRealm(st, fo))
+        let r = callNativeProg(prog, n, fo, argVals, &mut st)
+        let _ = enterRealm(&mut st, prevRealm)
+        return r
+    }
     if nativeEq(n, Native.Fn(Builtin.String)) && argVals.len() > 0 {
         let h = objHandle(argVals[0])
         if h >= 0 {
@@ -4515,8 +4537,8 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
     if id == Builtin.ObjectDefineProperty {
         // defineProperty is the other way a non-writable data property appears on
         // Object.prototype, so it retires the same fast path a plain write does.
-        if argVals.len() > 0 && objHandle(argVals[0]) == st.objectProtoObj {
-            st.objectProtoPristine = false
+        if argVals.len() > 0 && objHandle(argVals[0]) >= 0 {
+            touchedBuiltinProto(&mut st, objHandle(argVals[0]))
         }
         // Every one of these was silently accepted, so a call that the spec says
         // must throw returned the object unchanged and the caller carried on
@@ -7357,27 +7379,34 @@ fn protoOfHandle(st: &Interp, h: i64): i64 {
     if st.objects[h].protoNull {
         return -1
     }
-    // Object.prototype is the top of the chain; its own proto is null
-    if h == st.objectProtoObj {
-        return -1
-    }
     // an explicit link (user `new F()`, Object.create, setPrototypeOf) wins
     if st.objects[h].proto >= 0 {
         return st.objects[h].proto
     }
-    if st.objects[h].isArray && st.arrayProtoObj >= 0 {
-        return st.arrayProtoObj
+    // No explicit link: the prototype is implied by the object's kind, and it is
+    // the intrinsic of the realm the object was MADE in, whichever realm is
+    // asking. A `{}` from another realm inherits that realm's Object.prototype.
+    let r = st.objects[h].realm as i64
+    let objectProto = realmObjectProto(st, r)
+    // Object.prototype is the top of the chain; its own proto is null
+    if h == objectProto {
+        return -1
+    }
+    let arrayProto = realmArrayProto(st, r)
+    if st.objects[h].isArray && arrayProto >= 0 {
+        return arrayProto
     }
     // A CALLABLE object inherits Function.prototype, not Object.prototype. Without
     // this `Array.constructor` was undefined and
     // `Object.getPrototypeOf(Array) === Function.prototype` was false, which is
     // what get-intrinsic checks when resolving `%Array.constructor%`.
-    if st.objects[h].isFunctionLike && st.functionProtoObj >= 0 && h != st.functionProtoObj {
-        return st.functionProtoObj
+    let functionProto = realmFunctionProto(st, r)
+    if st.objects[h].isFunctionLike && functionProto >= 0 && h != functionProto {
+        return functionProto
     }
     // functions, errors and plain objects fall back to Object.prototype
     // (Function.prototype / Error.prototype are not distinct singletons here)
-    return st.objectProtoObj
+    return objectProto
 }
 
 // The `constructor` for a builtin object, when the (faked) prototype chain has
@@ -7997,6 +8026,11 @@ fn nativeProtoChainHas(st: &Interp, o: i64, bag: i64): bool {
 // `o instanceof <native constructor>`. Split out of instanceOf so the built-in
 // shortcuts can match on the constructor's variant.
 fn nativeInstanceOf(st: &Interp, o: i64, nv: &Native, nfo: i64): bool {
+    // The internal-kind shortcuts below answer "is it a Map" and not "is it
+    // THIS realm's Map". Across realms only the general rule is right.
+    if nfo >= 0 && st.objects[o].realm != st.objects[nfo].realm {
+        return nativeProtoChainHas(st, o, nfo)
+    }
     match nv {
         Native.Fn(id) => {
             // Almost every object inherits from Object.prototype — but not one
@@ -8117,12 +8151,16 @@ fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
                 JSValue.Obj(c) => {
                     // Array is an object constructor (JSValue.Obj), not a Native,
                     // so `[] instanceof Array` reaches here — match by the array flag
-                    if c == st.arrayCtorObj && st.objects[o].isArray {
+                    // (same realm only: another realm's array is not an
+                    // instance of this realm's Array, and the general rule
+                    // below answers that from the prototype chain)
+                    let sameRealm = st.objects[o].realm == st.objects[c].realm
+                    if sameRealm && c == st.arrayCtorObj && st.objects[o].isArray {
                         return true
                     }
                     // Promise's constructor is an Obj too; a promise is recognised
                     // by its settlement-state slot
-                    if st.promiseCtorObj >= 0 && c == st.promiseCtorObj && st.objects[o].promiseState >= 0 {
+                    if sameRealm && st.promiseCtorObj >= 0 && c == st.promiseCtorObj && st.objects[o].promiseState >= 0 {
                         return true
                     }
                     // The general rule the two shortcuts above stand in for: the
@@ -9388,7 +9426,7 @@ fn evalNewArms(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inte
         // than in callNative because the executor is a user function and
         // needs the program to run.
         let ah = objHandle(calleeVal)
-        if ah >= 0 && st.arrayCtorObj >= 0 && ah == st.arrayCtorObj {
+        if ah >= 0 && isArrayCtorObj(st, ah) {
             let argVals = evalArgs(prog, argsIdx, &mut st, scope)
             // An argument expression that threw ABORTS the call: without this the
             // callee still ran with the arguments evaluated so far, so
@@ -9397,10 +9435,15 @@ fn evalNewArms(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inte
             if st.throwing {
                 return JSValue.Undefined
             }
+            // another realm's Array: constructValue enters that realm, after the
+            // arguments were evaluated in this one
+            if objRealm(st, ah) != st.curRealm {
+                return constructValue(prog, &mut st, calleeVal, argVals, calleeVal)
+            }
             return makeArrayFromCtor(&mut st, argVals)
         }
         let ph = objHandle(calleeVal)
-        if ph >= 0 && isPromiseCtor(st, ph) {
+        if ph >= 0 && isPromiseCtorObj(st, ph) {
             let argVals = evalArgs(prog, argsIdx, &mut st, scope)
             // An argument expression that threw ABORTS the call: without this the
             // callee still ran with the arguments evaluated so far, so
@@ -9408,6 +9451,9 @@ fn evalNewArms(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inte
             // `resolve(boom())` settled the promise with undefined.
             if st.throwing {
                 return JSValue.Undefined
+            }
+            if objRealm(st, ph) != st.curRealm {
+                return constructValue(prog, &mut st, calleeVal, argVals, calleeVal)
             }
             return constructPromise(prog, &mut st, argVals)
         }
@@ -9452,7 +9498,7 @@ fn evalNewArms(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inte
                 }
                 return JSValue.Obj(obj)
             }
-            JSValue.Native(nativeId, _fo) => {
+            JSValue.Native(nativeId, nfo) => {
                 if !nativeIsConstructor(nativeId) {
                     return throwErr(&mut st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor")
                 }
@@ -9464,17 +9510,20 @@ fn evalNewArms(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inte
                 if st.throwing {
                     return JSValue.Undefined
                 }
+                if nfo >= 0 && objRealm(st, nfo) != st.curRealm {
+                    return constructValue(prog, &mut st, calleeVal, argVals, calleeVal)
+                }
                 // Called as a function these three coerce; called with `new`
                 // they BOX. Ignoring `new` made `new Boolean(false)` falsy
                 // and `typeof new String("")` report "string".
                 if nativeEq(nativeId, Native.Fn(Builtin.String)) || nativeEq(nativeId, Native.Fn(Builtin.Number)) || nativeEq(nativeId, Native.Fn(Builtin.Boolean)) {
-                    let prim = callNativeProg(prog, nativeId, argVals, &mut st)
+                    let prim = callNativeProg(prog, nativeId, nfo, argVals, &mut st)
                     if st.throwing {
                         return JSValue.Undefined
                     }
                     return makeWrapper(&mut st, prim)
                 }
-                return callNativeProg(prog, nativeId, argVals, &mut st)
+                return callNativeProg(prog, nativeId, nfo, argVals, &mut st)
             }
             JSValue.Obj(co) => {
                 if st.objects[co].isProxy {
@@ -11267,6 +11316,16 @@ pub fn inspectTop(st: &Interp, v: &JSValue): string {
 // than editing callFunctionBody's many early returns keeps the push and pop
 // paired without touching its control flow.
 pub fn callFunction(prog: &Prog, callee: &JSValue, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue {
+    // A function runs in the realm it was created in (PrepareForOrdinaryCall):
+    // its globals, and every object its body allocates, belong to that realm.
+    // Same-realm calls pay this load and compare and nothing else.
+    let calleeR = calleeRealm(st, callee)
+    if calleeR >= 0 && calleeR != st.curRealm {
+        let prevRealm = enterRealm(&mut st, calleeR)
+        let r = callFunction(prog, callee, argVals, thisVal, &mut st)
+        let _ = enterRealm(&mut st, prevRealm)
+        return r
+    }
     let fIdx = funcHandle(callee)
     // A class constructor may only be reached through `new` (or a super() call,
     // which goes through the construct path and so has a new.target). Calling one
@@ -11817,7 +11876,8 @@ fn ordinaryGetOwnPropDesc(st: &mut Interp, v: &JSValue, key: &string): JSValue {
         // it lives in scope 0; it is writable and enumerable but, like a
         // `var` declaration, not configurable
         if st.objects[h].isGlobal {
-            var bi = scopeOwnIndex(st, st.globalScope, key)
+            let gs = globalScopeOfObj(st, h)
+            var bi = scopeOwnIndex(st, gs, key)
             if key == "undefined" {
                 // a literal, not a binding, but an own frozen property of the
                 // global object all the same
@@ -11827,11 +11887,11 @@ fn ordinaryGetOwnPropDesc(st: &mut Interp, v: &JSValue, key: &string): JSValue {
                 // a builtin global is writable, non-enumerable, configurable;
                 // the three value constants are frozen; the program's own
                 // `var`s are writable, enumerable, non-configurable
-                let builtin = bi < st.builtinGlobals
+                let builtin = bi < realmBuiltinGlobals(st, st.objects[h].realm as i64)
                 let frozen = key == "NaN" || key == "Infinity" || key == "undefined"
                 let gd = newObject(&mut st)
                 pushTemp(&mut st, JSValue.Obj(gd))
-                objSet(&mut st, gd, "value", scopeLookup(st, st.globalScope, key))
+                objSet(&mut st, gd, "value", scopeLookup(st, gs, key))
                 objSet(&mut st, gd, "writable", JSValue.Bool(!frozen))
                 objSet(&mut st, gd, "enumerable", JSValue.Bool(!builtin))
                 objSet(&mut st, gd, "configurable", JSValue.Bool(builtin && !frozen))
@@ -11946,11 +12006,14 @@ fn ordinaryGetProto(st: &mut Interp, v: &JSValue): JSValue {
     if isCallableIn(st, v) && st.functionProtoObj >= 0 {
         var bagProto: i64 = -1
         let bh0 = propertyBagOf(&mut st, v)
+        // the function's OWN realm's Function.prototype, not the caller's
+        var fr = st.curRealm
         if bh0 >= 0 {
             bagProto = protoOfHandle(st, bh0)
+            fr = st.objects[bh0].realm as i64
         }
-        if bagProto < 0 || bagProto == st.objectProtoObj {
-            return JSValue.Obj(st.functionProtoObj)
+        if bagProto < 0 || bagProto == realmObjectProto(st, fr) {
+            return JSValue.Obj(realmFunctionProto(st, fr))
         }
     }
     let h = propertyBagOf(&mut st, v)
@@ -12423,6 +12486,17 @@ fn cloneValueVec(v: &Vec<JSValue>): Vec<JSValue> {
 
 pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec<JSValue>, newTarget: &JSValue): JSValue {
     let co = objHandle(ctor)
+    // A builtin constructor builds its instance in its own realm: `new B.Map()`
+    // is a B Map. A user function enters its realm in callFunction instead, and
+    // a proxy or bind() result has no realm of its own to enter.
+    let ctorRealm = calleeRealm(st, ctor)
+    if ctorRealm >= 0 && ctorRealm != st.curRealm && funcHandle(ctor) < 0
+        && !(co >= 0 && (st.objects[co].isProxy || (st.objects[co].isBound && st.objExtras[st.objects[co].extra].boundMethod.len() == 0))) {
+        let prevRealm = enterRealm(&mut st, ctorRealm)
+        let r = constructValue(prog, &mut st, ctor, argVals, newTarget)
+        let _ = enterRealm(&mut st, prevRealm)
+        return r
+    }
     if co >= 0 && st.objects[co].isProxy {
         if !valueIsConstructor(prog, st, ctor) {
             return throwErr(&mut st, "TypeError", "proxy is not a constructor")
@@ -12490,11 +12564,11 @@ pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec
                 }
             }
         }
-        JSValue.Native(nid, _fo) => {
+        JSValue.Native(nid, nfo) => {
             // a builtin constructor makes its OWN instance (an Array, a Date, a
             // wrapper); handing it a fresh plain object as `this` would produce
             // an ordinary object wearing the right prototype and nothing else
-            let r = callNativeProg(prog, nid, argVals, &mut st)
+            let r = callNativeProg(prog, nid, nfo, argVals, &mut st)
             if st.throwing {
                 return JSValue.Undefined
             }
@@ -13672,6 +13746,10 @@ fn genResume(o: i64, args: Vec<JSValue>, mode: i64, st: &mut Interp): JSValue {
             // an async generator's body is already ON a task; without this the
             // isAsync branch would spawn an activation and hand back a promise
             gInterp.suppressAsyncSpawn = true
+            // The body runs in its generator function's realm, which is the
+            // realm the generator object was made in (the call entered it).
+            // The task starts in whatever realm its first next() ran.
+            let _ = enterRealm(&mut gInterp, objRealm(gInterp, genObjIdx))
             let r = runGeneratorBody(gProg, fIdx, bodyScope, &mut gInterp)
             let fgi = genIndexOf(gInterp, genObjIdx)
             if fgi >= 0 {
@@ -14403,7 +14481,11 @@ fn schedulerYieldedToActivation(st: &mut Interp): bool {
         i = i + 1
     }
     if ready {
+        // the activations that run in the meantime leave the Interp in
+        // whichever realm they last ran; the loop continues in its own
+        let loopRealm = st.curRealm
         schedulerYield()
+        let _ = enterRealm(&mut st, loopRealm)
     }
     return ready
 }
@@ -14464,7 +14546,9 @@ pub fn runEventLoop(prog: &Prog, st: &mut Interp) {
         } else if st.actTask.len() > 0 {
             // activations are still live; their continuations are real work, so
             // exiting here would drop them on the floor
+            let loopRealm = st.curRealm
             schedulerYield()
+            let _ = enterRealm(&mut st, loopRealm)
         } else {
             // Report only here, where the loop is genuinely out of work. A
             // rejection is "unhandled" the moment it settles with no reaction
@@ -15354,8 +15438,8 @@ pub fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSVa
         JSValue.Func(_fIdx, _envIdx, _fo) => {
             return callFunction(prog, fnVal, args, thisVal, &mut st)
         }
-        JSValue.Native(id, _fo) => {
-            return callNativeAsFunction(prog, id, args, &mut st)
+        JSValue.Native(id, fo) => {
+            return callNativeAsFunction(prog, id, fo, args, &mut st)
         }
         JSValue.Obj(o) => {
             if st.objects[o].isProxy {
@@ -15394,6 +15478,16 @@ pub fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSVa
             // a bind() result: the captured receiver wins over the call site's
             if st.objects[o].isBound {
                 let ex = st.objects[o].extra
+                // a builtin METHOD object runs in its own realm, like a native:
+                // B's Array.prototype.map called on an A array makes a B array.
+                // A bind() result has no realm of its own to enter; its target
+                // enters its own when called below.
+                if st.objExtras[ex].boundMethod.len() > 0 && objRealm(st, o) != st.curRealm {
+                    let prevRealm = enterRealm(&mut st, objRealm(st, o))
+                    let r = callValue(prog, fnVal, args, thisVal, &mut st)
+                    let _ = enterRealm(&mut st, prevRealm)
+                    return r
+                }
                 if st.objExtras[ex].boundMethod.len() > 0 {
                     let mname = st.objExtras[ex].boundMethod.clone()
                     var recvV = cloneValue(st.objExtras[ex].boundThis)
@@ -16121,7 +16215,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                     popTemp(&mut st)
                     return r
                 }
-                JSValue.Native(id, _fo) => {
+                JSValue.Native(id, nfo) => {
                     let argVals = evalArgs(prog, argsIdx, &mut st, scope)
                     // An argument expression that threw ABORTS the call: without this the
                     // callee still ran with the arguments evaluated so far, so
@@ -16130,7 +16224,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                     if st.throwing {
                         return JSValue.Undefined
                     }
-                    let r = callNativeAsFunction(prog, id, argVals, &mut st)
+                    let r = callNativeAsFunction(prog, id, nfo, argVals, &mut st)
                     popTemp(&mut st)
                     return r
                 }
@@ -17042,7 +17136,7 @@ pub fn isPlainCallable(st: &Interp, v: &JSValue): bool {
                 return true
             }
             // Array(n) without `new` behaves identically to new Array(n)
-            if st.arrayCtorObj >= 0 && o == st.arrayCtorObj {
+            if isArrayCtorObj(st, o) {
                 return true
             }
             return false
@@ -17059,8 +17153,12 @@ pub fn isPlainCallable(st: &Interp, v: &JSValue): bool {
 pub fn callPlainValue(prog: &Prog, calleeVal: &JSValue, argVals: Vec<JSValue>, st: &mut Interp): JSValue {
     if let JSValue.Obj(o) = calleeVal {
         let callableObj = st.objects[o].isBound || st.objects[o].isProxy || st.objExtras[st.objects[o].extra].napiFn >= 0
-        if !callableObj && st.arrayCtorObj >= 0 && o == st.arrayCtorObj {
-            return makeArrayFromCtor(&mut st, argVals)
+        if !callableObj && isArrayCtorObj(st, o) {
+            // another realm's Array() makes an array of that realm
+            let prevRealm = enterRealm(&mut st, objRealm(st, o))
+            let r = makeArrayFromCtor(&mut st, argVals)
+            let _ = enterRealm(&mut st, prevRealm)
+            return r
         }
     }
     return callValue(prog, calleeVal, argVals, JSValue.Undefined, &mut st)

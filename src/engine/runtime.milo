@@ -37,7 +37,7 @@ from "std/os" import {
     free
 }
 from "./eval" import { makeError }
-from "./realm" import { saveRealm, Realm }
+from "./realm" import { saveRealm, enterRealm, globalScopeOfObj, realmObjectProto, Realm }
 
 struct Binding {
     name: string,
@@ -444,6 +444,9 @@ struct ExecCtx {
     active: Vec<i64>,
     modDirStack: Vec<string>,
     modPathStack: Vec<string>,
+    // The realm the activation was running in. A parked async function or
+    // generator of realm B resumes in B whatever realm its waker was running.
+    realm: i64,
 }
 
 // Lift the running execution out of the Interp, leaving it clean for whoever
@@ -487,6 +490,7 @@ pub fn saveExecCtx(st: &mut Interp): ExecCtx {
         active: actives,
         modDirStack: dirs,
         modPathStack: paths,
+        realm: st.curRealm,
     }
     st.throwing = false
     st.genReturning = false
@@ -514,6 +518,7 @@ pub fn restoreExecCtx(st: &mut Interp, ctx: ExecCtx) {
     st.active = ctx.active
     st.modDirStack = ctx.modDirStack
     st.modPathStack = ctx.modPathStack
+    let _ = enterRealm(&mut st, ctx.realm)
 }
 
 pub struct Timer {
@@ -736,6 +741,12 @@ struct JSObj {
     // array, which shares those fields. A DataView is not index-accessible and
     // its methods pick the element type per call.
     isDataView: bool,
+    // The realm that was running when the object was allocated. For a function
+    // object that is its [[Realm]], which a call enters; for any object it is
+    // the realm whose intrinsics an implicit prototype link (proto == -1) means.
+    // i32 so it sits in the padding after the flags above: JSObj stays the same
+    // size.
+    realm: i32,
     // promise settlement discriminator (-1 not a promise, 0 pending, 1/2
     // settled); the value + pending reactions live in the side table. The
     // compiled-regex handle (regexId) now lives in the side table too.
@@ -1136,7 +1147,7 @@ pub var gInterp: Interp = Interp {
 fn allocObj(st: &mut Interp, isArray: bool): i64 {
     st.allocSinceGc = st.allocSinceGc + 1
     let obj = JSObj {
-        props: Vec.new(), elems: Vec.new(), holes: Vec.new(), logicalLen: -1, isArray: isArray, fnIdx: -1, fnEnv: -1, proto: -1, protoNull: false, isArguments: false, lengthNonWritable: false, isError: false, frozen: false, fnStatInit: false, noExtend: false, sealed: false, isGlobal: false, isArrayBuffer: false, abDetached: false, isDataView: false, promiseState: -1, isBound: false, isEnv: false, isFunctionLike: false, isDate: false, isMap: false, isSet: false, isProxy: false, isGenerator: false, isAsyncGenerator: false, extra: 0, mark: false, free: false
+        props: Vec.new(), elems: Vec.new(), holes: Vec.new(), logicalLen: -1, isArray: isArray, fnIdx: -1, fnEnv: -1, proto: -1, protoNull: false, isArguments: false, lengthNonWritable: false, isError: false, frozen: false, fnStatInit: false, noExtend: false, sealed: false, isGlobal: false, isArrayBuffer: false, abDetached: false, isDataView: false, realm: st.curRealm as i32, promiseState: -1, isBound: false, isEnv: false, isFunctionLike: false, isDate: false, isMap: false, isSet: false, isProxy: false, isGenerator: false, isAsyncGenerator: false, extra: 0, mark: false, free: false
     }
     // reuse a freed slot if one exists (indices are stable — handles hold them),
     // otherwise grow the arena
@@ -1464,6 +1475,17 @@ pub fn objSetNonEnumerable(st: &mut Interp, obj: i64, key: &string) {
 // rather than only at setMember means defineProperty, delete and accessor
 // installation are all covered without each remembering to do it.
 pub fn touchedBuiltinProto(st: &mut Interp, obj: i64) {
+    // A prototype of a realm that is not running guards THAT realm's fast
+    // paths: code in realm A replacing B's Array.prototype.map must retire B's
+    // guard, or B's direct dispatch keeps calling the original. Entering B for
+    // the check keeps the list of guarded prototypes in one place.
+    let r = st.objects[obj].realm as i64
+    if r != st.curRealm {
+        let prev = enterRealm(&mut st, r)
+        touchedBuiltinProto(&mut st, obj)
+        let _ = enterRealm(&mut st, prev)
+        return
+    }
     if obj == st.arrayProtoObj {
         st.arrayProtoPristine = false
     }
@@ -2043,7 +2065,7 @@ pub fn objHas(st: &Interp, o: i64, key: &string): bool {
     // read and write. Own-key QUERIES have to mirror it too, or
     // `hasOwnProperty(globalThis, "$DONE")` denies a global that is plainly
     // there (test262's async harness refuses to run on that answer).
-    if st.objects[o].isGlobal && scopeHasOwn(st, st.globalScope, key) {
+    if st.objects[o].isGlobal && scopeHasOwn(st, globalScopeOfObj(st, o), key) {
         return true
     }
     var i: i64 = 0
@@ -2068,11 +2090,11 @@ pub fn objHasInChain(st: &Interp, o: i64, key: &string): bool {
         let next = st.objects[cur].proto
         if next >= 0 {
             cur = next
-        } else if cur != st.objectProtoObj && st.objectProtoObj >= 0 {
+        } else if cur != realmObjectProto(st, st.objects[cur].realm as i64) && realmObjectProto(st, st.objects[cur].realm as i64) >= 0 {
             // A plain object's `proto` field is -1: the link to Object.prototype
-            // is resolved by type, not stored, so a raw walk of the field stops
-            // one level short and reports `toString` as absent.
-            cur = st.objectProtoObj
+            // (its own realm's) is resolved by type, not stored, so a raw walk of
+            // the field stops one level short and reports `toString` as absent.
+            cur = realmObjectProto(st, st.objects[cur].realm as i64)
         } else {
             cur = -1
         }

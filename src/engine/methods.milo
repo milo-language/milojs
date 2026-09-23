@@ -7,6 +7,9 @@
 // Milo permits circular imports, so a leaf can import the evaluator that
 // imports it back. That is what makes the seam cuttable at all.
 
+from "./realm" import {
+    isArrayCtorObj, objRealm
+}
 from "./strutil" import {
     strSlice
 }
@@ -2355,6 +2358,12 @@ fn arraySpeciesCreate(prog: &Prog, o: i64, len: i64, st: &mut Interp): i64 {
     }
     var species = cloneValue(ctor)
     let ch = objHandle(ctor)
+    // Another realm's %Array% counts as no constructor at all: the spec wants
+    // `B.Array.prototype.map.call(anArrayOfA, f)` to make a B array, not an A
+    // one, so a plain array of the running realm it is.
+    if ch >= 0 && isArrayCtorObj(st, ch) && objRealm(st, ch) != st.curRealm {
+        return -1
+    }
     if ch >= 0 {
         species = getMemberDyn(prog, ch, symSpeciesKey(), &mut st)
         if st.throwing {

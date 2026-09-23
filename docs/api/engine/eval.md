@@ -174,7 +174,7 @@ _Undocumented._
 ### `callNativeAsFunction`
 
 ```milo
-pub fn callNativeAsFunction(prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn callNativeAsFunction(prog: &Prog, n: &Native, fo: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue
 ```
 
 A native invoked as a PLAIN FUNCTION, as opposed to through `new` or from the
@@ -184,10 +184,11 @@ which callNativeProg cannot make, because both arrive there.
 ### `callNativeProg`
 
 ```milo
-pub fn callNativeProg(_prog: &Prog, n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn callNativeProg(prog: &Prog, n: &Native, fo: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue
 ```
 
-_Undocumented._
+Every call of a builtin's native code funnels through here, so this is where
+it enters the builtin's realm (fo is its function object, -1 when unknown).
 
 ### `callPlainValue`
 

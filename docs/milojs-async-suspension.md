@@ -27,7 +27,7 @@ document, and the document changes first if the plan changes.
 | R4a async body returns a pending promise | done (`0391271`) — an activation returning a pending promise adopts it, not reads its state; guarded by `tests/runtime/asyncReturnsPendingPromise.js` (new runtime harness pass) |
 | Per-binary JS recursion limit | done (`2843607`, recalibrated 2026-07-30) — `callDepthLimit` field; engine/embedding 108 on the normal process stack, runtime 500 on its green task. A differential fixture requires depth 100 and catchable runaway recursion. Not an async requirement, tracked here because it interacts with activation stacks |
 | R5 existing values unchanged | holds (nothing landed yet) |
-| R6 per-activation execution state | done (`3215822`, corrected `c079770`) — 9 fields, contexts reclaimed by task identity. Covered end-to-end by `tests/runtime/r6LocalsLiveAcrossSuspend.js` (locals live across a mid-loop suspend) |
+| R6 per-activation execution state | done (`3215822`, corrected `c079770`) — 9 fields, contexts reclaimed by task identity; a 10th, the running realm, since realms landed (an activation of realm B resumes in B, restoreExecCtx enters it). Covered end-to-end by `tests/runtime/r6LocalsLiveAcrossSuspend.js` (locals live across a mid-loop suspend) |
 | R7 GC over suspended activations | done (`3215822`) — collect walks parked roots. Covered by `tests/runtime/r7GcOverSuspended.js`, which `run.sh` runs under `MILOJS_GC_THRESHOLD=1` (any `*Gc*` fixture) so a collection actually fires during the park |
 | R8 unsettleable promise still reported | holds today, must survive |
 
