@@ -446,7 +446,7 @@ pub fn napi_typeof(_env: *u8, value: i64, result: *u8): i32 {
         JSValue.Func(_f, _e, _fo) => {
             napiWriteI32(result, 7)
         }
-        JSValue.Native(_i) => {
+        JSValue.Native(_i, _fo) => {
             napiWriteI32(result, 7)
         }
         JSValue.Obj(o) => {

@@ -1,0 +1,34 @@
+true
+true false
+true
+true
+true
+function false
+1 undefined isArray undefined
+12 [ 'tag' ] []
+true 12 true true
+[ 'length', 'name', 'tag' ]
+[ 'length', 'name' ]
+[ 'length', 'name' ]
+[ 'length', 'name', 'prototype', 'groupBy' ]
+[ 'length', 'name', 'prototype', 'BYTES_PER_ELEMENT' ]
+[ 'length', 'name', 'prototype' ]
+max 2 abs 1 3
+false
+false ""
+3 max min parseInt false
+1 2 false
+2 1 true
+false false false true
+function 1 1 "" ""
+[ 'length', 'name' ] true false
+r1 j1 undefined undefined
+false 0
+3 1 2 3 undefined
+function floor() { [native code] }
+function Map() { [native code] }
+function max() { [native code] }
+true false
+true false undefined 8
+false undefined 3
+p1 done r1

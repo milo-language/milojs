@@ -613,7 +613,7 @@ _Undocumented._
 ### `nativeSourceText`
 
 ```milo
-pub fn nativeSourceText(st: &mut Interp, n: &Native): string
+pub fn nativeSourceText(st: &Interp, n: &Native, bag: i64): string
 ```
 
 Parse `src` into the shared program and run it in `scope`, answering the

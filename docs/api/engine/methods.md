@@ -165,7 +165,7 @@ to the built-in unconditionally made every override unreachable through
 
 Deliberately &Interp, not &mut: typedArrayProtoFor needs a mutable lookup, and
 threading one into these two dispatch sites made the prover havoc interpreter
-state and drop six neighbouring contracts. nativePropsOf answers the same
+state and drop six neighbouring contracts. nativeObjIfMade answers the same
 question without creating anything — by the time an instance exists its
 constructor's props bag does too, so the -1 arm is unreachable in practice and
 falls back to the built-in, which is the pre-existing behaviour.

@@ -20,7 +20,7 @@ from "./value" import {
     isStr, toStr, toNum, toInt32, toUint32, jsEquals, jsStrictEquals, strLess, objHandle, numToStr,
     cloneValue, funcHandle, jsNan, truthy, nativeHandle, isNullish, strToNum, jsInfinity,
     jsParseFloatPrefix, jsParsePrefixNum, uriEncode, uriHasBadEscape, uriDecode, parseIsoDate, jsInf,
-    funcEnv, funcObjOf, pad2, pad3,
+    funcEnv, funcObjOf, nativeObjOf, pad2, pad3,
     JSValue, Native, Builtin, i64ToStr, daysFromCivil, nativeEq, isNativeValue, symKey, symIdOfKey, propKeyValue,
     WK_ASYNC_ITERATOR, WK_HAS_INSTANCE, WK_ITERATOR, WK_MATCH, WK_MATCH_ALL, WK_REPLACE, WK_SEARCH, WK_SPLIT,
     WK_TO_PRIMITIVE, WK_TO_STRING_TAG, WK_DISPOSE, WK_ASYNC_DISPOSE
@@ -31,7 +31,7 @@ from "./runtime" import {
     scopeLookup, objSet, newArray, enumOrder, arrPush, isSymbolKey, taWidth, taName, taLoad, taStore,
     nativeBufferLen, objHas, makeClosure, nativeBufferGet, nativeBufferSet, scopeDefine, arrSet,
     setArrayLength, scopeAssign, scopeTryLookup, mapPut, objSetNonEnumerable, isPromise, newPromise,
-    objDeleteKey, objDefineAccessor, newScope, pushActive, popActive, scopeHas, nativePropsOf,
+    objDeleteKey, objDefineAccessor, newScope, pushActive, popActive, scopeHas, makeResolver, nativeValue,
     bufferNativeViewHandle, bufferBytesHandle, isPromiseCtor, arrMarkHole, gInterp,
     saveExecCtx, restoreExecCtx, objDefineFnProtoAttr, scopeHasBelowGlobal, maybeGc,
     Interp, Timer, Microtask, Reaction, PendingFetch, collect, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn, TA_MAX, TA_I64, TA_U64, taIsBigKind, taLoadBig, taStoreBig, isPrivateKey, scopeOwnIndex,
@@ -406,8 +406,8 @@ fn toPrimitiveDefault(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
         JSValue.Func(df, _de, _fo) => {
             return JSValue.Str(funcSourceText(prog, df))
         }
-        JSValue.Native(dn) => {
-            return JSValue.Str(nativeSourceText(&mut st, dn))
+        JSValue.Native(dn, dfo) => {
+            return JSValue.Str(nativeSourceText(st, dn, dfo))
         }
         _ => {
         }
@@ -554,8 +554,8 @@ pub fn toStrProg(prog: &Prog, v: &JSValue, st: &mut Interp): string {
         JSValue.Func(vf, _ve, _fo) => {
             return funcSourceText(prog, vf)
         }
-        JSValue.Native(vn) => {
-            return nativeSourceText(&mut st, vn)
+        JSValue.Native(vn, vfo) => {
+            return nativeSourceText(st, vn, vfo)
         }
         _ => {
         }
@@ -1058,7 +1058,7 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
     // `constructor` fallback for builtins whose faked prototype chain has none.
     // Only when the chain gave nothing, so a user constructor is never shadowed.
     if isUndefinedValue(direct) && key == "constructor" {
-        let c = builtinConstructorOf(st, o)
+        let c = builtinConstructorOf(&mut st, o)
         if !isUndefinedValue(c) {
             return c
         }
@@ -1452,11 +1452,12 @@ fn nativeIsConstructor(n: &Native): bool {
         Native.TypedArrayCtor(_kind) => {
             return true
         }
-        Native.Resolver(_promise, _isReject) => {
-            return false
-        }
         Native.Fn(b) => {
             return builtinIsConstructor(b)
+        }
+        _ => {
+            // a promise's resolve and reject functions
+            return false
         }
     }
 }
@@ -1729,8 +1730,8 @@ fn finishBind(prog: &Prog, st: &mut Interp, bo: i64, target: &JSValue, nBound: i
             arity = toNum(getMember(st, to, "length")) as i64
             nm = toStr(getMember(st, to, "name"))
         }
-        JSValue.Native(tn) => {
-            let bag = getNativeProps(&mut st, tn)
+        JSValue.Native(_tn, _tfo) => {
+            let bag = propertyBagOf(&mut st, target)
             arity = toNum(getMember(st, bag, "length")) as i64
             nm = toStr(getMember(st, bag, "name"))
         }
@@ -3205,7 +3206,7 @@ fn objectTypeTag(v: &JSValue): string {
         JSValue.Func(_f, _e, _fo) => {
             return "Function"
         }
-        JSValue.Native(_n) => {
+        JSValue.Native(_n, _fo) => {
             return "Function"
         }
         _ => {
@@ -3709,6 +3710,10 @@ fn readLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
                     let statics = propertyBagOf(&mut st, ov)
                     return getMemberDyn(prog, statics, name, &mut st)
                 }
+                JSValue.Native(_n, _nfo) => {
+                    let nbag = propertyBagOf(&mut st, ov)
+                    return getMemberDyn(prog, nbag, name, &mut st)
+                }
                 _ => {
                     return JSValue.Undefined
                 }
@@ -3728,6 +3733,10 @@ fn readLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
                 JSValue.Func(_fIdx, _fe, _fo) => {
                     let statics = propertyBagOf(&mut st, ov)
                     return getMemberDyn(prog, statics, key, &mut st)
+                }
+                JSValue.Native(_n, _nfo) => {
+                    let nbag = propertyBagOf(&mut st, ov)
+                    return getMemberDyn(prog, nbag, key, &mut st)
                 }
                 _ => {
                     return JSValue.Undefined
@@ -3758,6 +3767,12 @@ fn writeLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64, value
                     // the plain set overwrote the accessor with a data property
                     setMemberDyn(prog, statics, name.clone(), value, &mut st)
                 }
+                JSValue.Native(_n, _nfo) => {
+                    // `Math.max.count++`: the write lands on the builtin's
+                    // function object, as a plain assignment does
+                    let nbag = propertyBagOf(&mut st, ov)
+                    setMemberDyn(prog, nbag, name.clone(), value, &mut st)
+                }
                 _ => {
                 }
             }
@@ -3776,6 +3791,10 @@ fn writeLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64, value
                 JSValue.Func(_fIdx, _fe, _fo) => {
                     let statics = propertyBagOf(&mut st, ov)
                     setMemberDyn(prog, statics, key, value, &mut st)
+                }
+                JSValue.Native(_n, _nfo) => {
+                    let nbag = propertyBagOf(&mut st, ov)
+                    setMemberDyn(prog, nbag, key, value, &mut st)
                 }
                 _ => {
                 }
@@ -3999,8 +4018,11 @@ fn callNative(n: &Native, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             // reinterpret (runtime.milo), so every kind is constructible.
             return makeTypedArray(gProg, &mut st, kind, argVals)
         }
-        Native.Resolver(target, isReject) => {
-            return callResolver(&mut st, target, isReject, argVals)
+        Native.Resolve(target) => {
+            return callResolver(&mut st, target, false, argVals)
+        }
+        Native.Reject(target) => {
+            return callResolver(&mut st, target, true, argVals)
         }
     }
 }
@@ -7362,9 +7384,9 @@ fn protoOfHandle(st: &Interp, h: i64): i64 {
 // none. Returns Undefined for anything without a well-defined builtin
 // constructor here, so a real (user) constructor resolved through the chain is
 // never overridden — this is only ever consulted as a fallback.
-fn builtinConstructorOf(st: &Interp, o: i64): JSValue {
+fn builtinConstructorOf(st: &mut Interp, o: i64): JSValue {
     if o == st.objectProtoObj {
-        return JSValue.Native(Native.Fn(Builtin.ObjectCtor))
+        return nativeValue(&mut st, Native.Fn(Builtin.ObjectCtor))
     }
     if o == st.arrayProtoObj && st.arrayCtorObj >= 0 {
         return JSValue.Obj(st.arrayCtorObj)
@@ -7389,7 +7411,7 @@ fn builtinConstructorOf(st: &Interp, o: i64): JSValue {
     // constructor here (Map/Set/Date/typed-array/proxy/promise/function…) are
     // left Undefined rather than mis-reported as Object
     if !st.objects[o].isMap && !st.objects[o].isSet && !st.objects[o].isDate && !st.objects[o].isProxy && !st.objects[o].isArrayBuffer && st.objExtras[st.objects[o].extra].taBuf < 0 && !st.objects[o].isGenerator && st.objects[o].promiseState < 0 && !st.objects[o].isFunctionLike && !st.objects[o].isBound {
-        return JSValue.Native(Native.Fn(Builtin.ObjectCtor))
+        return nativeValue(&mut st, Native.Fn(Builtin.ObjectCtor))
     }
     return JSValue.Undefined
 }
@@ -7957,11 +7979,7 @@ fn requireModuleFrom(prog: &Prog, spec: &string, st: &mut Interp, dirIn: string)
 // chain looking for that constructor's `prototype`. The internal-kind checks in
 // instanceOf are shortcuts for the common case; this is the general rule they
 // stand in for, and the only thing that recognises a subclass instance.
-fn nativeProtoChainHas(st: &Interp, o: i64, n: &Native): bool {
-    let bag = nativePropsOf(st, n)
-    if bag < 0 {
-        return false
-    }
+fn nativeProtoChainHas(st: &Interp, o: i64, bag: i64): bool {
     let target = objHandle(objGet(st, bag, "prototype"))
     if target < 0 {
         return false
@@ -7978,7 +7996,7 @@ fn nativeProtoChainHas(st: &Interp, o: i64, n: &Native): bool {
 
 // `o instanceof <native constructor>`. Split out of instanceOf so the built-in
 // shortcuts can match on the constructor's variant.
-fn nativeInstanceOf(st: &Interp, o: i64, nv: &Native): bool {
+fn nativeInstanceOf(st: &Interp, o: i64, nv: &Native, nfo: i64): bool {
     match nv {
         Native.Fn(id) => {
             // Almost every object inherits from Object.prototype — but not one
@@ -8031,9 +8049,9 @@ fn nativeInstanceOf(st: &Interp, o: i64, nv: &Native): bool {
             if st.objExtras[st.objects[o].extra].taBuf >= 0 && !st.objects[o].isDataView && st.objExtras[st.objects[o].extra].taKind == kind {
                 return true
             }
-            return nativeProtoChainHas(st, o, nv)
+            return nativeProtoChainHas(st, o, nfo)
         }
-        Native.Resolver(_promise, _isReject) => {
+        _ => {
         }
     }
     if !st.objects[o].isError {
@@ -8041,7 +8059,7 @@ fn nativeInstanceOf(st: &Interp, o: i64, nv: &Native): bool {
         // carries the right prototype chain but not the base's internal slot, so
         // `new (class extends Map {})() instanceof Map` answered false. Fall back
         // to OrdinaryHasInstance, which is what the shortcuts stand in for.
-        return nativeProtoChainHas(st, o, nv)
+        return nativeProtoChainHas(st, o, nfo)
     }
     if nativeEq(nv, Native.Fn(Builtin.Error)) {
         return true
@@ -8055,13 +8073,13 @@ fn nativeInstanceOf(st: &Interp, o: i64, nv: &Native): bool {
     if toStr(nm) == nativeErrorNameOf(nv) {
         return true
     }
-    return nativeProtoChainHas(st, o, nv)
+    return nativeProtoChainHas(st, o, nfo)
 }
 
 fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
     // `f instanceof Function` for a plain function value: functions are not Objs
     // here, so the object walk below never saw them and answered false.
-    if let JSValue.Native(cid) = ctor {
+    if let JSValue.Native(cid, _cfo) = ctor {
         if nativeEq(cid, Native.Fn(Builtin.FunctionCtor)) {
             return isCallableIn(st, val)
         }
@@ -8093,8 +8111,8 @@ fn instanceOf(st: &Interp, val: &JSValue, ctor: &JSValue): bool {
                     }
                     return false
                 }
-                JSValue.Native(nv) => {
-                    return nativeInstanceOf(st, o, nv)
+                JSValue.Native(nv, nfo) => {
+                    return nativeInstanceOf(st, o, nv, nfo)
                 }
                 JSValue.Obj(c) => {
                     // Array is an object constructor (JSValue.Obj), not a Native,
@@ -8179,7 +8197,7 @@ fn typeofStr(v: &JSValue): string {
         JSValue.Obj(_o) => {
             return "object"
         }
-        JSValue.Native(_id) => {
+        JSValue.Native(_id, _fo) => {
             return "function"
         }
     }
@@ -8599,7 +8617,7 @@ pub fn memberOfValue(prog: &Prog, ov: JSValue, name: &string, st: &mut Interp): 
             if name == "constructor" {
                 let statics1 = propertyBagOf(&mut st, ov)
                 if objOwnIndex(st, statics1, name) < 0 {
-                    return JSValue.Native(Native.Fn(Builtin.FunctionCtor))
+                    return nativeValue(&mut st, Native.Fn(Builtin.FunctionCtor))
                 }
             }
             // fn.call / fn.apply / fn.bind as VALUES. They already work
@@ -8635,8 +8653,8 @@ pub fn memberOfValue(prog: &Prog, ov: JSValue, name: &string, st: &mut Interp): 
             // invoked it — every static getter returned undefined
             return getMemberDyn(prog, statics, name, &mut st)
         }
-        JSValue.Native(nid) => {
-            let bag = getNativeProps(&mut st, nid)
+        JSValue.Native(nid, _nfo) => {
+            let bag = propertyBagOf(&mut st, ov)
             if name == "name" && objOwnIndex(st, bag, "name") < 0 {
                 let nn = nativeCtorName(nid)
                 if nn.len() > 0 {
@@ -8735,10 +8753,10 @@ fn evalIndexExpr(prog: &Prog, objIdx: ExprId, keyIdx: ExprId, st: &mut Interp, s
                 // methods too, not just what is literally in the bag
                 return getMemberDyn(prog, statics, key, &mut st)
             }
-            JSValue.Native(nid) => {
-                let bag = getNativeProps(&mut st, nid)
+            JSValue.Native(nid, _nfo) => {
+                let bag = propertyBagOf(&mut st, ov)
                 if (key == "call" || key == "apply" || key == "bind") && objOwnIndex(st, bag, key) < 0 {
-                    return makeBoundMethod(&mut st, JSValue.Native(nid), key.clone())
+                    return makeBoundMethod(&mut st, cloneValue(ov), key.clone())
                 }
                 if key == "name" && objOwnIndex(st, bag, "name") < 0 {
                     let nn = nativeCtorName(nid)
@@ -8832,12 +8850,12 @@ pub fn setMemberOfValue(prog: &Prog, ov: JSValue, key: string, v: JSValue, st: &
             }
             setMemberDyn(prog, o, key, cloneValue(v), &mut st)
         }
-        JSValue.Native(nid) => {
+        JSValue.Native(_nid, _nfo) => {
+            let bag = propertyBagOf(&mut st, ov)
             // assigning onto a builtin constructor, e.g.
             // Error.captureStackTrace = fn. setMemberDyn, not objSet, so
             // a non-writable property (every built-in `prototype`) drops
             // the write instead of silently replacing itself.
-            let bag = getNativeProps(&mut st, nid)
             setMemberDyn(prog, bag, key, cloneValue(v), &mut st)
         }
         JSValue.Func(_sf, _senv, _sfo) => {
@@ -9434,7 +9452,7 @@ fn evalNewArms(prog: &Prog, calleeIdx: ExprId, argsIdx: ArgListId, st: &mut Inte
                 }
                 return JSValue.Obj(obj)
             }
-            JSValue.Native(nativeId) => {
+            JSValue.Native(nativeId, _fo) => {
                 if !nativeIsConstructor(nativeId) {
                     return throwErr(&mut st, "TypeError", describeCallee(prog, calleeIdx) + " is not a constructor")
                 }
@@ -10045,8 +10063,9 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     let statics = propertyBagOf(&mut st, ov)
                     return getMemberDyn(prog, statics, key, &mut st)
                 }
-                JSValue.Native(nid) => {
-                    return getMember(st, getNativeProps(&mut st, nid), key)
+                JSValue.Native(_nid, _nfo) => {
+                    let nbag = propertyBagOf(&mut st, ov)
+                    return getMember(st, nbag, key)
                 }
                 _ => {
                     return JSValue.Undefined
@@ -10110,8 +10129,8 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     // missing case — @trpc's `procedure?._def.type`.
                     return memberOfValue(prog, cloneValue(ov), name, &mut st)
                 }
-                JSValue.Native(nid) => {
-                    let bag = getNativeProps(&mut st, nid)
+                JSValue.Native(nid, _nfo) => {
+                    let bag = propertyBagOf(&mut st, ov)
                     if name == "name" && objOwnIndex(st, bag, "name") < 0 {
                         let nn = nativeCtorName(nid)
                         if nn.len() > 0 {
@@ -10468,7 +10487,7 @@ fn rootIfHeap(st: &mut Interp, v: &JSValue) {
         JSValue.Func(_f, _e, _fo) => {
             pushTemp(&mut st, cloneValue(v))
         }
-        JSValue.Native(_n) => {
+        JSValue.Native(_n, _fo) => {
             pushTemp(&mut st, cloneValue(v))
         }
         _ => {
@@ -12300,9 +12319,16 @@ fn constructPromise(prog: &Prog, st: &mut Interp, argVals: &Vec<JSValue>): JSVal
     let pr = newPromise(&mut st, 0, JSValue.Undefined)
     pushTemp(&mut st, JSValue.Obj(pr))
     var exArgs: Vec<JSValue> = Vec.new()
-    exArgs.push(JSValue.Native(Native.Resolver(pr, false)))
-    exArgs.push(JSValue.Native(Native.Resolver(pr, true)))
+    // Rooted across the call: until the executor binds its parameters (a bound
+    // or proxied one runs code first) this Vec is all that holds the two
+    // function objects, and the collector cannot see a Milo local.
+    let rootBase = st.tempRoots.len()
+    exArgs.push(makeResolver(&mut st, pr, false))
+    rootIfHeap(&mut st, exArgs[0])
+    exArgs.push(makeResolver(&mut st, pr, true))
+    rootIfHeap(&mut st, exArgs[1])
     let _ = callValue(prog, argVals[0], exArgs, JSValue.Undefined, &mut st)
+    truncateTemps(&mut st, rootBase)
     if st.throwing {
         let err = cloneValue(st.thrownValue)
         st.throwing = false
@@ -12464,7 +12490,7 @@ pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec
                 }
             }
         }
-        JSValue.Native(nid) => {
+        JSValue.Native(nid, _fo) => {
             // a builtin constructor makes its OWN instance (an Array, a Date, a
             // wrapper); handing it a fresh plain object as `this` would produce
             // an ordinary object wearing the right prototype and nothing else
@@ -13716,9 +13742,14 @@ pub fn awaitValue(prog: &Prog, va: &JSValue, st: &mut Interp): JSValue {
                         let adopted = newPromise(&mut st, 0, JSValue.Undefined)
                         pushTemp(&mut st, JSValue.Obj(adopted))
                         var thenArgs: Vec<JSValue> = Vec.new()
-                        thenArgs.push(JSValue.Native(Native.Resolver(adopted, false)))
-                        thenArgs.push(JSValue.Native(Native.Resolver(adopted, true)))
+                        // rooted across the call, as in constructPromise
+                        let thenBase = st.tempRoots.len()
+                        thenArgs.push(makeResolver(&mut st, adopted, false))
+                        rootIfHeap(&mut st, thenArgs[0])
+                        thenArgs.push(makeResolver(&mut st, adopted, true))
+                        rootIfHeap(&mut st, thenArgs[1])
                         let _tr = callValue(prog, thenFn, thenArgs, JSValue.Obj(th), &mut st)
+                        truncateTemps(&mut st, thenBase)
                         popTemp(&mut st)
                         if st.throwing {
                             return JSValue.Undefined
@@ -14106,9 +14137,14 @@ fn resolvePromiseValue(prog: &Prog, st: &mut Interp, target: i64, v: JSValue) {
         // No prelude (a bare embedding evaluating source before it loads): fall
         // back to calling then inline. Wrong tick, right state.
         var inlineArgs: Vec<JSValue> = Vec.new()
-        inlineArgs.push(JSValue.Native(Native.Resolver(target, false)))
-        inlineArgs.push(JSValue.Native(Native.Resolver(target, true)))
+        // rooted across the call, as in constructPromise
+        let inlineBase = st.tempRoots.len()
+        inlineArgs.push(makeResolver(&mut st, target, false))
+        rootIfHeap(&mut st, inlineArgs[0])
+        inlineArgs.push(makeResolver(&mut st, target, true))
+        rootIfHeap(&mut st, inlineArgs[1])
         let _ = callValue(prog, thenFn, inlineArgs, cloneValue(v), &mut st)
+        truncateTemps(&mut st, inlineBase)
         if st.throwing {
             let err2 = cloneValue(st.thrownValue)
             st.throwing = false
@@ -14129,8 +14165,8 @@ fn resolvePromiseValue(prog: &Prog, st: &mut Interp, target: i64, v: JSValue) {
     pushTemp(&mut st, JSValue.Obj(box))
     arrPush(&mut st, box, cloneValue(v))
     arrPush(&mut st, box, cloneValue(thenFn))
-    arrPush(&mut st, box, JSValue.Native(Native.Resolver(inner, false)))
-    arrPush(&mut st, box, JSValue.Native(Native.Resolver(inner, true)))
+    arrPush(&mut st, box, makeResolver(&mut st, inner, false))
+    arrPush(&mut st, box, makeResolver(&mut st, inner, true))
     popTemp(&mut st)
     popTemp(&mut st)
     st.microtasks.push(Microtask {
@@ -14830,10 +14866,36 @@ pub fn propertyBagOf(st: &mut Interp, v: &JSValue): i64 {
         }
         return bag
     }
-    if let Option.Some(n) = nativeHandle(v) {
-        return getNativeProps(&mut st, n)
+    let nfo = nativeObjOf(v)
+    // A promise's resolve and reject functions own `length` 1 and `name` "",
+    // made on first look rather than by makeResolver: most never get one,
+    // and a promise-heavy loop mints two per promise. fnStatInit, as for a
+    // closure, so a deleted one stays deleted. A builtin's own name and length
+    // were set when bootstrap installed it.
+    if nfo >= 0 && !st.objects[nfo].fnStatInit {
+        st.objects[nfo].fnStatInit = true
+        if let JSValue.Native(n, _fo) = v {
+            if isResolverNative(n) {
+                objDefineBuiltinAttr(&mut st, nfo, "length", JSValue.Number(1.0))
+                objDefineBuiltinAttr(&mut st, nfo, "name", JSValue.Str(""))
+            }
+        }
     }
-    return -1
+    return nfo
+}
+
+fn isResolverNative(n: &Native): bool {
+    match n {
+        Native.Resolve(_p) => {
+            return true
+        }
+        Native.Reject(_p) => {
+            return true
+        }
+        _ => {
+            return false
+        }
+    }
 }
 
 // The object `new F()` links its instance to: F's own `prototype` when that is
@@ -15292,7 +15354,7 @@ pub fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSVa
         JSValue.Func(_fIdx, _envIdx, _fo) => {
             return callFunction(prog, fnVal, args, thisVal, &mut st)
         }
-        JSValue.Native(id) => {
+        JSValue.Native(id, _fo) => {
             return callNativeAsFunction(prog, id, args, &mut st)
         }
         JSValue.Obj(o) => {
@@ -15528,7 +15590,7 @@ pub fn isCallable(v: &JSValue): bool {
         JSValue.Func(_f, _e, _fo) => {
             return true
         }
-        JSValue.Native(_i) => {
+        JSValue.Native(_i, _fo) => {
             return true
         }
         _ => {
@@ -15636,7 +15698,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
             // a Native is not a primitive: `Math.max.toString()` is
             // "function max() { [native code] }", and this fast path answered
             // the bare word "function" for it
-            JSValue.Native(_) => {
+            JSValue.Native(_, _fo) => {
                 useDirectPrimitive = false
             }
             _ => {
@@ -16059,7 +16121,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                     popTemp(&mut st)
                     return r
                 }
-                JSValue.Native(id) => {
+                JSValue.Native(id, _fo) => {
                     let argVals = evalArgs(prog, argsIdx, &mut st, scope)
                     // An argument expression that threw ABORTS the call: without this the
                     // callee still ran with the arguments evaluated so far, so
@@ -16112,12 +16174,13 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 }
             }
         }
-        JSValue.Native(nid) => {
+        JSValue.Native(nid, _nfo) => {
+            let nfo = propertyBagOf(&mut st, recv)
             // node prints a built-in as `function <name>() { [native code] }`,
             // and lodash tells built-ins from user functions by looking for that
             // exact "[native code]" marker.
             if name == "toString" {
-                return JSValue.Str(nativeSourceText(&mut st, nid))
+                return JSValue.Str(nativeSourceText(st, nid, nfo))
             }
             // Function.prototype.apply/call/bind on a native function
             // (Math.max.apply(null, arr) etc.) — dispatch through callBuiltinByName
@@ -16130,12 +16193,17 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 if st.throwing {
                     return JSValue.Undefined
                 }
-                return callBuiltinByName(prog, JSValue.Native(nid), name, argVals, &mut st)
+                return callBuiltinByName(prog, cloneValue(recv), name, argVals, &mut st)
             }
-            // statics hanging off a native constructor, e.g. String.fromCharCode
-            let bag = getNativeProps(&mut st, nid)
-            let assigned = getMember(st, bag, name)
-            if isCallable(assigned) {
+            // statics hanging off a native constructor, e.g. String.fromCharCode,
+            // and what the function object inherits: getMemberDyn and
+            // isCallableIn, as for a closure, so an Object.prototype method
+            // (`Map.hasOwnProperty`) is found and an accessor's result is called
+            let assigned = getMemberDyn(prog, nfo, name, &mut st)
+            if st.throwing {
+                return JSValue.Undefined
+            }
+            if isCallableIn(st, assigned) {
                 let argVals = evalArgs(prog, argsIdx, &mut st, scope)
                 // An argument expression that threw ABORTS the call: without this the
                 // callee still ran with the arguments evaluated so far, so
@@ -16144,7 +16212,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 if st.throwing {
                     return JSValue.Undefined
                 }
-                return callValue(prog, assigned, argVals, JSValue.Native(nid), &mut st)
+                return callValue(prog, assigned, argVals, cloneValue(recv), &mut st)
             }
             if nativeEq(nid, Native.Fn(Builtin.Date)) && st.dateCtorProps >= 0 {
                 let m = getMember(st, st.dateCtorProps, name)
@@ -16352,8 +16420,7 @@ fn throwNullMember(st: &mut Interp, name: &string, base: &string): JSValue {
 // to tell a built-in from a user function, so every user function looked native.
 // A built-in's source text. Its own `name` property is authoritative: it is set
 // from node's own tables by nameNativesOf.
-pub fn nativeSourceText(st: &mut Interp, n: &Native): string {
-    let bag = getNativeProps(&mut st, n)
+pub fn nativeSourceText(st: &Interp, n: &Native, bag: i64): string {
     var nm = toStr(getMember(st, bag, "name"))
     if nm.len() == 0 {
         nm = nativeCtorName(n)
@@ -16533,8 +16600,8 @@ pub fn evalInOperator(prog: &Prog, key: string, ov: JSValue, st: &mut Interp): J
             }
             return JSValue.Bool(false)
         }
-        JSValue.Native(nid) => {
-            var ncur = getNativeProps(&mut st, nid)
+        JSValue.Native(_nid, _nfo) => {
+            var ncur = propertyBagOf(&mut st, ov)
             while ncur >= 0 {
                 if objHas(st, ncur, key) {
                     return JSValue.Bool(true)
@@ -16608,7 +16675,7 @@ fn consoleMethodIsPristine(st: &mut Interp, scope: i64, name: &string): bool {
         return true
     }
     match getMember(st, h, nameCopy) {
-        JSValue.Native(_n) => {
+        JSValue.Native(_n, _fo) => {
             return true
         }
         _ => {
@@ -16967,7 +17034,7 @@ pub fn isPlainCallable(st: &Interp, v: &JSValue): bool {
         JSValue.Func(_f, _e, _fo) => {
             return true
         }
-        JSValue.Native(_id) => {
+        JSValue.Native(_id, _fo) => {
             return true
         }
         JSValue.Obj(o) => {

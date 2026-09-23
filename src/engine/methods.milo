@@ -17,7 +17,7 @@ from "./value" import {
 }
 from "./runtime" import {
     objGet, getNativeProps, bigToRawBits, rawBitsToBig, f64ToBits, f32ToBits, bitsToF64, bitsToF32, mapFind, mapPut, pushTemp,
-    popTemp, newObject, ensureExtra, newArray, arrPush, arrLen, objSet, nativePropsOf, objHas,
+    popTemp, newObject, ensureExtra, newArray, arrPush, arrLen, objSet, nativeValue, objHas,
     objOwnIndex, taWidth, arrIsHole, arrMarkHole, arrGet, objDeleteKey, arrHasIndex,
     setArrayLength, sameValueZero, arrSet,
     Interp
@@ -129,7 +129,7 @@ fn toBigIntDigits(prog: &Prog, st: &mut Interp, v: &JSValue): string {
         JSValue.Str(_s) => {
             var cargs: Vec<JSValue> = Vec.new()
             cargs.push(cloneValue(v))
-            let r = callValue(prog, JSValue.Native(Native.Fn(Builtin.BigInt)), cargs, JSValue.Undefined, &mut st)
+            let r = callValue(prog, nativeValue(&mut st, Native.Fn(Builtin.BigInt)), cargs, JSValue.Undefined, &mut st)
             if let JSValue.BigInt(rs) = r {
                 return rs.clone()
             }
@@ -1223,7 +1223,7 @@ pub fn typedArrayFromBytes(st: &mut Interp, src: &string): JSValue {
 //
 // Deliberately &Interp, not &mut: typedArrayProtoFor needs a mutable lookup, and
 // threading one into these two dispatch sites made the prover havoc interpreter
-// state and drop six neighbouring contracts. nativePropsOf answers the same
+// state and drop six neighbouring contracts. nativeObjIfMade answers the same
 // question without creating anything — by the time an instance exists its
 // constructor's props bag does too, so the -1 arm is unreachable in practice and
 // falls back to the built-in, which is the pre-existing behaviour.
@@ -1297,7 +1297,7 @@ fn canBeHeldWeakly(st: &Interp, v: &JSValue): bool {
         JSValue.Func(_f, _e, _o) => {
             return true
         }
-        JSValue.Native(_n) => {
+        JSValue.Native(_n, _fo) => {
             return true
         }
         JSValue.Sym(id) => {

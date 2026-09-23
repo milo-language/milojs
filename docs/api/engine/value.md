@@ -185,7 +185,8 @@ pub fn nativeEq(a: &Native, b: &Native): bool
 
 Two natives are the same built-in. Milo has no `==` on an enum with
 payload-bearing variants, and the payload-free half (Builtin) is exactly the
-half that can use it.
+half that can use it. This is "which builtin", for dispatch; value identity
+compares the function objects instead (jsStrictEquals).
 
 ### `nativeHandle`
 
@@ -194,6 +195,15 @@ pub fn nativeHandle(v: &JSValue): Option<Native>
 ```
 
 which built-in v is, or None if it is not one
+
+### `nativeObjOf`
+
+```milo
+pub fn nativeObjOf(v: &JSValue): i64
+```
+
+The function object (identity and property bag) of a built-in function
+value, or -1 for anything else.
 
 ### `numToExponential`
 

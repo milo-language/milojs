@@ -210,7 +210,9 @@ the same assumption the integer paths below already make.
 pub fn getNativeProps(st: &mut Interp, n: &Native): i64
 ```
 
-_Undocumented._
+The property bag of a builtin named by its variant: its canonical function
+object. A caller already holding the value reads the object off it instead
+(nativeObjOf), which is the only way to reach a resolver's.
 
 ### `isPrivateKey`
 
@@ -274,6 +276,18 @@ The object is callable-flavoured (isFunctionLike), which is what makes an
 inherited lookup on it reach Function.prototype rather than Object.prototype.
 name/length/prototype are NOT created here: propertyBagOf materialises them on
 first use, so a closure that nobody inspects costs one object.
+
+### `makeResolver`
+
+```milo
+pub fn makeResolver(st: &mut Interp, promise: i64, isReject: bool): JSValue
+```
+
+A promise's resolve (isReject false) or reject function. Every call makes a
+new function with its own object, as the spec's CreateResolvingFunctions
+does: two pairs for one promise are four distinct functions. The allocation
+is a safepoint hazard for whoever holds the first of a pair while making the
+second; nothing collects inside this call.
 
 ### `mapFind`
 
@@ -341,15 +355,35 @@ pub fn nativeBufferSet(st: &mut Interp, o: i64, at: i64, value: f64): bool
 
 _Undocumented._
 
-### `nativePropsOf`
+### `nativeObj`
 
 ```milo
-pub fn nativePropsOf(st: &Interp, n: &Native): i64
+pub fn nativeObj(st: &mut Interp, n: &Native): i64
 ```
 
-The property bag a native already has, or -1. The read-only half of
-getNativeProps, for callers that hold an immutable Interp and must not
-materialise a bag as a side effect of asking.
+The canonical function object of a builtin or typed-array constructor,
+created on first use and then always the same one. Allocates on that first
+use, so it is a new allocation wherever a native value is first produced; the
+table roots the object from the moment it exists.
+
+### `nativeObjIfMade`
+
+```milo
+pub fn nativeObjIfMade(st: &Interp, n: &Native): i64
+```
+
+nativeObj without the side effect, for callers holding an immutable Interp:
+the object if it has been made, else -1.
+
+### `nativeValue`
+
+```milo
+pub fn nativeValue(st: &mut Interp, n: Native): JSValue
+```
+
+The ONLY way to obtain a builtin or typed-array constructor as a value. The
+function object is what identity compares, so building the variant by hand
+would mint a value equal to nothing.
 
 ### `newArray`
 
