@@ -15783,7 +15783,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
             // own prototype, with all twelve typed-array prototypes untouched and
             // no own property of the name, can only reach the native.
             if st.taProtoPristine && !st.objects[o].isDataView && st.objExtras[st.objects[o].extra].taBuf >= 0
-                && st.objects[o].proto == st.taProtos[st.objExtras[st.objects[o].extra].taKind]
+                && st.objects[o].proto == st.realms[st.curRealm].taProtos[st.objExtras[st.objects[o].extra].taKind]
                 && isTypedArrayMethodName(name) && objOwnIndex(st, o, name) < 0 {
                 let argVals = evalArgs(prog, argsIdx, &mut st, scope)
                 if st.throwing {

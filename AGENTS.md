@@ -34,7 +34,7 @@ Two binaries, both written in [Milo](https://github.com/milo-language/milo):
 - `milojs` — a Node-compatible **runtime** on top of it: module loader, event
   loop, fs/http, Node-API addons. Like node/deno/bun.
 
-~<!--fact:loc-milo-->50.8k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
+~<!--fact:loc-milo-->51.0k<!--/fact--> lines of Milo. Tree-walking interpreter, mark-sweep GC, own regex engine,
 own bigint. No V8, no JSC, no C engine underneath.
 
 `src/` is split along that same line, and `tools/check-layering.sh` keeps it split:
@@ -475,6 +475,7 @@ milojs's numeric core is f64, most contracts worth writing are not yet provable.
 | `tools/vm-differential.sh` | runs generated programs through the compiled path and the tree-walking evaluator and requires identical output; starts with `fuzz-gen.py --matrix`, the operator x operand cross product |
 | `tools/check-crash-visibility.mjs` | drives each sweep against a stub engine that segfaults; fails unless the report calls it a crash and counts it |
 | `tools/check-exit-codes.mjs` | exit status for 9 program shapes, differential against node; a wrong 0 is a case the sweep scores as a pass |
+| `tools/check-realm-fields.mjs` | every per-realm intrinsic in `src/engine/realm.milo` is restored by `loadRealm` and rooted by the collector's `markRealms`; the compiler checks only the save direction |
 | `tools/check-ast-refs.mjs` | finds AST strings used after the interpreter re-enters (a require can move the store); baseline may only shrink |
 | `tools/check-defect-budget.mjs` | ratchets per-suite crashes, hangs and unparsable files; crashes exact, the other two ceilings |
 | `tools/check-conformance-ratchet.mjs` | per-case pass-set ratchet: every case in `docs/conformance/passset-<suite>.txt` must still pass in that suite's committed report; corpus/seed pin mismatch is an error, lost cases fail by name |

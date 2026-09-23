@@ -122,6 +122,12 @@ if command -v node >/dev/null 2>&1 && ! node tools/check-vm-coverage.mjs; then
     status=1
 fi
 
+# Each per-realm intrinsic must be restored on a realm switch and rooted by the
+# collector; the compiler checks only the save direction. Static.
+if command -v node >/dev/null 2>&1 && ! node tools/check-realm-fields.mjs; then
+    status=1
+fi
+
 # A string read out of the AST and used after the interpreter re-enters itself.
 # Two of that class reached users: a for-of binding name that went empty
 # mid-loop, and a SIGSEGV in node's test-global.js. Static, so it costs nothing.

@@ -165,6 +165,16 @@ teeth "check-layering (engine global)" src/engine/bootstrap.milo \
     "perl -0pi -e 's/(scopeDefine\(&mut st, 0, \"__inspect\")/scopeDefine(&mut st, 0, \"__teethNative\", JSValue.Native(Native.Fn(Builtin.Inspect)))\n    \$1/' src/engine/bootstrap.milo" \
     "tools/check-layering.sh --quiet"
 
+# --- realm fields: an intrinsic loadRealm forgets to restore ---
+teeth "check-realm-fields (load)" src/engine/realm.milo \
+    "perl -ni -e 'print unless /st\.dateProtoObj = st\.realms/' src/engine/realm.milo" \
+    "node tools/check-realm-fields.mjs"
+
+# --- realm fields: an intrinsic the collector does not root ---
+teeth "check-realm-fields (mark)" src/engine/runtime.milo \
+    "perl -ni -e 'print unless /markIfHandle\(&mut st, st\.realms\[r\]\.intr\.mapProtoObj\)/' src/engine/runtime.milo" \
+    "node tools/check-realm-fields.mjs"
+
 # --- sweeps: scoring with no engine binary ---
 # The probe deletes quickjs-sweep's missing-engine guard and expects
 # check-sweeps to notice. That only proves anything when the quickjs CORPUS is

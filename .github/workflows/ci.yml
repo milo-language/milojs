@@ -100,6 +100,12 @@ jobs:
       - name: engine does not reach the runtime
         run: ./tools/check-layering.sh
 
+      # Interp caches the running realm's intrinsics; loadRealm must restore
+      # every one and the collector must root every one, in every realm. The
+      # compiler checks only the save direction.
+      - name: realm fields restored and rooted
+        run: node tools/check-realm-fields.mjs
+
       # z3 discharges the nonlinear/bitwise contracts the native std/smt prover can only
       # mark unknown. Without it the gate still runs, just with weaker verdicts.
       - name: install z3

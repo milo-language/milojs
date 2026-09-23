@@ -1,0 +1,177 @@
+// Realms: a set of intrinsics (every built-in constructor and prototype) and a
+// global scope. Code runs in exactly one realm at a time, and Interp caches that
+// realm's intrinsics in its own fields, so an intrinsic read anywhere in the
+// engine is still a plain field load. Switching realm writes the cache back into
+// Interp.realms and loads another realm's.
+//
+// NOT per realm, and deliberately so: the symbol table and the Symbol.for
+// registry (the spec shares both across realms), the well-known symbols, the
+// heap, the job and timer queues, and the call stack.
+
+from "./runtime" import {
+    Interp
+}
+
+// The scalar half of a realm: every field Interp caches under the same name.
+// saveRealm is the only code copying Interp into one of these and loadRealm the
+// only code copying back. saveRealm names every field in a struct literal, so the
+// compiler rejects one it forgets; tools/check-realm-fields.mjs holds loadRealm
+// and the collector's markRealms to the same list.
+pub struct RealmIntrinsics {
+    globalScope: i64,
+    builtinGlobals: i64,
+    promiseCtorObj: i64,
+    stringCtorProps: i64,
+    stringProtoObj: i64,
+    functionProtoObj: i64,
+    dateCtorProps: i64,
+    dateProtoObj: i64,
+    regexProtoObj: i64,
+    mapProtoObj: i64,
+    setProtoObj: i64,
+    promiseProtoObj: i64,
+    iterProtoObj: i64,
+    genProtoObj: i64,
+    arrayCtorObj: i64,
+    objectProtoObj: i64,
+    arrayProtoObj: i64,
+    dataViewProtoObj: i64,
+    taProtoObj: i64,
+    taProtoLo: i64,
+    taProtoHi: i64,
+    arrayProtoPristine: bool,
+    stringProtoPristine: bool,
+    dateProtoPristine: bool,
+    regexProtoPristine: bool,
+    dataViewProtoPristine: bool,
+    taProtoPristine: bool,
+    objectProtoPristine: bool,
+}
+
+pub struct Realm {
+    intr: RealmIntrinsics,
+    // Read in place through realms[curRealm] rather than cached on Interp: a Vec
+    // would be copied on every realm switch. The canonical function object of
+    // each builtin (see nativeObj) and each concrete typed-array prototype.
+    nativeObjs: Vec<i64>,
+    taProtos: Vec<i64>,
+}
+
+// A realm that has not been booted yet: no intrinsics, every fast-path guard
+// down until setupGlobals raises it. Object.prototype's guard starts UP because
+// the object it guards starts with no non-writable data property at all.
+pub fn emptyRealm(globalScope: i64): Realm {
+    return Realm {
+        intr: RealmIntrinsics {
+            globalScope: globalScope, builtinGlobals: 0,
+            promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1,
+            dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1,
+            setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1,
+            arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, dataViewProtoObj: -1,
+            taProtoObj: -1, taProtoLo: 0, taProtoHi: -1,
+            arrayProtoPristine: false, stringProtoPristine: false, dateProtoPristine: false,
+            regexProtoPristine: false, dataViewProtoPristine: false, taProtoPristine: false,
+            objectProtoPristine: true,
+        },
+        nativeObjs: Vec.new(),
+        taProtos: Vec.new(),
+    }
+}
+
+// Write the running realm's cached intrinsics back into its Realm record.
+pub fn saveRealm(st: &mut Interp) {
+    if st.curRealm >= st.realms.len() {
+        return
+    }
+    st.realms[st.curRealm].intr = RealmIntrinsics {
+        globalScope: st.globalScope,
+        builtinGlobals: st.builtinGlobals,
+        promiseCtorObj: st.promiseCtorObj,
+        stringCtorProps: st.stringCtorProps,
+        stringProtoObj: st.stringProtoObj,
+        functionProtoObj: st.functionProtoObj,
+        dateCtorProps: st.dateCtorProps,
+        dateProtoObj: st.dateProtoObj,
+        regexProtoObj: st.regexProtoObj,
+        mapProtoObj: st.mapProtoObj,
+        setProtoObj: st.setProtoObj,
+        promiseProtoObj: st.promiseProtoObj,
+        iterProtoObj: st.iterProtoObj,
+        genProtoObj: st.genProtoObj,
+        arrayCtorObj: st.arrayCtorObj,
+        objectProtoObj: st.objectProtoObj,
+        arrayProtoObj: st.arrayProtoObj,
+        dataViewProtoObj: st.dataViewProtoObj,
+        taProtoObj: st.taProtoObj,
+        taProtoLo: st.taProtoLo,
+        taProtoHi: st.taProtoHi,
+        arrayProtoPristine: st.arrayProtoPristine,
+        stringProtoPristine: st.stringProtoPristine,
+        dateProtoPristine: st.dateProtoPristine,
+        regexProtoPristine: st.regexProtoPristine,
+        dataViewProtoPristine: st.dataViewProtoPristine,
+        taProtoPristine: st.taProtoPristine,
+        objectProtoPristine: st.objectProtoPristine,
+    }
+}
+
+// Load realm r's intrinsics into the Interp cache. Does not save the running
+// one first; enterRealm is the caller that pairs the two.
+fn loadRealm(st: &mut Interp, r: i64) {
+    st.globalScope = st.realms[r].intr.globalScope
+    st.builtinGlobals = st.realms[r].intr.builtinGlobals
+    st.promiseCtorObj = st.realms[r].intr.promiseCtorObj
+    st.stringCtorProps = st.realms[r].intr.stringCtorProps
+    st.stringProtoObj = st.realms[r].intr.stringProtoObj
+    st.functionProtoObj = st.realms[r].intr.functionProtoObj
+    st.dateCtorProps = st.realms[r].intr.dateCtorProps
+    st.dateProtoObj = st.realms[r].intr.dateProtoObj
+    st.regexProtoObj = st.realms[r].intr.regexProtoObj
+    st.mapProtoObj = st.realms[r].intr.mapProtoObj
+    st.setProtoObj = st.realms[r].intr.setProtoObj
+    st.promiseProtoObj = st.realms[r].intr.promiseProtoObj
+    st.iterProtoObj = st.realms[r].intr.iterProtoObj
+    st.genProtoObj = st.realms[r].intr.genProtoObj
+    st.arrayCtorObj = st.realms[r].intr.arrayCtorObj
+    st.objectProtoObj = st.realms[r].intr.objectProtoObj
+    st.arrayProtoObj = st.realms[r].intr.arrayProtoObj
+    st.dataViewProtoObj = st.realms[r].intr.dataViewProtoObj
+    st.taProtoObj = st.realms[r].intr.taProtoObj
+    st.taProtoLo = st.realms[r].intr.taProtoLo
+    st.taProtoHi = st.realms[r].intr.taProtoHi
+    st.arrayProtoPristine = st.realms[r].intr.arrayProtoPristine
+    st.stringProtoPristine = st.realms[r].intr.stringProtoPristine
+    st.dateProtoPristine = st.realms[r].intr.dateProtoPristine
+    st.regexProtoPristine = st.realms[r].intr.regexProtoPristine
+    st.dataViewProtoPristine = st.realms[r].intr.dataViewProtoPristine
+    st.taProtoPristine = st.realms[r].intr.taProtoPristine
+    st.objectProtoPristine = st.realms[r].intr.objectProtoPristine
+}
+
+// Make realm r the running one and answer the realm that was running, for the
+// caller to hand back to enterRealm when it is done. Entering the running realm
+// costs one compare.
+pub fn enterRealm(st: &mut Interp, r: i64): i64 {
+    let prev = st.curRealm
+    if r == prev {
+        return prev
+    }
+    saveRealm(&mut st)
+    loadRealm(&mut st, r)
+    st.curRealm = r
+    return prev
+}
+
+// Register a new, empty realm whose global scope is `globalScope`, and answer
+// its index. Does not enter it.
+pub fn addRealm(st: &mut Interp, globalScope: i64): i64 {
+    st.realms.push(emptyRealm(globalScope))
+    return st.realms.len() - 1
+}
+
+// The first realm, the one every binary boots into.
+pub fn bootFirstRealm(st: &mut Interp, globalScope: i64) {
+    let r = addRealm(&mut st, globalScope)
+    st.curRealm = r
+    loadRealm(&mut st, r)
+}

@@ -6,7 +6,8 @@
 pub fn bootInterp(st: &mut Interp)
 ```
 
-scope 0 = global (never collected — always a GC root), then install builtins
+the first realm's global scope (a GC root, like every realm's), then install
+builtins into it
 
 ### `describeThrown`
 

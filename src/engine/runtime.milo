@@ -37,6 +37,7 @@ from "std/os" import {
     free
 }
 from "./eval" import { makeError }
+from "./realm" import { saveRealm, Realm }
 
 struct Binding {
     name: string,
@@ -886,11 +887,16 @@ pub struct Interp {
     stringCtorProps: i64,
     stringProtoObj: i64,
     functionProtoObj: i64,
-    // The canonical function object of each builtin and typed-array
-    // constructor, indexed by nativeSlot, -1 until first use (nativeObj). A GC
-    // root. Read and written only by nativeObj and nativeObjIfMade, so it can
-    // move into a per-realm struct without touching any caller.
-    nativeObjs: Vec<i64>,
+    // Every realm this interpreter has made (see src/engine/realm.milo), and
+    // which one is running. The intrinsic fields on this struct (the *ProtoObj,
+    // *CtorObj, *CtorProps and *Pristine ones, builtinGlobals, globalScope) are
+    // a CACHE of realms[curRealm]: enterRealm writes them back and loads
+    // another realm's, so the reads everywhere else stay plain field loads.
+    realms: Vec<Realm>,
+    curRealm: i64,
+    // The running realm's global scope: where top-level declarations of its
+    // scripts land and where every scope chain created in it ends.
+    globalScope: i64,
     // property bag for statics on the Date constructor (Date.now)
     dateCtorProps: i64,
     // Date.prototype, so instances can link it (identity tests, and inherited
@@ -942,8 +948,8 @@ pub struct Interp {
     // %TypedArray%.prototype, each concrete kind's prototype (indexed by taKind),
     // and one guard covering all twelve: a write to any of them retires the
     // direct typed-array dispatch in callMember.
+    // (each concrete kind's prototype, indexed by taKind, is realms[curRealm].taProtos)
     taProtoObj: i64,
-    taProtos: Vec<i64>,
     // the handle range spanning all twelve, so the write barrier in objSet can
     // rule an object out with two compares instead of loading its proto
     taProtoLo: i64,
@@ -1124,7 +1130,7 @@ pub var gInterp: Interp = Interp {
     throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 10000,
     rngState: 88172645463325252,
-    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, nativeObjs: Vec.new(), dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, dateProtoPristine: false, regexProtoPristine: false, dataViewProtoObj: -1, dataViewProtoPristine: false, taProtoObj: -1, taProtos: Vec.new(), taProtoLo: 0, taProtoHi: -1, taProtoPristine: false, objectProtoPristine: true, symDescs: Vec.new(), symHasDesc: Vec.new(), symRegistered: Vec.new(), symRegistry: HashMap.new(), anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actFn: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), inspectMaxDepth: 2, parseFailed: false, hadUnhandledRejection: false, gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false, builtinGlobals: 0
+    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, realms: Vec.new(), curRealm: 0, globalScope: 0, dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, dateProtoPristine: false, regexProtoPristine: false, dataViewProtoObj: -1, dataViewProtoPristine: false, taProtoObj: -1, taProtoLo: 0, taProtoHi: -1, taProtoPristine: false, objectProtoPristine: true, symDescs: Vec.new(), symHasDesc: Vec.new(), symRegistered: Vec.new(), symRegistry: HashMap.new(), anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actFn: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), inspectMaxDepth: 2, parseFailed: false, hadUnhandledRejection: false, gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false, builtinGlobals: 0
 }
 
 fn allocObj(st: &mut Interp, isArray: bool): i64 {
@@ -2074,7 +2080,7 @@ pub fn objHasInChain(st: &Interp, o: i64, key: &string): bool {
     return false
 }
 
-// The dense index of a canonical native in Interp.nativeObjs: typed-array kinds
+// The dense index of a canonical native in Realm.nativeObjs: typed-array kinds
 // first (0..TA_MAX), then every Builtin by its discriminant. -1 for a resolve
 // or reject function, which is per promise and has no canonical object.
 fn nativeSlot(n: &Native): i64 {
@@ -2109,24 +2115,26 @@ pub fn nativeObj(st: &mut Interp, n: &Native): i64 {
     if slot < 0 {
         return -1
     }
-    while st.nativeObjs.len() <= slot {
-        st.nativeObjs.push(-1)
+    // per realm: each realm's Array is a different function object
+    let r = st.curRealm
+    while st.realms[r].nativeObjs.len() <= slot {
+        st.realms[r].nativeObjs.push(-1)
     }
-    if st.nativeObjs[slot] < 0 {
+    if st.realms[r].nativeObjs[slot] < 0 {
         let fo = newNativeFnObj(&mut st)
-        st.nativeObjs[slot] = fo
+        st.realms[r].nativeObjs[slot] = fo
     }
-    return st.nativeObjs[slot]
+    return st.realms[r].nativeObjs[slot]
 }
 
 // nativeObj without the side effect, for callers holding an immutable Interp:
 // the object if it has been made, else -1.
 pub fn nativeObjIfMade(st: &Interp, n: &Native): i64 {
     let slot = nativeSlot(n)
-    if slot < 0 || slot >= st.nativeObjs.len() {
+    if slot < 0 || slot >= st.realms[st.curRealm].nativeObjs.len() {
         return -1
     }
-    return st.nativeObjs[slot]
+    return st.realms[st.curRealm].nativeObjs[slot]
 }
 
 // The ONLY way to obtain a builtin or typed-array constructor as a value. The
@@ -2497,6 +2505,57 @@ fn markScopeShallow(st: &mut Interp, i: i64, objs: &mut Vec<i64>, scopes: &mut V
     }
 }
 
+// Every realm's intrinsics are roots, the running one's included: a realm is
+// never freed (see docs/backlog.md), and most of these objects are otherwise
+// held only in these fields -- the global bindings name the natives, not the
+// constructor-side bags, and %GeneratorPrototype% exists before anything links
+// it. saveRealm first, so the running realm is marked from its live cache and
+// not from the copy it last left behind. tools/check-realm-fields.mjs fails if
+// a handle field of RealmIntrinsics is missing here.
+fn markRealms(st: &mut Interp) {
+    saveRealm(&mut st)
+    var r: i64 = 0
+    while r < st.realms.len() {
+        markScope(&mut st, st.realms[r].intr.globalScope)
+        markIfHandle(&mut st, st.realms[r].intr.promiseCtorObj)
+        markIfHandle(&mut st, st.realms[r].intr.stringCtorProps)
+        markIfHandle(&mut st, st.realms[r].intr.stringProtoObj)
+        markIfHandle(&mut st, st.realms[r].intr.functionProtoObj)
+        markIfHandle(&mut st, st.realms[r].intr.dateCtorProps)
+        markIfHandle(&mut st, st.realms[r].intr.dateProtoObj)
+        markIfHandle(&mut st, st.realms[r].intr.regexProtoObj)
+        markIfHandle(&mut st, st.realms[r].intr.mapProtoObj)
+        markIfHandle(&mut st, st.realms[r].intr.setProtoObj)
+        markIfHandle(&mut st, st.realms[r].intr.promiseProtoObj)
+        markIfHandle(&mut st, st.realms[r].intr.iterProtoObj)
+        markIfHandle(&mut st, st.realms[r].intr.genProtoObj)
+        markIfHandle(&mut st, st.realms[r].intr.arrayCtorObj)
+        markIfHandle(&mut st, st.realms[r].intr.objectProtoObj)
+        markIfHandle(&mut st, st.realms[r].intr.arrayProtoObj)
+        markIfHandle(&mut st, st.realms[r].intr.dataViewProtoObj)
+        markIfHandle(&mut st, st.realms[r].intr.taProtoObj)
+        // every builtin's canonical function object: a builtin is reachable by
+        // name from the engine itself, whoever else holds it
+        var np: i64 = 0
+        while np < st.realms[r].nativeObjs.len() {
+            markIfHandle(&mut st, st.realms[r].nativeObjs[np])
+            np = np + 1
+        }
+        var tp: i64 = 0
+        while tp < st.realms[r].taProtos.len() {
+            markIfHandle(&mut st, st.realms[r].taProtos[tp])
+            tp = tp + 1
+        }
+        r = r + 1
+    }
+}
+
+fn markIfHandle(st: &mut Interp, h: i64) {
+    if h >= 0 {
+        markObject(&mut st, h)
+    }
+}
+
 // Mark-sweep over both arenas. SAFE ONLY at execBlock statement boundaries: there
 // every live value is stored in a scope binding (a root) and no closure/object is
 // in-flight on the native stack mid-expression, so nothing reachable is missed.
@@ -2511,9 +2570,10 @@ pub fn collect(st: &mut Interp) {
         st.objects[oi].mark = false
         oi = oi + 1
     }
-    // roots: global scope 0 + the whole dynamic call/block stack. Objects are
-    // marked transitively from the values bound in reachable scopes.
-    markScope(&mut st, 0)
+    // roots: every realm's global scope and intrinsics + the whole dynamic
+    // call/block stack. Objects are marked transitively from the values bound
+    // in reachable scopes.
+    markRealms(&mut st)
     var a: i64 = 0
     while a < st.active.len() {
         markScope(&mut st, st.active[a])
@@ -2624,12 +2684,6 @@ pub fn collect(st: &mut Interp) {
         markValue(&mut st, mv)
         me = me + 1
     }
-    // %GeneratorPrototype% is a root in its own right. It is normally reachable
-    // through some generator function's .prototype below, but it is created
-    // BEFORE that link is made, and a collection in that window would sweep it.
-    if st.genProtoObj >= 0 {
-        markObject(&mut st, st.genProtoObj)
-    }
     // pending timer callbacks and queued microtasks are roots — nothing else
     // references them until they run
     var tm: i64 = 0
@@ -2659,20 +2713,6 @@ pub fn collect(st: &mut Interp) {
         }
         mt = mt + 1
     }
-    // constructor-side objects held only in Interp fields are roots: nothing in
-    // the scope chain references them, since the globals bind the native itself
-    if st.dateCtorProps >= 0 {
-        markObject(&mut st, st.dateCtorProps)
-    }
-    if st.stringCtorProps >= 0 {
-        markObject(&mut st, st.stringCtorProps)
-    }
-    if st.arrayCtorObj >= 0 {
-        markObject(&mut st, st.arrayCtorObj)
-    }
-    if st.promiseCtorObj >= 0 {
-        markObject(&mut st, st.promiseCtorObj)
-    }
     // a listening server is reachable only from this registry
     var hs: i64 = 0
     var pf: i64 = 0
@@ -2684,20 +2724,11 @@ pub fn collect(st: &mut Interp) {
         markObject(&mut st, st.httpServers[hs])
         hs = hs + 1
     }
-    // every builtin's canonical function object is a root: a builtin is
-    // reachable by name from the engine itself, whoever else holds it
-    var np: i64 = 0
-    while np < st.nativeObjs.len() {
-        if st.nativeObjs[np] >= 0 {
-            markObject(&mut st, st.nativeObjs[np])
-        }
-        np = np + 1
-    }
     var freed: i64 = 0
     var s: i64 = 0
     while s < st.scopes.len() {
         let isFree = st.scopes[s].parent == GC_FREE
-        if s != 0 && !isFree && !st.scopes[s].mark {
+        if !isFree && !st.scopes[s].mark {
             st.scopes[s].vars = Vec.new()
             st.scopes[s].parent = GC_FREE
             st.freeList.push(s)
@@ -2894,7 +2925,7 @@ pub fn scopeOwnIndex(st: &Interp, scope: i64, name: &string): i64 {
 }
 
 pub fn markBuiltinGlobals(st: &mut Interp) {
-    st.builtinGlobals = st.scopes[0].vars.len()
+    st.builtinGlobals = st.scopes[st.globalScope].vars.len()
 }
 
 pub fn scopeHasOwn(st: &Interp, scope: i64, name: &string): bool {

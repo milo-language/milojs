@@ -158,7 +158,7 @@ fn setupTypedArrayProtos(st: &mut Interp) {
         // objSet left it writable and configurable, so every test262 case that
         // verifies the descriptor failed regardless of the value.
         objSetFrozenOwn(&mut st, sub, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64), false)
-        st.taProtos.push(sub)
+        st.realms[st.curRealm].taProtos.push(sub)
         if sub < st.taProtoLo {
             st.taProtoLo = sub
         }
