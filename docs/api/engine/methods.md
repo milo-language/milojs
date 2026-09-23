@@ -192,14 +192,6 @@ Typed-array methods. Views share their buffer, so subarray returns a new view
 over the SAME bytes while slice copies — getting that backwards is the classic
 typed-array bug.
 
-### `typedArrayOverride`
-
-```milo
-pub fn typedArrayOverride(st: &Interp, o: i64, key: &string): bool
-```
-
-_Undocumented._
-
 ### `weakMethod`
 
 ```milo

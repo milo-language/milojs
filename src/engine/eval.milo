@@ -10,7 +10,7 @@ from "./bytecode" import {
 }
 from "./methods" import {
     mapSetOverride, weakMethod, weakPut, isWeakMethodName,
-    dateMethod, mapMethod, dataViewMethod, isDataViewMethodName, dataViewProto, arrayMethod, arrayMethodGeneric, isArrayMethod, arrayIterNext, typedArrayMethod, typedArrayOverride, typedArrayDataPtr, typedArrayFromBytes, bytesFromTypedArray, isTypedArrayMethodName, taIntegrityBlocked
+    dateMethod, mapMethod, dataViewMethod, isDataViewMethodName, dataViewProto, arrayMethod, arrayMethodGeneric, isArrayMethod, arrayIterNext, typedArrayMethod, typedArrayDataPtr, typedArrayFromBytes, bytesFromTypedArray, isTypedArrayMethodName, taIntegrityBlocked
 }
 from "./ast" import {
     Expr, getStmt, Stmt,
@@ -963,10 +963,6 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
             return makeBoundMethod(&mut st, JSValue.Obj(o), key.clone())
         }
         if st.objects[o].isGenerator && (key == "next" || key == "throw" || key == "return" || key == symIteratorKey()) {
-            return makeBoundMethod(&mut st, JSValue.Obj(o), key.clone())
-        }
-        if st.objExtras[st.objects[o].extra].taBuf >= 0 && isTypedArrayMethodName(key)
-            && !typedArrayOverride(st, o, key) {
             return makeBoundMethod(&mut st, JSValue.Obj(o), key.clone())
         }
         // NB: no array-method arm here. Arrays link Array.prototype as a real
@@ -2362,6 +2358,15 @@ fn stringRegexProtocol(prog: &Prog, st: &mut Interp, sRef: &string, nameRef: &st
 }
 
 pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSValue>, st: &mut Interp): JSValue {
+    // get %TypedArray%.prototype[@@toStringTag]: the kind's name for a typed
+    // array, undefined for anything else (it never throws)
+    if name == "__taToStringTag" {
+        let th = objHandle(recv)
+        if th >= 0 && !st.objects[th].isDataView && st.objExtras[st.objects[th].extra].taBuf >= 0 {
+            return JSValue.Str(taName(st.objExtras[st.objects[th].extra].taKind))
+        }
+        return JSValue.Undefined
+    }
     if name == "__reTest" || isRegexSymbolOpKey(name) {
         return regexProtoOp(prog, recv, name, args, &mut st)
     }
@@ -2779,8 +2784,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
                     return JSValue.Obj(o)
                 }
             }
-            if st.objExtras[st.objects[o].extra].taBuf >= 0 && isTypedArrayMethodName(name)
-                && !typedArrayOverride(st, o, name) {
+            if st.objExtras[st.objects[o].extra].taBuf >= 0 && isTypedArrayMethodName(name) {
                 return typedArrayMethod(prog, o, name, args, &mut st)
             }
             // A Node-API Buffer's `.bytes` is an array-like native view with
@@ -3462,6 +3466,10 @@ fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
     }
     if o == st.dataViewProtoObj {
         st.dataViewProtoPristine = false
+    }
+    if st.taProtoPristine && o >= st.taProtoLo && o <= st.taProtoHi
+        && (o == st.taProtoObj || st.objects[o].proto == st.taProtoObj) {
+        st.taProtoPristine = false
     }
     if o == st.objectProtoObj {
         st.objectProtoPristine = false
@@ -15729,6 +15737,20 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                     popTemp(&mut st)
                     return ownR
                 }
+            }
+            // The Array guard for typed arrays: a view still linked to its kind's
+            // own prototype, with all twelve typed-array prototypes untouched and
+            // no own property of the name, can only reach the native.
+            if st.taProtoPristine && !st.objects[o].isDataView && st.objExtras[st.objects[o].extra].taBuf >= 0
+                && st.objects[o].proto == st.taProtos[st.objExtras[st.objects[o].extra].taKind]
+                && isTypedArrayMethodName(name) && objOwnIndex(st, o, name) < 0 {
+                let argVals = evalArgs(prog, argsIdx, &mut st, scope)
+                if st.throwing {
+                    return JSValue.Undefined
+                }
+                let r = typedArrayMethod(prog, o, name, argVals, &mut st)
+                popTemp(&mut st)
+                return r
             }
             // The Array guard for DataView: a view still linked to an untouched
             // DataView.prototype, with no own property of the name, can only

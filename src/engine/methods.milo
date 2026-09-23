@@ -1250,29 +1250,6 @@ pub fn typedArrayDataPtr(st: &Interp, v: JSValue): i64 {
     }
 }
 
-fn typedArrayBuiltinProto(st: &Interp, kind: i64): i64 {
-    let bag = nativePropsOf(st, Native.TypedArrayCtor(kind))
-    if bag < 0 {
-        return -1
-    }
-    return objHandle(objGet(st, bag, "prototype"))
-}
-
-pub fn typedArrayOverride(st: &Interp, o: i64, key: &string): bool {
-    let builtin = typedArrayBuiltinProto(st, st.objExtras[st.objects[o].extra].taKind)
-    if builtin < 0 {
-        return false
-    }
-    var cur = st.objects[o].proto
-    while cur >= 0 && cur != builtin {
-        if objHas(st, cur, key) {
-            return true
-        }
-        cur = st.objects[cur].proto
-    }
-    return false
-}
-
 // True when reading `key` off Map/Set instance `o` must NOT reach the native:
 // an own property, a subclass prototype method, or a patched builtin prototype
 // entry shadows it. Without this a `class X extends Map { set() {} }` override

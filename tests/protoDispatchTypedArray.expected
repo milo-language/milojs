@@ -1,0 +1,64 @@
+parent: true
+TypedArray: TypedArray 0 length,name,prototype,of,from
+  of 0 of true false true
+  from 1 from true false true
+statics inherited: false true 1,2
+constructor,buffer,byteLength,byteOffset,length,entries,keys,values,at,copyWithin,every,fill,filter,find,findIndex,findLast,findLastIndex,forEach,includes,indexOf,join,lastIndexOf,map,reverse,reduce,reduceRight,set,slice,some,sort,subarray,toReversed,toSorted,with,toLocaleString,toString
+  buffer get get buffer 0 undefined false true
+  byteLength get get byteLength 0 undefined false true
+  byteOffset get get byteOffset 0 undefined false true
+  length get get length 0 undefined false true
+  entries 0 entries true false true
+  keys 0 keys true false true
+  values 0 values true false true
+  at 1 at true false true
+  copyWithin 2 copyWithin true false true
+  every 1 every true false true
+  fill 1 fill true false true
+  filter 1 filter true false true
+  find 1 find true false true
+  findIndex 1 findIndex true false true
+  findLast 1 findLast true false true
+  findLastIndex 1 findLastIndex true false true
+  forEach 1 forEach true false true
+  includes 1 includes true false true
+  indexOf 1 indexOf true false true
+  join 1 join true false true
+  lastIndexOf 1 lastIndexOf true false true
+  map 1 map true false true
+  reverse 0 reverse true false true
+  reduce 1 reduce true false true
+  reduceRight 1 reduceRight true false true
+  set 1 set true false true
+  slice 2 slice true false true
+  some 1 some true false true
+  sort 1 sort true false true
+  subarray 2 subarray true false true
+  toReversed 0 toReversed true false true
+  toSorted 1 toSorted true false true
+  with 2 with true false true
+  toLocaleString 0 toLocaleString true false true
+  toString 0 toString true false true
+  Symbol(Symbol.toStringTag) get get [Symbol.toStringTag] 0 undefined false true
+  Symbol(Symbol.iterator) 0 values true false true
+shared functions: true true
+Int16Array: length,name,prototype,BYTES_PER_ELEMENT / constructor,BYTES_PER_ELEMENT
+tag: Float32Array undefined undefined [object Uint8ClampedArray]
+identity: true true true true
+computed: 30 true 10 10-20-30 10,20,30
+at on array: TypeError
+map on plain: TypeError
+fill on DataView: TypeError
+length on plain: TypeError
+Object.create receiver: TypeError
+extracted: 8
+extracted unbound: TypeError
+shared override: shared 1 shared 0 shared 2
+restored: 20
+concrete override: u8 only true
+concrete removed: true
+subclass: sub 3,6 2 true true [object Uint16Array]
+deleted: TypeError
+in: false
+put back: 5,5,5
+shadow: own true 5,5,5

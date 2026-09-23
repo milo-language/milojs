@@ -24,7 +24,6 @@ const ENGINE = argEngine >= 0 ? process.argv[argEngine + 1] : ".dev/mj-engine";
 // `probe` is JS evaluated in the engine; it returns true while the gap is real.
 const GAPS = [
   { id: "float16", probe: `typeof Float16Array === "undefined"` },
-  { id: "bigint64-from", probe: `typeof BigInt64Array.from !== "function"` },
   { id: "intl",
     probe: `new Date(0).toLocaleString("de-DE") === new Date(0).toLocaleString("en-US")` },
 ];

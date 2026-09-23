@@ -66,43 +66,14 @@ fn brandProtoMethods(st: &mut Interp, proto: i64, brand: i64, names: &Vec<string
 // collector already walks, so they need no new GC root. Subtype prototypes chain
 // to Error.prototype the way the spec says, which is what makes
 // `Object.getPrototypeOf(TypeError.prototype) === Error.prototype` hold.
-// Every typed-array method name, as a list. isTypedArrayMethodName is the
-// predicate over the same set; both have to move together.
+// Every %TypedArray%.prototype method, in node's own-key order.
+// isTypedArrayMethodName is the predicate over the same set; both have to move
+// together.
 fn typedArrayMethodNames(): Vec<string> {
     var v: Vec<string> = Vec.new()
-    v.push("fill")
-    v.push("set")
-    v.push("subarray")
-    v.push("slice")
-    v.push("at")
-    v.push("indexOf")
-    v.push("includes")
-    v.push("join")
-    v.push("toString")
-    v.push("forEach")
-    v.push("map")
-    v.push("filter")
-    v.push("reduce")
-    v.push("reduceRight")
-    v.push("find")
-    v.push("findIndex")
-    v.push("findLast")
-    v.push("findLastIndex")
-    v.push("some")
-    v.push("every")
-    v.push("reverse")
-    v.push("sort")
-    v.push("with")
-    v.push("copyWithin")
-    v.push("lastIndexOf")
-    v.push("keys")
-    v.push("values")
-    v.push("entries")
-    v.push("toReversed")
-    v.push("toSorted")
-    v.push("toLocaleString")
-    // %TypedArray%.prototype[Symbol.iterator] is the same function as .values
-    v.push(symIteratorKey())
+    for n in ["entries", "keys", "values", "at", "copyWithin", "every", "fill", "filter", "find", "findIndex", "findLast", "findLastIndex", "forEach", "includes", "indexOf", "join", "lastIndexOf", "map", "reverse", "reduce", "reduceRight", "set", "slice", "some", "sort", "subarray", "toReversed", "toSorted", "with", "toLocaleString", "toString"] {
+        v.push(n.clone())
+    }
     return v
 }
 
@@ -123,6 +94,32 @@ fn typedArrayMethodNames(): Vec<string> {
 fn setupTypedArrayProtos(st: &mut Interp) {
     let taProto = newObject(&mut st)
     st.objects[taProto].proto = st.objectProtoObj
+    // constructor first (linked below, once taCtor exists), then the accessors,
+    // then the methods: node's own-key order
+    objSet(&mut st, taProto, "constructor", JSValue.Undefined)
+    objSetNonEnumerable(&mut st, taProto, "constructor")
+    // buffer/byteLength/byteOffset/length are ACCESSORS on %TypedArray%.prototype,
+    // not data properties on each view. Reading one off a non-view is a
+    // TypeError, which the brand gives for free.
+    var taAcc: Vec<string> = Vec.new()
+    taAcc.push("buffer")
+    taAcc.push("byteLength")
+    taAcc.push("byteOffset")
+    taAcc.push("length")
+    var taGet: Vec<string> = Vec.new()
+    taGet.push("__taBuffer")
+    taGet.push("__taByteLength")
+    taGet.push("__taByteOffset")
+    taGet.push("__taLength")
+    var ai: i64 = 0
+    while ai < taAcc.len() {
+        let g = makeBrandedMethod(&mut st, taGet[ai].clone(), 1)
+        objDefineBuiltinAttr(&mut st, objHandle(g), "name", JSValue.Str("get " + taAcc[ai].clone()))
+        objDefineBuiltinAttr(&mut st, objHandle(g), "length", JSValue.Number(0.0))
+        objDefineAccessor(&mut st, taProto, taAcc[ai].clone(), g, JSValue.Undefined)
+        objSetNonEnumerable(&mut st, taProto, taAcc[ai])
+        ai = ai + 1
+    }
     let names = typedArrayMethodNames()
     var i: i64 = 0
     while i < names.len() {
@@ -130,34 +127,25 @@ fn setupTypedArrayProtos(st: &mut Interp) {
         objSetNonEnumerable(&mut st, taProto, names[i])
         i = i + 1
     }
-    // length/byteLength/byteOffset/buffer are ACCESSORS on %TypedArray%.prototype,
-    // not data properties on each view. Reading one off a non-view is a
-    // TypeError, which the brand gives for free.
-    var taAcc: Vec<string> = Vec.new()
-    taAcc.push("length")
-    taAcc.push("byteLength")
-    taAcc.push("byteOffset")
-    taAcc.push("buffer")
-    var taGet: Vec<string> = Vec.new()
-    taGet.push("__taLength")
-    taGet.push("__taByteLength")
-    taGet.push("__taByteOffset")
-    taGet.push("__taBuffer")
-    var ai: i64 = 0
-    while ai < taAcc.len() {
-        let g = makeBrandedMethod(&mut st, taGet[ai].clone(), 1)
-        objDefineAccessor(&mut st, taProto, taAcc[ai].clone(), g, JSValue.Undefined)
-        objSetNonEnumerable(&mut st, taProto, taAcc[ai])
-        ai = ai + 1
-    }
+    // get [Symbol.toStringTag] answers the kind's name, and undefined rather
+    // than a TypeError for anything that is not a typed array
+    let tagGetter = makeBoundMethod(&mut st, JSValue.Undefined, "__taToStringTag")
+    objDefineBuiltinAttr(&mut st, objHandle(tagGetter), "name", JSValue.Str("get [Symbol.toStringTag]"))
+    objDefineBuiltinAttr(&mut st, objHandle(tagGetter), "length", JSValue.Number(0.0))
+    objDefineAccessor(&mut st, taProto, symToStringTagKey(), tagGetter, JSValue.Undefined)
+    objSetNonEnumerable(&mut st, taProto, symToStringTagKey())
+    // %TypedArray%.prototype[Symbol.iterator] is the same function as .values
+    objSet(&mut st, taProto, symIteratorKey(), objGet(st, taProto, "values"))
+    objSetNonEnumerable(&mut st, taProto, symIteratorKey())
     let taCtor = newObject(&mut st)
     st.objects[taCtor].isFunctionLike = true
-    objSet(&mut st, taCtor, "prototype", JSValue.Obj(taProto))
-    objSetNonEnumerable(&mut st, taCtor, "prototype")
-    objSet(&mut st, taCtor, "name", JSValue.Str("TypedArray"))
-    objSetNonEnumerable(&mut st, taCtor, "name")
+    objDefineBuiltinAttr(&mut st, taCtor, "length", JSValue.Number(0.0))
+    objDefineBuiltinAttr(&mut st, taCtor, "name", JSValue.Str("TypedArray"))
+    objDefineProtoAttr(&mut st, taCtor, "prototype", JSValue.Obj(taProto))
     objSet(&mut st, taProto, "constructor", JSValue.Obj(taCtor))
-    objSetNonEnumerable(&mut st, taProto, "constructor")
+    st.taProtoObj = taProto
+    st.taProtoLo = taProto
+    st.taProtoHi = taProto
 
     var tk: i64 = 0
     while tk <= TA_MAX {
@@ -170,12 +158,19 @@ fn setupTypedArrayProtos(st: &mut Interp) {
         // objSet left it writable and configurable, so every test262 case that
         // verifies the descriptor failed regardless of the value.
         objSetFrozenOwn(&mut st, sub, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64), false)
+        st.taProtos.push(sub)
+        if sub < st.taProtoLo {
+            st.taProtoLo = sub
+        }
+        if sub > st.taProtoHi {
+            st.taProtoHi = sub
+        }
         let bag = getNativeProps(&mut st, Native.TypedArrayCtor(tk))
-        objDefineProtoAttr(&mut st, bag, "prototype", JSValue.Obj(sub))
-        objSetFrozenOwn(&mut st, bag, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64), false)
-        objSetBuiltinAttr(&mut st, bag, "name", JSValue.Str(taName(tk)))
         // the constructor's own length: (buffer, byteOffset, length)
         objSetBuiltinAttr(&mut st, bag, "length", JSValue.Number(3.0))
+        objSetBuiltinAttr(&mut st, bag, "name", JSValue.Str(taName(tk)))
+        objDefineProtoAttr(&mut st, bag, "prototype", JSValue.Obj(sub))
+        objSetFrozenOwn(&mut st, bag, "BYTES_PER_ELEMENT", JSValue.Number(taWidth(tk) as f64), false)
         // this is what makes Object.getPrototypeOf(Int8Array) === %TypedArray%:
         // getPrototypeOf reads the proto of the native's property bag
         st.objects[bag].proto = taCtor
@@ -993,6 +988,11 @@ pub fn setupGlobals(st: &mut Interp) {
     // Set only now that setup has finished writing the methods in, so the setup
     // writes themselves do not count as a user touch.
     st.arrayProtoPristine = true
+    // %TypedArray%.prototype.toString IS Array.prototype.toString, the same
+    // function object; it is generic, and a typed-array receiver reaches the
+    // typed-array join through callBuiltinByName
+    objSet(&mut st, st.taProtoObj, "toString", objGet(st, arrayProto, "toString"))
+    st.taProtoPristine = true
     objSet(&mut st, arrayCtor, "isArray", JSValue.Native(Native.Fn(Builtin.ArrayIsArray)))
     objSet(&mut st, arrayCtor, "from", JSValue.Native(Native.Fn(Builtin.ArrayFrom)))
     scopeDefine(&mut st, 0, "Array", JSValue.Obj(arrayCtor))
