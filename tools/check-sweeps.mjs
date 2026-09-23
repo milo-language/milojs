@@ -118,5 +118,27 @@ if (!existsSync(join(NODE_TESTS, "parallel"))) {
   rmSync(work, { recursive: true, force: true });
 }
 
-console.log(`check-sweeps: ${sweeps.length} sweep(s), ${bad} that score without a binary or miscount a skip`);
+// An unknown flag must be refused before any work: a sweep that ignored
+// `--files` ran the whole suite instead of the named cases, and a mistyped
+// `--sampel` would score everything while looking like a sample.
+for (const s of sweeps) {
+  let code = 0, err = "";
+  try {
+    // --json to a scratch path: a sweep that fails this check goes on to score
+    // the suite, and must not overwrite the committed report while doing it.
+    execFileSync("bun", [`scripts/${s}`, "--no-such-flag", "--json", `/tmp/check-sweeps-flag-${s}.json`], {
+      encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], timeout: 60_000,
+    });
+  } catch (e) {
+    code = e.status ?? 1;
+    err = String(e.stderr ?? "");
+  }
+  rmSync(`/tmp/check-sweeps-flag-${s}.json`, { force: true });
+  if (code === 0 || !err.includes("unknown argument")) {
+    console.error(`check-sweeps: ${s} did not refuse an unknown flag`);
+    bad++;
+  }
+}
+
+console.log(`check-sweeps: ${sweeps.length} sweep(s), ${bad} that score without a binary, miscount a skip or accept an unknown flag`);
 process.exit(bad ? 1 : 0);

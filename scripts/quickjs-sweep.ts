@@ -26,6 +26,20 @@ import { homedir } from "node:os";
 const tilde = (x: string) => (x.startsWith(homedir()) ? "~" + x.slice(homedir().length) : x);
 import { tmpdir } from "os";
 
+// An unknown flag is refused, not ignored: `--files` was once passed here when
+// only node-compat-sweep had it, and this sweep quietly ran the WHOLE suite.
+{
+  const takesValue = new Set(["--json", "-f"]);
+  const flags = new Set(["-v"]);
+  const a = process.argv.slice(2);
+  for (let i = 0; i < a.length; i++) {
+    if (takesValue.has(a[i])) { i++; continue; }
+    if (flags.has(a[i])) continue;
+    console.error(`quickjs-sweep: unknown argument '${a[i]}'`);
+    process.exit(2);
+  }
+}
+
 const QJS = process.env.QUICKJS_TESTS ?? join(process.env.HOME!, "git/quickjs/tests");
 const ENGINE = process.env.MILOJS_ENGINE ?? ".dev/mj-engine";
 // A missing engine makes every single case "crash", which reads as a catastrophic

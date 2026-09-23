@@ -22,6 +22,20 @@ import { join, resolve, isAbsolute } from "path";
 import { homedir } from "node:os";
 import os from "node:os";
 
+// An unknown flag is refused, not ignored: `--files` was once passed here when
+// only node-compat-sweep had it, and this sweep quietly ran the WHOLE suite.
+{
+  const takesValue = new Set(["--confirm-timeout", "--dir", "--fails", "--files", "--jobs", "--json", "--max-group-mb", "--max-group", "--sample", "--timeout"]);
+  const flags = new Set(["--all", "--leaks", "-v"]);
+  const a = process.argv.slice(2);
+  for (let i = 0; i < a.length; i++) {
+    if (takesValue.has(a[i])) { i++; continue; }
+    if (flags.has(a[i])) continue;
+    console.error(`node-compat-sweep: unknown argument '${a[i]}'`);
+    process.exit(2);
+  }
+}
+
 const tilde = (x: string) => (x.startsWith(homedir()) ? "~" + x.slice(homedir().length) : x);
 
 const NODE_TESTS = process.env.NODE_TESTS ?? join(homedir(), "git/node/test");

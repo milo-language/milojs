@@ -26,6 +26,20 @@ import { homedir } from "node:os";
 const tilde = (x: string) => (x.startsWith(homedir()) ? "~" + x.slice(homedir().length) : x);
 import { tmpdir } from "os";
 
+// An unknown flag is refused, not ignored: `--files` was once passed here when
+// only node-compat-sweep had it, and this sweep quietly ran the WHOLE suite.
+{
+  const takesValue = new Set(["--dir", "--fails", "--json", "--limit", "--sample"]);
+  const flags = new Set(["-v"]);
+  const a = process.argv.slice(2);
+  for (let i = 0; i < a.length; i++) {
+    if (takesValue.has(a[i])) { i++; continue; }
+    if (flags.has(a[i])) continue;
+    console.error(`test262-sweep: unknown argument '${a[i]}'`);
+    process.exit(2);
+  }
+}
+
 const T262 = process.env.TEST262 ?? "/tmp/test262";
 const HARNESS = join(T262, "harness");
 const ENGINE = process.env.MILOJS_ENGINE ?? ".dev/mj-engine";
