@@ -913,6 +913,9 @@ pub struct Interp {
     // The running realm's global scope: where top-level declarations of its
     // scripts land and where every scope chain created in it ends.
     globalScope: i64,
+    // The running realm's sandbox (see identTryLookup in src/engine/realm.milo),
+    // or -1 in a realm without one.
+    sandboxObj: i64,
     // property bag for statics on the Date constructor (Date.now)
     dateCtorProps: i64,
     // Date.prototype, so instances can link it (identity tests, and inherited
@@ -1146,7 +1149,7 @@ pub var gInterp: Interp = Interp {
     throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 10000,
     rngState: 88172645463325252,
-    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, realms: Vec.new(), curRealm: 0, realmPreludes: Vec.new(), globalScope: 0, dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, dateProtoPristine: false, regexProtoPristine: false, dataViewProtoObj: -1, dataViewProtoPristine: false, taProtoObj: -1, taProtoLo: 0, taProtoHi: -1, taProtoPristine: false, objectProtoPristine: true, symDescs: Vec.new(), symHasDesc: Vec.new(), symRegistered: Vec.new(), symRegistry: HashMap.new(), anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actFn: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), inspectMaxDepth: 2, parseFailed: false, hadUnhandledRejection: false, gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false, builtinGlobals: 0
+    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, realms: Vec.new(), curRealm: 0, realmPreludes: Vec.new(), globalScope: 0, sandboxObj: -1, dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, dateProtoPristine: false, regexProtoPristine: false, dataViewProtoObj: -1, dataViewProtoPristine: false, taProtoObj: -1, taProtoLo: 0, taProtoHi: -1, taProtoPristine: false, objectProtoPristine: true, symDescs: Vec.new(), symHasDesc: Vec.new(), symRegistered: Vec.new(), symRegistry: HashMap.new(), anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actFn: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), inspectMaxDepth: 2, parseFailed: false, hadUnhandledRejection: false, gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false, builtinGlobals: 0
 }
 
 fn allocObj(st: &mut Interp, isArray: bool): i64 {
@@ -2554,6 +2557,7 @@ fn markRealms(st: &mut Interp) {
     var r: i64 = 0
     while r < st.realms.len() {
         markScope(&mut st, st.realms[r].intr.globalScope)
+        markIfHandle(&mut st, st.realms[r].intr.sandboxObj)
         markIfHandle(&mut st, st.realms[r].intr.promiseCtorObj)
         markIfHandle(&mut st, st.realms[r].intr.stringCtorProps)
         markIfHandle(&mut st, st.realms[r].intr.stringProtoObj)
@@ -2928,6 +2932,22 @@ pub fn scopeHasBelowGlobal(st: &Interp, scope: i64, name: &string): bool {
         s = st.scopes[s].parent
     }
     return false
+}
+
+// The scope on `scope`'s chain that binds `name` short of the global scope (a
+// `with` object that has it counts), or -1.
+pub fn scopeFindBelowGlobal(st: &Interp, scope: i64, name: &string): i64 {
+    var s = scope
+    while s >= 0 && st.scopes[s].parent >= 0 {
+        if st.scopes[s].withObj >= 0 && withHas(st, st.scopes[s].withObj, name) {
+            return s
+        }
+        if scopeOwnIndex(st, s, name) >= 0 {
+            return s
+        }
+        s = st.scopes[s].parent
+    }
+    return -1
 }
 
 // The last scope on `scope`'s parent chain: the global scope of the realm the

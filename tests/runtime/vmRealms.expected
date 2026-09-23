@@ -1,0 +1,42 @@
+read: 2
+written: 10 20 30 function false
+keys: a,shadow,f,b,v
+lexical stays inside: 40 undefined
+function sees sandbox: 30
+host write seen: 31
+typeof: number undefined function
+in this: true false
+delete: true false false undefined
+shadowed name: mine
+builtin assignment lands on sandbox: replaced
+getter: gotgot 2
+setter: 102
+strict undeclared: ReferenceError undeclared is not defined false
+sloppy read-only: 5
+strict read-only: TypeError
+own Array: true true
+instanceof across: false true true
+object proto: true false
+same context, same Array: true
+fresh Array per context: true
+sandbox built-in passes through: true
+TypeError from context: false TypeError Cannot read properties of null (reading 'x')
+ReferenceError from context: false ReferenceError [object Error]
+SyntaxError from context: false SyntaxError
+host error crossing in: true host
+this: false true function 10
+write through global: yes yes
+sandbox as itself: true
+function keeps realm: inner false false true
+sloppy this: true
+nested: false,true,false
+isContext: true false false
+isContext(1): ERR_INVALID_ARG_TYPE
+createContext again: true
+script reuse: 1 100 2 2 100
+script in new context: undefined
+runInThisContext: undefined true
+compileFunction: 3number function (x) {
+return x
+}
+contextExtensions: extended

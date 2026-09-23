@@ -270,6 +270,14 @@ pub fn definePropOf(prog: &Prog, st: &mut Interp, v: &JSValue, key: &string, d: 
 
 _Undocumented._
 
+### `deleteOwnKey`
+
+```milo
+pub fn deleteOwnKey(prog: &Prog, st: &mut Interp, o: i64, key: string): JSValue
+```
+
+[[Delete]] of an own property, answered as `delete` answers it.
+
 ### `evalBinValues`
 
 ```milo
@@ -306,13 +314,14 @@ depends on it (a large slice of npm) died on "base intrinsic for
 ### `evalScriptInRealm`
 
 ```milo
-pub fn evalScriptInRealm(src: &string, r: i64, st: &mut Interp): JSValue
+pub fn evalScriptInRealm(src: &string, r: i64, fileName: string, st: &mut Interp): JSValue
 ```
 
 $262.evalScript: run `src` as a global SCRIPT of realm r and answer its
 completion value. Unlike indirect eval, `let`/`const`/`class` at its top
 level are bindings of that realm's global scope, visible to later scripts,
-which is what ScriptEvaluation does.
+which is what ScriptEvaluation does. A non-empty fileName is the script's
+own frame in the stack of an error it raises.
 
 ### `evalUnValue`
 
@@ -603,6 +612,14 @@ The value-level half of a property read: everything after the object
 expression has been evaluated. Split out of evalMemberExpr so the bytecode VM
 reads a property through the same primitive-receiver rules (a number's
 __proto__, a string's length, a boxed wrapper) instead of a second copy.
+
+### `nameInList`
+
+```milo
+pub fn nameInList(list: &Vec<string>, name: &string): bool
+```
+
+_Undocumented._
 
 ### `napi_call_function`
 

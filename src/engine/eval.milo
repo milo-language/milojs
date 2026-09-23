@@ -27,7 +27,8 @@ from "./value" import {
 }
 from "./realm" import {
     enterRealm, calleeRealm, objRealm, globalScopeOfObj, realmBuiltinGlobals, realmObjectProto, realmFunctionProto, realmArrayProto,
-    isArrayCtorObj, isPromiseCtorObj, createRealm, realmGlobalObject
+    isArrayCtorObj, isPromiseCtorObj, createRealm, realmGlobalObject,
+    identTryLookup, identAssign, identDelete, isSandboxGlobalScope, declareSandboxGlobal
 }
 from "./runtime" import {
     objOwnIndex, touchedBuiltinProto, propIsAccessor, accGetter, accSetter, arrLen, arrGet, pushTemp, popTemp,
@@ -3619,7 +3620,7 @@ fn assignTarget(prog: &Prog, targetId: ExprId, value: JSValue, st: &mut Interp, 
             if isUndefinedValue(value) {
                 v = evalExpr(prog, defaultIdx, &mut st, scope)
             }
-            scopeAssign(&mut st, scope, name, cloneValue(v))
+            identAssign(prog, &mut st, scope, name, cloneValue(v))
         }
         _ => {
             writeLValue(prog, targetId, &mut st, scope, cloneValue(value))
@@ -3709,7 +3710,7 @@ fn assignPattern(prog: &Prog, patId: ExprId, value: JSValue, st: &mut Interp, sc
 fn readLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSValue {
     match prog.exprs[targetId.index] {
         Expr.Ident(name) => {
-            match scopeTryLookup(st, scope, name) {
+            match identTryLookup(prog, &mut st, scope, name) {
                 Option.Some(v) => {
                     return v
                 }
@@ -3774,7 +3775,7 @@ fn readLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
 fn writeLValue(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64, value: JSValue) {
     match prog.exprs[targetId.index] {
         Expr.Ident(name) => {
-            scopeAssign(&mut st, scope, name, value)
+            identAssign(prog, &mut st, scope, name, value)
         }
         Expr.Member(objIdx, name) => {
             let ov = evalExpr(prog, objIdx, &mut st, scope)
@@ -6313,15 +6314,27 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         return JSValue.Undefined
     }
-    // $262.createRealm(): a fresh realm, answered as its global object
+    // $262.createRealm(): a fresh realm, answered as its global object.
+    // __realmCreate(sandbox) makes the object the realm's sandbox (see
+    // identTryLookup), which is node:vm's contextifying.
     if id == Builtin.RealmCreate {
+        var sandbox: i64 = -1
+        if argVals.len() > 0 && !isUndefinedValue(argVals[0]) {
+            sandbox = objHandle(argVals[0])
+            if sandbox < 0 {
+                return throwErr(&mut st, "TypeError", "__realmCreate expects an object for its sandbox")
+            }
+        }
         let r = createRealm(gProg, &mut st)
         if st.throwing || r < 0 {
             return JSValue.Undefined
         }
+        // set after the boot, so the realm's own built-ins went into its scope
+        st.realms[r].intr.sandboxObj = sandbox
         return realmGlobalObject(st, r)
     }
-    // __realmEval(global, src): $262.evalScript for the realm owning `global`
+    // __realmEval(global, src, filename?): $262.evalScript for the realm owning
+    // `global`; the filename is the script's frame in error stacks
     if id == Builtin.RealmEval {
         if argVals.len() < 2 || objHandle(argVals[0]) < 0 || !st.objects[objHandle(argVals[0])].isGlobal {
             return throwErr(&mut st, "TypeError", "__realmEval expects a realm's global object")
@@ -6330,7 +6343,13 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if st.throwing {
             return JSValue.Undefined
         }
-        return evalScriptInRealm(src, objRealm(st, objHandle(argVals[0])), &mut st)
+        var fileName = ""
+        if argVals.len() > 2 {
+            if let JSValue.Str(fname) = argVals[2] {
+                fileName = fname.clone()
+            }
+        }
+        return evalScriptInRealm(src, objRealm(st, objHandle(argVals[0])), fileName, &mut st)
     }
     if id == Builtin.IsConstructor {
         if argVals.len() == 0 {
@@ -8601,7 +8620,7 @@ fn symbolOperandError(st: &mut Interp, op: &string): JSValue {
 // through the big frame cost both time and recursion depth.
 fn evalAssignExpr(prog: &Prog, name: &string, e: ExprId, st: &mut Interp, scope: i64): JSValue {
     let v = evalExpr(prog, e, &mut st, scope)
-    scopeAssign(&mut st, scope, name, cloneValue(v))
+    identAssign(prog, &mut st, scope, name, cloneValue(v))
     return v
 }
 
@@ -9149,6 +9168,15 @@ fn unOpOf(op: &string): UnOp {
     return UnOp.Not
 }
 
+fn typeofResult(st: &Interp, va: &JSValue): JSValue {
+    // a bind() result is an object internally but a function to JS
+    let th = objHandle(va)
+    if th >= 0 && (st.objects[th].isBound || st.objects[th].isFunctionLike) {
+        return JSValue.Str("function")
+    }
+    return JSValue.Str(typeofStr(va))
+}
+
 fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): JSValue {
         let code = unOpOf(op)
         // delete needs the unevaluated target, not its value
@@ -9158,6 +9186,21 @@ fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): 
         // typeof is the one context where an undeclared name is legal
         if code == UnOp.TypeOf {
             if let Expr.Ident(iname) = prog.exprs[a.index] {
+                // resolved once: a sandbox's has trap or getter must not run
+                // twice for one typeof
+                if st.sandboxObj >= 0 && iname != "this" {
+                    match identTryLookup(prog, &mut st, scope, iname) {
+                        Option.Some(tv) => {
+                            if st.throwing {
+                                return JSValue.Undefined
+                            }
+                            return typeofResult(st, tv)
+                        }
+                        Option.None => {
+                            return JSValue.Str("undefined")
+                        }
+                    }
+                }
                 if iname != "this" && !scopeHas(st, scope, iname) {
                     return JSValue.Str("undefined")
                 }
@@ -9400,12 +9443,7 @@ pub fn evalUnValue(prog: &Prog, op: &string, va: JSValue, st: &mut Interp): JSVa
             return JSValue.BigInt(bnSub(bnNeg(bigStrOf(va)), "1"))
         }
         if code == UnOp.TypeOf {
-            // a bind() result is an object internally but a function to JS
-            let th = objHandle(va)
-            if th >= 0 && (st.objects[th].isBound || st.objects[th].isFunctionLike) {
-                return JSValue.Str("function")
-            }
-            return JSValue.Str(typeofStr(va))
+            return typeofResult(st, va)
         }
         if code == UnOp.Void {
             return JSValue.Undefined
@@ -9692,7 +9730,7 @@ pub fn evalExpr(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue {
             return JSValue.Undefined
         }
         Expr.Ident(name) => {
-            match scopeTryLookup(st, scope, name) {
+            match identTryLookup(prog, &mut st, scope, name) {
                 Option.Some(v) => {
                     return v
                 }
@@ -9775,7 +9813,7 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
             return JSValue.Undefined
         }
         Expr.Ident(name) => {
-            match scopeTryLookup(st, scope, name) {
+            match identTryLookup(prog, &mut st, scope, name) {
                 Option.Some(v) => {
                     return v
                 }
@@ -11539,7 +11577,12 @@ fn callFunctionBody(prog: &Prog, callee: &JSValue, argVals: Vec<JSValue>, thisVa
     // because it decides how much of the frame is needed: a compiled body has no
     // `var` and no nested function declaration to hoist, and usually no
     // `arguments` to materialise.
-    let cid = bodyChunkOf(prog, fIdx)
+    // A sandboxed realm's globals resolve through the sandbox's own property
+    // paths (identTryLookup); the VM would hold them in slots instead.
+    var cid: i64 = -1
+    if st.sandboxObj < 0 {
+        cid = bodyChunkOf(prog, fIdx)
+    }
     let callScope = bindActivationScope(prog, callee, argVals, thisVal, &mut st, cid < 0 || chunkUsesArguments(cid))
     // root the frame across the whole call so a GC inside the body (or a nested
     // call) can't reclaim it
@@ -14910,13 +14953,7 @@ fn evalDelete(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
             let ov = evalExpr(prog, objIdx, &mut st, scope)
             let o = propertyBagOf(&mut st, ov)
             if o >= 0 {
-                if st.objects[o].isProxy {
-                    return proxyDelete(prog, o, name.clone(), &mut st)
-                }
-                if st.objects[o].frozen || st.objects[o].sealed {
-                    return deleteResult(&mut st, false, name)
-                }
-                return deleteResult(&mut st, objDeleteKey(&mut st, o, name.clone()), name)
+                return deleteOwnKey(prog, &mut st, o, name.clone())
             }
             return deleteOnNoBag(&mut st, ov)
         }
@@ -14928,23 +14965,33 @@ fn evalDelete(prog: &Prog, targetId: ExprId, st: &mut Interp, scope: i64): JSVal
             let key = toPropertyKey(st, kv)
             let o = propertyBagOf(&mut st, ov)
             if o >= 0 {
-                if st.objects[o].isProxy {
-                    return proxyDelete(prog, o, key, &mut st)
-                }
-                if st.objects[o].frozen || st.objects[o].sealed {
-                    return deleteResult(&mut st, false, key)
-                }
-                return deleteResult(&mut st, objDeleteKey(&mut st, o, key.clone()), key)
+                return deleteOwnKey(prog, &mut st, o, key)
             }
             return deleteOnNoBag(&mut st, ov)
         }
         _ => {
+            if let Expr.Ident(iname) = prog.exprs[targetId.index] {
+                if let Option.Some(dr) = identDelete(prog, &mut st, scope, iname) {
+                    return dr
+                }
+            }
             // `delete someVariable` is not permitted on bindings; evaluate for
             // effect and report false
             let _ = evalExpr(prog, targetId, &mut st, scope)
             return JSValue.Bool(false)
         }
     }
+}
+
+// [[Delete]] of an own property, answered as `delete` answers it.
+pub fn deleteOwnKey(prog: &Prog, st: &mut Interp, o: i64, key: string): JSValue {
+    if st.objects[o].isProxy {
+        return proxyDelete(prog, o, key, &mut st)
+    }
+    if st.objects[o].frozen || st.objects[o].sealed {
+        return deleteResult(&mut st, false, key)
+    }
+    return deleteResult(&mut st, objDeleteKey(&mut st, o, key.clone()), key)
 }
 
 // new Array(n) preallocates n holes; new Array(a, b, ...) is a literal list.
@@ -16701,10 +16748,12 @@ fn parseScriptSource(src: &string, st: &mut Interp): BlockId {
 // $262.evalScript: run `src` as a global SCRIPT of realm r and answer its
 // completion value. Unlike indirect eval, `let`/`const`/`class` at its top
 // level are bindings of that realm's global scope, visible to later scripts,
-// which is what ScriptEvaluation does.
-pub fn evalScriptInRealm(src: &string, r: i64, st: &mut Interp): JSValue {
+// which is what ScriptEvaluation does. A non-empty fileName is the script's
+// own frame in the stack of an error it raises.
+pub fn evalScriptInRealm(src: &string, r: i64, fileName: string, st: &mut Interp): JSValue {
     let prevRealm = enterRealm(&mut st, r)
     let savedStrict = st.strict
+    st.fnFileStack.push(fileName)
     let top = parseScriptSource(src, &mut st)
     var completion = JSValue.Undefined
     if top.index >= 0 {
@@ -16728,6 +16777,7 @@ pub fn evalScriptInRealm(src: &string, r: i64, st: &mut Interp): JSValue {
         }
     }
     st.strict = savedStrict
+    let _popped = st.fnFileStack.pop()
     let _ = enterRealm(&mut st, prevRealm)
     if st.throwing {
         return JSValue.Undefined
@@ -16936,6 +16986,10 @@ fn consoleMethodIsPristine(st: &mut Interp, scope: i64, name: &string): bool {
     // Copied out of the AST before anything below can re-enter the
     // interpreter and move the program storage this reference points into.
     let nameCopy = name.clone()
+    // a sandboxed realm's `console` is whatever its sandbox says it is
+    if st.sandboxObj >= 0 {
+        return false
+    }
     if !scopeHas(st, scope, "console") {
         return true
     }
@@ -17902,7 +17956,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                                     registerUsing(prog, &mut st, iterScope, bindName)
                                 }
                             } else {
-                                scopeAssign(&mut st, scope, bindName, bound)
+                                identAssign(prog, &mut st, scope, bindName, bound)
                             }
                             let flow = execStmt(prog, body, &mut st, iterScope)
                             // `for (using x of it)` disposes at the END of each
@@ -18054,7 +18108,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                         registerUsing(prog, &mut st, iterScope, bindName)
                     }
                 } else {
-                    scopeAssign(&mut st, scope, bindName, eagerBound)
+                    identAssign(prog, &mut st, scope, bindName, eagerBound)
                 }
                 let flow = execStmt(prog, body, &mut st, iterScope)
                 runDisposals(prog, &mut st, iterScope)
@@ -18176,7 +18230,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 if bindKind == 2 {
                     scopeDefine(&mut st, iterScope, bindName.clone(), JSValue.Str(keys[i].clone()))
                 } else {
-                    scopeAssign(&mut st, scope, bindName, JSValue.Str(keys[i].clone()))
+                    identAssign(prog, &mut st, scope, bindName, JSValue.Str(keys[i].clone()))
                 }
                 let flow = execStmt(prog, body, &mut st, iterScope)
                 runDisposals(prog, &mut st, iterScope)
@@ -18252,7 +18306,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 if prog.declLists[listIdx.index][i].isVar {
                     // `var` was already bound in the function scope by hoisting;
                     // assign there rather than shadowing it in this block
-                    scopeAssign(&mut st, scope, name, v)
+                    identAssign(prog, &mut st, scope, name, v)
                 } else {
                     scopeDefine(&mut st, scope, name, v)
                 }
@@ -18468,6 +18522,18 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             // declaration has to stay true. A block-level one has no binding
             // yet (the block scope is fresh), so it is created here, once per
             // evaluation of the block.
+            if isSandboxGlobalScope(st, scope) {
+                // the hoist put it on the sandbox; a declaration Annex B left
+                // undefined there gets its value now
+                if let Option.Some(cur) = identTryLookup(prog, &mut st, scope, name) {
+                    if funcHandle(cur) == f && funcEnv(cur) == scope {
+                        return Flow.Normal
+                    }
+                }
+                let sv = makeClosure(&mut st, f, scope)
+                identAssign(prog, &mut st, scope, name, sv)
+                return Flow.Normal
+            }
             var fv = JSValue.Undefined
             let own = scopeOwnIndex(st, scope, name)
             if own >= 0 && funcHandle(st.scopes[scope].vars[own].value) == f && funcEnv(st.scopes[scope].vars[own].value) == scope {
@@ -18484,7 +18550,11 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             var s = st.scopes[scope].parent
             while s >= 0 {
                 if nameInList(st.scopes[s].annexBFns, name) {
-                    scopeDefine(&mut st, s, name.clone(), cloneValue(fv))
+                    if isSandboxGlobalScope(st, s) {
+                        identAssign(prog, &mut st, s, name, cloneValue(fv))
+                    } else {
+                        scopeDefine(&mut st, s, name.clone(), cloneValue(fv))
+                    }
                     s = -1
                 } else {
                     s = st.scopes[s].parent
@@ -18568,7 +18638,7 @@ fn collectLexicalNames(prog: &Prog, blockId: BlockId, out: &mut Vec<string>) {
     }
 }
 
-fn nameInList(list: &Vec<string>, name: &string): bool {
+pub fn nameInList(list: &Vec<string>, name: &string): bool {
     var i: i64 = 0
     while i < list.len() {
         if list[i] == name.clone() {
@@ -18802,7 +18872,31 @@ pub fn hoistBlock(prog: &Prog, blockId: BlockId, st: &mut Interp, scope: i64) {
     // deeper takes the Annex B path in hoistStmt.
     var shadow: Vec<string> = Vec.new()
     collectLexicalNames(prog, blockId, &mut shadow)
+    if isSandboxGlobalScope(st, scope) {
+        // GlobalDeclarationInstantiation binds every function before any var,
+        // and the sandbox's key order shows it
+        var fi: i64 = 0
+        while fi < prog.blocks[blockId.index].len() {
+            if let Stmt.FuncDecl(tf) = prog.stmts[prog.blocks[blockId.index][fi].index] {
+                let tname = prog.funcs[tf].name.clone()
+                if tname.len() > 0 {
+                    let tv = makeClosure(&mut st, tf, scope)
+                    declareSandboxGlobal(prog, &mut st, tname, Option.Some(tv))
+                }
+            }
+            fi = fi + 1
+        }
+    }
     hoistBlockInner(prog, blockId, &mut st, scope, false, shadow)
+}
+
+// A var-scoped binding the hoist creates, undefined until its declaration runs.
+fn hoistVarName(prog: &Prog, st: &mut Interp, scope: i64, name: &string) {
+    if isSandboxGlobalScope(st, scope) {
+        declareSandboxGlobal(prog, &mut st, name, Option.None)
+    } else if !scopeHasOwn(st, scope, name) {
+        scopeDefine(&mut st, scope, name.clone(), JSValue.Undefined)
+    }
 }
 
 fn hoistBlockInner(prog: &Prog, blockId: BlockId, st: &mut Interp, scope: i64, nested: bool, shadow: &Vec<string>) {
@@ -18827,8 +18921,11 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64, nested: bool,
             let fname = prog.funcs[fIdx].name.clone()
             if fname.len() > 0 {
                 if !nested {
-                    let hv = makeClosure(&mut st, fIdx, scope)
-                    scopeDefine(&mut st, scope, fname, hv)
+                    // a sandbox's top-level functions went first, in hoistBlock
+                    if !isSandboxGlobalScope(st, scope) {
+                        let hv = makeClosure(&mut st, fIdx, scope)
+                        scopeDefine(&mut st, scope, fname, hv)
+                    }
                 } else if !nameInList(shadow, fname) {
                     // Annex B B.3.3: the hoist creates the var-scoped binding but
                     // leaves it UNDEFINED. The function value is written when the
@@ -18836,9 +18933,7 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64, nested: bool,
                     // `if (true) function f(){}` is "undefined" and why
                     // `if (false) function h(){}` leaves h undefined rather than a
                     // function that never ran.
-                    if !scopeHasOwn(st, scope, fname) {
-                        scopeDefine(&mut st, scope, fname.clone(), JSValue.Undefined)
-                    }
+                    hoistVarName(prog, &mut st, scope, fname)
                     recordAnnexB(&mut st, scope, fname)
                 }
             }
@@ -18848,8 +18943,8 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64, nested: bool,
             while d < prog.declLists[listIdx.index].len() {
                 if prog.declLists[listIdx.index][d].isVar {
                     let dname = prog.declLists[listIdx.index][d].name.clone()
-                    if dname.len() > 0 && !scopeHasOwn(st, scope, dname) {
-                        scopeDefine(&mut st, scope, dname, JSValue.Undefined)
+                    if dname.len() > 0 {
+                        hoistVarName(prog, &mut st, scope, dname)
                     }
                 }
                 d = d + 1
@@ -18882,14 +18977,14 @@ fn hoistStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64, nested: bool,
         Stmt.ForIn(nm, _o, body, bindKind) => {
             // `var` in a for-in head is function-scoped, so it hoists like any
             // other var. `let`/`const` (2) and a bare assignment (0) do not.
-            if bindKind == 1 && nm.len() > 0 && !scopeHasOwn(st, scope, nm) {
-                scopeDefine(&mut st, scope, nm.clone(), JSValue.Undefined)
+            if bindKind == 1 && nm.len() > 0 {
+                hoistVarName(prog, &mut st, scope, nm)
             }
             hoistStmt(prog, body, &mut st, scope, true, shadow)
         }
         Stmt.ForOf(nm, _o, body, _aw, bindKind) => {
-            if bindKind == 1 && nm.len() > 0 && !scopeHasOwn(st, scope, nm) {
-                scopeDefine(&mut st, scope, nm.clone(), JSValue.Undefined)
+            if bindKind == 1 && nm.len() > 0 {
+                hoistVarName(prog, &mut st, scope, nm)
             }
             hoistStmt(prog, body, &mut st, scope, true, shadow)
         }

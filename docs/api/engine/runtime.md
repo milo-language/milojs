@@ -681,6 +681,15 @@ pub fn scopeDefine(st: &mut Interp, scope: i64, name: string, value: JSValue)
 
 _Undocumented._
 
+### `scopeFindBelowGlobal`
+
+```milo
+pub fn scopeFindBelowGlobal(st: &Interp, scope: i64, name: &string): i64
+```
+
+The scope on `scope`'s chain that binds `name` short of the global scope (a
+`with` object that has it counts), or -1.
+
 ### `scopeHas`
 
 ```milo

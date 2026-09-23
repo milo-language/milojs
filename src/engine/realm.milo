@@ -9,10 +9,11 @@
 // heap, the job and timer queues, and the call stack.
 
 from "./runtime" import {
-    Interp, newScope, markBuiltinGlobals, scopeLookup
+    Interp, newScope, markBuiltinGlobals, scopeLookup, scopeTryLookup, scopeAssign, scopeOwnIndex,
+    scopeFindBelowGlobal, scopeDefine, newObject, objSet, pushTemp, popTemp
 }
 from "./value" import {
-    JSValue
+    JSValue, objHandle, truthy, cloneValue
 }
 from "./ast" import {
     Prog, BlockId
@@ -21,7 +22,7 @@ from "./bootstrap" import {
     setupGlobals
 }
 from "./eval" import {
-    hoistBlock, execBlock
+    hoistBlock, execBlock, evalInOperator, getMemberDyn, setMemberDyn, definePropOf, deleteOwnKey, throwErr, nameInList
 }
 
 // The scalar half of a realm: every field Interp caches under the same name.
@@ -31,6 +32,10 @@ from "./eval" import {
 // and the collector's markRealms to the same list.
 pub struct RealmIntrinsics {
     globalScope: i64,
+    // The object whose properties are this realm's global variables, or -1: see
+    // identTryLookup. Cached like the rest so the check costs code in an
+    // ordinary realm one field compare per global name.
+    sandboxObj: i64,
     builtinGlobals: i64,
     promiseCtorObj: i64,
     stringCtorProps: i64,
@@ -67,6 +72,10 @@ pub struct Realm {
     // each builtin (see nativeObj) and each concrete typed-array prototype.
     nativeObjs: Vec<i64>,
     taProtos: Vec<i64>,
+    // The names a sandboxed realm's scripts declared with var or function. V8
+    // keeps a copy of each on the real global object, so `delete` of one answers
+    // false and the name still resolves; identDelete answers the same.
+    sandboxVars: Vec<string>,
 }
 
 // A realm that has not been booted yet: no intrinsics, every fast-path guard
@@ -75,7 +84,7 @@ pub struct Realm {
 pub fn emptyRealm(globalScope: i64): Realm {
     return Realm {
         intr: RealmIntrinsics {
-            globalScope: globalScope, builtinGlobals: 0,
+            globalScope: globalScope, sandboxObj: -1, builtinGlobals: 0,
             promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1,
             dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1,
             setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1,
@@ -87,6 +96,7 @@ pub fn emptyRealm(globalScope: i64): Realm {
         },
         nativeObjs: Vec.new(),
         taProtos: Vec.new(),
+        sandboxVars: Vec.new(),
     }
 }
 
@@ -97,6 +107,7 @@ pub fn saveRealm(st: &mut Interp) {
     }
     st.realms[st.curRealm].intr = RealmIntrinsics {
         globalScope: st.globalScope,
+        sandboxObj: st.sandboxObj,
         builtinGlobals: st.builtinGlobals,
         promiseCtorObj: st.promiseCtorObj,
         stringCtorProps: st.stringCtorProps,
@@ -131,6 +142,7 @@ pub fn saveRealm(st: &mut Interp) {
 // one first; enterRealm is the caller that pairs the two.
 fn loadRealm(st: &mut Interp, r: i64) {
     st.globalScope = st.realms[r].intr.globalScope
+    st.sandboxObj = st.realms[r].intr.sandboxObj
     st.builtinGlobals = st.realms[r].intr.builtinGlobals
     st.promiseCtorObj = st.realms[r].intr.promiseCtorObj
     st.stringCtorProps = st.realms[r].intr.stringCtorProps
@@ -328,4 +340,200 @@ pub fn createRealm(prog: &Prog, st: &mut Interp): i64 {
 // Realm r's global object: what its `globalThis` is bound to.
 pub fn realmGlobalObject(st: &Interp, r: i64): JSValue {
     return scopeLookup(st, realmGlobalScope(st, r), "globalThis")
+}
+
+// ---- A realm's sandbox --------------------------------------------------------
+//
+// A realm may carry a SANDBOX: an object whose properties are that realm's
+// global variables, which is what node:vm's contextifying does to the object
+// handed to createContext. A global name resolves against the sandbox before
+// the realm's own global bindings (so `{ Array: 1 }` shadows the built-in), and
+// assignments to global names, and function declarations, land on the sandbox,
+// where the host reads them back as plain properties. The realm's own global
+// scope keeps its built-ins, its scripts' top-level let/const/class (which V8
+// resolves before the global object, so the sandbox cannot shadow them), and a
+// binding per declared var and function, V8's copy on the real global object:
+// `var x;` alone puts nothing on the sandbox, and `delete x` answers false and
+// leaves the name resolving.
+//
+// Everything goes through the ordinary property paths (has, get, set,
+// defineProperty, delete), so a sandbox that is a Proxy or carries accessors
+// behaves as it does in node: its traps and getters run. That is why this is
+// not in scopeTryLookup, which cannot run JS. Code in a realm without a sandbox
+// pays one field compare per global name, and code in one with a sandbox never
+// runs as bytecode (the VM keeps globals in slots).
+
+fn isSandboxVar(st: &Interp, name: &string): bool {
+    return nameInList(st.realms[st.curRealm].sandboxVars, name)
+}
+
+// The realm's own top-level lexical binding of `name`, or -1. Bindings below
+// builtinGlobals are the built-ins, and the declared vars are recorded; the
+// rest are let, const and class.
+fn realmLexicalIndex(st: &Interp, name: &string): i64 {
+    let bi = scopeOwnIndex(st, st.globalScope, name)
+    if bi >= st.builtinGlobals && !isSandboxVar(st, name) {
+        return bi
+    }
+    return -1
+}
+
+fn sandboxHas(prog: &Prog, st: &mut Interp, name: &string): bool {
+    let sb = st.sandboxObj
+    return truthy(evalInOperator(prog, name.clone(), JSValue.Obj(sb), &mut st))
+}
+
+// Identifier resolution: scopeTryLookup, with a sandboxed realm's globals.
+// Kept this small so it inlines into the evaluator's identifier arms: the
+// sandbox half is out of line.
+pub fn identTryLookup(prog: &Prog, st: &mut Interp, scope: i64, nameRef: &string): Option<JSValue> {
+    if st.sandboxObj < 0 || nameRef == "this" {
+        return scopeTryLookup(st, scope, nameRef)
+    }
+    return sandboxLookup(prog, &mut st, scope, nameRef)
+}
+
+fn sandboxLookup(prog: &Prog, st: &mut Interp, scope: i64, nameRef: &string): Option<JSValue> {
+    // a copy: the caller's name may point into the AST, which a trap or getter
+    // run below can move
+    let name = nameRef.clone()
+    let at = scopeFindBelowGlobal(st, scope, name)
+    if at >= 0 {
+        return scopeTryLookup(st, at, name)
+    }
+    let g = st.globalScope
+    let lex = realmLexicalIndex(st, name)
+    if lex >= 0 {
+        return Option.Some(cloneValue(st.scopes[g].vars[lex].value))
+    }
+    let sb = st.sandboxObj
+    let has = sandboxHas(prog, &mut st, name)
+    if st.throwing {
+        return Option.Some(JSValue.Undefined)
+    }
+    if has {
+        let v = getMemberDyn(prog, sb, name, &mut st)
+        // node answers the global object where the sandbox holds itself, so
+        // `ctx.window = ctx` makes `window` and `this` the same object inside
+        if objHandle(v) == sb {
+            return Option.Some(scopeLookup(st, g, "globalThis"))
+        }
+        return Option.Some(v)
+    }
+    return scopeTryLookup(st, g, name)
+}
+
+// Identifier assignment: scopeAssign, with a sandboxed realm's globals. A name
+// neither the sandbox nor the realm declares is a ReferenceError in strict code
+// and a new sandbox property otherwise.
+pub fn identAssign(prog: &Prog, st: &mut Interp, scope: i64, nameRef: &string, value: JSValue) {
+    if st.sandboxObj < 0 {
+        scopeAssign(&mut st, scope, nameRef, value)
+        return
+    }
+    sandboxAssign(prog, &mut st, scope, nameRef, value)
+}
+
+fn sandboxAssign(prog: &Prog, st: &mut Interp, scope: i64, nameRef: &string, value: JSValue) {
+    let name = nameRef.clone()
+    let at = scopeFindBelowGlobal(st, scope, name)
+    if at >= 0 {
+        scopeAssign(&mut st, at, name, value)
+        return
+    }
+    let g = st.globalScope
+    let lex = realmLexicalIndex(st, name)
+    if lex >= 0 {
+        st.scopes[g].vars[lex].value = value
+        return
+    }
+    let sb = st.sandboxObj
+    let bi = scopeOwnIndex(st, g, name)
+    if st.strict && bi < 0 {
+        let has = sandboxHas(prog, &mut st, name)
+        if st.throwing {
+            return
+        }
+        if !has {
+            let _ = throwErr(&mut st, "ReferenceError", name.clone() + " is not defined")
+            return
+        }
+    }
+    // a declared var keeps its own copy in step, which is what it still reads
+    // after `delete` takes the sandbox's
+    if bi >= st.builtinGlobals {
+        st.scopes[g].vars[bi].value = cloneValue(value)
+    }
+    setMemberDyn(prog, sb, name, value, &mut st)
+}
+
+// `delete name` where the name resolves to the sandbox: the property goes, and
+// the answer is false for a declared var, whose binding stays. None when the
+// name is not the sandbox's, for the caller's ordinary answer.
+pub fn identDelete(prog: &Prog, st: &mut Interp, scope: i64, nameRef: &string): Option<JSValue> {
+    if st.sandboxObj < 0 || scopeFindBelowGlobal(st, scope, nameRef) >= 0 || realmLexicalIndex(st, nameRef) >= 0 {
+        return Option.None
+    }
+    let name = nameRef.clone()
+    let sb = st.sandboxObj
+    let has = sandboxHas(prog, &mut st, name)
+    if st.throwing {
+        return Option.Some(JSValue.Undefined)
+    }
+    let declared = isSandboxVar(st, name)
+    if has {
+        let r = deleteOwnKey(prog, &mut st, sb, name)
+        if st.throwing || !declared {
+            return Option.Some(r)
+        }
+    }
+    if declared {
+        return Option.Some(JSValue.Bool(false))
+    }
+    return Option.None
+}
+
+// Is `scope` a sandboxed realm's global scope? Declarations hoisted there are
+// declareSandboxGlobal's.
+pub fn isSandboxGlobalScope(st: &Interp, scope: i64): bool {
+    return st.sandboxObj >= 0 && scope == st.globalScope
+}
+
+// A top-level `var` (fnValue None) or function declaration of code running in a
+// sandboxed realm: CreateGlobalVarBinding / CreateGlobalFunctionBinding. Both
+// get the realm binding; a function is also defined on the sandbox, with the
+// attributes node gives it, replacing whatever is there.
+pub fn declareSandboxGlobal(prog: &Prog, st: &mut Interp, nameRef: &string, fnValue: Option<JSValue>) {
+    let name = nameRef.clone()
+    let g = st.globalScope
+    if !isSandboxVar(st, name) {
+        st.realms[st.curRealm].sandboxVars.push(name.clone())
+    }
+    var value = JSValue.Undefined
+    match fnValue {
+        Option.Some(fv) => {
+            value = fv
+        }
+        Option.None => {
+            if scopeOwnIndex(st, g, name) < 0 {
+                scopeDefine(&mut st, g, name, JSValue.Undefined)
+            }
+            return
+        }
+    }
+    scopeDefine(&mut st, g, name.clone(), cloneValue(value))
+    let sb = st.sandboxObj
+    let d = newObject(&mut st)
+    pushTemp(&mut st, JSValue.Obj(d))
+    objSet(&mut st, d, "value", cloneValue(value))
+    objSet(&mut st, d, "writable", JSValue.Bool(true))
+    objSet(&mut st, d, "enumerable", JSValue.Bool(true))
+    objSet(&mut st, d, "configurable", JSValue.Bool(true))
+    let ok = definePropOf(prog, &mut st, JSValue.Obj(sb), name, d)
+    // a non-configurable property of that name refuses the full descriptor;
+    // CreateGlobalFunctionBinding then writes the value alone
+    if !ok && !st.throwing {
+        setMemberDyn(prog, sb, name.clone(), value, &mut st)
+    }
+    popTemp(&mut st)
 }

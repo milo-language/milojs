@@ -37,6 +37,17 @@ by the same bootstrap the first realm ran, then the same JS-written built-ins.
 Answers the realm's index, or -1 with the exception pending. The running realm
 is unchanged on return.
 
+### `declareSandboxGlobal`
+
+```milo
+pub fn declareSandboxGlobal(prog: &Prog, st: &mut Interp, nameRef: &string, fnValue: Option<JSValue>)
+```
+
+A top-level `var` (fnValue None) or function declaration of code running in a
+sandboxed realm: CreateGlobalVarBinding / CreateGlobalFunctionBinding. Both
+get the realm binding; a function is also defined on the sandbox, with the
+attributes node gives it, replacing whatever is there.
+
 ### `emptyRealm`
 
 ```milo
@@ -67,6 +78,36 @@ The global scope a global object mirrors: its own realm's. A realm's global
 object may be read from code running in another realm, and must still answer
 with its own bindings.
 
+### `identAssign`
+
+```milo
+pub fn identAssign(prog: &Prog, st: &mut Interp, scope: i64, nameRef: &string, value: JSValue)
+```
+
+Identifier assignment: scopeAssign, with a sandboxed realm's globals. A name
+neither the sandbox nor the realm declares is a ReferenceError in strict code
+and a new sandbox property otherwise.
+
+### `identDelete`
+
+```milo
+pub fn identDelete(prog: &Prog, st: &mut Interp, scope: i64, nameRef: &string): Option<JSValue>
+```
+
+`delete name` where the name resolves to the sandbox: the property goes, and
+the answer is false for a declared var, whose binding stays. None when the
+name is not the sandbox's, for the caller's ordinary answer.
+
+### `identTryLookup`
+
+```milo
+pub fn identTryLookup(prog: &Prog, st: &mut Interp, scope: i64, nameRef: &string): Option<JSValue>
+```
+
+Identifier resolution: scopeTryLookup, with a sandboxed realm's globals.
+Kept this small so it inlines into the evaluator's identifier arms: the
+sandbox half is out of line.
+
 ### `isArrayCtorObj`
 
 ```milo
@@ -84,6 +125,15 @@ pub fn isPromiseCtorObj(st: &Interp, o: i64): bool
 ```
 
 _Undocumented._
+
+### `isSandboxGlobalScope`
+
+```milo
+pub fn isSandboxGlobalScope(st: &Interp, scope: i64): bool
+```
+
+Is `scope` a sandboxed realm's global scope? Declarations hoisted there are
+declareSandboxGlobal's.
 
 ### `objRealm`
 

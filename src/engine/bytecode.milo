@@ -2215,7 +2215,8 @@ var gLoopIdx: Vec<i64> = Vec.new()
 // Run this `for` through the compiled path, or answer false to say the tree
 // walker still has to run it. Compilation happens once per statement.
 pub fn tryRunFor(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): bool {
-    if gVmDisabled {
+    // a sandboxed realm's globals are not scope bindings (see identTryLookup)
+    if gVmDisabled || st.sandboxObj >= 0 {
         return false
     }
     while gLoopIdx.len() <= id.index {
