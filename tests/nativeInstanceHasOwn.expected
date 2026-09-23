@@ -1,0 +1,8 @@
+Error vs natives: false false false false
+Error family: true true true false false
+subclass: true true true false
+missing string method: true
+own string methods: ABC 2 c
+proxy: true false true virtual,other,virtual
+global bindings: true true false
+arrays: true false true

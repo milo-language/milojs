@@ -2363,6 +2363,31 @@ fn stringRegexProtocol(prog: &Prog, st: &mut Interp, sRef: &string, nameRef: &st
     return Option.None
 }
 
+// HasOwnProperty, for hasOwnProperty and Object.hasOwn alike: an own named
+// property, a real (non-hole) array index, or for a proxy whatever its
+// getOwnPropertyDescriptor trap reports. Object.hasOwn had its own copy that
+// knew neither proxies nor the global object's bindings.
+fn hasOwnKey(prog: &Prog, st: &mut Interp, o: i64, key: string): JSValue {
+    if st.objects[o].isProxy {
+        let pd = getOwnPropDescOf(prog, &mut st, JSValue.Obj(o), key)
+        if st.throwing {
+            return JSValue.Undefined
+        }
+        return JSValue.Bool(objHandle(pd) >= 0)
+    }
+    if st.objects[o].isArray {
+        // an array's `length` is its own data property, though no slot holds it
+        if key == "length" {
+            return JSValue.Bool(true)
+        }
+        let ai = asArrayIndex(key)
+        if ai >= 0 && ai < arrLen(st, o) && !arrIsHole(st, o, ai) {
+            return JSValue.Bool(true)
+        }
+    }
+    return JSValue.Bool(objHas(st, o, key))
+}
+
 pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSValue>, st: &mut Interp): JSValue {
     // get %TypedArray%.prototype[@@toStringTag]: the kind's name for a typed
     // array, undefined for anything else (it never throws)
@@ -2805,16 +2830,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
                 if args.len() > 0 {
                     key = toStr(args[0])
                 }
-                // a proxy's own properties are whatever its
-                // getOwnPropertyDescriptor trap reports, not what its slots hold
-                if st.objects[o].isProxy {
-                    let pd = getOwnPropDescOf(prog, &mut st, JSValue.Obj(o), key)
-                    if st.throwing {
-                        return JSValue.Undefined
-                    }
-                    return JSValue.Bool(objHandle(pd) >= 0)
-                }
-                return JSValue.Bool(objHas(st, o, key) || (st.objects[o].isArray && asArrayIndex(key) >= 0 && asArrayIndex(key) < arrLen(st, o) && !arrIsHole(st, o, asArrayIndex(key))))
+                return hasOwnKey(prog, &mut st, o, key)
             }
             if name == "toString" {
                 // a Symbol WRAPPER prints its description, not the object tag:
@@ -7072,8 +7088,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Bool(false)
         }
         let key = toStr(argVals[1])
-        // mirrors hasOwnProperty: own named prop, or a real (non-hole) array index
-        return JSValue.Bool(objOwnIndex(st, o, key) >= 0 || (st.objects[o].isArray && asArrayIndex(key) >= 0 && asArrayIndex(key) < arrLen(st, o) && !arrIsHole(st, o, asArrayIndex(key))))
+        return hasOwnKey(gProg, &mut st, o, key)
     }
     if id == Builtin.ObjectIsSealed {
         if argVals.len() > 0 {
@@ -8122,9 +8137,13 @@ fn nativeInstanceOf(st: &Interp, o: i64, nv: &Native, nfo: i64): bool {
     // only `stack` (and `message`, when passed) as own properties of an Error;
     // `name` lives on each subtype's prototype, so the lookup has to walk the
     // chain that already links them.
-    let nm = getMember(st, o, "name")
-    if toStr(nm) == nativeErrorNameOf(nv) {
-        return true
+    // Only for an error constructor: nativeErrorNameOf answers "Error" for any
+    // other native, which made every plain Error an instance of RegExp, Map, ...
+    if let Native.Fn(eb) = nv {
+        let ename = nativeErrorNameOf(nv)
+        if errorCtorIdFor(ename) == eb && toStr(getMember(st, o, "name")) == ename {
+            return true
+        }
     }
     return nativeProtoChainHas(st, o, nfo)
 }
@@ -15917,6 +15936,17 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
             }
             if name == "__stringIterator" || name == symIteratorKey() {
                 return makeStringIterator(&mut st, s)
+            }
+            // A name String.prototype does not define is not one stringMethod
+            // knows either, and it answered undefined for it: `"x".nope()`
+            // returned instead of throwing. What the chain above it offers
+            // (Object.prototype's methods) is called; anything else throws.
+            if objOwnIndex(st, st.stringProtoObj, name) < 0 {
+                let inherited = getMember(st, st.stringProtoObj, name)
+                if isCallableIn(st, inherited) {
+                    return callValue(prog, inherited, argVals, JSValue.Str(s.clone()), &mut st)
+                }
+                return throwErr(&mut st, "TypeError", name.clone() + " is not a function")
             }
             if stringArgsNeedCoercion(name, argVals) {
                 let ca = coercedStringArgs(prog, name, argVals, &mut st)
