@@ -890,13 +890,13 @@ fn runLine(prog: &Prog, top: BlockId, st: &mut Interp): JSValue {
         match getStmt(prog, sIdx) {
             Stmt.ExprStmt(e) => {
                 if isLast {
-                    result = evalExpr(prog, e, &mut st, 0)
+                    result = evalExpr(prog, e, &mut st, st.globalScope)
                 } else {
-                    evalExpr(prog, e, &mut st, 0)
+                    evalExpr(prog, e, &mut st, st.globalScope)
                 }
             }
             _ => {
-                execStmt(prog, sIdx, &mut st, 0)
+                execStmt(prog, sIdx, &mut st, st.globalScope)
             }
         }
         if st.throwing {
@@ -920,7 +920,7 @@ pub fn repl(st: &mut Interp): i32 {
     loadHistory(&mut history)
     // everything already in the global scope is a builtin; anything appended past
     // this point was defined by the user, and completion highlights it as such
-    let builtinCount = st.scopes[0].vars.len()
+    let builtinCount = st.scopes[st.globalScope].vars.len()
     let prompt = Ansi.fg24(226, 192, 150) + "milojs> " + Ansi.reset()
     let contPrompt = Color.gray("... ") + Ansi.reset()
     // lines of a block that is not syntactically finished yet

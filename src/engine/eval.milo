@@ -1027,8 +1027,8 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
     }
     // globalThis.x reads the global binding, so it stays in step with bare `x`
     if st.objects[o].isGlobal && objOwnIndex(st, o, key) < 0 {
-        if scopeHasOwn(st, 0, key) {
-            return scopeLookup(st, 0, key)
+        if scopeHasOwn(st, st.globalScope, key) {
+            return scopeLookup(st, st.globalScope, key)
         }
     }
     if st.objects[o].isEnv && objOwnIndex(st, o, key) < 0 {
@@ -2240,7 +2240,7 @@ fn regexProtoOp(prog: &Prog, recv: &JSValue, name: &string, args: &Vec<JSValue>,
         }
         return regexMethod(&mut st, h, name, args)
     }
-    let spec = objHandle(scopeLookup(st, 0, "__reSpec"))
+    let spec = objHandle(scopeLookup(st, st.globalScope, "__reSpec"))
     var f = JSValue.Undefined
     if spec >= 0 {
         f = objGet(st, spec, implName)
@@ -3320,8 +3320,8 @@ pub fn getMember(st: &Interp, o: i64, key: &string): JSValue {
     // (`globalThis.x += y`) read undefined for its own left-hand side while a
     // plain read of the same property worked.
     if st.objects[o].isGlobal && objOwnIndex(st, o, key) < 0 {
-        if scopeHasOwn(st, 0, key) {
-            return scopeLookup(st, 0, key)
+        if scopeHasOwn(st, st.globalScope, key) {
+            return scopeLookup(st, st.globalScope, key)
         }
     }
     let nativeLen = nativeBufferLen(st, o)
@@ -3540,7 +3540,7 @@ fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
     }
     // globalThis.x = v defines/updates the global binding, not a detached property
     if st.objects[o].isGlobal {
-        scopeDefine(&mut st, 0, key, value)
+        scopeDefine(&mut st, st.globalScope, key, value)
         return
     }
     if st.objects[o].isArray {
@@ -6635,7 +6635,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         // always the GLOBAL scope: a function built this way never closes over
         // the caller, which is the difference from direct eval
-        return runEvalSource("(function anonymous(" + params + "\n) {\n" + body + "\n})", &mut st, 0)
+        return runEvalSource("(function anonymous(" + params + "\n) {\n" + body + "\n})", &mut st, st.globalScope)
     }
     if id == Builtin.Eval {
         // INDIRECT eval (`const e = eval; e(src)`) runs in the GLOBAL scope,
@@ -6645,7 +6645,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         match cloneValue(argVals[0]) {
             JSValue.Str(src) => {
-                return runEvalSource(src, &mut st, 0)
+                return runEvalSource(src, &mut st, st.globalScope)
             }
             _ => {
                 return cloneValue(argVals[0])
@@ -7395,12 +7395,12 @@ fn builtinConstructorOf(st: &mut Interp, o: i64): JSValue {
         // the specific constructor named by the error's `name` (TypeError, …)
         let nm = getMember(st, o, "name")
         if let JSValue.Str(s) = nm {
-            if scopeHasOwn(st, 0, s) {
-                return scopeLookup(st, 0, s)
+            if scopeHasOwn(st, st.globalScope, s) {
+                return scopeLookup(st, st.globalScope, s)
             }
         }
-        if scopeHasOwn(st, 0, "Error") {
-            return scopeLookup(st, 0, "Error")
+        if scopeHasOwn(st, st.globalScope, "Error") {
+            return scopeLookup(st, st.globalScope, "Error")
         }
         return JSValue.Undefined
     }
@@ -7839,7 +7839,7 @@ pub fn runModule(prog: &Prog, idx: i64, st: &mut Interp): JSValue {
     let path = st.modPaths[idx].clone()
     let dir = dirOf(path)
 
-    let modScope = newScope(&mut st, 0)
+    let modScope = newScope(&mut st, st.globalScope)
     pushActive(&mut st, modScope)
     let moduleObj = newObject(&mut st)
     let exportsObj = newObject(&mut st)
@@ -9614,7 +9614,7 @@ pub fn evalExpr(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSValue {
                         // no enclosing function or module bound one: script
                         // code's `this` is the global object, as is an arrow's
                         // at top level
-                        return scopeLookup(st, 0, "globalThis")
+                        return scopeLookup(st, st.globalScope, "globalThis")
                     }
                     return throwErr(&mut st, "ReferenceError", name.clone() + " is not defined")
                 }
@@ -11322,8 +11322,8 @@ pub fn bindActivationScope(prog: &Prog, callee: &JSValue, argVals: &Vec<JSValue>
         if !prog.funcs[fIdx].isStrict && isNullish(boundThisVal) {
             // sloppy mode substitutes globalThis for BOTH undefined and null:
             // `f.call(null)` and `f()` bind the same receiver
-            if scopeHas(st, 0, "globalThis") {
-                boundThisVal = scopeLookup(st, 0, "globalThis")
+            if scopeHas(st, st.globalScope, "globalThis") {
+                boundThisVal = scopeLookup(st, st.globalScope, "globalThis")
             }
         }
         scopeDefine(&mut st, callScope, "this", boundThisVal)
@@ -11817,7 +11817,7 @@ fn ordinaryGetOwnPropDesc(st: &mut Interp, v: &JSValue, key: &string): JSValue {
         // it lives in scope 0; it is writable and enumerable but, like a
         // `var` declaration, not configurable
         if st.objects[h].isGlobal {
-            var bi = scopeOwnIndex(st, 0, key)
+            var bi = scopeOwnIndex(st, st.globalScope, key)
             if key == "undefined" {
                 // a literal, not a binding, but an own frozen property of the
                 // global object all the same
@@ -11831,7 +11831,7 @@ fn ordinaryGetOwnPropDesc(st: &mut Interp, v: &JSValue, key: &string): JSValue {
                 let frozen = key == "NaN" || key == "Infinity" || key == "undefined"
                 let gd = newObject(&mut st)
                 pushTemp(&mut st, JSValue.Obj(gd))
-                objSet(&mut st, gd, "value", scopeLookup(st, 0, key))
+                objSet(&mut st, gd, "value", scopeLookup(st, st.globalScope, key))
                 objSet(&mut st, gd, "writable", JSValue.Bool(!frozen))
                 objSet(&mut st, gd, "enumerable", JSValue.Bool(!builtin))
                 objSet(&mut st, gd, "configurable", JSValue.Bool(builtin && !frozen))
@@ -14132,7 +14132,7 @@ fn resolvePromiseValue(prog: &Prog, st: &mut Interp, target: i64, v: JSValue) {
     // The CALL is a job, not part of resolve(). __thenJob (engine-prelude) is the
     // wrapper; it takes the four values as one array because a microtask with no
     // derived promise calls its callback with exactly one argument.
-    let job = scopeLookup(st, 0, "__thenJob")
+    let job = scopeLookup(st, st.globalScope, "__thenJob")
     if !isCallableIn(st, job) {
         // No prelude (a bare embedding evaluating source before it loads): fall
         // back to calling then inline. Wrong tick, right state.
@@ -14550,7 +14550,7 @@ fn serveHttpOnce(prog: &Prog, st: &mut Interp): bool {
 // node's rule for NOT exiting. Without this the interpreter exited on every
 // uncaught error, including the ones a test had explicitly asked to handle.
 fn dispatchUncaught(prog: &Prog, st: &mut Interp): bool {
-    let handler = scopeLookup(st, 0, "__dispatchUncaught")
+    let handler = scopeLookup(st, st.globalScope, "__dispatchUncaught")
     match handler {
         JSValue.Func(_fIdx, _envIdx, _fo) => {
             // Cleared before re-entering JS: the callee runs on a clean frame,
@@ -17319,7 +17319,7 @@ pub fn runDisposals(prog: &Prog, st: &mut Interp, scopeIdx: i64) {
 // to the newer error alone when the helper is missing, because a disposal failure
 // must not itself become a crash.
 fn makeSuppressed(prog: &Prog, st: &mut Interp, err: JSValue, suppressed: JSValue): JSValue {
-    let ctor = scopeLookup(st, 0, "__mjSuppress")
+    let ctor = scopeLookup(st, st.globalScope, "__mjSuppress")
     if !isCallable(ctor) {
         return err
     }

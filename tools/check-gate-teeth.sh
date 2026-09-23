@@ -162,7 +162,7 @@ teeth "check-layering (stale host std edge)" src/.layering-exempt \
 
 # --- layering half 2: a host native installed by the engine bootstrap ---
 teeth "check-layering (engine global)" src/engine/bootstrap.milo \
-    "perl -0pi -e 's/(scopeDefine\(&mut st, 0, \"__inspect\")/scopeDefine(&mut st, 0, \"__teethNative\", JSValue.Native(Native.Fn(Builtin.Inspect)))\n    \$1/' src/engine/bootstrap.milo" \
+    "perl -0pi -e 's/(scopeDefine\(&mut st, g, \"__inspect\")/scopeDefine(&mut st, g, \"__teethNative\", JSValue.Native(Native.Fn(Builtin.Inspect)))\n    \$1/' src/engine/bootstrap.milo" \
     "tools/check-layering.sh --quiet"
 
 # --- realm fields: an intrinsic loadRealm forgets to restore ---

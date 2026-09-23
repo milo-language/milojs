@@ -607,28 +607,31 @@ fn hoistLengthAndName(st: &mut Interp, bag: i64) {
 }
 
 pub fn setupGlobals(st: &mut Interp) {
-    scopeDefine(&mut st, 0, "Error", nativeValue(&mut st, Native.Fn(Builtin.Error)))
+    // the global scope of the realm being booted: the first one, or one
+    // createRealm has just entered
+    let g = st.globalScope
+    scopeDefine(&mut st, g, "Error", nativeValue(&mut st, Native.Fn(Builtin.Error)))
     nameGlobalCtor(&mut st, "Error", Builtin.Error)
-    scopeDefine(&mut st, 0, "TypeError", nativeValue(&mut st, Native.Fn(Builtin.TypeError)))
+    scopeDefine(&mut st, g, "TypeError", nativeValue(&mut st, Native.Fn(Builtin.TypeError)))
     nameGlobalCtor(&mut st, "TypeError", Builtin.TypeError)
-    scopeDefine(&mut st, 0, "RangeError", nativeValue(&mut st, Native.Fn(Builtin.RangeError)))
+    scopeDefine(&mut st, g, "RangeError", nativeValue(&mut st, Native.Fn(Builtin.RangeError)))
     nameGlobalCtor(&mut st, "RangeError", Builtin.RangeError)
-    scopeDefine(&mut st, 0, "SyntaxError", nativeValue(&mut st, Native.Fn(Builtin.SyntaxError)))
+    scopeDefine(&mut st, g, "SyntaxError", nativeValue(&mut st, Native.Fn(Builtin.SyntaxError)))
     nameGlobalCtor(&mut st, "SyntaxError", Builtin.SyntaxError)
-    scopeDefine(&mut st, 0, "ReferenceError", nativeValue(&mut st, Native.Fn(Builtin.ReferenceError)))
+    scopeDefine(&mut st, g, "ReferenceError", nativeValue(&mut st, Native.Fn(Builtin.ReferenceError)))
     nameGlobalCtor(&mut st, "ReferenceError", Builtin.ReferenceError)
-    scopeDefine(&mut st, 0, "EvalError", nativeValue(&mut st, Native.Fn(Builtin.EvalError)))
+    scopeDefine(&mut st, g, "EvalError", nativeValue(&mut st, Native.Fn(Builtin.EvalError)))
     nameGlobalCtor(&mut st, "EvalError", Builtin.EvalError)
-    scopeDefine(&mut st, 0, "URIError", nativeValue(&mut st, Native.Fn(Builtin.UriError)))
+    scopeDefine(&mut st, g, "URIError", nativeValue(&mut st, Native.Fn(Builtin.UriError)))
     nameGlobalCtor(&mut st, "URIError", Builtin.UriError)
-    scopeDefine(&mut st, 0, "eval", nativeValue(&mut st, Native.Fn(Builtin.Eval)))
+    scopeDefine(&mut st, g, "eval", nativeValue(&mut st, Native.Fn(Builtin.Eval)))
     nameGlobalCtor(&mut st, "eval", Builtin.Eval)
     // JSON is a plain object whose methods are native functions
     let json = newObject(&mut st)
     objSet(&mut st, json, "stringify", nativeValue(&mut st, Native.Fn(Builtin.JsonStringify)))
     objSet(&mut st, json, "parse", nativeValue(&mut st, Native.Fn(Builtin.JsonParse)))
     nameNativesOf(&mut st, json)
-    scopeDefine(&mut st, 0, "JSON", JSValue.Obj(json))
+    scopeDefine(&mut st, g, "JSON", JSValue.Obj(json))
     // Math likewise: native-fn methods + numeric constants
     let math = newObject(&mut st)
     objSet(&mut st, math, "floor", nativeValue(&mut st, Native.Fn(Builtin.MathFloor)))
@@ -676,8 +679,8 @@ pub fn setupGlobals(st: &mut Interp) {
             st.objects[math].props[ci].configurable = false
         }
     }
-    scopeDefine(&mut st, 0, "Math", JSValue.Obj(math))
-    scopeDefine(&mut st, 0, "RegExp", nativeValue(&mut st, Native.Fn(Builtin.RegExp)))
+    scopeDefine(&mut st, g, "Math", JSValue.Obj(math))
+    scopeDefine(&mut st, g, "RegExp", nativeValue(&mut st, Native.Fn(Builtin.RegExp)))
     nameGlobalCtor(&mut st, "RegExp", Builtin.RegExp)
     let promiseCtor = newObject(&mut st)
     nameNativesOf(&mut st, promiseCtor)
@@ -694,7 +697,7 @@ pub fn setupGlobals(st: &mut Interp) {
     st.promiseCtorObj = promiseCtor
     objSet(&mut st, promiseCtor, "resolve", nativeValue(&mut st, Native.Fn(Builtin.PromiseResolve)))
     objSet(&mut st, promiseCtor, "reject", nativeValue(&mut st, Native.Fn(Builtin.PromiseReject)))
-    scopeDefine(&mut st, 0, "Promise", JSValue.Obj(promiseCtor))
+    scopeDefine(&mut st, g, "Promise", JSValue.Obj(promiseCtor))
     // Object's statics live in the property bag that belongs to the native id,
     // so reading `Object.keys` as a value and calling `Object.keys(o)` both go
     // through the same place. A standalone object would only serve the call path.
@@ -756,11 +759,11 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(&mut st, objectCtor, "toString", makeBoundMethod(&mut st, JSValue.Undefined, "@@objProtoToString"))
     objSet(&mut st, objectCtor, "valueOf", makeBoundMethod(&mut st, JSValue.Undefined, "valueOf"))
     nameNativesOf(&mut st, objectCtor)
-    scopeDefine(&mut st, 0, "Object", nativeValue(&mut st, Native.Fn(Builtin.ObjectCtor)))
+    scopeDefine(&mut st, g, "Object", nativeValue(&mut st, Native.Fn(Builtin.ObjectCtor)))
     nameGlobalCtor(&mut st, "Object", Builtin.ObjectCtor)
-    scopeDefine(&mut st, 0, "Number", nativeValue(&mut st, Native.Fn(Builtin.Number)))
+    scopeDefine(&mut st, g, "Number", nativeValue(&mut st, Native.Fn(Builtin.Number)))
     nameGlobalCtor(&mut st, "Number", Builtin.Number)
-    scopeDefine(&mut st, 0, "BigInt", nativeValue(&mut st, Native.Fn(Builtin.BigInt)))
+    scopeDefine(&mut st, g, "BigInt", nativeValue(&mut st, Native.Fn(Builtin.BigInt)))
     nameGlobalCtor(&mut st, "BigInt", Builtin.BigInt)
     let stringCtorObj = getNativeProps(&mut st, Native.Fn(Builtin.String))
     objSet(&mut st, stringCtorObj, "fromCharCode", nativeValue(&mut st, Native.Fn(Builtin.StringFromCharCode)))
@@ -801,17 +804,17 @@ pub fn setupGlobals(st: &mut Interp) {
     st.stringCtorProps = stringCtorObj
     st.stringProtoObj = stringProto
     st.stringProtoPristine = true
-    scopeDefine(&mut st, 0, "String", nativeValue(&mut st, Native.Fn(Builtin.String)))
+    scopeDefine(&mut st, g, "String", nativeValue(&mut st, Native.Fn(Builtin.String)))
     nameGlobalCtor(&mut st, "String", Builtin.String)
-    scopeDefine(&mut st, 0, "Boolean", nativeValue(&mut st, Native.Fn(Builtin.Boolean)))
+    scopeDefine(&mut st, g, "Boolean", nativeValue(&mut st, Native.Fn(Builtin.Boolean)))
     nameGlobalCtor(&mut st, "Boolean", Builtin.Boolean)
-    scopeDefine(&mut st, 0, "NaN", JSValue.Number(jsNan()))
-    scopeDefine(&mut st, 0, "Infinity", JSValue.Number(jsInfinity()))
-    scopeDefine(&mut st, 0, "isNaN", nativeValue(&mut st, Native.Fn(Builtin.IsNan)))
-    scopeDefine(&mut st, 0, "gc", nativeValue(&mut st, Native.Fn(Builtin.Gc)))
-    scopeDefine(&mut st, 0, "isFinite", nativeValue(&mut st, Native.Fn(Builtin.IsFinite)))
-    scopeDefine(&mut st, 0, "parseInt", nativeValue(&mut st, Native.Fn(Builtin.ParseInt)))
-    scopeDefine(&mut st, 0, "parseFloat", nativeValue(&mut st, Native.Fn(Builtin.ParseFloat)))
+    scopeDefine(&mut st, g, "NaN", JSValue.Number(jsNan()))
+    scopeDefine(&mut st, g, "Infinity", JSValue.Number(jsInfinity()))
+    scopeDefine(&mut st, g, "isNaN", nativeValue(&mut st, Native.Fn(Builtin.IsNan)))
+    scopeDefine(&mut st, g, "gc", nativeValue(&mut st, Native.Fn(Builtin.Gc)))
+    scopeDefine(&mut st, g, "isFinite", nativeValue(&mut st, Native.Fn(Builtin.IsFinite)))
+    scopeDefine(&mut st, g, "parseInt", nativeValue(&mut st, Native.Fn(Builtin.ParseInt)))
+    scopeDefine(&mut st, g, "parseFloat", nativeValue(&mut st, Native.Fn(Builtin.ParseFloat)))
     // The shared iterator prototype. The prelude installs the helper methods
     // (map/filter/take/...) onto this one object; every iterator the engine
     // builds points its proto here, so helpers work on array iterators too.
@@ -822,12 +825,12 @@ pub fn setupGlobals(st: &mut Interp) {
     // rejecting a non-object argument, which is what a null third link is.
     st.objects[iterProto].proto = st.objectProtoObj
     st.iterProtoObj = iterProto
-    scopeDefine(&mut st, 0, "__iteratorProto", JSValue.Obj(iterProto))
+    scopeDefine(&mut st, g, "__iteratorProto", JSValue.Obj(iterProto))
     // globalThis: a real object whose properties ARE the global bindings
     let globalObj = newObject(&mut st)
     st.objects[globalObj].isGlobal = true
-    scopeDefine(&mut st, 0, "globalThis", JSValue.Obj(globalObj))
-    scopeDefine(&mut st, 0, "Symbol", nativeValue(&mut st, Native.Fn(Builtin.Symbol)))
+    scopeDefine(&mut st, g, "globalThis", JSValue.Obj(globalObj))
+    scopeDefine(&mut st, g, "Symbol", nativeValue(&mut st, Native.Fn(Builtin.Symbol)))
     nameGlobalCtor(&mut st, "Symbol", Builtin.Symbol)
     let symbolCtorObj = getNativeProps(&mut st, Native.Fn(Builtin.Symbol))
     // the well-known symbols: non-writable, non-enumerable, non-configurable
@@ -888,7 +891,7 @@ pub fn setupGlobals(st: &mut Interp) {
     st.dateCtorProps = dateCtorObj
     // only now, so the setup writes above do not count as a user touch
     st.dateProtoPristine = true
-    scopeDefine(&mut st, 0, "Date", nativeValue(&mut st, Native.Fn(Builtin.Date)))
+    scopeDefine(&mut st, g, "Date", nativeValue(&mut st, Native.Fn(Builtin.Date)))
     nameGlobalCtor(&mut st, "Date", Builtin.Date)
     // Function.prototype.{call,apply,bind} are bound-method values: invoking
     // .call on them re-targets to whatever function is passed as the receiver,
@@ -919,49 +922,49 @@ pub fn setupGlobals(st: &mut Interp) {
     objDefineProtoAttr(&mut st, functionCtorBag, "prototype", JSValue.Obj(functionProto))
     objSet(&mut st, functionProto, "constructor", nativeValue(&mut st, Native.Fn(Builtin.FunctionCtor)))
     objSetNonEnumerable(&mut st, functionProto, "constructor")
-    scopeDefine(&mut st, 0, "Function", nativeValue(&mut st, Native.Fn(Builtin.FunctionCtor)))
+    scopeDefine(&mut st, g, "Function", nativeValue(&mut st, Native.Fn(Builtin.FunctionCtor)))
     nameGlobalCtor(&mut st, "Function", Builtin.FunctionCtor)
-    scopeDefine(&mut st, 0, "setTimeout", nativeValue(&mut st, Native.Fn(Builtin.SetTimeout)))
-    scopeDefine(&mut st, 0, "setInterval", nativeValue(&mut st, Native.Fn(Builtin.SetInterval)))
-    scopeDefine(&mut st, 0, "clearTimeout", nativeValue(&mut st, Native.Fn(Builtin.ClearTimer)))
-    scopeDefine(&mut st, 0, "clearInterval", nativeValue(&mut st, Native.Fn(Builtin.ClearTimer)))
-    scopeDefine(&mut st, 0, "clearImmediate", nativeValue(&mut st, Native.Fn(Builtin.ClearTimer)))
-    scopeDefine(&mut st, 0, "setImmediate", nativeValue(&mut st, Native.Fn(Builtin.SetImmediate)))
-    scopeDefine(&mut st, 0, "__timerRef", nativeValue(&mut st, Native.Fn(Builtin.TimerRef)))
-    scopeDefine(&mut st, 0, "__jsonStringifyFast", nativeValue(&mut st, Native.Fn(Builtin.JsonStringifyFast)))
-    scopeDefine(&mut st, 0, "queueMicrotask", nativeValue(&mut st, Native.Fn(Builtin.QueueMicrotaskJs)))
+    scopeDefine(&mut st, g, "setTimeout", nativeValue(&mut st, Native.Fn(Builtin.SetTimeout)))
+    scopeDefine(&mut st, g, "setInterval", nativeValue(&mut st, Native.Fn(Builtin.SetInterval)))
+    scopeDefine(&mut st, g, "clearTimeout", nativeValue(&mut st, Native.Fn(Builtin.ClearTimer)))
+    scopeDefine(&mut st, g, "clearInterval", nativeValue(&mut st, Native.Fn(Builtin.ClearTimer)))
+    scopeDefine(&mut st, g, "clearImmediate", nativeValue(&mut st, Native.Fn(Builtin.ClearTimer)))
+    scopeDefine(&mut st, g, "setImmediate", nativeValue(&mut st, Native.Fn(Builtin.SetImmediate)))
+    scopeDefine(&mut st, g, "__timerRef", nativeValue(&mut st, Native.Fn(Builtin.TimerRef)))
+    scopeDefine(&mut st, g, "__jsonStringifyFast", nativeValue(&mut st, Native.Fn(Builtin.JsonStringifyFast)))
+    scopeDefine(&mut st, g, "queueMicrotask", nativeValue(&mut st, Native.Fn(Builtin.QueueMicrotaskJs)))
     // not a JS global in node; lib/util.js reads it off globalThis so util.inspect
     // and console.log render identically
-    scopeDefine(&mut st, 0, "__inspect", nativeValue(&mut st, Native.Fn(Builtin.Inspect)))
-    scopeDefine(&mut st, 0, "__isConstructor", nativeValue(&mut st, Native.Fn(Builtin.IsConstructor)))
-    scopeDefine(&mut st, 0, "__markNotConstructor", nativeValue(&mut st, Native.Fn(Builtin.MarkNotCtor)))
+    scopeDefine(&mut st, g, "__inspect", nativeValue(&mut st, Native.Fn(Builtin.Inspect)))
+    scopeDefine(&mut st, g, "__isConstructor", nativeValue(&mut st, Native.Fn(Builtin.IsConstructor)))
+    scopeDefine(&mut st, g, "__markNotConstructor", nativeValue(&mut st, Native.Fn(Builtin.MarkNotCtor)))
     // The raw "wrap a value in a resolved promise" primitive, exposed under its
     // own name so the prelude can build the public Promise.resolve on top of it.
     // Capturing `Promise.resolve` from JS does not work: reading a method off a
     // native constructor yields a late-bound dispatcher that looks the name up
     // again at call time, so a wrapper calling the captured value re-entered
     // itself forever.
-    scopeDefine(&mut st, 0, "__promiseResolveValue", nativeValue(&mut st, Native.Fn(Builtin.PromiseResolve)))
-    scopeDefine(&mut st, 0, "encodeURIComponent", nativeValue(&mut st, Native.Fn(Builtin.EncodeUriComponent)))
-    scopeDefine(&mut st, 0, "decodeURIComponent", nativeValue(&mut st, Native.Fn(Builtin.DecodeUriComponent)))
-    scopeDefine(&mut st, 0, "encodeURI", nativeValue(&mut st, Native.Fn(Builtin.EncodeUri)))
-    scopeDefine(&mut st, 0, "decodeURI", nativeValue(&mut st, Native.Fn(Builtin.DecodeUri)))
-    scopeDefine(&mut st, 0, "ArrayBuffer", nativeValue(&mut st, Native.Fn(Builtin.ArrayBuffer)))
+    scopeDefine(&mut st, g, "__promiseResolveValue", nativeValue(&mut st, Native.Fn(Builtin.PromiseResolve)))
+    scopeDefine(&mut st, g, "encodeURIComponent", nativeValue(&mut st, Native.Fn(Builtin.EncodeUriComponent)))
+    scopeDefine(&mut st, g, "decodeURIComponent", nativeValue(&mut st, Native.Fn(Builtin.DecodeUriComponent)))
+    scopeDefine(&mut st, g, "encodeURI", nativeValue(&mut st, Native.Fn(Builtin.EncodeUri)))
+    scopeDefine(&mut st, g, "decodeURI", nativeValue(&mut st, Native.Fn(Builtin.DecodeUri)))
+    scopeDefine(&mut st, g, "ArrayBuffer", nativeValue(&mut st, Native.Fn(Builtin.ArrayBuffer)))
     nameGlobalCtor(&mut st, "ArrayBuffer", Builtin.ArrayBuffer)
-    scopeDefine(&mut st, 0, "DataView", nativeValue(&mut st, Native.Fn(Builtin.DataView)))
+    scopeDefine(&mut st, g, "DataView", nativeValue(&mut st, Native.Fn(Builtin.DataView)))
     nameGlobalCtor(&mut st, "DataView", Builtin.DataView)
     var tk: i64 = 0
     while tk <= TA_MAX {
-        scopeDefine(&mut st, 0, taName(tk), nativeValue(&mut st, Native.TypedArrayCtor(tk)))
+        scopeDefine(&mut st, g, taName(tk), nativeValue(&mut st, Native.TypedArrayCtor(tk)))
         tk = tk + 1
     }
-    scopeDefine(&mut st, 0, "Map", nativeValue(&mut st, Native.Fn(Builtin.Map)))
+    scopeDefine(&mut st, g, "Map", nativeValue(&mut st, Native.Fn(Builtin.Map)))
     nameGlobalCtor(&mut st, "Map", Builtin.Map)
-    scopeDefine(&mut st, 0, "WeakMap", nativeValue(&mut st, Native.Fn(Builtin.WeakMap)))
+    scopeDefine(&mut st, g, "WeakMap", nativeValue(&mut st, Native.Fn(Builtin.WeakMap)))
     nameGlobalCtor(&mut st, "WeakMap", Builtin.WeakMap)
-    scopeDefine(&mut st, 0, "Set", nativeValue(&mut st, Native.Fn(Builtin.Set)))
+    scopeDefine(&mut st, g, "Set", nativeValue(&mut st, Native.Fn(Builtin.Set)))
     nameGlobalCtor(&mut st, "Set", Builtin.Set)
-    scopeDefine(&mut st, 0, "WeakSet", nativeValue(&mut st, Native.Fn(Builtin.WeakSet)))
+    scopeDefine(&mut st, g, "WeakSet", nativeValue(&mut st, Native.Fn(Builtin.WeakSet)))
     nameGlobalCtor(&mut st, "WeakSet", Builtin.WeakSet)
     // Array.prototype.<m> as a bound-method value, so the ES5 idiom
     // Array.prototype.slice.call(arguments) resolves
@@ -1010,9 +1013,9 @@ pub fn setupGlobals(st: &mut Interp) {
     st.taProtoPristine = true
     objSet(&mut st, arrayCtor, "isArray", nativeValue(&mut st, Native.Fn(Builtin.ArrayIsArray)))
     objSet(&mut st, arrayCtor, "from", nativeValue(&mut st, Native.Fn(Builtin.ArrayFrom)))
-    scopeDefine(&mut st, 0, "Array", JSValue.Obj(arrayCtor))
-    scopeDefine(&mut st, 0, "__callFrames", nativeValue(&mut st, Native.Fn(Builtin.CallFrames)))
-    scopeDefine(&mut st, 0, "__byteLength", nativeValue(&mut st, Native.Fn(Builtin.ByteLength)))
+    scopeDefine(&mut st, g, "Array", JSValue.Obj(arrayCtor))
+    scopeDefine(&mut st, g, "__callFrames", nativeValue(&mut st, Native.Fn(Builtin.CallFrames)))
+    scopeDefine(&mut st, g, "__byteLength", nativeValue(&mut st, Native.Fn(Builtin.ByteLength)))
     let consoleObj = newObject(&mut st)
     objSet(&mut st, consoleObj, "log", nativeValue(&mut st, Native.Fn(Builtin.ConsoleLog)))
     objSet(&mut st, consoleObj, "info", nativeValue(&mut st, Native.Fn(Builtin.ConsoleLog)))
@@ -1021,8 +1024,8 @@ pub fn setupGlobals(st: &mut Interp) {
     objSet(&mut st, consoleObj, "dir", nativeValue(&mut st, Native.Fn(Builtin.ConsoleLog)))
     objSet(&mut st, consoleObj, "warn", nativeValue(&mut st, Native.Fn(Builtin.ConsoleError)))
     objSet(&mut st, consoleObj, "error", nativeValue(&mut st, Native.Fn(Builtin.ConsoleError)))
-    scopeDefine(&mut st, 0, "console", JSValue.Obj(consoleObj))
-    scopeDefine(&mut st, 0, "Proxy", nativeValue(&mut st, Native.Fn(Builtin.Proxy)))
+    scopeDefine(&mut st, g, "console", JSValue.Obj(consoleObj))
+    scopeDefine(&mut st, g, "Proxy", nativeValue(&mut st, Native.Fn(Builtin.Proxy)))
     nameGlobalCtor(&mut st, "Proxy", Builtin.Proxy)
     let proxyBag = getNativeProps(&mut st, Native.Fn(Builtin.Proxy))
     // Proxy.revocable is writable, unlike the `length`/`name` that
@@ -1032,14 +1035,14 @@ pub fn setupGlobals(st: &mut Interp) {
     let revocableBag = getNativeProps(&mut st, Native.Fn(Builtin.ProxyRevocable))
     objDefineBuiltinAttr(&mut st, revocableBag, "length", JSValue.Number(2.0))
     objDefineBuiltinAttr(&mut st, revocableBag, "name", JSValue.Str("revocable"))
-    scopeDefine(&mut st, 0, "__reflectDefineProperty", nativeValue(&mut st, Native.Fn(Builtin.ReflectDefineProp)))
-    scopeDefine(&mut st, 0, "__reflectSet", nativeValue(&mut st, Native.Fn(Builtin.ReflectSet)))
-    scopeDefine(&mut st, 0, "__reflectGet", nativeValue(&mut st, Native.Fn(Builtin.ReflectGet)))
-    scopeDefine(&mut st, 0, "__reflectSetPrototypeOf", nativeValue(&mut st, Native.Fn(Builtin.ReflectSetProto)))
-    scopeDefine(&mut st, 0, "__reflectDelete", nativeValue(&mut st, Native.Fn(Builtin.ReflectDelete)))
-    scopeDefine(&mut st, 0, "__reflectPreventExtensions", nativeValue(&mut st, Native.Fn(Builtin.ReflectPreventExt)))
-    scopeDefine(&mut st, 0, "__construct", nativeValue(&mut st, Native.Fn(Builtin.ReflectConstruct)))
-    scopeDefine(&mut st, 0, "__reflectOwnKeys", nativeValue(&mut st, Native.Fn(Builtin.ReflectOwnKeys)))
+    scopeDefine(&mut st, g, "__reflectDefineProperty", nativeValue(&mut st, Native.Fn(Builtin.ReflectDefineProp)))
+    scopeDefine(&mut st, g, "__reflectSet", nativeValue(&mut st, Native.Fn(Builtin.ReflectSet)))
+    scopeDefine(&mut st, g, "__reflectGet", nativeValue(&mut st, Native.Fn(Builtin.ReflectGet)))
+    scopeDefine(&mut st, g, "__reflectSetPrototypeOf", nativeValue(&mut st, Native.Fn(Builtin.ReflectSetProto)))
+    scopeDefine(&mut st, g, "__reflectDelete", nativeValue(&mut st, Native.Fn(Builtin.ReflectDelete)))
+    scopeDefine(&mut st, g, "__reflectPreventExtensions", nativeValue(&mut st, Native.Fn(Builtin.ReflectPreventExt)))
+    scopeDefine(&mut st, g, "__construct", nativeValue(&mut st, Native.Fn(Builtin.ReflectConstruct)))
+    scopeDefine(&mut st, g, "__reflectOwnKeys", nativeValue(&mut st, Native.Fn(Builtin.ReflectOwnKeys)))
 }
 
 pub fn symSpeciesKey(): string {

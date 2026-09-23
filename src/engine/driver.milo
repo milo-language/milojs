@@ -105,7 +105,7 @@ pub fn evalSourceValue(src: &string, prog: &mut Prog, st: &mut Interp): JSValue 
         return throwErr(&mut st, "SyntaxError", "failed to parse script")
     }
 
-    hoistBlock(prog, top, &mut st, 0)
+    hoistBlock(prog, top, &mut st, st.globalScope)
     var completion = JSValue.Undefined
     var i: i64 = 0
     let n = prog.blocks[top.index].len()
@@ -114,14 +114,14 @@ pub fn evalSourceValue(src: &string, prog: &mut Prog, st: &mut Interp): JSValue 
         if i == n - 1 {
             match getStmt(prog, stmtIdx) {
                 Stmt.ExprStmt(e) => {
-                    completion = evalExpr(prog, e, &mut st, 0)
+                    completion = evalExpr(prog, e, &mut st, st.globalScope)
                 }
                 _ => {
-                    execStmt(prog, stmtIdx, &mut st, 0)
+                    execStmt(prog, stmtIdx, &mut st, st.globalScope)
                 }
             }
         } else {
-            execStmt(prog, stmtIdx, &mut st, 0)
+            execStmt(prog, stmtIdx, &mut st, st.globalScope)
         }
         i = i + 1
     }
@@ -153,8 +153,8 @@ fn runSource(src: &string, st: &mut Interp): i32 {
     }
     // top-level code has no FuncDef to carry its strictness, so seed it here
     st.strict = prog.progStrict
-    hoistBlock(prog, top, &mut st, 0)
-    execBlock(prog, top, &mut st, 0)
+    hoistBlock(prog, top, &mut st, st.globalScope)
+    execBlock(prog, top, &mut st, st.globalScope)
     // the script only schedules callbacks; without draining, every .then handler
     // and timer queued by it would be silently dropped
     if !st.throwing {

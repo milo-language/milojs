@@ -2043,7 +2043,7 @@ pub fn objHas(st: &Interp, o: i64, key: &string): bool {
     // read and write. Own-key QUERIES have to mirror it too, or
     // `hasOwnProperty(globalThis, "$DONE")` denies a global that is plainly
     // there (test262's async harness refuses to run on that answer).
-    if st.objects[o].isGlobal && scopeHasOwn(st, 0, key) {
+    if st.objects[o].isGlobal && scopeHasOwn(st, st.globalScope, key) {
         return true
     }
     var i: i64 = 0
@@ -2879,7 +2879,8 @@ pub fn scopeTryLookup(st: &Interp, scope: i64, name: &string): Option<JSValue> {
 // `eval(x)` into an ordinary call.
 pub fn scopeHasBelowGlobal(st: &Interp, scope: i64, name: &string): bool {
     var s = scope
-    while s > 0 {
+    // a global scope is the one scope with no parent, in every realm
+    while s >= 0 && st.scopes[s].parent >= 0 {
         var i = st.scopes[s].vars.len() - 1
         while i >= 0 {
             if st.scopes[s].vars[i].name == name {
@@ -2890,6 +2891,19 @@ pub fn scopeHasBelowGlobal(st: &Interp, scope: i64, name: &string): bool {
         s = st.scopes[s].parent
     }
     return false
+}
+
+// The last scope on `scope`'s parent chain: the global scope of the realm the
+// chain was created in. The running realm's when there is no chain at all.
+pub fn scopeChainRoot(st: &Interp, scope: i64): i64 {
+    if scope < 0 {
+        return st.globalScope
+    }
+    var s = scope
+    while st.scopes[s].parent >= 0 {
+        s = st.scopes[s].parent
+    }
+    return s
 }
 
 pub fn scopeHas(st: &Interp, scope: i64, name: &string): bool {
@@ -2971,7 +2985,11 @@ pub fn scopeAssign(st: &mut Interp, scope: i64, name: &string, value: JSValue) {
         st.thrownValue = makeError(&mut st, "ReferenceError", name.clone() + " is not defined")
         return
     }
-    st.scopes[0].vars.push(Binding {
+    // the global scope of the realm the ASSIGNING code belongs to, which is the
+    // root of its chain: a sloppy function from another realm creates the
+    // global in its own realm, not in whichever one called it
+    let root = scopeChainRoot(st, scope)
+    st.scopes[root].vars.push(Binding {
         name: name.clone(), value: value
     }
     )

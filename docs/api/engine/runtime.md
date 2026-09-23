@@ -655,6 +655,15 @@ the whole Binding dropped the old name string and moved an identical one back
 in, when a match on `name` already proves the stored name is correct.
 Worth ~5-10% on every bench in bench/ (measured against 5b377bd).
 
+### `scopeChainRoot`
+
+```milo
+pub fn scopeChainRoot(st: &Interp, scope: i64): i64
+```
+
+The last scope on `scope`'s parent chain: the global scope of the realm the
+chain was created in. The running realm's when there is no chain at all.
+
 ### `scopeDefine`
 
 ```milo

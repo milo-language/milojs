@@ -179,7 +179,7 @@ fn setupNodeGlobals(st: &mut Interp, entryPath: string, scriptArgs: &Vec<string>
     objSet(&mut st, stdinObj, "isTTY", JSValue.Bool(false))
     objSet(&mut st, proc, "stdin", JSValue.Obj(stdinObj))
 
-    scopeDefine(&mut st, 0, "process", JSValue.Obj(proc))
+    scopeDefine(&mut st, st.globalScope, "process", JSValue.Obj(proc))
 
     // `global` is node's alias for the global object, so it must BE the global
     // object. This used to bind a bare {} to both names, overwriting the real
@@ -191,8 +191,8 @@ fn setupNodeGlobals(st: &mut Interp, entryPath: string, scriptArgs: &Vec<string>
     // under the engine.
     let glob = newObject(&mut st)
     st.objects[glob].isGlobal = true
-    scopeDefine(&mut st, 0, "global", JSValue.Obj(glob))
-    scopeDefine(&mut st, 0, "globalThis", JSValue.Obj(glob))
+    scopeDefine(&mut st, st.globalScope, "global", JSValue.Obj(glob))
+    scopeDefine(&mut st, st.globalScope, "globalThis", JSValue.Obj(glob))
 }
 
 // KEY=VALUE lines from a file into process.env, matching node's --env-file.
@@ -200,7 +200,7 @@ fn setupNodeGlobals(st: &mut Interp, entryPath: string, scriptArgs: &Vec<string>
 fn loadEnvFile(st: &mut Interp, envPath: &string) {
     match readFile(envPath.clone()) {
         Result.Ok(text) => {
-            let procVal = scopeLookup(st, 0, "process")
+            let procVal = scopeLookup(st, st.globalScope, "process")
             let procObj = objHandle(procVal)
             if procObj < 0 {
                 return
@@ -361,17 +361,17 @@ fn main(): i32 {
         return 1
     }
     if enginePreludeIdx >= 0 {
-        hoistBlock(gProg, gInterp.modBlocks[enginePreludeIdx], &mut gInterp, 0)
-        execBlock(gProg, gInterp.modBlocks[enginePreludeIdx], &mut gInterp, 0)
+        hoistBlock(gProg, gInterp.modBlocks[enginePreludeIdx], &mut gInterp, gInterp.globalScope)
+        execBlock(gProg, gInterp.modBlocks[enginePreludeIdx], &mut gInterp, gInterp.globalScope)
     }
     if temporalIdx >= 0 {
-        hoistBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, 0)
-        execBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, 0)
+        hoistBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, gInterp.globalScope)
+        execBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, gInterp.globalScope)
     }
     if preludeIdx >= 0 {
         // run in global scope, so its declarations become globals
-        hoistBlock(gProg, gInterp.modBlocks[preludeIdx], &mut gInterp, 0)
-        execBlock(gProg, gInterp.modBlocks[preludeIdx], &mut gInterp, 0)
+        hoistBlock(gProg, gInterp.modBlocks[preludeIdx], &mut gInterp, gInterp.globalScope)
+        execBlock(gProg, gInterp.modBlocks[preludeIdx], &mut gInterp, gInterp.globalScope)
     }
     markBuiltinGlobals(&mut gInterp)
     // Node runs NOTHING when the source will not parse, and exits 1. Running the
@@ -419,7 +419,7 @@ fn main(): i32 {
     // `process.exitCode = N` sets the status of an OTHERWISE clean exit. Programs
     // use it to fail without cutting the event loop short the way process.exit()
     // does, so ignoring it turned a deliberate failure into a success.
-    if let Option.Some(pv) = scopeTryLookup(gInterp, 0, "process") {
+    if let Option.Some(pv) = scopeTryLookup(gInterp, gInterp.globalScope, "process") {
         if let JSValue.Obj(ph) = pv {
             let ec = getMember(gInterp, ph, "exitCode")
             if let JSValue.Number(n) = ec {

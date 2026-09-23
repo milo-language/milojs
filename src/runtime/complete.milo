@@ -162,10 +162,10 @@ fn cmplResolveBase(st: &Interp, base: &string): JSValue {
                 return JSValue.Undefined
             }
             if first {
-                if !scopeHas(st, 0, seg) {
+                if !scopeHas(st, st.globalScope, seg) {
                     return JSValue.Undefined
                 }
-                cur = scopeLookup(st, 0, seg)
+                cur = scopeLookup(st, st.globalScope, seg)
                 first = false
             } else {
                 match cur {
@@ -252,12 +252,12 @@ fn cmplMembers(st: &Interp, base: &string, prefix: &string, out: &mut Vec<string
 // Bindings past `builtinCount` were defined by this session — setupGlobals only
 // ever appends, so the boundary index taken at REPL start stays valid.
 fn cmplGlobals(st: &Interp, prefix: &string, out: &mut Vec<string>, kinds: &mut Vec<i64>, builtinCount: i64) {
-    for i in 0..st.scopes[0].vars.len() {
+    for i in 0..st.scopes[st.globalScope].vars.len() {
         var kind = CMPL_BUILTIN
         if i >= builtinCount {
             kind = CMPL_SESSION
         }
-        cmplAdd(&mut out, &mut kinds, st.scopes[0].vars[i].name, prefix, kind)
+        cmplAdd(&mut out, &mut kinds, st.scopes[st.globalScope].vars[i].name, prefix, kind)
     }
     cmplAddAll(&mut out, &mut kinds, cmplPseudoGlobals(), prefix, CMPL_BUILTIN)
     cmplAddAll(&mut out, &mut kinds, cmplKeywords(), prefix, CMPL_KEYWORD)

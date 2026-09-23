@@ -150,15 +150,15 @@ fn main(): i32 {
             // global scope so its declarations become globals
             let preludeIdx = preloadGraph("builtin:engine-prelude", &mut gProg, &mut gInterp)
             if preludeIdx >= 0 {
-                hoistBlock(gProg, gInterp.modBlocks[preludeIdx], &mut gInterp, 0)
-                execBlock(gProg, gInterp.modBlocks[preludeIdx], &mut gInterp, 0)
+                hoistBlock(gProg, gInterp.modBlocks[preludeIdx], &mut gInterp, gInterp.globalScope)
+                execBlock(gProg, gInterp.modBlocks[preludeIdx], &mut gInterp, gInterp.globalScope)
             }
             // Temporal, in its own file because it is large and self-contained;
             // same global scope, loaded after the prelude it depends on
             let temporalIdx = preloadGraph("builtin:temporal", &mut gProg, &mut gInterp)
             if temporalIdx >= 0 {
-                hoistBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, 0)
-                execBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, 0)
+                hoistBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, gInterp.globalScope)
+                execBlock(gProg, gInterp.modBlocks[temporalIdx], &mut gInterp, gInterp.globalScope)
             }
             markBuiltinGlobals(&mut gInterp)
             if gInterp.throwing {
@@ -255,8 +255,8 @@ fn main(): i32 {
                 if topBlock.index >= 0 {
                     // top-level code has no FuncDef to carry its strictness
                     gInterp.strict = gProg.progStrict
-                    hoistBlock(gProg, topBlock, &mut gInterp, 0)
-                    execBlock(gProg, topBlock, &mut gInterp, 0)
+                    hoistBlock(gProg, topBlock, &mut gInterp, gInterp.globalScope)
+                    execBlock(gProg, topBlock, &mut gInterp, gInterp.globalScope)
                 } else {
                     runModule(gProg, entryIdx, &mut gInterp)
                 }

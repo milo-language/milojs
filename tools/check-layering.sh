@@ -191,7 +191,7 @@ fi
 # An unclassified one fails: adding a host native to the engine's bootstrap should
 # cost a line and an argument, not nothing.
 BOOTSTRAP="src/engine/bootstrap.milo"
-globals=$(grep -oE 'scopeDefine\(&mut st, 0, "__[A-Za-z0-9_]+"' "$BOOTSTRAP" \
+globals=$(grep -oE 'scopeDefine\(&mut st, g, "__[A-Za-z0-9_]+"' "$BOOTSTRAP" \
     | sed -E 's/.*"(.*)"/\1/' | sort -u)
 n_globals=$(printf '%s' "$globals" | grep -c . )
 if [ "$n_globals" -lt 10 ]; then

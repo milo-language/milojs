@@ -1100,7 +1100,7 @@ fn napiNewBufferView(length: i64, source: *u8): i64 {
 }
 
 fn napiBufferPrototype(): i64 {
-    let bufCtor = scopeLookup(gInterp, 0, "Buffer")
+    let bufCtor = scopeLookup(gInterp, gInterp.globalScope, "Buffer")
     if funcHandle(bufCtor) < 0 {
         return -1
     }
