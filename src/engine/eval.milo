@@ -5538,7 +5538,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 // cluster worker starts, would hang the parent forever.
                 match buildChildCommand(program, sargs, senv).spawn() {
                     Result.Ok(child) => {
-                        childPid = child.pid as i64
+                        childPid = child.pid() as i64
                         spawnOsThreadDetached(move(): void => {
                             let r = readChildToCompletion(child)
                             let _s = chForTask.send(r)
