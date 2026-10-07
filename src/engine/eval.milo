@@ -5131,14 +5131,12 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         if idx >= 0 && idx < st.connOpen.len() {
             if st.connOpen[idx] {
-                // Overwrite the slot so the stream's Drop closes the fd NOW.
-                // Slots are append-only, so "closed when the slot is reused"
-                // meant never: the peer waiting for EOF (a reader draining to
-                // connection-close, e.g. our own doHttpFetch) blocked forever,
-                // and every served request leaked an fd. fd 0 drops as a no-op.
-                st.conns[idx] = TcpStream {
-                    fd: 0
-                }
+                // Close the stream NOW; its later Drop is a no-op. Slots are
+                // append-only, so "closed when the slot is reused" meant never:
+                // the peer waiting for EOF (a reader draining to connection-close,
+                // e.g. our own doHttpFetch) blocked forever, and every served
+                // request leaked an fd.
+                st.conns[idx].close()
             }
             st.connOpen[idx] = false
         }
@@ -5816,13 +5814,17 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         var one: i32 = 1
         setsockopt(fd, solSocket(), soReuseaddr(), one, 4 as u32)
         var sa = makeSockaddr(uport as u16, uaddr)
-        if bindIn(fd, sa) < 0 as i32 {
+        // A UDP socket is a bare number on the JS side, so the raw-fd calls are ours to
+        // vouch for: `fd` was created just above and nothing else holds it.
+        var bound: i32 = -1
+        unsafe { bound = bindIn(fd, sa) }
+        if bound < 0 as i32 {
             close(fd)
             return JSValue.Number(0.0 - 1.0)
         }
         // Non-blocking, so the event loop polls for datagrams instead of parking
         // on one and starving every timer behind it.
-        setNonblocking(fd)
+        unsafe { setNonblocking(fd) }
         return JSValue.Number(fd as f64)
     }
     if id == Builtin.UdpSend {
@@ -5889,7 +5891,8 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if argVals.len() < 1 {
             return JSValue.Number(0.0 - 1.0)
         }
-        return JSValue.Number(getSockPort(toNum(argVals[0]) as i32) as f64)
+        // The JS side holds the UDP socket as a number (see UdpBind).
+        unsafe { return JSValue.Number(getSockPort(toNum(argVals[0]) as i32) as f64) }
     }
     if id == Builtin.StatInfo {
         // __statSync(path, lstat) -> { size, mode, isDir, isFile, isSymlink } or
