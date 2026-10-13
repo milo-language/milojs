@@ -1094,7 +1094,8 @@ pub struct Interp {
     unhandledRejects: Vec<i64>,
     // nested-drain await budget in ms (MILOJS_AWAIT_BUDGET_MS overrides)
     awaitBudgetMs: f64,
-    listeners: Vec<TcpListener>,
+    // None while a blocking accept has the listener out of its slot (see TcpAccept).
+    listeners: Vec<Option<TcpListener>>,
     conns: Vec<TcpStream>,
     connOpen: Vec<bool>,
     // Open sqlite databases and prepared statements, addressed by index from JS

@@ -65,7 +65,7 @@ from "../runtime/modules" import {
     dirOf, resolveSpec, findModule, relativizeToCwd, loadModuleLazily
 }
 from "std/os" import {
-    exit, readFd, read, write, open, close, lseek, fsync, ftruncate, fchmod,
+    exit, readFd, writeFd, read, write, open, close, lseek, fsync, ftruncate, fchmod,
     socket, bindIn, setsockopt, getSockPort, ntohs, fflush, kill
 }
 from "std/deflate" import {
@@ -103,7 +103,7 @@ from "std/sync" import {
     Channel
 }
 from "std/net" import {
-    TcpListener, TcpStream
+    TcpListener, TcpStream, NetError
 }
 from "std/sqlite" import {
     Database, Statement, dbOpen, dbClose, dbExec, dbQuery, dbStep, dbColumnCount,
@@ -4888,7 +4888,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         match TcpListener.bind(port as u16) {
             Result.Ok(l) => {
-                st.listeners.push(l)
+                st.listeners.push(Option.Some(l))
                 return JSValue.Number((st.listeners.len() - 1) as f64)
             }
             Result.Err(_e) => {
@@ -4914,19 +4914,27 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if idx < 0 || idx >= st.listeners.len() {
             return JSValue.Number(0.0 - 1.0)
         }
+        var accepted: Result<TcpStream, NetError> = Result.Err(NetError.Other("listener closed"))
         if mayBlock {
-            match st.listeners[idx].accept() {
-                Result.Ok(conn) => {
-                    st.conns.push(conn)
-                    st.connOpen.push(true)
-                    return JSValue.Number((st.conns.len() - 1) as f64)
+            // The blocking accept parks this task, and another task may push to
+            // st.listeners meanwhile and move its buffer, so the listener must not be a
+            // receiver borrowed from that buffer across the park. It leaves its slot for
+            // the wait (the slot reads as closed) and goes back after.
+            let taken = replace(st.listeners[idx], Option.None)
+            match taken {
+                Option.Some(l) => {
+                    accepted = l.accept()
+                    st.listeners[idx] = Option.Some(l)
                 }
-                Result.Err(_e) => {
-                    return JSValue.Number(0.0 - 1.0)
-                }
+                Option.None => {}
+            }
+        } else {
+            match st.listeners[idx] {
+                Option.Some(l) => { accepted = l.acceptNb() }
+                Option.None => {}
             }
         }
-        match st.listeners[idx].acceptNb() {
+        match accepted {
             Result.Ok(conn) => {
                 st.conns.push(conn)
                 st.connOpen.push(true)
@@ -5061,7 +5069,10 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if idx < 0 || idx >= st.listeners.len() {
             return JSValue.Number(0.0 - 1.0)
         }
-        return JSValue.Number(st.listeners[idx].port() as f64)
+        match st.listeners[idx] {
+            Option.Some(l) => { return JSValue.Number(l.port() as f64) }
+            Option.None => { return JSValue.Number(0.0 - 1.0) }
+        }
     }
     if id == Builtin.TcpConnect {
         var host = "127.0.0.1"
@@ -5091,7 +5102,23 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if idx < 0 || idx >= st.conns.len() || !st.connOpen[idx] {
             return JSValue.Str("")
         }
-        return JSValue.Str(st.conns[idx].recvOnce())
+        // The read parks this task until data arrives, and another task's accept may
+        // push to st.conns meanwhile and move its buffer, so the stream is not a
+        // receiver borrowed from that buffer across the park (st.conns[idx].recvOnce()
+        // was). Only its fd crosses, by value; the stream stays in its slot, so a send
+        // from another task meanwhile still finds it.
+        var got = ""
+        unsafe {
+            let fd = st.conns[idx].rawFd()
+            var buf: [u8; 65536] = [0; 65536]
+            let n = readFd(fd, buf, 65536)
+            var i: i64 = 0
+            while i < n {
+                got.push(buf[i])
+                i = i + 1
+            }
+        }
+        return JSValue.Str(got)
     }
     if id == Builtin.TcpSend {
         var idx: i64 = 0
@@ -5115,13 +5142,10 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
                 data = toStr(argVals[1])
             }
         }
-        match st.conns[idx].send(data) {
-            Result.Ok(_n) => {
-                return JSValue.Bool(true)
-            }
-            Result.Err(_e) => {
-                return JSValue.Bool(false)
-            }
+        // A write parks on a full socket buffer: by the raw fd, as in TcpRecv.
+        unsafe {
+            let fd = st.conns[idx].rawFd()
+            return JSValue.Bool(writeFd(fd, data, data.len) >= 0)
         }
     }
     if id == Builtin.TcpClose {
