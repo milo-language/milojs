@@ -463,6 +463,18 @@ fn compExpr(prog: &Prog, c: &mut Comp, id: ExprId) {
                     reject(&mut c, "objlit-computed-key")
                     return
                 }
+                // `...src` is stored under the reserved key "..." and `__proto__: v`
+                // sets the prototype; assigning either as a plain key built
+                // `{ "...": src }`, which broke every `{ ...def }` in a compiled
+                // function (tRPC's procedure builder threw "undefined is not iterable").
+                if prog.objLits[litIdx.index][i].key == "..." {
+                    reject(&mut c, "objlit-spread")
+                    return
+                }
+                if prog.objLits[litIdx.index][i].isProtoSetter {
+                    reject(&mut c, "objlit-proto-setter")
+                    return
+                }
                 i = i + 1
             }
             emitOp(&mut c, Op.NewObj, 0)
