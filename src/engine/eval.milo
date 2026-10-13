@@ -3,7 +3,7 @@
 // execution returns a Flow so `return` can unwind out of nested blocks.
 
 from "../runtime/host" import {
-    doHttpFetch, buildChildCommand, readChildToCompletion, sqliteDbIdx, sqliteStmtIdx, parseDottedQuad, absolutePathOf
+    doHttpFetch, buildChildCommand, readChildToCompletion, sqliteDbIdx, sqliteStmtIdx, sqliteDbHandle, sqliteStmtHandle, parseDottedQuad, absolutePathOf
 }
 from "./bytecode" import {
     tryRunFor, bodyChunkOf, chunkUsesArguments, runChunk, runChunkNumeric, chunkIsNumeric
@@ -5148,7 +5148,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         match dbOpen(toStr(argVals[0])) {
             Result.Ok(db) => {
-                st.sqliteDbs.push(db)
+                st.sqliteDbs.push(Option.Some(db))
                 st.sqliteDbLive.push(true)
                 return JSValue.Number((st.sqliteDbs.len() - 1) as f64)
             }
@@ -5171,12 +5171,18 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         var i: i64 = 0
         while i < st.sqliteStmts.len() {
             if st.sqliteStmtLive[i] && st.sqliteStmtDb[i] == d {
-                dbFinalize(st.sqliteStmts[i])
+                match replace(st.sqliteStmts[i], Option.None) {
+                    Option.Some(stmt) => dbFinalize(stmt),
+                    Option.None => {},
+                }
                 st.sqliteStmtLive[i] = false
             }
             i = i + 1
         }
-        dbClose(st.sqliteDbs[d])
+        match replace(st.sqliteDbs[d], Option.None) {
+            Option.Some(db) => dbClose(db),
+            Option.None => {},
+        }
         st.sqliteDbLive[d] = false
         return JSValue.Undefined
     }
@@ -5188,7 +5194,12 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if d < 0 {
             return JSValue.Number(0.0 - 1.0)
         }
-        match dbExec(st.sqliteDbs[d], toStr(argVals[1])) {
+        var r: Result<i32> = Result.Err("closed")
+        match st.sqliteDbs[d] {
+            Option.Some(db) => { r = dbExec(db, toStr(argVals[1])) }
+            Option.None => {}
+        }
+        match r {
             Result.Ok(n) => {
                 return JSValue.Number(n as f64)
             }
@@ -5205,9 +5216,14 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if d < 0 {
             return JSValue.Number(0.0 - 1.0)
         }
-        match dbQuery(st.sqliteDbs[d], toStr(argVals[1])) {
+        var r: Result<Statement> = Result.Err("closed")
+        match st.sqliteDbs[d] {
+            Option.Some(db) => { r = dbQuery(db, toStr(argVals[1])) }
+            Option.None => {}
+        }
+        match r {
             Result.Ok(stmt) => {
-                st.sqliteStmts.push(stmt)
+                st.sqliteStmts.push(Option.Some(stmt))
                 st.sqliteStmtLive.push(true)
                 st.sqliteStmtDb.push(d)
                 return JSValue.Number((st.sqliteStmts.len() - 1) as f64)
@@ -5226,7 +5242,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Str("")
         }
         unsafe {
-            let p = sqlite3_errmsg(st.sqliteDbs[d].handle())
+            let p = sqlite3_errmsg(sqliteDbHandle(st, d))
             if p == 0 as *u8 {
                 return JSValue.Str("")
             }
@@ -5245,7 +5261,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if s < 0 {
             return JSValue.Number(0.0 - 1.0)
         }
-        return JSValue.Number(sqlite3_step(st.sqliteStmts[s].handle()) as f64)
+        return JSValue.Number(sqlite3_step(sqliteStmtHandle(st, s)) as f64)
     }
     if id == Builtin.SqliteColumnCount {
         if argVals.len() == 0 {
@@ -5255,7 +5271,10 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if s < 0 {
             return JSValue.Number(0.0)
         }
-        return JSValue.Number(dbColumnCount(st.sqliteStmts[s]) as f64)
+        match st.sqliteStmts[s] {
+            Option.Some(stmt) => { return JSValue.Number(dbColumnCount(stmt) as f64) }
+            Option.None => { return JSValue.Number(0.0) }
+        }
     }
     if id == Builtin.SqliteColumnName {
         if argVals.len() < 2 {
@@ -5266,7 +5285,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Str("")
         }
         unsafe {
-            let p = sqlite3_column_name(st.sqliteStmts[s].handle(), toNum(argVals[1]) as i32)
+            let p = sqlite3_column_name(sqliteStmtHandle(st, s), toNum(argVals[1]) as i32)
             if p == 0 as *u8 {
                 return JSValue.Str("")
             }
@@ -5283,20 +5302,25 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         let col = toNum(argVals[1]) as i32
         // SQLITE_INTEGER 1, FLOAT 2, TEXT 3, BLOB 4, NULL 5
-        let ty = sqlite3_column_type(st.sqliteStmts[s].handle(), col)
+        let ty = sqlite3_column_type(sqliteStmtHandle(st, s), col)
         if ty == 5 {
             return JSValue.Null
         }
-        if ty == 1 {
-            // Node returns a BigInt past 2^53; milojs narrows to a JS number
-            // instead, so rowids beyond the safe range lose precision.
-            return JSValue.Number(dbColumnInt64(st.sqliteStmts[s], col) as f64)
+        match st.sqliteStmts[s] {
+            Option.Some(stmt) => {
+                if ty == 1 {
+                    // Node returns a BigInt past 2^53; milojs narrows to a JS number
+                    // instead, so rowids beyond the safe range lose precision.
+                    return JSValue.Number(dbColumnInt64(stmt, col) as f64)
+                }
+                if ty == 2 {
+                    return JSValue.Number(dbColumnFloat(stmt, col))
+                }
+                // TEXT, and BLOB as its bytes reinterpreted as text (no Buffer yet)
+                return JSValue.Str(dbColumnText(stmt, col))
+            }
+            Option.None => { return JSValue.Null }
         }
-        if ty == 2 {
-            return JSValue.Number(dbColumnFloat(st.sqliteStmts[s], col))
-        }
-        // TEXT, and BLOB as its bytes reinterpreted as text (no Buffer yet)
-        return JSValue.Str(dbColumnText(st.sqliteStmts[s], col))
     }
     if id == Builtin.SqliteBind {
         if argVals.len() < 3 {
@@ -5308,49 +5332,54 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         // sqlite parameter indices are 1-based; JS passes the 1-based index too
         let idx = toNum(argVals[1]) as i32
-        match argVals[2] {
-            JSValue.Null => {
-                match dbBindNull(st.sqliteStmts[s], idx) {
-                    Result.Ok(_x) => { return JSValue.Bool(true) }
-                    Result.Err(_e) => { return JSValue.Bool(false) }
-                }
-            }
-            JSValue.Undefined => {
-                match dbBindNull(st.sqliteStmts[s], idx) {
-                    Result.Ok(_x) => { return JSValue.Bool(true) }
-                    Result.Err(_e) => { return JSValue.Bool(false) }
-                }
-            }
-            JSValue.Bool(b) => {
-                // sqlite has no boolean type; Node stores 0/1 integers
-                var n: i64 = 0
-                if b {
-                    n = 1
-                }
-                match dbBindInt64(st.sqliteStmts[s], idx, n) {
-                    Result.Ok(_x) => { return JSValue.Bool(true) }
-                    Result.Err(_e) => { return JSValue.Bool(false) }
-                }
-            }
-            JSValue.Number(f) => {
-                // Bind whole numbers as INTEGER so PRIMARY KEY columns and
-                // `typeof row.id === "number"` round-trip the way Node's do;
-                // a real float would come back as REAL either way.
-                if f >= 0.0 - 9007199254740992.0 && f <= 9007199254740992.0 && f == ((f as i64) as f64) {
-                    match dbBindInt64(st.sqliteStmts[s], idx, f as i64) {
-                        Result.Ok(_x) => { return JSValue.Bool(true) }
-                        Result.Err(_e) => { return JSValue.Bool(false) }
+        match st.sqliteStmts[s] {
+            Option.Some(stmt) => {
+                match argVals[2] {
+                    JSValue.Null => {
+                        match dbBindNull(stmt, idx) {
+                            Result.Ok(_x) => { return JSValue.Bool(true) }
+                            Result.Err(_e) => { return JSValue.Bool(false) }
+                        }
+                    }
+                    JSValue.Undefined => {
+                        match dbBindNull(stmt, idx) {
+                            Result.Ok(_x) => { return JSValue.Bool(true) }
+                            Result.Err(_e) => { return JSValue.Bool(false) }
+                        }
+                    }
+                    JSValue.Bool(b) => {
+                        // sqlite has no boolean type; Node stores 0/1 integers
+                        var n: i64 = 0
+                        if b {
+                            n = 1
+                        }
+                        match dbBindInt64(stmt, idx, n) {
+                            Result.Ok(_x) => { return JSValue.Bool(true) }
+                            Result.Err(_e) => { return JSValue.Bool(false) }
+                        }
+                    }
+                    JSValue.Number(f) => {
+                        // Bind whole numbers as INTEGER so PRIMARY KEY columns and
+                        // `typeof row.id === "number"` round-trip the way Node's do;
+                        // a real float would come back as REAL either way.
+                        if f >= 0.0 - 9007199254740992.0 && f <= 9007199254740992.0 && f == ((f as i64) as f64) {
+                            match dbBindInt64(stmt, idx, f as i64) {
+                                Result.Ok(_x) => { return JSValue.Bool(true) }
+                                Result.Err(_e) => { return JSValue.Bool(false) }
+                            }
+                        }
+                        let rc = sqlite3_bind_double(stmt.handle(), idx, f)
+                        return JSValue.Bool(rc == 0)
+                    }
+                    _ => {
+                        match dbBindText(stmt, idx, toStr(argVals[2])) {
+                            Result.Ok(_x) => { return JSValue.Bool(true) }
+                            Result.Err(_e) => { return JSValue.Bool(false) }
+                        }
                     }
                 }
-                let rc = sqlite3_bind_double(st.sqliteStmts[s].handle(), idx, f)
-                return JSValue.Bool(rc == 0)
             }
-            _ => {
-                match dbBindText(st.sqliteStmts[s], idx, toStr(argVals[2])) {
-                    Result.Ok(_x) => { return JSValue.Bool(true) }
-                    Result.Err(_e) => { return JSValue.Bool(false) }
-                }
-            }
+            Option.None => { return JSValue.Bool(false) }
         }
     }
     if id == Builtin.SqliteFilename {
@@ -5362,7 +5391,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Str("")
         }
         unsafe {
-            let p = sqlite3_db_filename(st.sqliteDbs[d].handle(), "main")
+            let p = sqlite3_db_filename(sqliteDbHandle(st, d), "main")
             if p == 0 as *u8 {
                 return JSValue.Str("")
             }
@@ -5377,7 +5406,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if s < 0 {
             return JSValue.Number(0.0)
         }
-        return JSValue.Number(sqlite3_bind_parameter_index(st.sqliteStmts[s].handle(), toStr(argVals[1])) as f64)
+        return JSValue.Number(sqlite3_bind_parameter_index(sqliteStmtHandle(st, s), toStr(argVals[1])) as f64)
     }
     if id == Builtin.SqliteReset {
         if argVals.len() == 0 {
@@ -5385,7 +5414,10 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         let s = sqliteStmtIdx(st, argVals[0])
         if s >= 0 {
-            dbReset(st.sqliteStmts[s])
+            match st.sqliteStmts[s] {
+                Option.Some(stmt) => dbReset(stmt),
+                Option.None => {},
+            }
         }
         return JSValue.Undefined
     }
@@ -5395,7 +5427,10 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         }
         let s = sqliteStmtIdx(st, argVals[0])
         if s >= 0 {
-            dbFinalize(st.sqliteStmts[s])
+            match replace(st.sqliteStmts[s], Option.None) {
+                Option.Some(stmt) => dbFinalize(stmt),
+                Option.None => {},
+            }
             st.sqliteStmtLive[s] = false
         }
         return JSValue.Undefined
@@ -5408,7 +5443,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if d < 0 {
             return JSValue.Number(0.0)
         }
-        return JSValue.Number(sqlite3_changes(st.sqliteDbs[d].handle()) as f64)
+        return JSValue.Number(sqlite3_changes(sqliteDbHandle(st, d)) as f64)
     }
     if id == Builtin.SqliteLastInsertId {
         if argVals.len() == 0 {
@@ -5418,7 +5453,10 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         if d < 0 {
             return JSValue.Number(0.0)
         }
-        return JSValue.Number(dbLastInsertId(st.sqliteDbs[d]) as f64)
+        match st.sqliteDbs[d] {
+            Option.Some(db) => { return JSValue.Number(dbLastInsertId(db) as f64) }
+            Option.None => { return JSValue.Number(0.0) }
+        }
     }
     if id == Builtin.HttpFetch {
         var method = "GET"
@@ -13378,7 +13416,9 @@ fn releaseCreatorOnce(st: &mut Interp) {
         if st.actTask[i] as i64 == me as i64 {
             if !st.actNotified[i] {
                 st.actNotified[i] = true
-                schedulerUnpark(st.actCreator[i])
+                // sound: actCreator holds the schedulerCurrent() of the task that spawned this
+                // activation, parked until actNotified flips, which happens only here
+                unsafe { schedulerUnpark(st.actCreator[i]) }
             }
             return
         }
@@ -13658,7 +13698,9 @@ fn genFinish(st: &mut Interp, gi: i64, r: JSValue) {
         st.throwing = false
         st.thrownValue = JSValue.Undefined
         st.genDone[gi] = true
-        schedulerUnpark(st.genCaller[gi])
+        // sound: genCaller is the schedulerCurrent() of the next() caller, parked
+        // inside genNext until the body hands control back
+        unsafe { schedulerUnpark(st.genCaller[gi]) }
         return
     }
     if st.throwing {
@@ -13672,7 +13714,9 @@ fn genFinish(st: &mut Interp, gi: i64, r: JSValue) {
     }
     st.genDone[gi] = true
     // hand control back to the next() caller; this task then returns and ends
-    schedulerUnpark(st.genCaller[gi])
+    // sound: genCaller is the schedulerCurrent() of the next() caller, parked
+    // inside genNext until the body hands control back
+    unsafe { schedulerUnpark(st.genCaller[gi]) }
 }
 
 // Create a generator object for a `function*` call. Does NOT run the body — that
@@ -13915,7 +13959,9 @@ fn genResume(o: i64, args: Vec<JSValue>, mode: i64, st: &mut Interp): JSValue {
     // control (mirrors spawnActivation). Only a body parked at a prior yield
     // needs an explicit unpark to become runnable again.
     if !justSpawned {
-        schedulerUnpark(st.genTask[gi])
+        // sound: genTask came from body.raw(), and a body that has not set genDone
+        // is parked at its previous yield, not finished
+        unsafe { schedulerUnpark(st.genTask[gi]) }
     }
     schedulerPark()
     resumeExecCtx(&mut st, caller)
@@ -14194,7 +14240,9 @@ fn genYieldProg(prog: &Prog, handed: JSValue, st: &mut Interp): JSValue {
     let ctx = saveExecCtx(&mut st)
     st.suspended.push(ctx)
     st.suspendedTask.push(me)
-    schedulerUnpark(st.genCaller[gi])
+    // sound: genCaller is the schedulerCurrent() of the next() caller, parked
+    // inside genNext until the body hands control back
+    unsafe { schedulerUnpark(st.genCaller[gi]) }
     schedulerPark()
     resumeExecCtx(&mut st, me)
     popTemp(&mut st)
@@ -14230,7 +14278,9 @@ fn wakeAwaiters(st: &mut Interp, p: i64) {
             let t = st.awaitTask[i]
             st.awaitPromise.remove(i)
             st.awaitTask.remove(i)
-            schedulerUnpark(t)
+            // sound: awaitTask entries are schedulerCurrent() of tasks parked in await,
+            // removed above so each is woken exactly once
+            unsafe { schedulerUnpark(t) }
         } else {
             i = i + 1
         }

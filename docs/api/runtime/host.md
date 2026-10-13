@@ -88,6 +88,16 @@ first pipe separating them so output containing pipes survives intact.
 Read to EOF then reap. Runs on the worker thread: both halves block, and the
 interpreter loop owns the OS main thread and never parks.
 
+### `sqliteDbHandle`
+
+```milo
+pub fn sqliteDbHandle(st: &Interp, d: i64): *u8
+```
+
+The raw handle in a slot sqliteDbIdx/sqliteStmtIdx accepted. A live slot is
+always Some, so the None arm (null) is unreachable; sqlite rejects a null
+handle with SQLITE_MISUSE rather than dereferencing it.
+
 ### `sqliteDbIdx`
 
 ```milo
@@ -97,6 +107,14 @@ pub fn sqliteDbIdx(st: &Interp, v: &JSValue): i64
 A live index into st.sqliteDbs, or -1 when the handle is closed or bogus. Every
 sqlite native funnels through this so a use-after-close is a JS-level error
 rather than a call on a freed sqlite3*.
+
+### `sqliteStmtHandle`
+
+```milo
+pub fn sqliteStmtHandle(st: &Interp, s: i64): *u8
+```
+
+_Undocumented._
 
 ### `sqliteStmtIdx`
 

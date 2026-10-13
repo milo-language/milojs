@@ -39,6 +39,23 @@ pub fn sqliteStmtIdx(st: &Interp, v: &JSValue): i64 {
     return i
 }
 
+// The raw handle in a slot sqliteDbIdx/sqliteStmtIdx accepted. A live slot is
+// always Some, so the None arm (null) is unreachable; sqlite rejects a null
+// handle with SQLITE_MISUSE rather than dereferencing it.
+pub fn sqliteDbHandle(st: &Interp, d: i64): *u8 {
+    match st.sqliteDbs[d] {
+        Option.Some(db) => { return db.handle() }
+        Option.None => { return 0 as *u8 }
+    }
+}
+
+pub fn sqliteStmtHandle(st: &Interp, s: i64): *u8 {
+    match st.sqliteStmts[s] {
+        Option.Some(stmt) => { return stmt.handle() }
+        Option.None => { return 0 as *u8 }
+    }
+}
+
 // Invoke a native function/constructor. Error(msg) and new Error(msg) behave the
 // same (both mint an error object), matching JS.
 // Synchronous outbound HTTP/HTTPS. Milo has no coroutines and the event loop is

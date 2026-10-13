@@ -77,14 +77,15 @@ pub fn driver(): void {
     }
 
     // wake in the order they parked — the opposite of what a position-based
-    // reclaim assumes
-    schedulerUnpark(gA)
+    // reclaim assumes. Both unparks are sound: gA/gB are schedulerCurrent() of
+    // tasks the spin above saw parked, and neither finishes until woken here.
+    unsafe { schedulerUnpark(gA) }
     var s2: i64 = 0
     while gDone < 1 && s2 < 1000 {
         schedulerYield()
         s2 = s2 + 1
     }
-    schedulerUnpark(gB)
+    unsafe { schedulerUnpark(gB) }
     var s3: i64 = 0
     while gDone < 2 && s3 < 1000 {
         schedulerYield()

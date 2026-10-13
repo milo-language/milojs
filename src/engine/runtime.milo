@@ -1100,10 +1100,11 @@ pub struct Interp {
     // Open sqlite databases and prepared statements, addressed by index from JS
     // (node:sqlite hands those indices back as opaque handles). Slots are never
     // reused: a closed handle must stay closed rather than silently aliasing a
-    // later database, so the `Live` flags tombstone instead of freeing.
-    sqliteDbs: Vec<Database>,
+    // later database, so the `Live` flags tombstone instead of freeing. Closing
+    // moves the owner out of its slot (leaving None), so its Drop runs once.
+    sqliteDbs: Vec<Option<Database>>,
     sqliteDbLive: Vec<bool>,
-    sqliteStmts: Vec<Statement>,
+    sqliteStmts: Vec<Option<Statement>>,
     sqliteStmtLive: Vec<bool>,
     // Owning database index per statement, so closing a database finalizes the
     // statements still open against it (sqlite3_close fails while any survive).
@@ -1144,7 +1145,7 @@ pub struct Interp {
 // that main() overwrites with makeInterp().
 pub var gInterp: Interp = Interp {
     scopes: Vec.new(), freeList: Vec.new(), active: Vec.new(),
-    nonCtorFns: Vec.new(), strict: false, objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: Arena { id: 0, data: Vec.new(), gens: Vec.new(), freeList: Vec.new(), live: 0 }, regexes: Vec.new(), tempRoots: Vec.new(), vmStack: Vec.new(), vmSp: 0, funcCallTicks: 0, hostRoots: Vec.new(), hostRootLive: Vec.new(),
+    nonCtorFns: Vec.new(), strict: false, objects: Vec.new(), objFreeList: Vec.new(), objExtras: Vec.new(), objExtraFree: Vec.new(), accessors: arenaNew(), regexes: Vec.new(), tempRoots: Vec.new(), vmStack: Vec.new(), vmSp: 0, funcCallTicks: 0, hostRoots: Vec.new(), hostRootLive: Vec.new(),
     modPaths: Vec.new(), modBlocks: Vec.new(), modStrict: Vec.new(), modExports: Vec.new(), modState: Vec.new(), modDirStack: Vec.new(), modPathStack: Vec.new(), fnFileStack: Vec.new(),
     throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 10000,
