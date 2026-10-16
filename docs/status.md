@@ -114,7 +114,7 @@ that gate fail until the bullet is deleted.
 
 | gate | state |
 |---|---|
-| 0, green and measurable | **RED**. `linux-arm64` release job aborts on the runtime smoke test with `free(): invalid pointer`, exit 134, since `0f167c5`. Engine binary clean. Rolling tarballs stuck at 2026-08-15. |
+| 0, green and measurable | **GREEN**. The rolling `latest` tarballs rebuild on every push (last 2026-10-16, all three targets). The linux-arm64 `free(): invalid pointer` abort no longer reproduces: on 2026-10-16 the published linux-arm64 binary ran a 20x smoke loop clean and 358/360 fixtures under podman on debian bookworm with zero crashes (the 2 diffs are cwd-relative paths in the ad-hoc harness). No fixing commit is identified; release has passed on every push since `d23d4a5` (2026-09-21), and the three failures just before it were build errors from a lagging milo release, not the abort. |
 | 1, embeddable engine preview | partial. C ABI builds, handles survive forced GC, no native-function registration. Reports are now pinned and committed. |
 | 2, credible QuickJS alternative | partial. Every constructor has a real prototype OBJECT. Array, String, the Error family, Map/Set, WeakMap/WeakSet, Date and RegExp dispatch through it and honour an override (RegExp's symbol methods and String's regex operations call each other in the spec's direction, through the user-visible `exec`), and so do DataView and the typed arrays through `%TypedArray%.prototype` (measured per receiver in `docs/milojs-quickjs-plan.md` lane 2). Uint8Array's base64/hex methods are absent. Raw arena indices remain. |
 | 3, Node runtime preview | partial. A real express 4 app boots and serves byte-identical output. See `docs/node-compat.md` for the surface. |

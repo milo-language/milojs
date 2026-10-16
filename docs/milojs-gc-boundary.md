@@ -158,9 +158,9 @@ test262 and the node oracle stay as regression gates.
 
 ## Order
 
-1. Fix the linux-arm64 release crash (`free(): invalid pointer`, gate 0 red)
-   and record whether it is in Milo code or a C dependency. The writeup has to
-   explain it either way.
+1. ~~Fix the linux-arm64 release crash.~~ Checked 2026-10-16: it no longer
+   reproduces (`docs/status.md`, gate 0). Cause never identified, so the
+   fuzz campaign in step 6 runs on linux-arm64 too.
 2. `Option.take` in Milo std.
 3. Mechanism 2 for Node-API and one resource module, with its bug-shape
    fixtures.
