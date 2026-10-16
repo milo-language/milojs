@@ -102,6 +102,7 @@ opening several.
 | `docs/backlog.md` | the OPEN list: known gaps, ranked, with repro and why each is not a one-liner. A fixed item is deleted, not archived |
 | `docs/node-compat.md` | per-module Node compatibility. **Generated** — export diff against node plus the sweep's per-area pass rate; never edit by hand |
 | `docs/milojs-roadmap.md` | staged plan, what "done" means, scope decisions |
+| `docs/milojs-gc-boundary.md` | project direction: the GC-to-native boundary as the Milo showcase; roots, finalizers, stale refs |
 | `docs/milojs-async-suspension.md` | await/park/resume, green tasks, the event loop |
 | `docs/milojs-generators.md` | generator objects and how they suspend |
 | `docs/milojs-embedding.md` | public C ABI, ownership, and the current single-context constraint |
