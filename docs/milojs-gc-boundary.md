@@ -117,8 +117,8 @@ and setImmediate fixes were patching, made unwritable rather than patched.
 
 Milo gap found by the probe: there is no `Option.take(&mut self)`, and moving a
 `@noCopy` value out of a field through `&mut` is rejected ("cannot move the
-borrowed value out"). The by-value spelling works but is clumsy. Adding `take`
-to std is the one Milo change this design needs.
+borrowed value out"). The by-value spelling works but is clumsy. `Option.take()`
+(milo `348927e4`) closes this: `match o.fd.take() { ... }` through `&mut`.
 
 Node-API finalizers then actually run, through the same `release`.
 
@@ -161,7 +161,8 @@ test262 and the node oracle stay as regression gates.
 1. ~~Fix the linux-arm64 release crash.~~ Checked 2026-10-16: it no longer
    reproduces (`docs/status.md`, gate 0). Cause never identified, so the
    fuzz campaign in step 6 runs on linux-arm64 too.
-2. `Option.take` in Milo std.
+2. ~~`Option.take` in Milo.~~ Landed as a compiler builtin, milo `348927e4`:
+   `x.take()` lowers to `replace(x, None)` and needs a mutable place.
 3. Mechanism 2 for Node-API and one resource module, with its bug-shape
    fixtures.
 4. Mechanism 1: port the stack scan, add `RootedVec` and its gate, delete
