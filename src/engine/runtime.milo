@@ -37,6 +37,7 @@ from "std/os" import {
     free
 }
 from "./eval" import { makeError }
+from "./rooted" import { rootedCount, rootedLen, rootedAt }
 from "./stackscan" import { scanStacks, gcSkipTempRoots }
 from "./realm" import { saveRealm, enterRealm, globalScopeOfObj, realmObjectProto, Realm }
 
@@ -2781,6 +2782,17 @@ pub fn collect(st: &mut Interp) {
             markValue(&mut st, hv)
         }
         hr = hr + 1
+    }
+    // every live RootedVec: a JSValue vector held by a native (see rooted.milo)
+    var rv: i64 = 0
+    while rv < rootedCount() {
+        var rj: i64 = 0
+        let rn = rootedLen(rv)
+        while rj < rn {
+            markValue(&mut st, rootedAt(rv, rj))
+            rj = rj + 1
+        }
+        rv = rv + 1
     }
     if st.throwing {
         let tv = cloneValue(st.thrownValue)

@@ -1,0 +1,31 @@
+# Registered legitimate bare `Vec<JSValue>` sites in src/engine, checked by
+# tools/check-rooted-vec.mjs.
+#
+# The rule (docs/milojs-gc-boundary.md "1. Roots"): a JSValue lives on a stack
+# (scanned), in the GC heap (traced) or in a RootedVec (src/engine/rooted.milo).
+# A bare Vec<JSValue> is only legitimate as a field of a structure collect()
+# already walks. Each line below names one such field and where collect() reads it.
+# A registered site that no longer exists fails too, so the list only shrinks.
+#
+# Format: <file> | <the line, trimmed, exactly as it appears> | <why the collector sees it>
+# The same line may be listed twice when it appears twice.
+src/engine/runtime.milo | dispRecv: Vec<JSValue>, | Scope field; markScope pushes every dispRecv entry
+src/engine/runtime.milo | dispFn: Vec<JSValue>, | Scope field; markScope pushes every dispFn entry
+src/engine/runtime.milo | tempRoots: Vec<JSValue>, | saved activation context; collect marks st.suspended[i].tempRoots
+src/engine/runtime.milo | tempRoots: Vec<JSValue>, | Interp.tempRoots; collect marks it (step 4d deletes it)
+src/engine/runtime.milo | args: Vec<JSValue>, | Timer.args; collect marks every active timer's args
+src/engine/runtime.milo | boundArgs: Vec<JSValue>, | JSObjExtra field; markObject pushes every boundArgs entry
+src/engine/runtime.milo | mapKeys: Vec<JSValue>, | JSObjExtra field; markObject walks Map/Set keys
+src/engine/runtime.milo | mapVals: Vec<JSValue>, | JSObjExtra field; markObject walks Map values
+src/engine/runtime.milo | elems: Vec<JSValue>, | JSObj element storage; markObject walks it
+src/engine/runtime.milo | modExports: Vec<JSValue>, | Interp field; collect marks every module export
+src/engine/runtime.milo | vmStack: Vec<JSValue>, | Interp field; collect marks vmStack[0..vmSp]
+src/engine/runtime.milo | hostRoots: Vec<JSValue>, | Interp field; collect marks every live host root
+src/engine/runtime.milo | actFn: Vec<JSValue>, | Interp activation table; collect marks it
+src/engine/runtime.milo | actArgs: Vec<Vec<JSValue>>, | Interp activation table; collect marks every argument
+src/engine/runtime.milo | actThis: Vec<JSValue>, | Interp activation table; collect marks it
+src/engine/runtime.milo | genArgs: Vec<Vec<JSValue>>, | generator table; collect marks every argument
+src/engine/runtime.milo | genThis: Vec<JSValue>, | generator table; collect marks it
+src/engine/runtime.milo | genYielded: Vec<JSValue>, | generator table; collect marks it
+src/engine/runtime.milo | genSent: Vec<JSValue>, | generator table; collect marks it
+src/engine/runtime.milo | genErr: Vec<JSValue>, | generator table; collect marks it

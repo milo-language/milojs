@@ -1,0 +1,201 @@
+// RootedVec: a Vec<JSValue> the collector always sees.
+//
+// The rule (docs/milojs-gc-boundary.md "1. Roots"): a JSValue lives on a stack (scanned
+// conservatively by stackscan.milo), in the GC heap (traced), or in a RootedVec (registered
+// here). A plain Vec<JSValue> local keeps its elements in malloc'd memory, which the stack scan
+// cannot see, so a collection while it is live frees objects it still holds.
+//
+// Why a heap record and a registry, not "register the Vec":
+//   * Milo values MOVE (their address changes when returned, passed by value or stored), and a
+//     Vec's buffer reallocates on push. Neither address is stable, so neither can be what the
+//     collector remembers.
+//   * So the RootedVec is one pointer to a heap-allocated Rec (the Vec plus its registry slot).
+//     The Rec never moves; the RootedVec may move freely. A module-level registry lists every
+//     live Rec by address. new() registers (one push), Drop unregisters by swap-remove (O(1):
+//     the Rec stores its own registry index, and the Rec swapped into the hole has its index
+//     patched) and frees. push/get/len are a pointer load plus the Vec's own operation: no
+//     allocation and no registry traffic after construction.
+//   * collect() walks the registry through rootedCount/rootedLen/rootedAt and marks every value.
+//     This file does not import the collector, so there is no import cycle.
+//
+// Why raw pointers: Milo has no auto-deref of a Heap<T> field and its borrow checker ties a
+// pointer taken from a Heap to that Heap, so a Heap<Rec> field could not also be registered by
+// address. The Rec is allocated as a Heap, its box pointer is taken and the Heap is forgotten
+// (leaked on purpose); Drop adopts it back to free it. All unsafe is in this file.
+//
+// What Milo cannot do: there is no index operator overloading (only Add/Sub/Mul/Div/Eq), so no
+// `rv[i]`; use get(i), an owned clone (cheap: a string is a count bump). A borrowing view() returning
+// &[JSValue] was tried and rejected: a slice read through a raw pointer is not accepted as a
+// slice of the receiver's own storage, so there is no by-reference element access.
+//
+// Limits: a RootedVec abandoned without running Drop (a green task whose stack is discarded
+// while parked, or forget) stays registered, so its values stay live for ever. That is a leak
+// and never a premature free. toVec/fromVec are the escape hatch for boundaries that still
+// take a plain Vec<JSValue>: the plain Vec is invisible to the collector again, so callers must
+// keep the values rooted some other way until they are converted.
+
+from "std/foreign" import { adopt }
+from "./value" import { JSValue, cloneValue }
+
+struct RootedRec {
+    items: Vec<JSValue>,
+    // position of this record's address in gRootedRecs
+    idx: i64,
+}
+
+// Addresses of every live RootedRec.
+var gRootedRecs: Vec<i64> = []
+// Unregistered, emptied records kept for reuse: a spread builds and drops one per call, and
+// reusing the record and its Vec buffer makes the steady state allocation-free.
+var gRootedFree: Vec<i64> = []
+
+pub struct RootedVec {
+    rec: *RootedRec,
+}
+
+impl RootedVec {
+    fn withItems(items: Vec<JSValue>): RootedVec {
+        if gRootedFree.len() > 0 {
+            let fp = gRootedFree.pop() ?? 0
+            unsafe {
+                let r = fp as *RootedRec
+                (*r).idx = gRootedRecs.len()
+                if items.capacity() > 0 {
+                    (*r).items = items
+                }
+                gRootedRecs.push(fp)
+                return RootedVec { rec: r }
+            }
+        }
+        let h = Heap(RootedRec { items: items, idx: gRootedRecs.len() })
+        let p = h.ptr()
+        forget(h)
+        gRootedRecs.push(p as i64)
+        return RootedVec { rec: p }
+    }
+
+    fn new(): RootedVec {
+        return RootedVec.withItems(Vec.new())
+    }
+
+    fn withCapacity(n: i64): RootedVec {
+        return RootedVec.withItems(Vec.withCapacity(n))
+    }
+
+    // Takes ownership of a plain Vec. Values in it must be kept alive by the caller until this returns.
+    fn fromVec(v: Vec<JSValue>): RootedVec {
+        return RootedVec.withItems(v)
+    }
+
+    fn push(self: &mut RootedVec, v: JSValue) {
+        unsafe {
+            (*self.rec).items.push(v)
+        }
+    }
+
+    fn pop(self: &mut RootedVec): JSValue? {
+        unsafe {
+            return (*self.rec).items.pop()
+        }
+    }
+
+    fn len(self: &RootedVec): i64 {
+        unsafe {
+            return (*self.rec).items.len()
+        }
+    }
+
+    // An owned copy of element i (traps when out of range, like Vec indexing).
+    fn get(self: &RootedVec, i: i64): JSValue {
+        unsafe {
+            return cloneValue((*self.rec).items[i])
+        }
+    }
+
+    fn set(self: &mut RootedVec, i: i64, v: JSValue) {
+        unsafe {
+            (*self.rec).items[i] = v
+        }
+    }
+
+    fn clear(self: &mut RootedVec) {
+        unsafe {
+            (*self.rec).items.clear()
+        }
+    }
+
+    // A new, separately registered RootedVec with cloned elements.
+    fn clone(self: &RootedVec): RootedVec {
+        var out = RootedVec.withCapacity(self.len())
+        var i: i64 = 0
+        let n = self.len()
+        while i < n {
+            out.push(self.get(i))
+            i = i + 1
+        }
+        return out
+    }
+
+    // Escape hatch: moves the elements out as a plain Vec and leaves this one empty.
+    fn toVec(self: &mut RootedVec): Vec<JSValue> {
+        unsafe {
+            let r = self.rec
+            return replace((*r).items, Vec.new())
+        }
+    }
+
+    // Escape hatch: an unrooted plain copy, this one stays intact.
+    fn cloneToVec(self: &RootedVec): Vec<JSValue> {
+        var out: Vec<JSValue> = Vec.withCapacity(self.len())
+        var i: i64 = 0
+        let n = self.len()
+        while i < n {
+            out.push(self.get(i))
+            i = i + 1
+        }
+        return out
+    }
+}
+
+impl Drop for RootedVec {
+    fn drop(self: &mut RootedVec) {
+        unsafe {
+            let last = gRootedRecs.len() - 1
+            let i = (*self.rec).idx
+            if i != last {
+                let moved = gRootedRecs[last]
+                gRootedRecs[i] = moved
+                let mr = moved as *RootedRec
+                (*mr).idx = i
+            }
+            let _p = gRootedRecs.pop()
+            // Keep small records for reuse; a big buffer or a full free list is released.
+            // adopting the leaked box back as a Heap frees it (and the Vec) when it drops.
+            if gRootedFree.len() < 64 && (*self.rec).items.capacity() <= 256 {
+                (*self.rec).items.clear()
+                gRootedFree.push(self.rec as i64)
+            } else {
+                let _h = adopt(self.rec)
+            }
+        }
+    }
+}
+
+// Collector interface: iterate every live RootedVec.
+pub fn rootedCount(): i64 {
+    return gRootedRecs.len()
+}
+
+pub fn rootedLen(r: i64): i64 {
+    unsafe {
+        let p = gRootedRecs[r] as *RootedRec
+        return (*p).items.len()
+    }
+}
+
+pub fn rootedAt(r: i64, j: i64): JSValue {
+    unsafe {
+        let p = gRootedRecs[r] as *RootedRec
+        return cloneValue((*p).items[j])
+    }
+}

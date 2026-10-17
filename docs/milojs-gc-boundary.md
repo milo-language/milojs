@@ -1,9 +1,9 @@
 <!-- doc-meta
 system: gc-boundary
 purpose: the project direction (a complete JS engine and Node-compatible runtime in Milo, replacing what bun gets from Zig plus JSC) and the GC design that comes first: roots, finalizers and stale references
-key-files: src/engine/eval.milo, src/engine/runtime.milo, src/runtime/napi.milo, lib/fs.js, src/engine/stackscan.milo
+key-files: src/engine/eval.milo, src/engine/runtime.milo, src/runtime/napi.milo, lib/fs.js, src/engine/stackscan.milo, src/engine/rooted.milo
 update-when: a step below lands, a probe result changes, or the direction is revisited
-last-verified: 2026-10-17 (JIT plan corrected, not LLVM; QuickJS decision point; direction restated: full engine and runtime, speed and node compat unfrozen; the 2026-10-16 narrowing to a safety showcase is withdrawn)
+last-verified: 2026-10-17 (RootedVec and the bare-Vec ratchet landed, step 4b; earlier: JIT plan corrected, not LLVM; QuickJS decision point; direction restated: full engine and runtime, speed and node compat unfrozen; the 2026-10-16 narrowing to a safety showcase is withdrawn)
 -->
 
 # Direction: a whole JS engine and runtime in Milo
@@ -91,9 +91,12 @@ with no push to forget.
 
 What a stack scan cannot see is a JSValue held in malloc'd memory, and milojs
 has 214 `Vec<JSValue>` sites in `src/engine/` (argument vectors, part-built
-arrays). Those become a `RootedVec`, a wrapper that registers its buffer with
-the collector when built and unregisters it in `Drop`. A gate fails on any bare
-`Vec<JSValue>` in engine code. So the rule is: a JSValue lives on a stack
+arrays). Those become a `RootedVec` (`src/engine/rooted.milo`): a pointer to a
+heap-allocated record holding the Vec, listed in a module-level registry when built
+and removed in `Drop`. The record, not the Vec, is what is registered, because Milo
+values move and a Vec's buffer reallocates on push. `tools/check-rooted-vec.mjs`
+ratchets bare `Vec<JSValue>` in engine code per file (fields the collector already
+traces are registered in `src/.rooted-vec-exempt`). So the rule is: a JSValue lives on a stack
 (scanned), in the GC heap (traced), or in a `RootedVec` (registered). The rule
 is enforced by gate plus `Drop`, not by the type checker; this doc does not
 claim otherwise.
@@ -180,6 +183,7 @@ The writeup has to rest on things that fail when they should:
    `tempRoots`, keep gc-stress green. Measure the bench before and after; the
    call-boundary rooting it removes is a speed cost too.
    4a landed: `src/engine/stackscan.milo` scans the running stack, every parked task from the SP saved in its ucontext, and the OS stack, as an extra root source in `collect`. `tempRoots` is still in place. Debug knobs `MILOJS_GC_SKIP_TEMPROOTS=1` and `MILOJS_GC_NO_STACKSCAN=1` give the experiment. Strict every-allocation `tools/gc-stress.sh` (362 fixtures, 3 exempt): default 359 pass 0 fail; no tempRoots and no scan 0 pass (the prelude itself fails, every fixture fails); no tempRoots with scan 358 pass 1 fail (`urlSearchParams`, a spread result held in a `Vec<JSValue>` that only step 4b's `RootedVec` can cover). `--quick`: default 0 fail, no tempRoots and no scan 4 fail, no tempRoots with scan 0 fail.
+   4b landed: `src/engine/rooted.milo` (`RootedVec`: new/withCapacity/fromVec, push, pop, len, get, set, clear, clone, toVec/cloneToVec as the escape hatch; no index operator in Milo, so `get(i)`), marked by `collect`; pilot is `spreadInto`/`spreadIntoArms`/`spreadBuiltin` and the callers' vectors. `tools/check-rooted-vec.mjs` ratchet starts at 194 bare `Vec<JSValue>` (eval 130, methods 46, builtins 15, runtime 2, bytecode 1) with 20 exempt traced fields. Strict gc-stress with `MILOJS_GC_SKIP_TEMPROOTS=1` (no tempRoots, scan on): 359 pass 0 fail (was 1 fail, `urlSearchParams`); default `tools/gc-stress.sh`: 359 pass 0 fail. Spread microbench within noise.
 5. In parallel from here, three tracks:
    - **Engine speed:** bytecode VM on every function body, then QuickJS bench
      parity. Plan in `docs/milojs-quickjs-plan.md`.

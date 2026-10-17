@@ -30,6 +30,7 @@ from "./realm" import {
     isArrayCtorObj, isPromiseCtorObj, createRealm, realmGlobalObject,
     identTryLookup, identAssign, identDelete, isSandboxGlobalScope, declareSandboxGlobal
 }
+from "./rooted" import { RootedVec }
 from "./runtime" import {
     objOwnIndex, touchedBuiltinProto, propIsAccessor, accGetter, accSetter, arrLen, arrGet, pushTemp, popTemp,
     getNativeProps, objGet, newObject, ensureExtra, arrIsHole, asArrayIndex, scopeHasOwn,
@@ -4806,7 +4807,7 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         let arr = newArray(&mut st)
         pushTemp(&mut st, JSValue.Obj(arr))
         // gather the source elements, then apply the optional map function
-        var elems: Vec<JSValue> = Vec.new()
+        var elems: RootedVec = RootedVec.new()
         if argVals.len() > 0 {
             let h = objHandle(argVals[0])
             if h >= 0 {
@@ -4871,11 +4872,11 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
         while k < elems.len() && !st.throwing {
             if hasMap {
                 var margs: Vec<JSValue> = Vec.new()
-                margs.push(cloneValue(elems[k]))
+                margs.push(elems.get(k))
                 margs.push(JSValue.Number(k as f64))
                 arrPush(&mut st, arr, callValue(gProg, argVals[1], margs, JSValue.Undefined, &mut st))
             } else {
-                arrPush(&mut st, arr, cloneValue(elems[k]))
+                arrPush(&mut st, arr, elems.get(k))
             }
             k = k + 1
         }
@@ -9483,7 +9484,7 @@ fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): 
                 // observable for an infinite inner iterator, which none of
                 // these shapes can be. Their completion value is undefined,
                 // so `last` correctly stays Undefined.
-                var items: Vec<JSValue> = Vec.new()
+                var items: RootedVec = RootedVec.new()
                 let spreadBase = st.tempRoots.len()
                 spreadInto(prog, &mut items, cloneValue(va), &mut st)
                 // hold the values in a rooted array: genYield parks this task,
@@ -9492,7 +9493,7 @@ fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): 
                 let hold = newArray(&mut st)
                 var hi: i64 = 0
                 while hi < items.len() {
-                    arrPush(&mut st, hold, cloneValue(items[hi]))
+                    arrPush(&mut st, hold, items.get(hi))
                     hi = hi + 1
                 }
                 truncateTemps(&mut st, spreadBase)
@@ -10143,13 +10144,13 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
                     match prog.exprs[elemIdx.index] {
                         Expr.Spread(inner) => {
                         let sv = evalExpr(prog, inner, &mut st, scope)
-                        var tmp: Vec<JSValue> = Vec.new()
+                        var tmp: RootedVec = RootedVec.new()
                         let tmpBase = st.tempRoots.len()
                         rootIfHeap(&mut st, sv)
                         spreadInto(prog, &mut tmp, sv, &mut st)
                         var t: i64 = 0
                         while t < tmp.len() {
-                            arrPush(&mut st, arr, cloneValue(tmp[t]))
+                            arrPush(&mut st, arr, tmp.get(t))
                             t = t + 1
                         }
                         truncateTemps(&mut st, tmpBase)
@@ -10389,11 +10390,11 @@ fn evalExprFallback(prog: &Prog, id: ExprId, st: &mut Interp, scope: i64): JSVal
 // while it allocates the array or arguments that will own the values: the
 // caller records st.tempRoots.len() before the call and truncates once the
 // values are reachable from something the collector can see.
-fn spreadInto(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp) {
+fn spreadInto(prog: &Prog, out: &mut RootedVec, v: &JSValue, st: &mut Interp) {
     spreadIntoArms(prog, &mut out, v, &mut st)
 }
 
-fn spreadIntoArms(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp) {
+fn spreadIntoArms(prog: &Prog, out: &mut RootedVec, v: &JSValue, st: &mut Interp) {
     let h = objHandle(v)
     // a String wrapper iterates as its string does, by code point. Its index
     // properties would make an array-like fallback plausible, but the spec
@@ -10592,14 +10593,14 @@ fn iterableToArray(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     // ["a","b"]. spreadInto already knows how to walk one, which is why `[..."ab"]`
     // worked while the Set constructor did not.
     if let JSValue.Str(sv) = v {
-        var chars: Vec<JSValue> = Vec.new()
+        var chars: RootedVec = RootedVec.new()
         let charsBase = st.tempRoots.len()
         spreadInto(prog, &mut chars, cloneValue(v), &mut st)
         let sarr = newArray(&mut st)
         pushTemp(&mut st, JSValue.Obj(sarr))
         var ci: i64 = 0
         while ci < chars.len() {
-            arrPush(&mut st, sarr, cloneValue(chars[ci]))
+            arrPush(&mut st, sarr, chars.get(ci))
             ci = ci + 1
         }
         truncateTemps(&mut st, charsBase)
@@ -10615,21 +10616,21 @@ fn iterableToArray(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     if !drivable {
         return cloneValue(v)
     }
-    var items: Vec<JSValue> = Vec.new()
+    var items: RootedVec = RootedVec.new()
     let itemsBase = st.tempRoots.len()
     spreadInto(prog, &mut items, cloneValue(v), &mut st)
     let arr = newArray(&mut st)
     pushTemp(&mut st, JSValue.Obj(arr))
     var i: i64 = 0
     while i < items.len() {
-        arrPush(&mut st, arr, cloneValue(items[i]))
+        arrPush(&mut st, arr, items.get(i))
         i = i + 1
     }
     truncateTemps(&mut st, itemsBase)
     return JSValue.Obj(arr)
 }
 
-fn spreadBuiltin(prog: &Prog, out: &mut Vec<JSValue>, v: &JSValue, st: &mut Interp) {
+fn spreadBuiltin(prog: &Prog, out: &mut RootedVec, v: &JSValue, st: &mut Interp) {
     match v {
         JSValue.Obj(o) => {
             if st.objects[o].isArray {
@@ -10672,13 +10673,17 @@ fn evalArgs(prog: &Prog, argsIdx: ArgListId, st: &mut Interp, scope: i64): Vec<J
             Expr.Spread(inner) => {
                 let v = evalExpr(prog, inner, &mut st, scope)
                 rootIfHeap(&mut st, v)
-                let before = out.len()
-                spreadInto(prog, &mut out, v, &mut st)
+                // spread into a RootedVec so a collection inside the iterator cannot sweep
+                // what it produced; only spread calls pay for the registration
+                var sp = RootedVec.new()
+                spreadInto(prog, &mut sp, v, &mut st)
                 // the elements an iterator produced are reachable from nothing
-                // but `out` once the source is done with
-                var si = before
-                while si < out.len() {
-                    rootIfHeap(&mut st, out[si])
+                // but `sp` once the source is done with
+                var si: i64 = 0
+                while si < sp.len() {
+                    let e = sp.get(si)
+                    rootIfHeap(&mut st, e)
+                    out.push(e)
                     si = si + 1
                 }
             }

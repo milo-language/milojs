@@ -135,6 +135,13 @@ if command -v node >/dev/null 2>&1 && ! node tools/check-ast-refs.mjs; then
     status=1
 fi
 
+# A bare Vec<JSValue> local is invisible to the stack scan (malloc'd buffer), so a
+# collection frees what it holds. Ratchet: the count per file may only go down; the
+# cure is RootedVec (src/engine/rooted.milo). Static, so it costs nothing.
+if command -v node >/dev/null 2>&1 && ! node tools/check-rooted-vec.mjs; then
+    status=1
+fi
+
 # The exit status, differential against node. The sweep scores a case by its exit
 # code, so a runtime that exits 0 after failing to parse gets credited for files
 # it never ran. Needs the runtime binary and node.

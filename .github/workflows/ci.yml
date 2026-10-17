@@ -182,10 +182,11 @@ jobs:
           node tools/check-conformance-ratchet.mjs
           node tools/check-vm-coverage.mjs
 
-      - name: generated builtin list and AST-reference baseline hold
+      - name: generated builtin list, AST-reference and bare Vec<JSValue> baselines hold
         run: |
           node tools/gen-builtins.mjs --check
           node tools/check-ast-refs.mjs
+          node tools/check-rooted-vec.mjs
 
       # Both need bun (already on this runner) and neither needs a corpus: the
       # corpus-dependent half of each prints its own skip line.

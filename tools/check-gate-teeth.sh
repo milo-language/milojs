@@ -135,6 +135,16 @@ teeth "check-bench-budget (over)" docs/conformance/bench.json \
 teeth "check-bench-budget (uncovered)" docs/conformance/bench-budget.json \
     "perl -0pi -e 's/\"arith\":/\"arithRenamed\":/' docs/conformance/bench-budget.json" \
     "node tools/check-bench-budget.mjs"
+# --- rooted vec: a new bare Vec<JSValue> local in engine code must fail the ratchet.
+# The appended fn is a plain local, the exact shape RootedVec exists to replace.
+teeth "check-rooted-vec (new bare local)" src/engine/strutil.milo \
+    "printf '\nfn teethBareVec() {\n    var v: Vec<JSValue> = Vec.new()\n}\n' >> src/engine/strutil.milo" \
+    "node tools/check-rooted-vec.mjs"
+# ...and a baseline left above the real count (a conversion nobody wrote down) must fail too.
+teeth "check-rooted-vec (stale baseline)" tools/rooted-vec-baseline.txt \
+    "perl -pi -e 's/^(src\\/engine\\/bytecode.milo) 1\$/\$1 2/' tools/rooted-vec-baseline.txt" \
+    "node tools/check-rooted-vec.mjs"
+
 # --- provenance: a hand-edited .expected is the defect verify-expected exists for ---
 teeth "verify-expected" tests/moduleNotFound.expected \
     "printf 'hand written line\n' >> tests/moduleNotFound.expected" \
