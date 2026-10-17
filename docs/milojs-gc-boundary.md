@@ -1,9 +1,9 @@
 <!-- doc-meta
 system: gc-boundary
 purpose: the project direction: milojs showcases Milo by making the GC-to-native boundary safe, and the design for roots, finalizers and stale references that does it
-key-files: src/engine/eval.milo, src/engine/runtime.milo, src/runtime/napi.milo
+key-files: src/engine/eval.milo, src/engine/runtime.milo, src/runtime/napi.milo, lib/fs.js
 update-when: a step below lands, a probe result changes, or the direction is revisited
-last-verified: 2026-10-16
+last-verified: 2026-10-16 (step 3 landed: owner slots, the finalize queue, napi finalizers and FileHandle)
 -->
 
 # The GC boundary: what milojs is for
@@ -55,9 +55,9 @@ is a reference into the GC'd object graph that outlived what kept it alive.
   is the C engines' failure mode.
 - Objects are `u32` indices into the heap in `src/engine/runtime.milo`. A
   recycled slot is silently a different object.
-- `napi_wrap` and `napi_add_finalizer` in `src/runtime/napi.milo` ignore their
-  finalizer callback. That avoids the double free by leaking, which is not
-  safety.
+- `napi_wrap` and `napi_add_finalizer` in `src/runtime/napi.milo` ignored their
+  finalizer callback until step 3 below. That avoided the double free by
+  leaking, which is not safety.
 
 The common thread across all three codebases: **Milo already wins on ordinary
 ownership, and loses at the boundary between the GC heap and everything else.**
@@ -122,6 +122,17 @@ borrowed value out"). The by-value spelling works but is clumsy. `Option.take()`
 
 Node-API finalizers then actually run, through the same `release`.
 
+As landed: the owner types are `NapiFinalizer` and `FdOwner` in
+`src/engine/runtime.milo`, each in an `OwnerSlot` chained off the object's
+`JSObjExtra.ownerHead`. The sweep only moves a dead object's owners to
+`Interp.finalizeQueue`; `drainFinalizers` in `src/engine/eval.milo` empties it
+after each turn's microtasks, which is when node's deferred finalizers have run
+by. An addon callback's handles stop being roots when it returns, as in node;
+without that, every object an addon touched was pinned and nothing could
+finalize. A napi owner is disposed by remove_wrap (cancel), the drain, or
+`napiTeardown` at exit; an fd owner by `FileHandle.close()` in `lib/fs.js` or
+the drain. Each path is a `.take()`.
+
 ### 3. Stale references: generational handles where slots recycle
 
 Already planned in `docs/milojs-arena-safety.md`: object and scope slots move to
@@ -163,8 +174,9 @@ test262 and the node oracle stay as regression gates.
    fuzz campaign in step 6 runs on linux-arm64 too.
 2. ~~`Option.take` in Milo.~~ Landed as a compiler builtin, milo `348927e4`:
    `x.take()` lowers to `replace(x, None)` and needs a mutable place.
-3. Mechanism 2 for Node-API and one resource module, with its bug-shape
-   fixtures.
+3. ~~Mechanism 2 for Node-API and one resource module.~~ Landed: napi_wrap,
+   add_finalizer, create_external and remove_wrap, and fs.promises FileHandle,
+   through one taken owner each, with the bun-shape fixtures.
 4. Mechanism 1: port the stack scan, add `RootedVec` and its gate, delete
    `tempRoots`, keep gc-stress green.
 5. Mechanism 3 per `docs/milojs-arena-safety.md`.

@@ -196,6 +196,17 @@ stayed white), and the same collector support for WeakRef and
 FinalizationRegistry, which lib/engine-prelude.js also implements with strong
 references. Lookup is also a linear scan, as for Map (`mapFind`).
 
+## Node-API: a weak reference is strong, so an ObjectWrap is never finalized
+
+`napi_create_reference` pins its value for the whole
+run whatever the refcount. node-addon-api's `ObjectWrap` holds a refcount-0
+(weak) reference to every instance it wraps, so those instances are never
+collected and their `napi_wrap` finalizers only run at teardown. A bare
+`napi_wrap`, `napi_add_finalizer` and `napi_create_external` do finalize on
+GC (tests/napi/finalize.c). The fix is the same collector support WeakMap needs
+above: a weak slot the sweep clears, so a dead target reads back as empty
+instead of as whatever object reuses its index.
+
 ## Engine: an object used as a computed key ignores its own toString
 
 `o[k]` with an object `k` keys on `toStr(k)`, which is "[object Object]" for
