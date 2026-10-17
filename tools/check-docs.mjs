@@ -189,9 +189,14 @@ for (const rel of docs) {
   // proves it is in step, and proves it harder than an edit-time heuristic can:
   // it regenerates and compares byte for byte.
   const generated = /^generated\b/i.test(m["update-when"] ?? "");
-  const touched = generated ? null : lastTouched(keyFiles.filter((f) => f !== rel));
+  // A key-file with uncommitted changes moves at the coming commit, which is later
+  // than any commit the doc has. Without this the hook passed a code change whose
+  // docs were untouched, and CI failed the moment the commit existed.
+  const ownKeys = keyFiles.filter((f) => f !== rel);
+  const keysDirty = !generated && ownKeys.some((f) => existsSync(p(f)) && dirtyInTree(f));
+  const touched = generated ? null : keysDirty ? "9998" : lastTouched(ownKeys);
   if (touched) {
-    const touchedDay = touched.slice(0, 10);
+    const touchedDay = keysDirty ? new Date().toISOString().slice(0, 10) : touched.slice(0, 10);
     // A doc with uncommitted edits is being written right now — that IS the
     // same-commit update, seen before the commit exists.
     const docMoved = dirtyInTree(rel) ? "9999" : lastTouched([rel]);
