@@ -57,6 +57,11 @@ teeth() {
     before=$(sha "$file")
 
     eval "$mutate"
+    # A probe whose edit no longer matches anything (the line it rewrites changed)
+    # leaves the file as it was, and the gate then "passes with the violation
+    # applied" for the wrong reason, or worse, fails for an unrelated one.
+    local mutated=1
+    [ "$(sha "$file")" = "$before" ] && mutated=0
     out=$(eval "$gate" 2>&1)
     code=$?
 
@@ -73,7 +78,11 @@ teeth() {
     fi
 
     checked=$((checked + 1))
-    if [ "$code" -eq 0 ]; then
+    if [ "$mutated" -eq 0 ]; then
+        status=1
+        toothless=$((toothless + 1))
+        echo "toothless: $label: the probe changed nothing in $file, so it tests nothing"
+    elif [ "$code" -eq 0 ]; then
         status=1
         toothless=$((toothless + 1))
         echo "toothless: $label passed with the violation applied"
@@ -142,7 +151,7 @@ teeth "check-rooted-vec (new bare local)" src/engine/strutil.milo \
     "node tools/check-rooted-vec.mjs"
 # ...and a baseline left above the real count (a conversion nobody wrote down) must fail too.
 teeth "check-rooted-vec (stale baseline)" tools/rooted-vec-baseline.txt \
-    "perl -pi -e 's/^(src\\/engine\\/bytecode.milo) 1\$/\$1 2/' tools/rooted-vec-baseline.txt" \
+    "perl -pi -e 's/^(src\\/engine\\/\\S+) (\\d+)\$/\$1 . \" \" . (\$2 + 1)/e' tools/rooted-vec-baseline.txt" \
     "node tools/check-rooted-vec.mjs"
 
 # --- provenance: a hand-edited .expected is the defect verify-expected exists for ---
