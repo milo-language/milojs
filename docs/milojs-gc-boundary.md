@@ -1,7 +1,7 @@
 <!-- doc-meta
 system: gc-boundary
 purpose: the project direction (a complete JS engine and Node-compatible runtime in Milo, replacing what bun gets from Zig plus JSC) and the GC design that comes first: roots, finalizers and stale references
-key-files: src/engine/eval.milo, src/engine/runtime.milo, src/runtime/napi.milo, lib/fs.js
+key-files: src/engine/eval.milo, src/engine/runtime.milo, src/runtime/napi.milo, lib/fs.js, src/engine/stackscan.milo
 update-when: a step below lands, a probe result changes, or the direction is revisited
 last-verified: 2026-10-17 (JIT plan corrected, not LLVM; QuickJS decision point; direction restated: full engine and runtime, speed and node compat unfrozen; the 2026-10-16 narrowing to a safety showcase is withdrawn)
 -->
