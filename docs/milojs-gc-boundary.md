@@ -3,7 +3,7 @@ system: gc-boundary
 purpose: the project direction (a complete JS engine and Node-compatible runtime in Milo, replacing what bun gets from Zig plus JSC) and the GC design that comes first: roots, finalizers and stale references
 key-files: src/engine/eval.milo, src/engine/runtime.milo, src/runtime/napi.milo, lib/fs.js
 update-when: a step below lands, a probe result changes, or the direction is revisited
-last-verified: 2026-10-17 (direction restated: full engine and runtime, speed and node compat unfrozen; the 2026-10-16 narrowing to a safety showcase is withdrawn)
+last-verified: 2026-10-17 (JIT plan corrected, not LLVM; QuickJS decision point; direction restated: full engine and runtime, speed and node compat unfrozen; the 2026-10-16 narrowing to a safety showcase is withdrawn)
 -->
 
 # Direction: a whole JS engine and runtime in Milo
@@ -27,7 +27,7 @@ Node-API addons). Esoteric corners and deprecated APIs are not targets; a
 | layer | now | bar |
 |---|---|---|
 | engine correctness | test262 82% on a 3% sample | test262 at QuickJS's level, Temporal and Intl included |
-| engine speed | median 410x behind bun (`docs/conformance/bench.json`) | QuickJS parity first (bytecode VM on every body), then a JIT |
+| engine speed | median 410x behind bun (`docs/conformance/bench.json`); not yet measured against QuickJS | QuickJS parity first (bytecode VM on every body), then a JIT |
 | runtime | 17.3% of node `test/parallel` | real apps run unmodified (Express, Prisma, then a Next-sized app); bun's 40.8% on the same sweep |
 
 ## Revision: 2026-10-16 narrowing withdrawn
@@ -187,9 +187,21 @@ The writeup has to rest on things that fail when they should:
      Next-sized app). Each failure an app hits is the next ticket.
    - **Hardening:** mechanism 3 per `docs/milojs-arena-safety.md`, and the
      crash fuzzer against milojs and QuickJS on mutated test262 input.
-6. The JIT: a baseline tier, then an optimizing tier that emits LLVM IR for hot
-   functions (Milo already lowers to LLVM). Design doc when step 5's engine track
-   reaches QuickJS parity.
+6. The JIT: a baseline tier with its own fast code generator, then an
+   optimizing tier (type speculation, inline caches, deopt). Not LLVM: WebKit's
+   FTL tier used LLVM and replaced it with B3 in 2016 because LLVM compiles too
+   slowly for a JIT. LLVM fits an ahead-of-time path, which is where the
+   ChadScript tie-in belongs. Design doc when step 5's engine track reaches
+   QuickJS parity.
+
+**Decision point at QuickJS parity.** If milojs is still well behind QuickJS
+with the same design (bytecode interpreter, same object model), the cost is in
+Milo's generated code or the value representation, not a missing JIT. Fix that
+first: a JIT on a slow runtime is still slow.
+
+Rough sizes, for planning rather than promise: step 4 weeks; step 5's engine and
+runtime tracks months each, run side by side; the baseline JIT 6+ months; the
+optimizing tier years. JSC's four tiers took a dedicated team about 15 years.
 
 test262, the node oracle and the bench budgets are the regression gates
 throughout.
