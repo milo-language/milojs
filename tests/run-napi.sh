@@ -62,3 +62,14 @@ MILOJS_NAPI_ADDON="$TMP/finalize.node" node --expose-gc tests/napi/finalize.js >
 MILOJS_NAPI_ADDON="$TMP/finalize.node" "$RUNTIME" tests/napi/finalize.js >"$TMP/actual4"
 diff -u "$TMP/expected4" "$TMP/actual4"
 echo "node-api finalizers ok"
+
+# A cached addon's exports must survive a collection when nothing else holds them:
+# callback.node drives the first load of surface.node from inside a native callback.
+case "$(uname -s)" in
+  Darwin) "$CC" -dynamiclib -undefined dynamic_lookup tests/napi/surface.c -o "$TMP/surface2.node" ;;
+  *)      "$CC" -shared -fPIC tests/napi/surface.c -o "$TMP/surface2.node" ;;
+esac
+MILOJS_NAPI_ADDON="$TMP/callback.node" MILOJS_NAPI_OTHER="$TMP/surface2.node" node --expose-gc tests/napi/addonexports.js >"$TMP/expected5"
+MILOJS_NAPI_ADDON="$TMP/callback.node" MILOJS_NAPI_OTHER="$TMP/surface2.node" "$RUNTIME" tests/napi/addonexports.js >"$TMP/actual5"
+diff -u "$TMP/expected5" "$TMP/actual5"
+echo "node-api addon exports cache ok"

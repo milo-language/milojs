@@ -625,9 +625,9 @@ fn dateMethodProg(prog: &Prog, st: &mut Interp, o: i64, name: &string, args: &Ve
         if st.throwing {
             return JSValue.Undefined
         }
-        return dateMethod(&mut st, o, name, nums)
+        return dateMethod(&mut st, o, name, RootedVec.fromVec(nums))
     }
-    return dateMethod(&mut st, o, name, args)
+    return dateMethod(&mut st, o, name, RootedVec.fromClone(args))
 }
 
 // Number.prototype.toFixed/toPrecision/toExponential/toString take one
@@ -640,10 +640,10 @@ fn primitiveMethodProg(prog: &Prog, name: &string, recv: &JSValue, args: &Vec<JS
             if st.throwing {
                 return JSValue.Undefined
             }
-            return primitiveMethod(name, recv, nums, &mut st)
+            return primitiveMethod(name, recv, RootedVec.fromVec(nums), &mut st)
         }
     }
-    return primitiveMethod(name, recv, args, &mut st)
+    return primitiveMethod(name, recv, RootedVec.fromClone(args), &mut st)
 }
 
 // ToNumber over an argument list, left to right, stopping at the first throw:
@@ -710,8 +710,8 @@ fn stringArgsNeedCoercion(name: &string, args: &Vec<JSValue>): bool {
 // Callers must run this AFTER the regex-op and concat branches: a RegExp
 // argument to replace/split belongs to those, and stringifying it here would
 // turn `s.replace(/a/g, "x")` into a search for the literal text "/a/g".
-fn coercedStringArgs(prog: &Prog, name: &string, args: &Vec<JSValue>, st: &mut Interp): Vec<JSValue> {
-    var out: Vec<JSValue> = Vec.new()
+fn coercedStringArgs(prog: &Prog, name: &string, args: &Vec<JSValue>, st: &mut Interp): RootedVec {
+    var out: RootedVec = RootedVec.new()
     // includes/startsWith/endsWith REJECT a RegExp argument rather than
     // stringifying it: the spec says so precisely because the coercion below
     // would otherwise turn the call into a substring search for "/re/" and
@@ -2244,9 +2244,9 @@ fn regexProtoOp(prog: &Prog, recv: &JSValue, name: &string, args: &Vec<JSValue>,
     // rejects that case) does not do.
     if regexIsPlain(st, h) && !(id == WK_MATCH_ALL && !st.regexes[st.objExtras[st.objects[h].extra].regexId].flagG) {
         if name == "__reTest" {
-            return regexMethod(&mut st, h, "test", args)
+            return regexMethod(&mut st, h, "test", RootedVec.fromClone(args))
         }
-        return regexMethod(&mut st, h, name, args)
+        return regexMethod(&mut st, h, name, RootedVec.fromClone(args))
     }
     let spec = objHandle(scopeLookup(st, st.globalScope, "__reSpec"))
     var f = JSValue.Undefined
@@ -2288,7 +2288,7 @@ fn stringRegexProtocol(prog: &Prog, st: &mut Interp, sRef: &string, nameRef: &st
     let h = objHandle(arg0)
     if h >= 0 {
         if regexIsPlain(st, h) && objOwnIndex(st, h, key) < 0 {
-            return Option.Some(stringRegexOp(prog, sv, nm, args, &mut st))
+            return Option.Some(stringRegexOp(prog, sv, nm, RootedVec.fromClone(args), &mut st))
         }
         // replaceAll and matchAll reject a non-global regex before looking the
         // method up; IsRegExp consults @@match first, then [[RegExpMatcher]]
@@ -2342,11 +2342,11 @@ fn stringRegexProtocol(prog: &Prog, st: &mut Interp, sRef: &string, nameRef: &st
         }
     }
     if nm == "match" || nm == "search" || nm == "matchAll" {
-        let ra = regexArgFor(&mut st, nm, args)
+        let ra = regexArgFor(&mut st, nm, RootedVec.fromClone(args))
         if st.regexProtoPristine {
             return Option.Some(stringRegexOp(prog, sv, nm, ra, &mut st))
         }
-        let rx = cloneValue(ra[0])
+        let rx = cloneValue(ra.get(0))
         pushTemp(&mut st, cloneValue(rx))
         let rm = getMemberDyn(prog, objHandle(rx), key, &mut st)
         if st.throwing {
@@ -2458,7 +2458,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
         // a pristine date with neither shadowed may skip the lookup.
         let direct = st.dateProtoPristine && st.objects[dh].isDate && st.objects[dh].proto == st.dateProtoObj
             && objOwnIndex(st, dh, "valueOf") < 0 && objOwnIndex(st, dh, "toString") < 0
-        var dargs: Vec<JSValue> = Vec.new()
+        var dargs: RootedVec = RootedVec.new()
         if hint == "number" {
             if direct {
                 return dateMethod(&mut st, dh, "valueOf", dargs)
@@ -2614,7 +2614,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             // both sides share (slice, indexOf, concat, at…) stay with the
             // string, which is what a bare "abc".slice() must keep doing.
             if isArrayMethod(name) && !isStringMethodName(name) {
-                return arrayMethodGeneric(prog, JSValue.Str(sv.clone()), name, args, &mut st)
+                return arrayMethodGeneric(prog, JSValue.Str(sv.clone()), name, RootedVec.fromClone(args), &mut st)
             }
             if let Option.Some(rr) = stringRegexProtocol(prog, &mut st, sv, name, args) {
                 return rr
@@ -2632,7 +2632,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
                 }
                 return stringMethod(name, sv, ca, &mut st)
             }
-            return stringMethod(name, sv, args, &mut st)
+            return stringMethod(name, sv, RootedVec.fromClone(args), &mut st)
         }
         JSValue.Obj(o) => {
             // .call/.apply/.bind on a BUILT-IN method value. This is the
@@ -2782,10 +2782,10 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
                 return dateMethodProg(prog, &mut st, o, name, args)
             }
             if st.objects[o].isMap || st.objects[o].isSet {
-                return mapMethod(prog, o, name, args, &mut st)
+                return mapMethod(prog, o, name, RootedVec.fromClone(args), &mut st)
             }
             if st.objExtras[st.objects[o].extra].weakKind != 0 && isWeakMethodName(name) {
-                return weakMethod(o, name, args, &mut st)
+                return weakMethod(o, name, RootedVec.fromClone(args), &mut st)
             }
             // a bound regex/buffer/typed-array method re-dispatches through here,
             // so these must be reachable or an extracted method silently does
@@ -2793,10 +2793,10 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             // The flag ACCESSORS are generic in the spec (see regexMethod), so
             // they have to reach it for a receiver that is not a regex at all.
             if isRegexMethodName(name) && (st.objExtras[st.objects[o].extra].regexId >= 0 || isRegexAccessorName(name)) {
-                return regexMethod(&mut st, o, name, args)
+                return regexMethod(&mut st, o, name, RootedVec.fromClone(args))
             }
             if st.objects[o].isDataView && isDataViewMethodName(name) {
-                return dataViewMethod(prog, o, name, args, &mut st)
+                return dataViewMethod(prog, o, name, RootedVec.fromClone(args), &mut st)
             }
             if st.objects[o].isGenerator {
                 var gmode: i64 = -1
@@ -2819,13 +2819,13 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
                 }
             }
             if st.objExtras[st.objects[o].extra].taBuf >= 0 && isTypedArrayMethodName(name) {
-                return typedArrayMethod(prog, o, name, args, &mut st)
+                return typedArrayMethod(prog, o, name, RootedVec.fromClone(args), &mut st)
             }
             // A Node-API Buffer's `.bytes` is an array-like native view with
             // Array.prototype in its chain. Re-looking up that same bound method
             // here recurses forever; apply the generic operation to the view.
             if nativeBufferLen(st, o) >= 0 && isArrayMethod(name) {
-                return arrayMethodGeneric(prog, JSValue.Obj(o), name, args, &mut st)
+                return arrayMethodGeneric(prog, JSValue.Obj(o), name, RootedVec.fromClone(args), &mut st)
             }
 
             if name == "hasOwnProperty" {
@@ -2854,7 +2854,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
                 // generic array-method path adapts the receiver through [[Get]]
                 // first, which is what the spec's join does.
                 if valueIsArrayLike(st, JSValue.Obj(o)) {
-                    return arrayMethodGeneric(prog, JSValue.Obj(o), "toString", args, &mut st)
+                    return arrayMethodGeneric(prog, JSValue.Obj(o), "toString", RootedVec.fromClone(args), &mut st)
                 }
                 // Error.prototype.toString is "Name: message", NOT the type tag —
                 // this is the path String(err) and `"" + err` take through
@@ -2926,7 +2926,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
                 return JSValue.Bool(pi >= 0 && st.objects[o].props[pi].enumerable)
             }
             if st.objects[o].isArray && isArrayMethod(name) {
-                return arrayMethod(prog, o, name, args, &mut st)
+                return arrayMethod(prog, o, name, RootedVec.fromClone(args), &mut st)
             }
             let m = getMemberDyn(prog, o, name, &mut st)
             // The lookup may resolve THROUGH THE PROTOTYPE CHAIN to the same bound
@@ -2940,14 +2940,14 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             // A user method of the same name is a Func, not a bound builtin, so
             // `({map: f}).map()` still calls f.
             if isArrayMethod(name) && !st.objects[o].isArray && boundMethodNameOf(st, m) == name.clone() {
-                return arrayMethodGeneric(prog, JSValue.Obj(o), name, args, &mut st)
+                return arrayMethodGeneric(prog, JSValue.Obj(o), name, RootedVec.fromClone(args), &mut st)
             }
             // Array.prototype.<m>.call(arrayLike, …): the receiver has no such
             // method of its own, so the spec's generic definition applies. Only
             // reached when lookup came up empty, so ({map: f}).map() still calls
             // the object's own map.
             if isUndefinedValue(m) && isArrayMethod(name) {
-                return arrayMethodGeneric(prog, JSValue.Obj(o), name, args, &mut st)
+                return arrayMethodGeneric(prog, JSValue.Obj(o), name, RootedVec.fromClone(args), &mut st)
             }
             return callValue(prog, m, args, JSValue.Obj(o), &mut st)
         }
@@ -3101,7 +3101,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<J
             // handled by the generic adapter rather than silently answering
             // undefined here
             if isArrayMethod(name) {
-                return arrayMethodGeneric(prog, cloneValue(recv), name, args, &mut st)
+                return arrayMethodGeneric(prog, cloneValue(recv), name, RootedVec.fromClone(args), &mut st)
             }
             return primitiveMethodProg(prog, name, recv, args, &mut st)
         }
@@ -4008,7 +4008,7 @@ pub fn callNativeAsFunction(prog: &Prog, n: &Native, fo: i64, argVals: &Vec<JSVa
     if nativeEq(n, Native.Fn(Builtin.Date)) {
         let nowObj = objHandle(callNativeProg(prog, n, fo, argVals, &mut st))
         if nowObj >= 0 {
-            var noArgs: Vec<JSValue> = Vec.new()
+            var noArgs: RootedVec = RootedVec.new()
             return dateMethod(&mut st, nowObj, "toString", noArgs)
         }
         return JSValue.Str("Invalid Date")
@@ -16178,7 +16178,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 }
                 return stringMethod(name, s, ca, &mut st)
             }
-            return stringMethod(name, s, argVals, &mut st)
+            return stringMethod(name, s, RootedVec.fromVec(argVals), &mut st)
         }
         JSValue.Obj(o) => {
             pushTemp(&mut st, JSValue.Obj(o))
@@ -16217,7 +16217,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 if st.throwing {
                     return JSValue.Undefined
                 }
-                let r = typedArrayMethod(prog, o, name, argVals, &mut st)
+                let r = typedArrayMethod(prog, o, name, RootedVec.fromVec(argVals), &mut st)
                 popTemp(&mut st)
                 return r
             }
@@ -16230,7 +16230,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 if st.throwing {
                     return JSValue.Undefined
                 }
-                let r = dataViewMethod(prog, o, name, argVals, &mut st)
+                let r = dataViewMethod(prog, o, name, RootedVec.fromVec(argVals), &mut st)
                 popTemp(&mut st)
                 return r
             }
@@ -16260,7 +16260,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 if st.throwing {
                     return JSValue.Undefined
                 }
-                let r = regexMethod(&mut st, o, name, argVals)
+                let r = regexMethod(&mut st, o, name, RootedVec.fromVec(argVals))
                 popTemp(&mut st)
                 return r
             }
@@ -16461,7 +16461,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 if st.throwing {
                     return JSValue.Undefined
                 }
-                let r = mapMethod(prog, o, name, argVals, &mut st)
+                let r = mapMethod(prog, o, name, RootedVec.fromVec(argVals), &mut st)
                 popTemp(&mut st)
                 return r
             }
@@ -16494,7 +16494,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 if st.throwing {
                     return JSValue.Undefined
                 }
-                let r = arrayMethod(prog, o, name, argVals, &mut st)
+                let r = arrayMethod(prog, o, name, RootedVec.fromVec(argVals), &mut st)
                 popTemp(&mut st)
                 return r
             }

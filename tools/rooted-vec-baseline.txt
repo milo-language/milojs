@@ -2,8 +2,8 @@
 # Checked by tools/check-rooted-vec.mjs. Counts may only go DOWN: convert a site to
 # RootedVec, then lower the number here (the gate fails if you forget). Step 4c converts
 # these; step 4d deletes tempRoots. Never raise a number: use RootedVec instead.
-src/engine/builtins.milo 15
-src/engine/bytecode.milo 1
-src/engine/eval.milo 130
-src/engine/methods.milo 46
-src/engine/runtime.milo 2
+src/engine/builtins.milo 0
+src/engine/bytecode.milo 0
+src/engine/eval.milo 126
+src/engine/methods.milo 0
+src/engine/runtime.milo 0

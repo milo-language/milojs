@@ -48,6 +48,15 @@ fn RootedVec.cloneToVec(self: &RootedVec): Vec<JSValue>
 
 Escape hatch: an unrooted plain copy, this one stays intact.
 
+### `RootedVec.fromClone`
+
+```milo
+fn RootedVec.fromClone(v: &Vec<JSValue>): RootedVec
+```
+
+A registered copy of a borrowed plain Vec. For eval.milo call sites that still hold their
+arguments in a Vec<JSValue> (the originals stay with the caller); batch 2 deletes them.
+
 ### `RootedVec.fromVec`
 
 ```milo

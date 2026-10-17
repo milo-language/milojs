@@ -29,3 +29,6 @@ src/engine/runtime.milo | genThis: Vec<JSValue>, | generator table; collect mark
 src/engine/runtime.milo | genYielded: Vec<JSValue>, | generator table; collect marks it
 src/engine/runtime.milo | genSent: Vec<JSValue>, | generator table; collect marks it
 src/engine/runtime.milo | genErr: Vec<JSValue>, | generator table; collect marks it
+src/engine/runtime.milo | var temps: Vec<JSValue> = Vec.new() | saveExecCtx builds the ExecCtx.tempRoots field with no GC allocation before it is stored; st.tempRoots still holds the originals until reset, then collect marks st.suspended[i].tempRoots
+src/engine/runtime.milo | napiAddonExports: Vec<JSValue>, | Interp field; collect marks every entry (the "napiAddonExports" loop after modExports)
+src/engine/bytecode.milo | var argVals: Vec<JSValue> = Vec.new() | Op.Call snapshot of vmStack[calleeSlot+1..sp]; st.vmSp = sp is set first and collect marks vmStack[0..vmSp], so the originals stay marked

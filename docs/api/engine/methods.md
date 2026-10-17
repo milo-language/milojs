@@ -11,7 +11,7 @@ _Undocumented._
 ### `arrayMethod`
 
 ```milo
-pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st: &mut Interp): JSValue
 ```
 
 _Undocumented._
@@ -19,7 +19,7 @@ _Undocumented._
 ### `arrayMethodGeneric`
 
 ```milo
-pub fn arrayMethodGeneric(prog: &Prog, recv: &JSValue, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn arrayMethodGeneric(prog: &Prog, recv: &JSValue, name: &string, args: &RootedVec, st: &mut Interp): JSValue
 ```
 
 Run an Array.prototype method against a receiver that is not a real array.
@@ -39,7 +39,7 @@ use Uint8Array, whose storage is raw bytes.
 ### `dataViewMethod`
 
 ```milo
-pub fn dataViewMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn dataViewMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st: &mut Interp): JSValue
 ```
 
 DataView get/set. Default endianness is BIG-endian (the littleEndian arg
@@ -57,7 +57,7 @@ _Undocumented._
 ### `dateMethod`
 
 ```milo
-pub fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSValue
+pub fn dateMethod(st: &mut Interp, o: i64, name: &string, args: &RootedVec): JSValue
 ```
 
 _Undocumented._
@@ -97,7 +97,7 @@ _Undocumented._
 ### `mapMethod`
 
 ```milo
-pub fn mapMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn mapMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st: &mut Interp): JSValue
 ```
 
 _Undocumented._
@@ -185,7 +185,7 @@ callBuiltin does not have.
 ### `typedArrayMethod`
 
 ```milo
-pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st: &mut Interp): JSValue
 ```
 
 Typed-array methods. Views share their buffer, so subarray returns a new view
@@ -195,7 +195,7 @@ typed-array bug.
 ### `weakMethod`
 
 ```milo
-pub fn weakMethod(o: i64, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn weakMethod(o: i64, name: &string, args: &RootedVec, st: &mut Interp): JSValue
 ```
 
 WeakMap/WeakSet methods. The receiver has already passed its brand check.

@@ -87,6 +87,18 @@ impl RootedVec {
         return RootedVec.withItems(v)
     }
 
+    // A registered copy of a borrowed plain Vec. For eval.milo call sites that still hold their
+    // arguments in a Vec<JSValue> (the originals stay with the caller); batch 2 deletes them.
+    fn fromClone(v: &Vec<JSValue>): RootedVec {
+        var out = RootedVec.withCapacity(v.len())
+        var i: i64 = 0
+        while i < v.len() {
+            out.push(cloneValue(v[i]))
+            i = i + 1
+        }
+        return out
+    }
+
     fn push(self: &mut RootedVec, v: JSValue) {
         unsafe {
             (*self.rec).items.push(v)

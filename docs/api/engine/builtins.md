@@ -3,7 +3,7 @@
 ### `argPresent`
 
 ```milo
-pub fn argPresent(args: &Vec<JSValue>, i: i64): bool
+pub fn argPresent(args: &RootedVec, i: i64): bool
 ```
 
 An argument passed explicitly as `undefined` is the same as an absent one to
@@ -194,7 +194,7 @@ pub fn numToIndex(x: f64): i64
 
 f64 -> i64 for an INDEX-like argument, saturating instead of trapping.
 
-`numToIndex(toNum(args[0]))` was used in 63 places. For an ordinary argument it is
+`numToIndex(toNum(args.get(0)))` was used in 63 places. For an ordinary argument it is
 fine; for `Number.MAX_VALUE` the cast produces something near i64::MAX and the
 next arithmetic on it OVERFLOWS, which in Milo is a trap — so
 `dv.getFloat64(1e308)` killed the process with "integer overflow" instead of
@@ -207,7 +207,7 @@ NaN answers 0, which is ToIntegerOrInfinity's rule.
 ### `primitiveMethod`
 
 ```milo
-pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn primitiveMethod(name: &string, recv: &JSValue, args: &RootedVec, st: &mut Interp): JSValue
 ```
 
 _Undocumented._
@@ -215,7 +215,7 @@ _Undocumented._
 ### `regexArgFor`
 
 ```milo
-pub fn regexArgFor(st: &mut Interp, name: &string, args: &Vec<JSValue>): Vec<JSValue>
+pub fn regexArgFor(st: &mut Interp, name: &string, args: &RootedVec): RootedVec
 ```
 
 RegExp.prototype. Like the buffer family and Date before it, this object did
@@ -233,7 +233,7 @@ requires of it.
 ### `regexMethod`
 
 ```milo
-pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSValue
+pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &RootedVec): JSValue
 ```
 
 _Undocumented._
@@ -265,7 +265,7 @@ U+00FF was destroyed.
 ### `stringMethod`
 
 ```milo
-pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn stringMethod(name: &string, s: &string, args: &RootedVec, st: &mut Interp): JSValue
 ```
 
 Dispatch a String method by name. Callback-taking methods don't exist on
@@ -274,7 +274,7 @@ strings, so this needs nothing from eval — only heap access for split.
 ### `stringRegexOp`
 
 ```milo
-pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &RootedVec, st: &mut Interp): JSValue
 ```
 
 _Undocumented._

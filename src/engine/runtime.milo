@@ -2879,6 +2879,15 @@ pub fn collect(st: &mut Interp) {
         markValue(&mut st, mv)
         me = me + 1
     }
+    // loaded Node-API addons' exports: findNapiAddon hands these back on a second
+    // require. They were kept alive only by the load-time napi handle's host root,
+    // which is not a contract (napiReleaseHandlesFrom can release such a handle).
+    var nae: i64 = 0
+    while nae < st.napiAddonExports.len() {
+        let nav = cloneValue(st.napiAddonExports[nae])
+        markValue(&mut st, nav)
+        nae = nae + 1
+    }
     // pending timer callbacks and queued microtasks are roots — nothing else
     // references them until they run
     var tm: i64 = 0

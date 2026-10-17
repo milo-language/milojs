@@ -45,6 +45,7 @@ from "std/strconv" import { parseFloat }
 from "./regex" import { Regex, regexCompile, regexExec }
 from "./ast" import { gProg, Prog }
 from "./bigint" import { bnToRadix }
+from "./rooted" import { RootedVec }
 
 // Throw a built-in error of `kind`, the way a JS `throw` does. makeError in
 // eval.milo builds the object: the same prototype a constructed error of that
@@ -146,7 +147,7 @@ fn jsCharAt(s: &string, idx: i64): string {
 
 // f64 -> i64 for an INDEX-like argument, saturating instead of trapping.
 //
-// `numToIndex(toNum(args[0]))` was used in 63 places. For an ordinary argument it is
+// `numToIndex(toNum(args.get(0)))` was used in 63 places. For an ordinary argument it is
 // fine; for `Number.MAX_VALUE` the cast produces something near i64::MAX and the
 // next arithmetic on it OVERFLOWS, which in Milo is a trap — so
 // `dv.getFloat64(1e308)` killed the process with "integer overflow" instead of
@@ -171,16 +172,16 @@ pub fn numToIndex(x: f64): i64 {
 // The raw numeric value of an argument, without the integer coercion argNum
 // applies. Needed where a NON-finite argument is itself an error and must be
 // detected before it is folded into an i64.
-fn argNumF(args: &Vec<JSValue>, i: i64, dflt: f64): f64 {
+fn argNumF(args: &RootedVec, i: i64, dflt: f64): f64 {
     if argPresent(args, i) {
-        return toNum(args[i])
+        return toNum(args.get(i))
     }
     return dflt
 }
 
-fn argNum(args: &Vec<JSValue>, i: i64, dflt: i64): i64 {
+fn argNum(args: &RootedVec, i: i64, dflt: i64): i64 {
     if argPresent(args, i) {
-        return numToIndex(toNum(args[i]))
+        return numToIndex(toNum(args.get(i)))
     }
     return dflt
 }
@@ -190,11 +191,11 @@ fn argNum(args: &Vec<JSValue>, i: i64, dflt: i64): i64 {
 // `"abcd".slice(1)`, not the empty string. Presence checks written as
 // `args.len() > i` alone get the explicit-undefined form wrong, and it is the
 // common shape in real code (a forwarded optional parameter).
-pub fn argPresent(args: &Vec<JSValue>, i: i64): bool {
+pub fn argPresent(args: &RootedVec, i: i64): bool {
     if i >= args.len() {
         return false
     }
-    match args[i] {
+    match args.get(i) {
         JSValue.Undefined => {
             return false
         }
@@ -204,9 +205,9 @@ pub fn argPresent(args: &Vec<JSValue>, i: i64): bool {
     }
 }
 
-fn argStr(args: &Vec<JSValue>, i: i64): string {
+fn argStr(args: &RootedVec, i: i64): string {
     if i < args.len() {
-        return toStr(args[i])
+        return toStr(args.get(i))
     }
     return ""
 }
@@ -228,16 +229,16 @@ pub fn strCodePoints(s: &string): Vec<string> {
     return out
 }
 
-fn jsSplit(s: &string, args: &Vec<JSValue>, st: &mut Interp): i64 {
+fn jsSplit(s: &string, args: &RootedVec, st: &mut Interp): i64 {
     let arr = newArray(&mut st)
     // second arg caps the result length; undefined means no limit
     var limit: i64 = -1
     if args.len() > 1 {
-        match args[1] {
+        match args.get(1) {
             JSValue.Undefined => {
             }
             _ => {
-                let ln = toNum(args[1])
+                let ln = toNum(args.get(1))
                 if isFiniteF(ln) && ln >= 0.0 {
                     limit = ln as i64
                 }
@@ -251,7 +252,7 @@ fn jsSplit(s: &string, args: &Vec<JSValue>, st: &mut Interp): i64 {
         arrPush(&mut st, arr, JSValue.Str(s.clone()))
         return arr
     }
-    let sep = toStr(args[0])
+    let sep = toStr(args.get(0))
     if sep.len() == 0 {
         // one entry per CODEPOINT. JS splits per UTF-16 unit, which would put the
         // two halves of an astral pair in separate entries — lone surrogates are
@@ -567,11 +568,11 @@ fn htmlAttrFor(n: &string): string {
 // RegExp argument outright rather than stringifying it, because the method would
 // otherwise silently do a substring search for "/re/" and answer false. That is
 // exactly what happened here.
-fn rejectRegexArg(name: &string, args: &Vec<JSValue>, st: &mut Interp): bool {
+fn rejectRegexArg(name: &string, args: &RootedVec, st: &mut Interp): bool {
     if args.len() == 0 {
         return false
     }
-    let h = objHandle(args[0])
+    let h = objHandle(args.get(0))
     if h < 0 {
         return false
     }
@@ -645,7 +646,7 @@ fn canonicalFlagOrder(flags: string): string {
 
 // Dispatch a String method by name. Callback-taking methods don't exist on
 // strings, so this needs nothing from eval — only heap access for split.
-pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+pub fn stringMethod(name: &string, s: &string, args: &RootedVec, st: &mut Interp): JSValue {
     if name == "toUpperCase" || name == "toLocaleUpperCase" {
         // the locale forms are the locale-independent ones here: this engine has
         // no locale data (see the Intl stub in lib/prelude.js), and node only
@@ -836,7 +837,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         // `"abcabc".lastIndexOf("b", 2)` answered 4 instead of 1.
         var i = s.len() - needle.len()
         if args.len() > 1 {
-            let posN = toNum(args[1])
+            let posN = toNum(args.get(1))
             if posN == posN {
                 var capUnits = posN as i64
                 if capUnits < 0 {
@@ -865,7 +866,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         }
         var pad = " "
         if argPresent(args, 1) {
-            pad = toStr(args[1])
+            pad = toStr(args.get(1))
         }
         let curLen = utf16Length(s)
         if pad.len() == 0 || curLen >= target {
@@ -965,7 +966,7 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         var out = s.clone()
         var i: i64 = 0
         while i < args.len() {
-            out = out + toStr(args[i])
+            out = out + toStr(args.get(i))
             i = i + 1
         }
         return JSValue.Str(out)
@@ -1051,11 +1052,11 @@ pub fn stringMethod(name: &string, s: &string, args: &Vec<JSValue>, st: &mut Int
         // an invalid form is a RangeError in the spec. Rejecting a typo'd form
         // loudly is worth more than pretending to normalize for it.
         if args.len() > 0 {
-            match cloneValue(args[0]) {
+            match args.get(0) {
                 JSValue.Undefined => {
                 }
                 _ => {
-                    let form = toStr(args[0])
+                    let form = toStr(args.get(0))
                     if form != "NFC" && form != "NFD" && form != "NFKC" && form != "NFKD" {
                         return throwErr(&mut st, "RangeError", "The normalization form should be one of NFC, NFD, NFKC, NFKD.")
                     }
@@ -1963,7 +1964,7 @@ fn buildMatchArray(st: &mut Interp, s: &string, saves: &Vec<i64>, rid: i64): JSV
     return JSValue.Obj(arr)
 }
 
-pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>): JSValue {
+pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &RootedVec): JSValue {
     // the prototype's flag accessors, dispatched under an internal name so they
     // cannot shadow an instance's own data property of the same name
     if isRegexAccessorName(name) {
@@ -2017,16 +2018,16 @@ pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>):
         strOp = "split"
     }
     if strOp.len() > 0 {
-        var sArgs: Vec<JSValue> = Vec.new()
+        var sArgs: RootedVec = RootedVec.new()
         sArgs.push(JSValue.Obj(o))
         var ai: i64 = 1
         while ai < args.len() {
-            sArgs.push(cloneValue(args[ai]))
+            sArgs.push(args.get(ai))
             ai = ai + 1
         }
         var recvStr = JSValue.Str("")
         if args.len() > 0 {
-            recvStr = JSValue.Str(toStrProg(gProg, args[0], &mut st))
+            recvStr = JSValue.Str(toStrProg(gProg, args.get(0), &mut st))
             if st.throwing {
                 return JSValue.Undefined
             }
@@ -2041,7 +2042,7 @@ pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>):
     // undefined, which is neither true nor false and breaks every caller.
     var subject = ""
     if args.len() > 0 {
-        subject = toStrProg(gProg, args[0], &mut st)
+        subject = toStrProg(gProg, args.get(0), &mut st)
         if st.throwing {
             return JSValue.Undefined
         }
@@ -2057,10 +2058,10 @@ pub fn regexMethod(st: &mut Interp, o: i64, name: &string, args: &Vec<JSValue>):
         var np = toStr(objGet(st, o, "source"))
         var nf = ""
         if args.len() > 0 {
-            np = toStr(args[0])
+            np = toStr(args.get(0))
         }
         if args.len() > 1 {
-            nf = toStr(args[1])
+            nf = toStr(args.get(1))
         }
         let fresh = makeRegex(&mut st, np, nf)
         let fh = objHandle(fresh)
@@ -2268,7 +2269,7 @@ fn regexReplaceFn(prog: &Prog, st: &mut Interp, s: &string, rid: i64, fn_: &JSVa
             let mstart = saves[0]
             let mend = saves[1]
             out = out + strSlice(s, last, mstart)
-            var args: Vec<JSValue> = Vec.new()
+            var args: RootedVec = RootedVec.new()
             args.push(JSValue.Str(strSlice(s, mstart, mend)))
             var g: i64 = 1
             let ng = saves.len() / 2
@@ -2311,7 +2312,7 @@ fn regexReplaceFn(prog: &Prog, st: &mut Interp, s: &string, rid: i64, fn_: &JSVa
                 popTemp(&mut st)
                 args.push(JSValue.Obj(gobj))
             }
-            let r = callValue(prog, fn_, args, JSValue.Undefined, &mut st)
+            let r = callValue(prog, fn_, args.cloneToVec(), JSValue.Undefined, &mut st)
             out = out + toStr(r)
             last = mend
             // advance a whole CHARACTER past a zero-width match: stepping one
@@ -2538,14 +2539,14 @@ fn regexStrMatchAll(st: &mut Interp, s: &string, rid: i64): JSValue {
 // engine resolves them); the prototype carries the methods.
 // The argument re-made as a RegExp, with matchAll keeping the /g the spec
 // requires of it.
-pub fn regexArgFor(st: &mut Interp, name: &string, args: &Vec<JSValue>): Vec<JSValue> {
+pub fn regexArgFor(st: &mut Interp, name: &string, args: &RootedVec): RootedVec {
     var pat = ""
     if args.len() > 0 {
-        match args[0] {
+        match args.get(0) {
             JSValue.Undefined => {
             }
             _ => {
-                pat = toStr(args[0])
+                pat = toStr(args.get(0))
             }
         }
     }
@@ -2553,18 +2554,18 @@ pub fn regexArgFor(st: &mut Interp, name: &string, args: &Vec<JSValue>): Vec<JSV
     if name == "matchAll" {
         flags = "g"
     }
-    var out: Vec<JSValue> = Vec.new()
+    var out: RootedVec = RootedVec.new()
     out.push(makeRegex(&mut st, pat, flags))
     var i: i64 = 1
     while i < args.len() {
-        out.push(cloneValue(args[i]))
+        out.push(args.get(i))
         i = i + 1
     }
     return out
 }
 
-pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>, st: &mut Interp): JSValue {
-    let rid = regexIdOf(st, args[0])
+pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &RootedVec, st: &mut Interp): JSValue {
+    let rid = regexIdOf(st, args.get(0))
     if name == "replace" || name == "replaceAll" {
         // replaceAll REQUIRES a global regex: a non-global one would replace the
         // first match only, which is the opposite of what the name promises, so
@@ -2572,8 +2573,8 @@ pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>
         if name == "replaceAll" && rid >= 0 && !st.regexes[rid].flagG {
             return throwErr(&mut st, "TypeError", "replaceAll must be called with a global RegExp")
         }
-        if args.len() > 1 && isCallable(args[1]) {
-            return regexReplaceFn(prog, &mut st, s, rid, cloneValue(args[1]))
+        if args.len() > 1 && isCallable(args.get(1)) {
+            return regexReplaceFn(prog, &mut st, s, rid, args.get(1))
         }
         var repl = ""
         if args.len() > 1 {
@@ -2583,7 +2584,7 @@ pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>
             // text instead of propagating. The non-regex spelling of replace
             // already coerced through coercedStringArgs; this branch is the one
             // that runs when the pattern is a regex.
-            repl = toStrProg(prog, cloneValue(args[1]), &mut st)
+            repl = toStrProg(prog, args.get(1), &mut st)
             if st.throwing {
                 return JSValue.Undefined
             }
@@ -2602,14 +2603,14 @@ pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &Vec<JSValue>
         return regexStrMatchAll(&mut st, s, rid)
     }
     if name == "split" {
-        // limit is the SECOND argument here; args[0] is the separator
+        // limit is the SECOND argument here; args.get(0) is the separator
         var splitLimit: i64 = -1
         if args.len() > 1 {
-            match cloneValue(args[1]) {
+            match args.get(1) {
                 JSValue.Undefined => {
                 }
                 _ => {
-                    let lv = toNum(args[1])
+                    let lv = toNum(args.get(1))
                     if lv != lv {
                         splitLimit = 0
                     } else {
@@ -2729,7 +2730,7 @@ fn numToLocale(n: f64): string {
     return out
 }
 
-pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>, st: &mut Interp): JSValue {
+pub fn primitiveMethod(name: &string, recv: &JSValue, args: &RootedVec, st: &mut Interp): JSValue {
     if name == "valueOf" {
         return cloneValue(recv)
     }
@@ -2742,12 +2743,12 @@ pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>, st: &
         if args.len() == 0 {
             return JSValue.Str(numToExponential(toNum(recv), 0, false))
         }
-        return JSValue.Str(numToExponential(toNum(recv), numToIndex(toNum(args[0])), true))
+        return JSValue.Str(numToExponential(toNum(recv), numToIndex(toNum(args.get(0))), true))
     }
     if name == "toFixed" || name == "toPrecision" {
         var digits: i64 = 0
         if args.len() > 0 {
-            digits = numToIndex(toNum(args[0]))
+            digits = numToIndex(toNum(args.get(0)))
         }
         // toFixed takes 0..100 and toPrecision 1..100; anything else is a
         // RangeError. Out of range simply produced a string of that many digits,
@@ -2755,7 +2756,7 @@ pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>, st: &
         if name == "toFixed" && args.len() > 0 && (digits < 0 || digits > 100) {
             return throwErr(&mut st, "RangeError", "toFixed() digits argument must be between 0 and 100")
         }
-        if name == "toPrecision" && args.len() > 0 && !isUndefinedValue(args[0]) && (digits < 1 || digits > 100) {
+        if name == "toPrecision" && args.len() > 0 && !isUndefinedValue(args.get(0)) && (digits < 1 || digits > 100) {
             return throwErr(&mut st, "RangeError", "toPrecision() argument must be between 1 and 100")
         }
         if name == "toPrecision" {
@@ -2771,7 +2772,7 @@ pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>, st: &
     if isBigIntVal(recv) {
         var radix: i64 = 10
         if args.len() > 0 {
-            radix = numToIndex(toNum(args[0]))
+            radix = numToIndex(toNum(args.get(0)))
         }
         if radix >= 2 && radix <= 36 {
             return JSValue.Str(bnToRadix(bigStrOf(recv), radix))
@@ -2782,8 +2783,8 @@ pub fn primitiveMethod(name: &string, recv: &JSValue, args: &Vec<JSValue>, st: &
     // where node answers "abc" and "true" — and tape passes an index straight
     // into toString, which took out all 53 package suites at their first require.
     if let JSValue.Number(_rn) = recv {
-        if args.len() > 0 && !isUndefinedValue(args[0]) {
-            let radix = numToIndex(toNum(args[0]))
+        if args.len() > 0 && !isUndefinedValue(args.get(0)) {
+            let radix = numToIndex(toNum(args.get(0)))
             // 2..36, and anything else is a RangeError rather than a silent
             // fallback to base 10: `(5).toString(1)` answered "5".
             if radix < 2 || radix > 36 {
