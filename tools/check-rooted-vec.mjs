@@ -21,7 +21,8 @@ import { join } from "path";
 
 const ROOT = ".";
 const NEEDLE = "Vec<JSValue>";
-const MIN_SEEN = 100;
+// 4c batch 2 left ~25 (the traced-field exemptions plus a few builders); batch 3 takes the last few.
+const MIN_SEEN = 20;
 const SKIP = new Set(["src/engine/rooted.milo"]);
 
 const meta = (p) => readFileSync(join(ROOT, p), "utf-8").split("\n");

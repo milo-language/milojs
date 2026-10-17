@@ -43,6 +43,7 @@
 // runs to its end before the heap is looked at. Nothing else rides on the
 // safepoint: no interrupt, no deadline check.
 
+from "./rooted" import { RootedVec }
 from "./ast" import {
     Prog, Expr, Stmt, ExprId, StmtId, BlockId, ArgListId
 }
@@ -1874,7 +1875,7 @@ pub fn runChunk(prog: &Prog, cid: i64, st: &mut Interp, scope: i64): Option<JSVa
                     // marked mid-dispatch under the GC-stress pass.
                     maybeGc(&mut st)
                     let calleeVal = cloneValue(st.vmStack[calleeSlot])
-                    var argVals: Vec<JSValue> = Vec.new()
+                    var argVals = RootedVec.new()
                     var ai: i64 = 0
                     while ai < argc {
                         argVals.push(cloneValue(st.vmStack[calleeSlot + 1 + ai]))

@@ -23,6 +23,7 @@
 from "std/io" import {
     writeStdout
 }
+from "../engine/rooted" import { RootedVec }
 from "../engine/value" import {
     toStr,
     JSValue, cloneValue, toNum, truthy, funcHandle
@@ -619,11 +620,19 @@ pub fn napi_get_cb_info(_env: *u8, cbinfo: i64, argc: *u8, argv: *u8, thisArg: *
 
 // Invoke an addon-implemented function. Called by callValue when a JS call lands on
 // an object whose napiFn is set.
-pub fn napiInvoke(fnIdx: i64, args: Vec<JSValue>, thisVal: JSValue): JSValue {
+pub fn napiInvoke(fnIdx: i64, argVals: &RootedVec, thisVal: JSValue): JSValue {
     if fnIdx < 0 || fnIdx >= gNapi.fns.len() {
         return JSValue.Undefined
     }
     let ptr = gNapi.fns[fnIdx].fnPtr
+    // This plain Vec goes straight into gNapi.calls (which collect marks), with no GC
+    // allocation in between.
+    var args: Vec<JSValue> = Vec.withCapacity(argVals.len())
+    var ai: i64 = 0
+    while ai < argVals.len() {
+        args.push(argVals.get(ai))
+        ai = ai + 1
+    }
     gNapi.calls.push(NapiCall {
         args: args, thisVal: thisVal, fnIdx: fnIdx
     }

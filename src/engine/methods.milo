@@ -133,7 +133,7 @@ fn toBigIntDigits(prog: &Prog, st: &mut Interp, v: &JSValue): string {
         JSValue.Str(_s) => {
             var cargs: RootedVec = RootedVec.new()
             cargs.push(cloneValue(v))
-            let r = callValue(prog, nativeValue(&mut st, Native.Fn(Builtin.BigInt)), cargs.cloneToVec(), JSValue.Undefined, &mut st)
+            let r = callValue(prog, nativeValue(&mut st, Native.Fn(Builtin.BigInt)), cargs, JSValue.Undefined, &mut st)
             if let JSValue.BigInt(rs) = r {
                 return rs.clone()
             }
@@ -327,7 +327,7 @@ fn callObjMethod(prog: &Prog, st: &mut Interp, recv: &JSValue, name: &string, ar
     if !isCallableIn(st, f) {
         return throwErr(&mut st, "TypeError", name.clone() + " is not a function")
     }
-    return callValue(prog, f, args.cloneToVec(), cloneValue(recv), &mut st)
+    return callValue(prog, f, args, cloneValue(recv), &mut st)
 }
 
 // The set-methods proposal takes "set-like" objects: {size, has, keys}. `size` is
@@ -435,7 +435,7 @@ fn iterClose(prog: &Prog, st: &mut Interp, iter: &JSValue) {
     }
     let f = getMember(st, h, "return")
     if isCallableIn(st, f) {
-        let _ = callValue(prog, f, Vec.new(), cloneValue(iter), &mut st)
+        let _ = callValue(prog, f, RootedVec.new(), cloneValue(iter), &mut st)
     }
 }
 
@@ -724,7 +724,7 @@ pub fn mapMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st: &mut 
             cbArgs.push(v)
             cbArgs.push(cloneValue(k))
             cbArgs.push(JSValue.Obj(o))
-            let _ = callValue(prog, cb, cbArgs.cloneToVec(), JSValue.Undefined, &mut st)
+            let _ = callValue(prog, cb, cbArgs, JSValue.Undefined, &mut st)
             if st.throwing {
                 break
             }
@@ -1675,7 +1675,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st
             cbArgs.push(taElemValue(st, o, i))
             cbArgs.push(JSValue.Number(i as f64))
             cbArgs.push(JSValue.Obj(o))
-            let _r = callValue(prog, args.get(0), cbArgs.cloneToVec(), cloneValue(cbThis), &mut st)
+            let _r = callValue(prog, args.get(0), cbArgs, cloneValue(cbThis), &mut st)
             i = i + 1
         }
         return JSValue.Undefined
@@ -1683,7 +1683,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st
     if name == "map" {
         var lenArgs: RootedVec = RootedVec.new()
         lenArgs.push(JSValue.Number(n as f64))
-        let out = makeTypedArray(prog, &mut st, kind, lenArgs.cloneToVec())
+        let out = makeTypedArray(prog, &mut st, kind, lenArgs)
         let oh = objHandle(out)
         pushTemp(&mut st, cloneValue(out))
         var i: i64 = 0
@@ -1692,7 +1692,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st
             cbArgs.push(taElemValue(st, o, i))
             cbArgs.push(JSValue.Number(i as f64))
             cbArgs.push(JSValue.Obj(o))
-            let r = callValue(prog, args.get(0), cbArgs.cloneToVec(), cloneValue(cbThis), &mut st)
+            let r = callValue(prog, args.get(0), cbArgs, cloneValue(cbThis), &mut st)
             taSetElem(&mut st, oh, i, toNum(r))
             i = i + 1
         }
@@ -1708,14 +1708,14 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st
             cbArgs.push(JSValue.Number(e))
             cbArgs.push(JSValue.Number(i as f64))
             cbArgs.push(JSValue.Obj(o))
-            if truthy(callValue(prog, args.get(0), cbArgs.cloneToVec(), cloneValue(cbThis), &mut st)) {
+            if truthy(callValue(prog, args.get(0), cbArgs, cloneValue(cbThis), &mut st)) {
                 kept.push(e)
             }
             i = i + 1
         }
         var lenArgs: RootedVec = RootedVec.new()
         lenArgs.push(JSValue.Number(kept.len() as f64))
-        let out = makeTypedArray(prog, &mut st, kind, lenArgs.cloneToVec())
+        let out = makeTypedArray(prog, &mut st, kind, lenArgs)
         let oh = objHandle(out)
         var k: i64 = 0
         while k < kept.len() {
@@ -1749,7 +1749,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st
                 cbArgs.push(e)
                 cbArgs.push(JSValue.Number(i as f64))
                 cbArgs.push(JSValue.Obj(o))
-                acc = callValue(prog, args.get(0), cbArgs.cloneToVec(), JSValue.Undefined, &mut st)
+                acc = callValue(prog, args.get(0), cbArgs, JSValue.Undefined, &mut st)
             }
             c = c + 1
         }
@@ -1769,7 +1769,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st
             cbArgs.push(JSValue.Number(e))
             cbArgs.push(JSValue.Number(i as f64))
             cbArgs.push(JSValue.Obj(o))
-            let hit = truthy(callValue(prog, args.get(0), cbArgs.cloneToVec(), cloneValue(cbThis), &mut st))
+            let hit = truthy(callValue(prog, args.get(0), cbArgs, cloneValue(cbThis), &mut st))
             if name == "some" && hit {
                 return JSValue.Bool(true)
             }
@@ -1837,7 +1837,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st
         }
         var lenArgs: RootedVec = RootedVec.new()
         lenArgs.push(JSValue.Number(snapLen as f64))
-        let out = makeTypedArray(prog, &mut st, kind, lenArgs.cloneToVec())
+        let out = makeTypedArray(prog, &mut st, kind, lenArgs)
         let oh = objHandle(out)
         pushTemp(&mut st, cloneValue(out))
         // The source may have SHRUNK while user code ran; the result keeps the
@@ -1941,7 +1941,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st
     if name == "toReversed" {
         var lenArgs: RootedVec = RootedVec.new()
         lenArgs.push(JSValue.Number(n as f64))
-        let out = makeTypedArray(prog, &mut st, kind, lenArgs.cloneToVec())
+        let out = makeTypedArray(prog, &mut st, kind, lenArgs)
         let oh = objHandle(out)
         pushTemp(&mut st, cloneValue(out))
         var i: i64 = 0
@@ -1955,7 +1955,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st
     if name == "toSorted" {
         var lenArgs: RootedVec = RootedVec.new()
         lenArgs.push(JSValue.Number(n as f64))
-        let out = makeTypedArray(prog, &mut st, kind, lenArgs.cloneToVec())
+        let out = makeTypedArray(prog, &mut st, kind, lenArgs)
         let oh = objHandle(out)
         pushTemp(&mut st, cloneValue(out))
         var c: i64 = 0
@@ -2000,7 +2000,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st
                     var cbArgs: RootedVec = RootedVec.new()
                     cbArgs.push(JSValue.Number(ej))
                     cbArgs.push(JSValue.Number(cur))
-                    swap = toNum(callValue(prog, args.get(0), cbArgs.cloneToVec(), JSValue.Undefined, &mut st)) > 0.0
+                    swap = toNum(callValue(prog, args.get(0), cbArgs, JSValue.Undefined, &mut st)) > 0.0
                 }
                 if swap {
                     taSetElem(&mut st, o, j + 1, ej)
@@ -2312,7 +2312,7 @@ fn constructWithLength(prog: &Prog, ctor: &JSValue, len: i64, st: &mut Interp): 
         // a native constructor (Array among them) already builds its own result
         let savedTarget = cloneValue(st.newTarget)
         st.newTarget = cloneValue(ctor)
-        let r = callValue(prog, ctor, cargs.cloneToVec(), JSValue.Undefined, &mut st)
+        let r = callValue(prog, ctor, cargs, JSValue.Undefined, &mut st)
         st.newTarget = savedTarget
         return r
     }
@@ -2322,7 +2322,7 @@ fn constructWithLength(prog: &Prog, ctor: &JSValue, len: i64, st: &mut Interp): 
     pushTemp(&mut st, JSValue.Obj(inst))
     let savedTarget = cloneValue(st.newTarget)
     st.newTarget = cloneValue(ctor)
-    let result = callFunction(prog, ctor, cargs.cloneToVec(), JSValue.Obj(inst), &mut st)
+    let result = callFunction(prog, ctor, cargs, JSValue.Obj(inst), &mut st)
     st.newTarget = savedTarget
     popTemp(&mut st)
     match result {
@@ -2553,7 +2553,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st: &mu
             if isFind && cbArgs.len() > 0 {
                 elem = cbArgs.get(0)
             }
-            let r = callValue(prog, cb, cbArgs.cloneToVec(), cloneValue(thisArg), &mut st)
+            let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), &mut st)
             let t = truthy(r)
             if t {
                 anyTrue = true
@@ -2775,7 +2775,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st: &mu
             if isFindLast && cbArgs.len() > 0 {
                 elem = cbArgs.get(0)
             }
-            let r = callValue(prog, cb, cbArgs.cloneToVec(), cloneValue(thisArg), &mut st)
+            let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), &mut st)
             if truthy(r) || st.throwing {
                 found = i
                 if isFindLast {
@@ -2988,7 +2988,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st: &mu
                     var cargs: RootedVec = RootedVec.new()
                     cargs.push(cloneValue(cur))
                     cargs.push(cloneValue(key))
-                    let r = callValue(prog, cmp, cargs.cloneToVec(), JSValue.Undefined, &mut st)
+                    let r = callValue(prog, cmp, cargs, JSValue.Undefined, &mut st)
                     greater = toNum(r) > 0.0
                 } else {
                     greater = strLess(toStr(key), toStr(cur))
@@ -3265,7 +3265,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st: &mu
                 continue
             }
             let cbArgs = makeCbArgsDyn(prog, o, i, &mut st)
-            let r = callValue(prog, cb, cbArgs.cloneToVec(), cloneValue(thisArg), &mut st)
+            let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), &mut st)
             arrPush(&mut st, mapped, r)
             i = i + 1
         }
@@ -3299,7 +3299,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st: &mu
             if cbArgs.len() > 0 {
                 elem = cbArgs.get(0)
             }
-            let keep = callValue(prog, cb, cbArgs.cloneToVec(), cloneValue(thisArg), &mut st)
+            let keep = callValue(prog, cb, cbArgs, cloneValue(thisArg), &mut st)
             if truthy(keep) {
                 arrPush(&mut st, kept, elem)
             }
@@ -3323,7 +3323,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st: &mu
                 continue
             }
             let cbArgs = makeCbArgsDyn(prog, o, i, &mut st)
-            let _ = callValue(prog, cb, cbArgs.cloneToVec(), cloneValue(thisArg), &mut st)
+            let _ = callValue(prog, cb, cbArgs, cloneValue(thisArg), &mut st)
             i = i + 1
         }
         popTemp(&mut st)
@@ -3372,7 +3372,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st: &mu
             } else {
                 cbArgs.push(JSValue.Obj(o))
             }
-            acc = callValue(prog, cb, cbArgs.cloneToVec(), JSValue.Undefined, &mut st)
+            acc = callValue(prog, cb, cbArgs, JSValue.Undefined, &mut st)
             i = i + 1
         }
         popTemp(&mut st)
@@ -3418,7 +3418,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st: &mu
             } else {
                 cbArgs.push(JSValue.Obj(o))
             }
-            acc = callValue(prog, cb, cbArgs.cloneToVec(), JSValue.Undefined, &mut st)
+            acc = callValue(prog, cb, cbArgs, JSValue.Undefined, &mut st)
             i = i - 1
         }
         popTemp(&mut st)
@@ -3442,7 +3442,7 @@ pub fn arrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st: &mu
                 continue
             }
             let cbArgs = makeCbArgsDyn(prog, o, i, &mut st)
-            let r = callValue(prog, cb, cbArgs.cloneToVec(), cloneValue(thisArg), &mut st)
+            let r = callValue(prog, cb, cbArgs, cloneValue(thisArg), &mut st)
             // one level of flattening, and only for array results
             let rh = objHandle(r)
             if rh >= 0 && st.objects[rh].isArray {

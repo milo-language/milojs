@@ -766,7 +766,7 @@ _Undocumented._
 ### `napiInvoke`
 
 ```milo
-pub fn napiInvoke(fnIdx: i64, args: Vec<JSValue>, thisVal: JSValue): JSValue
+pub fn napiInvoke(fnIdx: i64, argVals: &RootedVec, thisVal: JSValue): JSValue
 ```
 
 Invoke an addon-implemented function. Called by callValue when a JS call lands on

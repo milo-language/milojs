@@ -67,7 +67,7 @@ the decimal string of a BigInt, or "" for anything else
 ### `bindActivationScope`
 
 ```milo
-pub fn bindActivationScope(prog: &Prog, callee: &JSValue, argVals: &Vec<JSValue>, thisVal: &JSValue, st: &mut Interp, wantArguments: bool): i64
+pub fn bindActivationScope(prog: &Prog, callee: &JSValue, argVals: &RootedVec, thisVal: &JSValue, st: &mut Interp, wantArguments: bool): i64
 ```
 
 One activation's scope: `this`, `new.target`, the self-name of a named function
@@ -118,7 +118,7 @@ _Undocumented._
 ### `callBuiltinByName`
 
 ```milo
-pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: Vec<JSValue>, st: &mut Interp): JSValue
+pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: &RootedVec, st: &mut Interp): JSValue
 ```
 
 _Undocumented._
@@ -126,7 +126,7 @@ _Undocumented._
 ### `callFunction`
 
 ```milo
-pub fn callFunction(prog: &Prog, callee: &JSValue, argVals: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue
+pub fn callFunction(prog: &Prog, callee: &JSValue, argVals: &RootedVec, thisVal: JSValue, st: &mut Interp): JSValue
 ```
 
 Records the called function's source file for the duration of the call, so a
@@ -174,7 +174,7 @@ _Undocumented._
 ### `callNativeAsFunction`
 
 ```milo
-pub fn callNativeAsFunction(prog: &Prog, n: &Native, fo: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn callNativeAsFunction(prog: &Prog, n: &Native, fo: i64, argVals: &RootedVec, st: &mut Interp): JSValue
 ```
 
 A native invoked as a PLAIN FUNCTION, as opposed to through `new` or from the
@@ -184,7 +184,7 @@ which callNativeProg cannot make, because both arrive there.
 ### `callNativeProg`
 
 ```milo
-pub fn callNativeProg(prog: &Prog, n: &Native, fo: i64, argVals: &Vec<JSValue>, st: &mut Interp): JSValue
+pub fn callNativeProg(prog: &Prog, n: &Native, fo: i64, argVals: &RootedVec, st: &mut Interp): JSValue
 ```
 
 Every call of a builtin's native code funnels through here, so this is where
@@ -193,7 +193,7 @@ it enters the builtin's realm (fo is its function object, -1 when unknown).
 ### `callPlainValue`
 
 ```milo
-pub fn callPlainValue(prog: &Prog, calleeVal: &JSValue, argVals: Vec<JSValue>, st: &mut Interp): JSValue
+pub fn callPlainValue(prog: &Prog, calleeVal: &JSValue, argVals: &RootedVec, st: &mut Interp): JSValue
 ```
 
 Perform a plain call on an already-checked callable. Shared with the VM's call
@@ -203,7 +203,7 @@ case. argVals is consumed.
 ### `callValue`
 
 ```milo
-pub fn callValue(prog: &Prog, fnVal: &JSValue, args: Vec<JSValue>, thisVal: JSValue, st: &mut Interp): JSValue
+pub fn callValue(prog: &Prog, fnVal: &JSValue, args: &RootedVec, thisVal: JSValue, st: &mut Interp): JSValue
 ```
 
 _Undocumented._
@@ -211,7 +211,7 @@ _Undocumented._
 ### `constructValue`
 
 ```milo
-pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: Vec<JSValue>, newTarget: &JSValue): JSValue
+pub fn constructValue(prog: &Prog, st: &mut Interp, ctor: &JSValue, argVals: &RootedVec, newTarget: &JSValue): JSValue
 ```
 
 _Undocumented._
@@ -580,7 +580,7 @@ _Undocumented._
 ### `makeTypedArray`
 
 ```milo
-pub fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &Vec<JSValue>): JSValue
+pub fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &RootedVec): JSValue
 ```
 
 _Undocumented._
@@ -665,7 +665,7 @@ from node's own tables by nameNativesOf.
 ### `numArgsProg`
 
 ```milo
-pub fn numArgsProg(prog: &Prog, args: &Vec<JSValue>, st: &mut Interp): Vec<JSValue>
+pub fn numArgsProg(prog: &Prog, args: &RootedVec, st: &mut Interp): RootedVec
 ```
 
 ToNumber over an argument list, left to right, stopping at the first throw:

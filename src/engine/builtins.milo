@@ -2312,7 +2312,7 @@ fn regexReplaceFn(prog: &Prog, st: &mut Interp, s: &string, rid: i64, fn_: &JSVa
                 popTemp(&mut st)
                 args.push(JSValue.Obj(gobj))
             }
-            let r = callValue(prog, fn_, args.cloneToVec(), JSValue.Undefined, &mut st)
+            let r = callValue(prog, fn_, args, JSValue.Undefined, &mut st)
             out = out + toStr(r)
             last = mend
             // advance a whole CHARACTER past a zero-width match: stepping one

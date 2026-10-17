@@ -4,6 +4,6 @@
 # these; step 4d deletes tempRoots. Never raise a number: use RootedVec instead.
 src/engine/builtins.milo 0
 src/engine/bytecode.milo 0
-src/engine/eval.milo 126
+src/engine/eval.milo 3
 src/engine/methods.milo 0
 src/engine/runtime.milo 0

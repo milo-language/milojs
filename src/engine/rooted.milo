@@ -30,9 +30,9 @@
 //
 // Limits: a RootedVec abandoned without running Drop (a green task whose stack is discarded
 // while parked, or forget) stays registered, so its values stay live for ever. That is a leak
-// and never a premature free. toVec/fromVec are the escape hatch for boundaries that still
-// take a plain Vec<JSValue>: the plain Vec is invisible to the collector again, so callers must
-// keep the values rooted some other way until they are converted.
+// and never a premature free. toVec moves the elements out as a plain Vec<JSValue>, for storing into a heap field the
+// collector traces (boundArgs, a timer's args, the activation tables). Store it in the same
+// expression, with no GC allocation in between: a plain Vec is invisible to the collector.
 
 from "std/foreign" import { adopt }
 from "./value" import { JSValue, cloneValue }
@@ -80,23 +80,6 @@ impl RootedVec {
 
     fn withCapacity(n: i64): RootedVec {
         return RootedVec.withItems(Vec.withCapacity(n))
-    }
-
-    // Takes ownership of a plain Vec. Values in it must be kept alive by the caller until this returns.
-    fn fromVec(v: Vec<JSValue>): RootedVec {
-        return RootedVec.withItems(v)
-    }
-
-    // A registered copy of a borrowed plain Vec. For eval.milo call sites that still hold their
-    // arguments in a Vec<JSValue> (the originals stay with the caller); batch 2 deletes them.
-    fn fromClone(v: &Vec<JSValue>): RootedVec {
-        var out = RootedVec.withCapacity(v.len())
-        var i: i64 = 0
-        while i < v.len() {
-            out.push(cloneValue(v[i]))
-            i = i + 1
-        }
-        return out
     }
 
     fn push(self: &mut RootedVec, v: JSValue) {
@@ -148,24 +131,13 @@ impl RootedVec {
         return out
     }
 
-    // Escape hatch: moves the elements out as a plain Vec and leaves this one empty.
+    // Moves the elements out as a plain Vec and leaves this one empty. Only for storing into a heap
+    // field the collector traces, in the same expression (a plain Vec is invisible to the scan).
     fn toVec(self: &mut RootedVec): Vec<JSValue> {
         unsafe {
             let r = self.rec
             return replace((*r).items, Vec.new())
         }
-    }
-
-    // Escape hatch: an unrooted plain copy, this one stays intact.
-    fn cloneToVec(self: &RootedVec): Vec<JSValue> {
-        var out: Vec<JSValue> = Vec.withCapacity(self.len())
-        var i: i64 = 0
-        let n = self.len()
-        while i < n {
-            out.push(self.get(i))
-            i = i + 1
-        }
-        return out
     }
 }
 
