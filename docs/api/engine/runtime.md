@@ -329,6 +329,24 @@ pub fn markBuiltinGlobals(st: &mut Interp)
 
 _Undocumented._
 
+### `markObject`
+
+```milo
+pub fn markObject(st: &mut Interp, i: i64)
+```
+
+Children are gathered as HANDLES, not values: this previously cloned every
+property and element into a Vec<JSValue>, so each collection deep-copied the
+whole live heap (strings included). That made marking, not tracing, the
+dominant cost of a GC — 43% of matmul.
+
+The traversal is a WORKLIST, not native recursion. It used to be mutually
+recursive, one stack frame per edge of the object graph, and that graph is
+whatever the program built: a 100k-deep linked list (or promise chain, or
+nested JSON) walked the mark phase straight through the stack guard page and
+died on SIGBUS mid-collection, with no message and nothing the program could
+catch. Depth the user controls has to live on the heap.
+
 ### `maybeGc`
 
 ```milo

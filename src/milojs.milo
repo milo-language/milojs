@@ -26,6 +26,7 @@ from "std/os" import {
 from "std/strconv" import {
     parseInt
 }
+from "./engine/stackscan" import { stackscanInit }
 from "std/env" import {
     Env
 }
@@ -246,6 +247,13 @@ fn loadEnvFile(st: &mut Interp, envPath: &string) {
 }
 
 fn main(): i32 {
+    // debug knobs for the stack-scan experiments (docs/milojs-gc-boundary.md step 4a)
+    var scanMark: i64 = 0
+    var scanMarkAddr: i64 = 0
+    unsafe {
+        scanMarkAddr = scanMark.addrOf() as i64
+    }
+    stackscanInit(Env.get("MILOJS_GC_SKIP_TEMPROOTS").isSome(), Env.get("MILOJS_GC_NO_STACKSCAN").isSome(), scanMarkAddr)
     let argv = args()
     // node-compatible flags: --env-file=<path> / --env-file <path>
     var envFile = ""

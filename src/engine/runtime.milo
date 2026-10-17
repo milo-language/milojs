@@ -37,6 +37,7 @@ from "std/os" import {
     free
 }
 from "./eval" import { makeError }
+from "./stackscan" import { scanStacks, gcSkipTempRoots }
 from "./realm" import { saveRealm, enterRealm, globalScopeOfObj, realmObjectProto, Realm }
 
 struct Binding {
@@ -2511,7 +2512,7 @@ fn pushMarkTargets(v: &JSValue, objs: &mut Vec<i64>, scopes: &mut Vec<i64>) {
 // nested JSON) walked the mark phase straight through the stack guard page and
 // died on SIGBUS mid-collection, with no message and nothing the program could
 // catch. Depth the user controls has to live on the heap.
-fn markObject(st: &mut Interp, i: i64) {
+pub fn markObject(st: &mut Interp, i: i64) {
     drainMarks(&mut st, i, -1)
 }
 
@@ -2759,8 +2760,10 @@ pub fn collect(st: &mut Interp) {
         markScope(&mut st, st.active[a])
         a = a + 1
     }
+    // conservative stack roots: a JSValue held only in a Milo local or register
+    scanStacks(&mut st)
     var t: i64 = 0
-    while t < st.tempRoots.len() {
+    while t < st.tempRoots.len() && !gcSkipTempRoots() {
         let tv = cloneValue(st.tempRoots[t])
         markValue(&mut st, tv)
         t = t + 1
@@ -2811,7 +2814,7 @@ pub fn collect(st: &mut Interp) {
             ai = ai + 1
         }
         var ti: i64 = 0
-        while ti < st.suspended[sc].tempRoots.len() {
+        while ti < st.suspended[sc].tempRoots.len() && !gcSkipTempRoots() {
             let sv = cloneValue(st.suspended[sc].tempRoots[ti])
             markValue(&mut st, sv)
             ti = ti + 1

@@ -27,6 +27,7 @@ from "std/fs" import {
 from "std/strconv" import {
     parseInt
 }
+from "./engine/stackscan" import { stackscanInit }
 from "std/env" import {
     Env
 }
@@ -75,6 +76,13 @@ from "./engine/eval" import {
 }
 
 fn main(): i32 {
+    // debug knobs for the stack-scan experiments (docs/milojs-gc-boundary.md step 4a)
+    var scanMark: i64 = 0
+    var scanMarkAddr: i64 = 0
+    unsafe {
+        scanMarkAddr = scanMark.addrOf() as i64
+    }
+    stackscanInit(Env.get("MILOJS_GC_SKIP_TEMPROOTS").isSome(), Env.get("MILOJS_GC_NO_STACKSCAN").isSome(), scanMarkAddr)
     // Checked before argparse: `--version` is not a positional, so parse() would
     // reject it as an unknown flag with no `file` argument.
     let argv = args()

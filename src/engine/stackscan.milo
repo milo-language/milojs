@@ -1,0 +1,288 @@
+// Conservative stack scan: an extra root source for collect().
+//
+// A JSValue::Obj held only in a Milo local or register is invisible to the precise roots
+// (scopes, tempRoots, ...). This file finds it by reading the native stacks as raw words, and
+// counts a word as a root only if it names a live slot of st.objects. It never frees anything
+// and never moves anything: a stale word that happens to equal a live index just retains that
+// object one cycle longer. The heap is traced precisely; only the stacks are conservative.
+//
+// Which stacks: exactly one is running (task stack, or the OS main stack before the program
+// task starts). Every other stack is parked inside swapcontext. For those the scan starts at the
+// SP saved IN the task's ucontext, not at any SP observed before the switch: swapcontext spills
+// the caller's callee-saved registers below the SP its caller can see, and a value held only in
+// such a register would be missed. The ucontext bytes themselves are scanned too, since the
+// registers live there. If the saved SP cannot be read or is out of range, the whole usable
+// stack region is scanned instead (more false retention, never a miss).
+//
+// This is the only file that does raw pointer work for the collector. It reads std's green Task
+// layout (std/runtime documents it and exports the offsets) rather than a std API, because the
+// released milo that CI installs has no public stack-bounds query.
+//
+// Scanned at 4-byte granularity: JSValue's u32 payload may sit in either half of a word.
+
+from "./runtime" import { Interp, markObject }
+from "std/dl" import { dlSelf }
+from "std/platform" import { getcontext, uctxSize, uctxStackPtrOffset }
+from "std/runtime" import { rtReadI64, tCtx, tStack, tStackSize, tSched, sCtx, guardPageSize, schedulerCurrent }
+
+extern fn _setjmp(buf: *u8): i32
+
+// Highest address of the OS main stack (0 = unknown, scan skipped).
+var gOsTop: i64 = 0
+// Byte offset of the saved SP in a ucontext, found by stackscanInit; -1 = unknown.
+// gSpIndirect: the SP lives in the struct that uc_mcontext (offset 48) points to; darwin embeds that struct in the ucontext itself.
+var gSpOff: i64 = -1
+var gSpIndirect: bool = false
+var gSkipTempRoots: bool = false
+var gNoScan: bool = false
+var gInited: bool = false
+
+pub fn gcSkipTempRoots(): bool {
+    return gSkipTempRoots
+}
+
+fn rd64(addr: i64): i64 {
+    unsafe {
+        return *(addr as *i64)
+    }
+}
+
+// An address in this function's frame. noinline is not expressible, so callers only rely on it
+// being at or above the true SP of their own callee chain; they subtract a margin where it matters.
+fn localAddr(): i64 {
+    var x: i64 = 0
+    unsafe {
+        return x.addrOf() as i64
+    }
+}
+
+fn probeOsTop(): i64 {
+    // darwin: pthread_get_stackaddr_np(pthread_self()); linux: the variable __libc_stack_end.
+    // Both found by name so one binary source builds on either.
+    match dlSelf() {
+        Result.Ok(lib) => {
+            unsafe {
+                match lib.sym("pthread_get_stackaddr_np") {
+                    Result.Ok(f) => {
+                        match lib.sym("pthread_self") {
+                            Result.Ok(s) => {
+                                let self = s as extern () => *u8
+                                let get = f as extern (*u8) => *u8
+                                return get(self()) as i64
+                            }
+                            Result.Err(_e) => {
+                            }
+                        }
+                    }
+                    Result.Err(_e) => {
+                    }
+                }
+                match lib.sym("__libc_stack_end") {
+                    Result.Ok(p) => {
+                        return *(p as *i64)
+                    }
+                    Result.Err(_e) => {
+                    }
+                }
+            }
+        }
+        Result.Err(_e) => {
+        }
+    }
+    return 0
+}
+
+fn spCandidate(buf: i64, off: i64, indirect: bool): i64 {
+    if indirect {
+        let mc = rd64(buf + 48)
+        if mc == 0 {
+            return 0
+        }
+        return rd64(mc + off)
+    }
+    return rd64(buf + off)
+}
+
+// getcontext on this stack yields a ucontext whose saved SP is within a few KB of a local; the
+// layout of ucontext_t differs per OS and arch, so find the field that behaves like an SP
+// instead of hard-coding one platform.
+fn calibrate() {
+    var buf: [i64; 1100] = [0; 1100]
+    var base: i64 = 0
+    unsafe {
+        base = buf[0].addrOf() as i64
+        getcontext(buf[0].addrOf() as *u8)
+    }
+    let here = localAddr()
+    let darwin = uctxStackPtrOffset() == 8
+    var offs: [i64; 2] = [0; 2]
+    if darwin {
+        // arm64 (__ss.__sp after 16 bytes of exception state), then x86_64 (__rsp)
+        offs[0] = 264
+        offs[1] = 72
+    } else {
+        // x86_64 gregs[REG_RSP], then aarch64 __sp
+        offs[0] = 160
+        offs[1] = 432
+    }
+    var i: i64 = 0
+    while i < 2 {
+        let sp = spCandidate(base, offs[i], darwin)
+        let d = if sp > here { sp - here } else { here - sp }
+        if sp != 0 && d < 16384 && sp % 16 == 0 {
+            gSpOff = offs[i]
+            gSpIndirect = darwin
+            return
+        }
+        i = i + 1
+    }
+}
+
+// Call once from each entry point's main, before any collection can run. `mainLocal` is the
+// address of a local in main's frame: only used if the OS stack top cannot be found by name.
+pub fn stackscanInit(skipTempRoots: bool, noScan: bool, mainLocal: i64) {
+    if gInited {
+        return
+    }
+    gInited = true
+    gSkipTempRoots = skipTempRoots
+    gNoScan = noScan
+    gOsTop = probeOsTop()
+    if gOsTop == 0 {
+        gOsTop = mainLocal + 512
+    }
+    calibrate()
+}
+
+fn savedSp(ctx: i64): i64 {
+    if gSpOff < 0 || ctx == 0 {
+        return 0
+    }
+    return spCandidate(ctx, gSpOff, gSpIndirect)
+}
+
+// Mark every live object named by a 4-byte half of an 8-aligned word in [lo, hi). Every 4-aligned
+// u32 is one half of such a word, so reading u64s and splitting is the same scan, half the loads.
+fn scanRange(st: &mut Interp, lo: i64, hi: i64) {
+    var p = (lo + 7) / 8 * 8
+    let end = hi / 8 * 8
+    let n = st.objects.len()
+    while p < end {
+        var w64: i64 = 0
+        unsafe {
+            w64 = *(p as *i64)
+        }
+        let a = w64 & 4294967295
+        let b = (w64 >> 32) & 4294967295
+        // already-marked slots are skipped here: markObject allocates its work stacks per call
+        if a < n && !st.objects[a].mark && !st.objects[a].free {
+            markObject(&mut st, a)
+        }
+        if b < n && !st.objects[b].mark && !st.objects[b].free {
+            markObject(&mut st, b)
+        }
+        p = p + 8
+    }
+}
+
+// One parked task: its ucontext bytes, then [saved SP, top) of its stack.
+// mprotect rounds the guard up to a whole page (16 KB on darwin arm64), larger than std's
+// guardPageSize(), so the fallback scan must not start inside it.
+fn guardBytes(): i64 {
+    let g = guardPageSize()
+    return if g < 16384 { 16384 } else { g }
+}
+
+fn scanParked(st: &mut Interp, task: i64) {
+    let ctx = rd64(task + tCtx())
+    let stackBase = rd64(task + tStack())
+    let total = rd64(task + tStackSize())
+    let usableLo = stackBase + guardBytes()
+    let top = stackBase + total
+    if ctx != 0 {
+        scanRange(&mut st, ctx, ctx + uctxSize())
+    }
+    var lo = savedSp(ctx)
+    if lo < usableLo || lo > top {
+        lo = usableLo
+    }
+    scanRange(&mut st, lo, top)
+}
+
+fn seen(done: &Vec<i64>, t: i64): bool {
+    var i: i64 = 0
+    while i < done.len() {
+        if done[i] == t {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+fn addParked(st: &mut Interp, done: &mut Vec<i64>, t: i64, cur: i64) {
+    if t == 0 || t == cur || seen(done, t) {
+        return
+    }
+    done.push(t)
+    scanParked(&mut st, t)
+}
+
+// The scan itself. `regs` receives the callee-saved registers (_setjmp), so a value the caller
+// of collect() keeps only in a register is in this frame when the running stack is read.
+pub fn scanStacks(st: &mut Interp) {
+    if gNoScan {
+        return
+    }
+    var regs: [i64; 64] = [0; 64]
+    unsafe {
+        _setjmp(regs[0].addrOf() as *u8)
+    }
+    var regsAddr: i64 = 0
+    unsafe {
+        regsAddr = regs[0].addrOf() as i64
+    }
+    let cur = schedulerCurrent() as i64
+    // everything below this address is the scan's own machinery, not the caller's
+    let lo = regsAddr
+    var done: Vec<i64> = Vec.new()
+    if cur != 0 {
+        let top = rd64(cur + tStack()) + rd64(cur + tStackSize())
+        scanRange(&mut st, lo, top)
+        // the OS stack is parked in the scheduler's context while a task runs
+        let sched = rd64(cur + tSched())
+        if sched != 0 && gOsTop != 0 {
+            let sctx = rd64(sched + sCtx())
+            let ssp = savedSp(sctx)
+            if sctx != 0 && ssp != 0 && ssp < gOsTop && gOsTop - ssp < 268435456 {
+                scanRange(&mut st, sctx, sctx + uctxSize())
+                scanRange(&mut st, ssp, gOsTop)
+            }
+        }
+    } else if gOsTop != 0 {
+        scanRange(&mut st, lo, gOsTop)
+    }
+    addParked(&mut st, &mut done, st.mainTask as i64, cur)
+    var i: i64 = 0
+    while i < st.suspendedTask.len() {
+        addParked(&mut st, &mut done, st.suspendedTask[i] as i64, cur)
+        i = i + 1
+    }
+    i = 0
+    while i < st.actTask.len() {
+        addParked(&mut st, &mut done, st.actTask[i] as i64, cur)
+        i = i + 1
+    }
+    i = 0
+    while i < st.genTask.len() {
+        // a finished generator's task struct may already be reaped
+        if !st.genDone[i] {
+            addParked(&mut st, &mut done, st.genTask[i] as i64, cur)
+        }
+        i = i + 1
+    }
+    // A use after the scan, so `regs` stays in this frame until it is done.
+    if regs[0] == 1 && regs[1] == 2 {
+        gNoScan = false
+    }
+}

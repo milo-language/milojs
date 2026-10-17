@@ -179,6 +179,7 @@ The writeup has to rest on things that fail when they should:
 4. Mechanism 1: port the stack scan, add `RootedVec` and its gate, delete
    `tempRoots`, keep gc-stress green. Measure the bench before and after; the
    call-boundary rooting it removes is a speed cost too.
+   4a landed: `src/engine/stackscan.milo` scans the running stack, every parked task from the SP saved in its ucontext, and the OS stack, as an extra root source in `collect`. `tempRoots` is still in place. Debug knobs `MILOJS_GC_SKIP_TEMPROOTS=1` and `MILOJS_GC_NO_STACKSCAN=1` give the experiment. Strict every-allocation `tools/gc-stress.sh` (362 fixtures, 3 exempt): default 359 pass 0 fail; no tempRoots and no scan 0 pass (the prelude itself fails, every fixture fails); no tempRoots with scan 358 pass 1 fail (`urlSearchParams`, a spread result held in a `Vec<JSValue>` that only step 4b's `RootedVec` can cover). `--quick`: default 0 fail, no tempRoots and no scan 4 fail, no tempRoots with scan 0 fail.
 5. In parallel from here, three tracks:
    - **Engine speed:** bytecode VM on every function body, then QuickJS bench
      parity. Plan in `docs/milojs-quickjs-plan.md`.
