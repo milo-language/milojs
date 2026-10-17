@@ -19,15 +19,13 @@ _Undocumented._
 ### `napi_add_finalizer`
 
 ```milo
-pub fn napi_add_finalizer(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _finalizeHint: i64, result: *u8): i32
+pub fn napi_add_finalizer(env: *u8, jsObject: i64, nativeObject: i64, finalizeCb: i64, finalizeHint: i64, result: *u8): i32
 ```
 
 napi_add_finalizer(env, js_object, native_object, cb, hint, result)
 
-Recorded, not scheduled. milojs's collector has no finalizer hook (the same
-limitation napi_wrap documents), so the callback is kept against the object
-rather than dropped silently: an addon that registers one and never sees it
-run leaks, and that is worth saying in one place instead of pretending.
+Any number per object, each its own owner slot, none of them a wrap: unwrap
+and remove_wrap do not see these.
 
 ### `napi_call_threadsafe_function`
 
@@ -137,7 +135,7 @@ _Undocumented._
 ### `napi_create_external`
 
 ```milo
-pub fn napi_create_external(_env: *u8, data: i64, _finalizeCb: i64, _finalizeHint: i64, result: *u8): i32
+pub fn napi_create_external(env: *u8, data: i64, finalizeCb: i64, finalizeHint: i64, result: *u8): i32
 ```
 
 napi_create_external / napi_get_value_external
@@ -205,9 +203,10 @@ _Undocumented._
 pub fn napi_create_reference(_env: *u8, value: i64, _initialRefcount: i32, result: *u8): i32
 ```
 
-References keep a value alive across calls. There is no finalizer hook in the
-collector yet, so a reference is simply a handle that is never released — it
-over-retains rather than freeing something the addon still points at.
+References keep a value alive across calls. Every reference is strong for the
+whole run, including a weak one (refcount 0): it over-retains rather than
+freeing something the addon still points at, so an object an addon holds a
+weak reference to is never finalized.
 
 ### `napi_create_string_latin1`
 
@@ -606,9 +605,9 @@ _Undocumented._
 pub fn napi_open_handle_scope(_env: *u8, result: *u8): i32
 ```
 
-Handle scopes. Every handle this runtime hands out is already mirrored into
-the interpreter's foreign-host root set for its lifetime, so a scope has no
-storage to reclaim and these are bookkeeping. The scope handle is a counter so
+Handle scopes. Handles are released only when the whole callback returns
+(napiReleaseHandlesFrom), so an inner scope frees nothing early and these are
+bookkeeping. The scope handle is a counter so
 an addon that compares or nests them sees distinct values.
 
 ### `napi_queue_async_work`
@@ -650,6 +649,16 @@ pub fn napi_release_threadsafe_function(_func: i64, _mode: i32): i32
 ```
 
 _Undocumented._
+
+### `napi_remove_wrap`
+
+```milo
+pub fn napi_remove_wrap(_env: *u8, jsObject: i64, result: *u8): i32
+```
+
+napi_remove_wrap(env, js_object, result): the addon takes its data back, so
+the wrap's finalizer must never run. Taking the owner is the cancellation;
+a second remove finds None and fails, as in node.
 
 ### `napi_resolve_deferred`
 
@@ -720,13 +729,13 @@ _Undocumented._
 ### `napi_wrap`
 
 ```milo
-pub fn napi_wrap(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _finalizeHint: i64, _result: *u8): i32
+pub fn napi_wrap(env: *u8, jsObject: i64, nativeObject: i64, finalizeCb: i64, finalizeHint: i64, _result: *u8): i32
 ```
 
 napi_wrap(env, js_object, native_object, finalize_cb, finalize_hint, result)
 
-The finalizer is accepted but never invoked yet: milojs's collector has no
-finalizer hook, so a wrapped native allocation outlives its JS object.
+The wrap is an owner slot even with no finalizer: it is what makes a second
+napi_wrap fail and what napi_remove_wrap takes back.
 
 ### `napiHandle`
 
@@ -803,6 +812,16 @@ pub fn napiPollTsfn(): Vec<NapiTsfnCall>
 
 Non-blocking drain. Returns the calls that were waiting.
 
+### `napiRunFinalizer`
+
+```milo
+pub fn napiRunFinalizer(f: NapiFinalizer)
+```
+
+Run one finalizer the collector queued, or one left at teardown. Called only
+from the event loop's drain, never from collect. The callback may call back
+into napi, so it gets its own handle scope like any other callback.
+
 ### `napiRunTsfnCall`
 
 ```milo
@@ -820,6 +839,17 @@ pub fn napiTakePending(): Vec<NapiPending>
 ```
 
 Drained by the interpreter after any call into an addon.
+
+### `napiTeardown`
+
+```milo
+pub fn napiTeardown()
+```
+
+Environment teardown after the script's last turn: node runs the finalizer of
+every wrap, external and add_finalizer record still alive, plus any the
+collector queued that the loop never drained. An fd owner is left to the
+kernel, which closes it at exit anyway.
 
 ### `napiValueOf`
 

@@ -90,6 +90,14 @@ A key names an array element only if it is a canonical non-negative integer
 ("0", "1", ...); returns that index, or -1 for any other key (which addresses a
 string property instead, per JS).
 
+### `attachOwner`
+
+```milo
+pub fn attachOwner(st: &mut Interp, o: i64, kind: i64, owner: NativeOwner)
+```
+
+_Undocumented._
+
 ### `bigToRawBits`
 
 ```milo
@@ -213,6 +221,14 @@ pub fn getNativeProps(st: &mut Interp, n: &Native): i64
 The property bag of a builtin named by its variant: its canonical function
 object. A caller already holding the value reads the object off it instead
 (nativeObjOf), which is the only way to reach a resolver's.
+
+### `hasOwner`
+
+```milo
+pub fn hasOwner(st: &Interp, o: i64, kind: i64): bool
+```
+
+_Undocumented._
 
 ### `isPrivateKey`
 
@@ -612,6 +628,15 @@ pub fn pushTemp(st: &mut Interp, v: JSValue)
 
 _Undocumented._
 
+### `queueAllOwners`
+
+```milo
+pub fn queueAllOwners(st: &mut Interp)
+```
+
+Process teardown: queue every owner still attached to a live object, so the
+host can run what node runs when its environment is torn down.
+
 ### `rawBitsToBig`
 
 ```milo
@@ -794,6 +819,23 @@ pub fn taIsBigKind(kind: i64): bool
 ```
 
 _Undocumented._
+
+### `takeOwner`
+
+```milo
+pub fn takeOwner(st: &mut Interp, o: i64, kind: i64): Option<NativeOwner>
+```
+
+Move object o's first owner of `kind` out and unlink its slot. None when it
+has none, which for a close or remove_wrap means it was already disposed of.
+
+### `takeQueuedOwner`
+
+```milo
+pub fn takeQueuedOwner(st: &mut Interp): Option<NativeOwner>
+```
+
+The next owner the sweep queued, oldest first.
 
 ### `taLoad`
 
