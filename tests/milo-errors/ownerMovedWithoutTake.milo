@@ -1,0 +1,22 @@
+// @error: cannot move
+// Bun's subprocess-stdin use-after-free: the exit path recovered the sink from
+// a slot the GC finalizer had already emptied and freed. Disposing straight out
+// of the slot, without take() leaving None behind, would let the other path
+// find the same owner again, so moving it out through &mut does not compile.
+
+from "../../src/engine/runtime" import {
+    Interp, NativeOwner, FdOwner
+}
+
+fn closeFd(o: FdOwner): bool {
+    return o.fd >= 0
+}
+
+fn drainWithoutTake(st: &mut Interp) {
+    match st.finalizeQueue[0] {
+        NativeOwner.Fd(fo) => {
+            let _c = closeFd(fo)
+        }
+        _ => {}
+    }
+}

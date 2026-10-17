@@ -1,0 +1,22 @@
+// @error: use of moved variable
+// Bun's shell-interpreter double free: an error path destroyed the object
+// itself, then the GC finalizer destroyed it again. Here both disposals are
+// spelled on the owner the slot gave up, and the second one does not compile.
+
+from "../../src/engine/runtime" import {
+    Interp, NativeOwner, FdOwner, takeOwner, OWNER_FD
+}
+
+fn closeFd(o: FdOwner): bool {
+    return o.fd >= 0
+}
+
+fn closeTwice(st: &mut Interp, handle: i64) {
+    match takeOwner(&mut st, handle, OWNER_FD) {
+        Option.Some(NativeOwner.Fd(fo)) => {
+            let _a = closeFd(fo)
+            let _b = closeFd(fo)
+        }
+        _ => {}
+    }
+}
