@@ -39,6 +39,7 @@ from "./runtime" import {
     objDeleteKey, objDefineAccessor, newScope, pushActive, popActive, scopeHas, makeResolver, nativeValue,
     bufferNativeViewHandle, bufferBytesHandle, isPromiseCtor, arrMarkHole, gInterp,
     saveExecCtx, restoreExecCtx, objDefineFnProtoAttr, scopeHasBelowGlobal, maybeGc,
+    NativeOwner, FdOwner, attachOwner, takeOwner, takeQueuedOwner, OWNER_FD,
     Interp, Timer, Microtask, Reaction, PendingFetch, collect, objHasInChain, objDefineBuiltinAttr, objSetNonConfigurable, objDefineProtoAttr, boxedPrimitive, isWrapperObj, objSetFrozenOwn, TA_MAX, TA_I64, TA_U64, taIsBigKind, taLoadBig, taStoreBig, isPrivateKey, scopeOwnIndex,
     newSymbol, symbolFor, symbolKeyFor, symDescValue, symbolDisplay
 }
@@ -124,7 +125,7 @@ from "std/fs" import {
 }
 from "../runtime/napi" import {
     NAPI_OK, NAPI_INVALID_ARG, NAPI_PENDING_EXCEPTION, napiHandle, napiValueOf, napiWriteHandle, napiLoadI64,
-    napiInvoke, napiLoadAddon, napiTakePending, napiPollTsfn, napiRunTsfnCall, napiHasTsfn, napiHasPendingWork, napiMayDeliver, napiWaitBriefly
+    napiInvoke, napiLoadAddon, napiRunFinalizer, napiTakePending, napiPollTsfn, napiRunTsfnCall, napiHasTsfn, napiHasPendingWork, napiMayDeliver, napiWaitBriefly
 }
 from "std/math" import {
     Math
@@ -5727,6 +5728,40 @@ fn callBuiltin(id: Builtin, argVals: &Vec<JSValue>, st: &mut Interp): JSValue {
             return JSValue.Bool(false)
         }
         return JSValue.Bool(close(toNum(argVals[0]) as i32) == 0 as i32)
+    }
+    if id == Builtin.FileHandleAdopt {
+        // __fileHandleAdopt(handle, fd, path): from here on the fd's only owner
+        // is this native slot, keyed by the FileHandle object
+        if argVals.len() < 3 {
+            return JSValue.Undefined
+        }
+        let ho = objHandle(argVals[0])
+        if ho >= 0 {
+            attachOwner(&mut st, ho, OWNER_FD, NativeOwner.Fd(FdOwner {
+                fd: toNum(argVals[1]) as i64, path: toStr(argVals[2])
+            }))
+        }
+        return JSValue.Undefined
+    }
+    if id == Builtin.FileHandleClose {
+        // __fileHandleClose(handle) -> true closed, false close(2) failed,
+        // undefined already closed (by an earlier close, never by the GC: the GC
+        // only takes the owner of an unreachable handle)
+        if argVals.len() < 1 {
+            return JSValue.Undefined
+        }
+        let ho = objHandle(argVals[0])
+        if ho < 0 {
+            return JSValue.Undefined
+        }
+        match takeOwner(&mut st, ho, OWNER_FD) {
+            Option.Some(NativeOwner.Fd(fo)) => {
+                return JSValue.Bool(closeOwnedFd(fo))
+            }
+            _ => {
+                return JSValue.Undefined
+            }
+        }
     }
     if id == Builtin.ReadFdInto {
         // __readFdInto(fd, u8array, offset, length, position) -> bytes read, or
@@ -13417,6 +13452,59 @@ fn napiServiceTsfn(st: &mut Interp) {
     napiDrainSettlements(&mut st)
 }
 
+// The one place an owned fd is closed. Taking the owner by value is what makes
+// a second close of the same fd number unwritable.
+fn closeOwnedFd(o: FdOwner): bool {
+    return close(o.fd as i32) == 0 as i32
+}
+
+// Dispose of what the collector queued. Runs between event-loop turns, never
+// inside collect: a napi finalizer is C that may call back into napi, and a
+// FileHandle the GC closed is reported in JS. Node runs its deferred napi
+// finalizers from a setImmediate, so after gc() they have run by the next one.
+fn drainFinalizers(prog: &Prog, st: &mut Interp): bool {
+    var ran = false
+    var going = true
+    while going {
+        match takeQueuedOwner(&mut st) {
+            Option.Some(NativeOwner.Napi(f)) => {
+                napiRunFinalizer(f)
+                ran = true
+            }
+            Option.Some(NativeOwner.Fd(fo)) => {
+                fileHandleClosedOnGc(prog, fo, &mut st)
+                ran = true
+            }
+            Option.None => {
+                going = false
+            }
+        }
+    }
+    return ran
+}
+
+// An unclosed FileHandle was collected. Node closes the fd and then raises
+// ERR_INVALID_STATE as an uncaught exception; lib/fs.js builds that error.
+fn fileHandleClosedOnGc(prog: &Prog, fo: FdOwner, st: &mut Interp) {
+    let fd = fo.fd
+    let path = fo.path.clone()
+    let _closed = closeOwnedFd(fo)
+    let hook = scopeLookup(st, st.globalScope, "__fileHandleGcClosed")
+    match hook {
+        JSValue.Func(_fIdx, _envIdx, _fo) => {
+            var args: Vec<JSValue> = Vec.new()
+            args.push(JSValue.Number(fd as f64))
+            args.push(JSValue.Str(path))
+            let _r = callFunction(prog, hook, args, JSValue.Undefined, &mut st)
+            if st.throwing && !dispatchUncaught(prog, &mut st) {
+                eprint("Uncaught " + describeThrownValue(st, st.thrownValue))
+                exit(1)
+            }
+        }
+        _ => {}
+    }
+}
+
 // Apply promise settlements an addon requested while it held control.
 fn napiDrainSettlements(st: &mut Interp) {
     var q = napiTakePending()
@@ -14729,6 +14817,12 @@ pub fn runEventLoop(prog: &Prog, st: &mut Interp) {
         napiServiceTsfn(&mut st)
         serviceFetches(&mut st)
         drainMicrotasks(prog, &mut st, 1000000)
+        // a finalizer can settle promises or queue jobs; those run before the
+        // next timer, as they would after any other callback
+        if drainFinalizers(prog, &mut st) {
+            napiDrainSettlements(&mut st)
+            drainMicrotasks(prog, &mut st, 1000000)
+        }
         compactTimers(&mut st)
         // Order matters: run timers that are already due, then service a
         // listening server, and only sleep for a future timer when no server is

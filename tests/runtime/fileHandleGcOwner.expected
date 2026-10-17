@@ -1,0 +1,9 @@
+start
+fd after close: -1
+second close resolved
+fd reused: true
+second file still reads: 4 bbbb
+dropped handle fd: EBADF
+uncaught: [
+  'ERR_INVALID_STATE: A FileHandle object was closed during garbage collection. This used to be allowed with a deprecation warning but is now considered an error. Please close FileHandle objects explicitly.'
+]

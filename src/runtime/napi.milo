@@ -16,7 +16,9 @@
 // napi_value is an opaque pointer-sized handle. It is NOT a JSValue: values move
 // as the object arena compacts, and the addon holds handles across calls. So a
 // handle is an index into gNapi.handles (biased by 1 so that 0 is a valid "null
-// handle"), and the table is a GC root for as long as the addon can reach it.
+// handle"), and the table is a GC root for as long as the addon can reach it:
+// until the callback that made it returns, as in node, or for the whole run for
+// references, deferreds and handles made outside any callback.
 
 from "std/io" import {
     writeStdout
@@ -29,6 +31,8 @@ from "../engine/runtime" import {
     setArrayLength, arrLen, arrGet, arrSet, newPromise, objHasInChain, objHas, objDefineAccessor,
     Interp, gInterp, newObject, newArray, objGet, objSet, objSetNonEnumerable,
     ensureExtra, scopeLookup, bufferBytesHandle,
+    NativeOwner, NapiFinalizer, attachOwner, hasOwner, takeOwner, takeQueuedOwner, queueAllOwners,
+    OWNER_NAPI_WRAP, OWNER_NAPI_FINALIZER,
     bufferNativeViewHandle, nativeBufferLen, nativeBufferPtr, nativeBufferSet
 }
 from "std/os" import {
@@ -89,6 +93,10 @@ struct NapiTsfn {
 struct NapiState {
     // handle index -> the value it denotes; slot 0 is unused so handle 0 can mean null
     handles: Vec<JSValue>,
+    // per handle: its slot in gInterp.hostRoots, and whether it outlives the
+    // callback that created it
+    handleRoot: Vec<i64>,
+    handlePinned: Vec<bool>,
     // set once the addon has been handed its exports object
     registered: bool,
     // a counter handed out as the handle for each open handle scope, so an addon
@@ -111,7 +119,7 @@ struct NapiState {
 }
 
 var gNapi: NapiState = NapiState {
-    handles: Vec.new(), registered: false, scopeSeq: 0, lastErrorInfo: 0 as *u8, fns: Vec.new(), calls: Vec.new(), pending: Vec.new(), tsfns: Vec.new(), liveDeferred: 0, tsfnR: -1, tsfnW: -1
+    handles: Vec.new(), handleRoot: Vec.new(), handlePinned: Vec.new(), registered: false, scopeSeq: 0, lastErrorInfo: 0 as *u8, fns: Vec.new(), calls: Vec.new(), pending: Vec.new(), tsfns: Vec.new(), liveDeferred: 0, tsfnR: -1, tsfnW: -1
 }
 
 // Wrap a value in a fresh handle. Handles are never reused within a run: the addon
@@ -120,15 +128,48 @@ pub fn napiHandle(v: JSValue): i64 {
     if gNapi.handles.len() == 0 {
         // slot 0 reserved so a returned handle is never the null pointer
         gNapi.handles.push(JSValue.Undefined)
+        gNapi.handleRoot.push(-1)
+        gNapi.handlePinned.push(true)
     }
     let root = cloneValue(v)
     gNapi.handles.push(v)
-    // Node-API handles may outlive the callback that created them. Mirror each
-    // one into the interpreter's foreign-host root set so collection cannot
-    // recycle its object while the addon still owns the handle.
+    // Mirror each handle into the interpreter's foreign-host root set so
+    // collection cannot recycle its object while the addon still owns it.
     gInterp.hostRoots.push(root)
     gInterp.hostRootLive.push(true)
+    gNapi.handleRoot.push(gInterp.hostRoots.len() - 1)
+    gNapi.handlePinned.push(false)
     return gNapi.handles.len() - 1
+}
+
+// A handle that survives the callback that made it: a reference, a deferred,
+// or the function a threadsafe function will call later.
+fn napiPersistentHandle(v: JSValue): i64 {
+    let h = napiHandle(v)
+    gNapi.handlePinned[h] = true
+    return h
+}
+
+// Close the implicit handle scope of a callback: every unpinned handle made
+// since `mark` stops being a root, which is what lets an object the addon only
+// touched in passing (a napi_wrap target) be collected and finalized. The slot
+// keeps answering Undefined rather than being reused, so a handle an addon
+// wrongly kept past its scope can never name a different object.
+fn napiReleaseHandlesFrom(mark: i64) {
+    var h = mark
+    if h < 1 {
+        h = 1
+    }
+    while h < gNapi.handles.len() {
+        if !gNapi.handlePinned[h] {
+            let r = gNapi.handleRoot[h]
+            gInterp.hostRoots[r] = JSValue.Undefined
+            gInterp.hostRootLive[r] = false
+            gNapi.handles[h] = JSValue.Undefined
+            gNapi.handlePinned[h] = true
+        }
+        h = h + 1
+    }
 }
 
 // Resolve a handle back to its value. Out-of-range yields Undefined rather than
@@ -588,6 +629,7 @@ pub fn napiInvoke(fnIdx: i64, args: Vec<JSValue>, thisVal: JSValue): JSValue {
     }
     )
     let cbinfo = gNapi.calls.len() - 1
+    let mark = gNapi.handles.len()
     unsafe {
         let f = (ptr as *u8) as extern (*u8, i64) => i64
         let rh = f(0 as *u8, cbinfo)
@@ -595,7 +637,9 @@ pub fn napiInvoke(fnIdx: i64, args: Vec<JSValue>, thisVal: JSValue): JSValue {
         while gNapi.calls.len() > cbinfo {
             let _d = gNapi.calls.pop()
         }
-        return napiValueOf(rh)
+        let rv = napiValueOf(rh)
+        napiReleaseHandlesFrom(mark)
+        return rv
     }
 }
 
@@ -795,14 +839,20 @@ pub fn napi_define_class(_env: *u8, _utf8name: *u8, _length: i64, constructor: i
 
 // napi_wrap(env, js_object, native_object, finalize_cb, finalize_hint, result)
 //
-// The finalizer is accepted but never invoked yet: milojs's collector has no
-// finalizer hook, so a wrapped native allocation outlives its JS object.
+// The wrap is an owner slot even with no finalizer: it is what makes a second
+// napi_wrap fail and what napi_remove_wrap takes back.
 @externalLinkage
-pub fn napi_wrap(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _finalizeHint: i64, _result: *u8): i32 {
+pub fn napi_wrap(env: *u8, jsObject: i64, nativeObject: i64, finalizeCb: i64, finalizeHint: i64, _result: *u8): i32 {
     match napiValueOf(jsObject) {
         JSValue.Obj(o) => {
             let _ew = ensureExtra(&mut gInterp, o)
+            if hasOwner(gInterp, o, OWNER_NAPI_WRAP) {
+                return NAPI_INVALID_ARG
+            }
             gInterp.objExtras[gInterp.objects[o].extra].napiWrap = nativeObject
+            attachOwner(&mut gInterp, o, OWNER_NAPI_WRAP, NativeOwner.Napi(NapiFinalizer {
+                cb: finalizeCb, env: env as i64, data: nativeObject, hint: finalizeHint
+            }))
             return NAPI_OK
         }
         _ => {
@@ -821,6 +871,9 @@ pub fn napi_unwrap(_env: *u8, jsObject: i64, result: *u8): i32 {
     }
     match napiValueOf(jsObject) {
         JSValue.Obj(o) => {
+            if !hasOwner(gInterp, o, OWNER_NAPI_WRAP) {
+                return NAPI_INVALID_ARG
+            }
             napiWriteHandle(result, gInterp.objExtras[gInterp.objects[o].extra].napiWrap)
             return NAPI_OK
         }
@@ -828,6 +881,65 @@ pub fn napi_unwrap(_env: *u8, jsObject: i64, result: *u8): i32 {
             return NAPI_INVALID_ARG
         }
     }
+}
+
+// napi_remove_wrap(env, js_object, result): the addon takes its data back, so
+// the wrap's finalizer must never run. Taking the owner is the cancellation;
+// a second remove finds None and fails, as in node.
+@externalLinkage
+pub fn napi_remove_wrap(_env: *u8, jsObject: i64, result: *u8): i32 {
+    match napiValueOf(jsObject) {
+        JSValue.Obj(o) => {
+            match takeOwner(&mut gInterp, o, OWNER_NAPI_WRAP) {
+                Option.Some(NativeOwner.Napi(f)) => {
+                    gInterp.objExtras[gInterp.objects[o].extra].napiWrap = 0
+                    if (result as i64) != 0 {
+                        napiWriteHandle(result, f.data)
+                    }
+                    return NAPI_OK
+                }
+                _ => {
+                    return NAPI_INVALID_ARG
+                }
+            }
+        }
+        _ => {
+            return NAPI_INVALID_ARG
+        }
+    }
+}
+
+// Environment teardown after the script's last turn: node runs the finalizer of
+// every wrap, external and add_finalizer record still alive, plus any the
+// collector queued that the loop never drained. An fd owner is left to the
+// kernel, which closes it at exit anyway.
+pub fn napiTeardown() {
+    queueAllOwners(&mut gInterp)
+    var going = true
+    while going {
+        match takeQueuedOwner(&mut gInterp) {
+            Option.Some(NativeOwner.Napi(f)) => napiRunFinalizer(f),
+            Option.Some(NativeOwner.Fd(_fo)) => {},
+            Option.None => {
+                going = false
+            }
+        }
+    }
+}
+
+// Run one finalizer the collector queued, or one left at teardown. Called only
+// from the event loop's drain, never from collect. The callback may call back
+// into napi, so it gets its own handle scope like any other callback.
+pub fn napiRunFinalizer(f: NapiFinalizer) {
+    if f.cb == 0 {
+        return
+    }
+    let mark = gNapi.handles.len()
+    unsafe {
+        let c = (f.cb as *u8) as extern (*u8, *u8, *u8) => void
+        c(f.env as *u8, f.data as *u8, f.hint as *u8)
+    }
+    napiReleaseHandlesFrom(mark)
 }
 
 // ── remaining mechanical surface ──
@@ -1277,9 +1389,10 @@ pub fn napi_is_buffer(_env: *u8, value: i64, result: *u8): i32 {
     return NAPI_OK
 }
 
-// References keep a value alive across calls. There is no finalizer hook in the
-// collector yet, so a reference is simply a handle that is never released — it
-// over-retains rather than freeing something the addon still points at.
+// References keep a value alive across calls. Every reference is strong for the
+// whole run, including a weak one (refcount 0): it over-retains rather than
+// freeing something the addon still points at, so an object an addon holds a
+// weak reference to is never finalized.
 @externalLinkage
 pub fn napi_create_reference(_env: *u8, value: i64, _initialRefcount: i32, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
@@ -1288,7 +1401,7 @@ pub fn napi_create_reference(_env: *u8, value: i64, _initialRefcount: i32, resul
     if (result as i64) == 0 {
         return NAPI_INVALID_ARG
     }
-    napiWriteHandle(result, napiHandle(napiValueOf(value)))
+    napiWriteHandle(result, napiPersistentHandle(napiValueOf(value)))
     return NAPI_OK
 }
 
@@ -1394,7 +1507,7 @@ pub fn napiTakePending(): Vec<NapiPending> {
 pub fn napi_create_promise(_env: *u8, deferred: *u8, promise: *u8): i32 {
     let p = newPromise(&mut gInterp, 0, JSValue.Undefined)
     gNapi.liveDeferred = gNapi.liveDeferred + 1
-    napiWriteHandle(deferred, napiHandle(JSValue.Obj(p)))
+    napiWriteHandle(deferred, napiPersistentHandle(JSValue.Obj(p)))
     napiWriteHandle(promise, napiHandle(JSValue.Obj(p)))
     return NAPI_OK
 }
@@ -1470,6 +1583,8 @@ pub fn napi_create_threadsafe_function(_env: *u8, func: i64, _asyncResource: i64
     if initialRefs < 1 {
         initialRefs = 1
     }
+    // the tsfn's own copy of the function is not traced, so a pinned handle roots it
+    let _pin = napiPersistentHandle(napiValueOf(func))
     gNapi.tsfns.push(NapiTsfn {
         jsFunc: napiValueOf(func), callJsCb: callJsCb, context: context, refs: initialRefs, unrefed: false
     }
@@ -1625,9 +1740,9 @@ pub fn napiHasTsfn(): bool {
 // them were missing. A missing symbol is not a missing feature, it is a module
 // that cannot load at all, which is why they land together.
 
-// Handle scopes. Every handle this runtime hands out is already mirrored into
-// the interpreter's foreign-host root set for its lifetime, so a scope has no
-// storage to reclaim and these are bookkeeping. The scope handle is a counter so
+// Handle scopes. Handles are released only when the whole callback returns
+// (napiReleaseHandlesFrom), so an inner scope frees nothing early and these are
+// bookkeeping. The scope handle is a counter so
 // an addon that compares or nests them sees distinct values.
 @externalLinkage
 pub fn napi_open_handle_scope(_env: *u8, result: *u8): i32 {
@@ -1941,18 +2056,18 @@ pub fn napi_define_properties(_env: *u8, object: i64, propertyCount: i64, proper
 
 // napi_add_finalizer(env, js_object, native_object, cb, hint, result)
 //
-// Recorded, not scheduled. milojs's collector has no finalizer hook (the same
-// limitation napi_wrap documents), so the callback is kept against the object
-// rather than dropped silently: an addon that registers one and never sees it
-// run leaks, and that is worth saying in one place instead of pretending.
+// Any number per object, each its own owner slot, none of them a wrap: unwrap
+// and remove_wrap do not see these.
 @externalLinkage
-pub fn napi_add_finalizer(_env: *u8, jsObject: i64, nativeObject: i64, _finalizeCb: i64, _finalizeHint: i64, result: *u8): i32 {
+pub fn napi_add_finalizer(env: *u8, jsObject: i64, nativeObject: i64, finalizeCb: i64, finalizeHint: i64, result: *u8): i32 {
+    if finalizeCb == 0 {
+        return NAPI_INVALID_ARG
+    }
     match napiValueOf(jsObject) {
         JSValue.Obj(o) => {
-            let _ea = ensureExtra(&mut gInterp, o)
-            if gInterp.objExtras[gInterp.objects[o].extra].napiWrap == 0 {
-                gInterp.objExtras[gInterp.objects[o].extra].napiWrap = nativeObject
-            }
+            attachOwner(&mut gInterp, o, OWNER_NAPI_FINALIZER, NativeOwner.Napi(NapiFinalizer {
+                cb: finalizeCb, env: env as i64, data: nativeObject, hint: finalizeHint
+            }))
             if (result as i64) != 0 {
                 napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
             }
@@ -2038,7 +2153,7 @@ pub fn napi_delete_async_work(_env: *u8, work: i64): i32 {
 // and only the addon can read it out. fsevents stores its event-stream handle
 // this way.
 @externalLinkage
-pub fn napi_create_external(_env: *u8, data: i64, _finalizeCb: i64, _finalizeHint: i64, result: *u8): i32 {
+pub fn napi_create_external(env: *u8, data: i64, finalizeCb: i64, finalizeHint: i64, result: *u8): i32 {
     // node answers napi_invalid_arg for a NULL out-param. Writing to it
     // instead killed the process mid-callback with no output and exit
     // code 0, which a CI run reads as success.
@@ -2049,6 +2164,11 @@ pub fn napi_create_external(_env: *u8, data: i64, _finalizeCb: i64, _finalizeHin
     let _ex = ensureExtra(&mut gInterp, o)
     gInterp.objExtras[gInterp.objects[o].extra].napiWrap = data
     gInterp.objExtras[gInterp.objects[o].extra].napiIsExternal = true
+    if finalizeCb != 0 {
+        attachOwner(&mut gInterp, o, OWNER_NAPI_FINALIZER, NativeOwner.Napi(NapiFinalizer {
+            cb: finalizeCb, env: env as i64, data: data, hint: finalizeHint
+        }))
+    }
     napiWriteHandle(result, napiHandle(JSValue.Obj(o)))
     return NAPI_OK
 }

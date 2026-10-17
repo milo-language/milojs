@@ -201,6 +201,8 @@ pub enum Builtin: i32 {
     OpenFlags,
     OpenFd,
     CloseFd,
+    FileHandleAdopt,
+    FileHandleClose,
     ReadFdInto,
     WriteFdFrom,
     FsyncFd,

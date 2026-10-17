@@ -64,6 +64,7 @@ from "./runtime/host" import {
 from "./runtime/modules" import {
     preloadGraph, dirOf, fileExists
 }
+from "./runtime/napi" import { napiTeardown }
 from "./engine/realm" import {
     runRealmPrelude
 }
@@ -404,6 +405,7 @@ fn main(): i32 {
     // Sized per-OS, same as the engine entry: see interpStackBytes in driver.milo.
     , interpStackBytes())
     interpTask.join()
+    napiTeardown()
     // Stats go to stderr so stdout stays byte-identical to node. A program that
     // leaves through exit() skips this line; the witness is for programs that
     // run to completion, which is what the coverage probes do.

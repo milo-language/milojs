@@ -49,3 +49,16 @@ MILOJS_NAPI_ADDON="$TMP/nullout.node" node tests/napi/nullout.js >"$TMP/expected
 MILOJS_NAPI_ADDON="$TMP/nullout.node" "$RUNTIME" tests/napi/nullout.js >"$TMP/actual3"
 diff -u "$TMP/expected3" "$TMP/actual3"
 echo "node-api null out-param ok"
+
+# Finalizers: each runs once after its object is collected, never after
+# napi_remove_wrap, and the survivors run at teardown. node's --expose-gc gives
+# the script the same gc() milojs has.
+case "$(uname -s)" in
+  Darwin) "$CC" -dynamiclib -undefined dynamic_lookup tests/napi/finalize.c -o "$TMP/finalize.node" ;;
+  *)      "$CC" -shared -fPIC tests/napi/finalize.c -o "$TMP/finalize.node" ;;
+esac
+
+MILOJS_NAPI_ADDON="$TMP/finalize.node" node --expose-gc tests/napi/finalize.js >"$TMP/expected4"
+MILOJS_NAPI_ADDON="$TMP/finalize.node" "$RUNTIME" tests/napi/finalize.js >"$TMP/actual4"
+diff -u "$TMP/expected4" "$TMP/actual4"
+echo "node-api finalizers ok"

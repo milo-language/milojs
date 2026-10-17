@@ -642,6 +642,8 @@ struct JSObjExtra {
     // ORIGINAL receiver, which the spec says callbacks get as their 3rd
     // argument. Its own -1 discriminator, so no bool in JSObj.
     arrayLikeOrig: i64,
+    // head of this object's chain in Interp.owners, -1 for none
+    ownerHead: i64,
 }
 
 pub fn defaultExtra(): JSObjExtra {
@@ -675,6 +677,7 @@ pub fn defaultExtra(): JSObjExtra {
         nativeBufOwned: false,
         arrayLikeOrig: -1,
         boxed: JSValue.Undefined,
+        ownerHead: -1,
     }
 }
 
@@ -1133,6 +1136,12 @@ pub struct Interp {
     gcGrowthFactor: i64,
     gcRuns: i64,
     gcStats: bool,
+    // Native resources behind JS objects (see NativeOwner). The sweep only MOVES
+    // a dead object's owners to finalizeQueue; the host drains the queue later,
+    // where calling C or JS is legal and collect is not running.
+    owners: Vec<OwnerSlot>,
+    ownerFree: Vec<i64>,
+    finalizeQueue: Vec<NativeOwner>,
 }
 
 // The interpreter, reachable without being threaded through a parameter.
@@ -1151,7 +1160,7 @@ pub var gInterp: Interp = Interp {
     throwing: false, genReturning: false, thrownValue: JSValue.Undefined,
     optShort: false, pendingLabel: "", callDepthLimit: 10000,
     rngState: 88172645463325252,
-    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, realms: Vec.new(), curRealm: 0, realmPreludes: Vec.new(), globalScope: 0, sandboxObj: -1, dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, dateProtoPristine: false, regexProtoPristine: false, dataViewProtoObj: -1, dataViewProtoPristine: false, taProtoObj: -1, taProtoLo: 0, taProtoHi: -1, taProtoPristine: false, objectProtoPristine: true, symDescs: Vec.new(), symHasDesc: Vec.new(), symRegistered: Vec.new(), symRegistry: HashMap.new(), anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actFn: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), inspectMaxDepth: 2, parseFailed: false, hadUnhandledRejection: false, gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false, builtinGlobals: 0
+    allocSinceGc: 0, promiseCtorObj: -1, stringCtorProps: -1, stringProtoObj: -1, functionProtoObj: -1, realms: Vec.new(), curRealm: 0, realmPreludes: Vec.new(), globalScope: 0, sandboxObj: -1, dateCtorProps: -1, dateProtoObj: -1, regexProtoObj: -1, mapProtoObj: -1, setProtoObj: -1, promiseProtoObj: -1, iterProtoObj: -1, genProtoObj: -1, arrayCtorObj: -1, objectProtoObj: -1, arrayProtoObj: -1, arrayProtoPristine: false, stringProtoPristine: false, dateProtoPristine: false, regexProtoPristine: false, dataViewProtoObj: -1, dataViewProtoPristine: false, taProtoObj: -1, taProtoLo: 0, taProtoHi: -1, taProtoPristine: false, objectProtoPristine: true, symDescs: Vec.new(), symHasDesc: Vec.new(), symRegistered: Vec.new(), symRegistry: HashMap.new(), anyProxy: false, timers: Vec.new(), microtasks: Vec.new(), nextTimerId: 1, callDepth: 0, mainTask: 0 as *u8, awaitPromise: Vec.new(), awaitTask: Vec.new(), suspended: Vec.new(), genObj: Vec.new(), genFn: Vec.new(), genTask: Vec.new(), genEnv: Vec.new(), genScope: Vec.new(), genArgs: Vec.new(), genThis: Vec.new(), genYielded: Vec.new(), genSent: Vec.new(), genResumeMode: Vec.new(), genAsync: Vec.new(), genDone: Vec.new(), genThrew: Vec.new(), genErr: Vec.new(), genCaller: Vec.new(), genStarted: Vec.new(), suspendedTask: Vec.new(), actTask: Vec.new(), actCreator: Vec.new(), actNotified: Vec.new(), actFn: Vec.new(), actArgs: Vec.new(), actThis: Vec.new(), actPromise: Vec.new(), suppressAsyncSpawn: false, suppressGenSpawn: false, fetches: Vec.new(), napiAddonPaths: Vec.new(), napiAddonExports: Vec.new(), newTarget: JSValue.Undefined, httpServers: Vec.new(), unhandledRejects: Vec.new(), awaitBudgetMs: 30000.0, listeners: Vec.new(), conns: Vec.new(), connOpen: Vec.new(), sqliteDbs: Vec.new(), sqliteDbLive: Vec.new(), sqliteStmts: Vec.new(), sqliteStmtLive: Vec.new(), sqliteStmtDb: Vec.new(), inspectMaxDepth: 2, parseFailed: false, hadUnhandledRejection: false, gcThreshold: 1024, gcMinThreshold: 1024, gcGrowthFactor: 2, gcRuns: 0, gcStats: false, builtinGlobals: 0, owners: Vec.new(), ownerFree: Vec.new(), finalizeQueue: Vec.new()
 }
 
 fn allocObj(st: &mut Interp, isArray: bool): i64 {
@@ -1274,6 +1283,124 @@ pub fn propIsAccessor(st: &Interp, obj: i64, idx: i64): bool {
     }
 }
 
+// ── native owners ──
+//
+// A native resource behind a JS object (a Node-API finalizer and the data it
+// frees, a FileHandle's fd) is a @noCopy value in exactly one OwnerSlot. Every
+// way of disposing of it, explicit close, napi_remove_wrap, the GC, process
+// teardown, gets it with `.take()`, so whoever runs second finds None. There
+// is no raw cb or fd to copy out and dispose of twice: that would be a second
+// owner, and the compiler rejects using a moved one.
+//
+// The engine only stores and moves these; it never disposes of one. Calling a
+// finalizer or closing an fd is host work, done by whoever drains
+// finalizeQueue (src/runtime/ for napi, the evaluator's fd arms for fds).
+
+@noCopy
+pub struct NapiFinalizer {
+    cb: i64,
+    env: i64,
+    data: i64,
+    hint: i64,
+}
+
+@noCopy
+pub struct FdOwner {
+    fd: i64,
+    // node names the path in the error it raises when the GC closes the fd
+    path: string,
+}
+
+pub enum NativeOwner {
+    Napi(NapiFinalizer),
+    Fd(FdOwner),
+}
+
+// What an owner is for, so the one path that may take it finds the right one:
+// napi_remove_wrap cancels only the wrap, never an add_finalizer record.
+pub let OWNER_NAPI_WRAP: i64 = 1
+pub let OWNER_NAPI_FINALIZER: i64 = 2
+pub let OWNER_FD: i64 = 3
+
+struct OwnerSlot {
+    kind: i64,
+    // next slot of the same object, -1 at the end
+    next: i64,
+    owner: Option<NativeOwner>,
+}
+
+pub fn attachOwner(st: &mut Interp, o: i64, kind: i64, owner: NativeOwner) {
+    let ex = ensureExtra(&mut st, o)
+    let head = st.objExtras[ex].ownerHead
+    var idx: i64 = 0
+    if st.ownerFree.len() > 0 {
+        idx = st.ownerFree.pop()!
+        st.owners[idx] = OwnerSlot { kind: kind, next: head, owner: Option.Some(owner) }
+    } else {
+        st.owners.push(OwnerSlot { kind: kind, next: head, owner: Option.Some(owner) })
+        idx = st.owners.len() - 1
+    }
+    st.objExtras[ex].ownerHead = idx
+}
+
+pub fn hasOwner(st: &Interp, o: i64, kind: i64): bool {
+    var i = st.objExtras[st.objects[o].extra].ownerHead
+    while i >= 0 {
+        if st.owners[i].kind == kind {
+            return true
+        }
+        i = st.owners[i].next
+    }
+    return false
+}
+
+// Move object o's first owner of `kind` out and unlink its slot. None when it
+// has none, which for a close or remove_wrap means it was already disposed of.
+pub fn takeOwner(st: &mut Interp, o: i64, kind: i64): Option<NativeOwner> {
+    let ex = st.objects[o].extra
+    if ex == 0 {
+        return Option.None
+    }
+    var prev: i64 = -1
+    var i = st.objExtras[ex].ownerHead
+    while i >= 0 {
+        if st.owners[i].kind == kind {
+            let next = st.owners[i].next
+            if prev < 0 {
+                st.objExtras[ex].ownerHead = next
+            } else {
+                st.owners[prev].next = next
+            }
+            st.ownerFree.push(i)
+            return st.owners[i].owner.take()
+        }
+        prev = i
+        i = st.owners[i].next
+    }
+    return Option.None
+}
+
+// The next owner the sweep queued, oldest first.
+pub fn takeQueuedOwner(st: &mut Interp): Option<NativeOwner> {
+    if st.finalizeQueue.len() == 0 {
+        return Option.None
+    }
+    return Option.Some(st.finalizeQueue.remove(0))
+}
+
+// Process teardown: queue every owner still attached to a live object, so the
+// host can run what node runs when its environment is torn down.
+pub fn queueAllOwners(st: &mut Interp) {
+    var i: i64 = 0
+    while i < st.owners.len() {
+        match st.owners[i].owner.take() {
+            Option.Some(ow) => st.finalizeQueue.push(ow),
+            Option.None => {},
+        }
+        i = i + 1
+    }
+}
+
 // Return an object's private extra slot to the free list (called by the sweep).
 // A no-op for the shared default (0). Clearing the payload here rather than at
 // reuse keeps freed slots from pinning JSValues the collector already released.
@@ -1284,6 +1411,16 @@ fn releaseExtra(st: &mut Interp, o: i64) {
             unsafe {
                 free(st.objExtras[ex].nativeBufPtr as *u8)
             }
+        }
+        // Moved, not disposed: collect must never call into C or JS.
+        var oi = st.objExtras[ex].ownerHead
+        while oi >= 0 {
+            match st.owners[oi].owner.take() {
+                Option.Some(ow) => st.finalizeQueue.push(ow),
+                Option.None => {},
+            }
+            st.ownerFree.push(oi)
+            oi = st.owners[oi].next
         }
         st.objExtras[ex] = defaultExtra()
         st.objExtraFree.push(ex)

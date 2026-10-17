@@ -374,6 +374,8 @@ pub fn installHostGlobals(st: &mut Interp) {
     scopeDefine(&mut st, g, "__openFlags", nativeValue(&mut st, Native.Fn(Builtin.OpenFlags)))
     scopeDefine(&mut st, g, "__openSync", nativeValue(&mut st, Native.Fn(Builtin.OpenFd)))
     scopeDefine(&mut st, g, "__closeSync", nativeValue(&mut st, Native.Fn(Builtin.CloseFd)))
+    scopeDefine(&mut st, g, "__fileHandleAdopt", nativeValue(&mut st, Native.Fn(Builtin.FileHandleAdopt)))
+    scopeDefine(&mut st, g, "__fileHandleClose", nativeValue(&mut st, Native.Fn(Builtin.FileHandleClose)))
     scopeDefine(&mut st, g, "__readFdInto", nativeValue(&mut st, Native.Fn(Builtin.ReadFdInto)))
     scopeDefine(&mut st, g, "__writeFdFrom", nativeValue(&mut st, Native.Fn(Builtin.WriteFdFrom)))
     scopeDefine(&mut st, g, "__fsyncSync", nativeValue(&mut st, Native.Fn(Builtin.FsyncFd)))
