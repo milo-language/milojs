@@ -1,35 +1,45 @@
 <!-- doc-meta
 system: gc-boundary
-purpose: the project direction: milojs showcases Milo by making the GC-to-native boundary safe, and the design for roots, finalizers and stale references that does it
+purpose: the project direction (a complete JS engine and Node-compatible runtime in Milo, replacing what bun gets from Zig plus JSC) and the GC design that comes first: roots, finalizers and stale references
 key-files: src/engine/eval.milo, src/engine/runtime.milo, src/runtime/napi.milo, lib/fs.js
 update-when: a step below lands, a probe result changes, or the direction is revisited
-last-verified: 2026-10-16 (step 3 landed: owner slots, the finalize queue, napi finalizers and FileHandle)
+last-verified: 2026-10-17 (direction restated: full engine and runtime, speed and node compat unfrozen; the 2026-10-16 narrowing to a safety showcase is withdrawn)
 -->
 
-# The GC boundary: what milojs is for
+# Direction: a whole JS engine and runtime in Milo
 
-milojs exists to show that Milo makes a JavaScript engine and runtime safe and
-pleasant to write. This doc narrows that to the one claim worth proving, records
-the evidence that picked it, and lays out the design. `docs/status.md` stays the
-scoreboard and `docs/backlog.md` the worklist. This file decides what goes on
-the worklist.
+milojs is bun's ambition with the engine included. Bun is a runtime in Zig on
+top of JSC in C++. milojs is both layers in one memory-safe language: our own
+engine in place of JSC, our own runtime in place of bun's, and the chance to
+drop decades of cruft from each. Safety is a property of the result, not the
+pitch.
 
-## Why the direction changes
+The engine started as a port of QuickJS's design. The runtime fills in the OS
+and Node APIs on top of it.
 
-milojs is three projects at once, each of them years long:
+**Node compatibility:** required for everything real applications use (fs, net,
+http, streams, timers, child_process, crypto, zlib, process, module loading,
+Node-API addons). Esoteric corners and deprecated APIs are not targets; a
+`test/parallel` case that only exercises one of those is not worth chasing.
 
-| goal | where it stands | ceiling |
+## Where it stands, and the bar for each layer
+
+| layer | now | bar |
 |---|---|---|
-| spec-complete engine | test262 82% on a 3% sample; ~2,000 Temporal failures on the full corpus | reachable, slowly |
-| fast engine | median 410x behind bun, worst 1,900x (`docs/conformance/bench.json`) | an interpreter tops out near QuickJS, still 20-50x behind a JIT |
-| Node-compatible runtime | 17.3% of `test/parallel` | bun, with JSC under it, scores 40.8% on the same sweep |
+| engine correctness | test262 82% on a 3% sample | test262 at QuickJS's level, Temporal and Intl included |
+| engine speed | median 410x behind bun (`docs/conformance/bench.json`) | QuickJS parity first (bytecode VM on every body), then a JIT |
+| runtime | 17.3% of node `test/parallel` | real apps run unmodified (Express, Prisma, then a Next-sized app); bun's 40.8% on the same sweep |
 
-None of those numbers says anything about Milo. A slow, partial Node clone
-reads as "Milo is slow to build in" when the cause is scope. Each further point
-of Node conformance proves breadth, not safety.
+## Revision: 2026-10-16 narrowing withdrawn
 
-## The evidence: where memory bugs actually live
+The 2026-10-16 version of this doc froze speed and Node compatibility and
+narrowed milojs to proving one safety claim. That was wrong: those gaps are the
+work, not a reason to stop. The GC design below survives, for a different
+reason: a real engine needs a collector that roots without hand bookkeeping,
+for speed (`tempRoots` push and truncate on every call boundary) as much as for
+correctness.
 
+## Why the GC comes first: where memory bugs actually live
 **Bun's runtime layer.** The bun clone has 533 branches named for a UAF,
 double free, leak, segfault or crash fix, in bun's own code, not JSC. Ten were
 read in full and classified against Milo's rules (2026-10-16):
@@ -61,7 +71,7 @@ is a reference into the GC'd object graph that outlived what kept it alive.
 
 The common thread across all three codebases: **Milo already wins on ordinary
 ownership, and loses at the boundary between the GC heap and everything else.**
-That boundary, in both layers, is the showcase.
+That boundary is what the design below closes.
 
 ## Design
 
@@ -156,31 +166,32 @@ The writeup has to rest on things that fail when they should:
 - **`unsafe` budget.** Count `unsafe` lines; the collector and FFI should hold
   all of them. Publish the number.
 
-## What stops
-
-- Bytecode VM coverage and bench budgets: frozen. The interpreter's job is
-  correctness.
-- Node `test/parallel` percentage as a target: replaced by real workloads
-  (Express, Prisma) and the resource-holding modules (fs, net, timers,
-  child_process, zlib, Node-API), the ones that exercise mechanism 2.
-- Temporal and Intl: dropped from the plan. What exists stays.
-
-test262 and the node oracle stay as regression gates.
-
 ## Order
 
 1. ~~Fix the linux-arm64 release crash.~~ Checked 2026-10-16: it no longer
-   reproduces (`docs/status.md`, gate 0). Cause never identified, so the
-   fuzz campaign in step 6 runs on linux-arm64 too.
+   reproduces (`docs/status.md`, gate 0). Cause never identified, so the fuzz
+   work in step 5 runs on linux-arm64 too.
 2. ~~`Option.take` in Milo.~~ Landed as a compiler builtin, milo `348927e4`:
    `x.take()` lowers to `replace(x, None)` and needs a mutable place.
 3. ~~Mechanism 2 for Node-API and one resource module.~~ Landed: napi_wrap,
    add_finalizer, create_external and remove_wrap, and fs.promises FileHandle,
    through one taken owner each, with the bun-shape fixtures.
 4. Mechanism 1: port the stack scan, add `RootedVec` and its gate, delete
-   `tempRoots`, keep gc-stress green.
-5. Mechanism 3 per `docs/milojs-arena-safety.md`.
-6. Fuzz campaign and the writeup.
+   `tempRoots`, keep gc-stress green. Measure the bench before and after; the
+   call-boundary rooting it removes is a speed cost too.
+5. In parallel from here, three tracks:
+   - **Engine speed:** bytecode VM on every function body, then QuickJS bench
+     parity. Plan in `docs/milojs-quickjs-plan.md`.
+   - **Runtime:** real apps drive the Node API work (Express, Prisma, then a
+     Next-sized app). Each failure an app hits is the next ticket.
+   - **Hardening:** mechanism 3 per `docs/milojs-arena-safety.md`, and the
+     crash fuzzer against milojs and QuickJS on mutated test262 input.
+6. The JIT: a baseline tier, then an optimizing tier that emits LLVM IR for hot
+   functions (Milo already lowers to LLVM). Design doc when step 5's engine track
+   reaches QuickJS parity.
+
+test262, the node oracle and the bench budgets are the regression gates
+throughout.
 
 ## Open questions
 
@@ -188,5 +199,5 @@ test262 and the node oracle stay as regression gates.
   retained-but-dead slots under the Express workload once step 4 lands.
 - The ChadScript tie-in. Bun's `--aot` branch (2026-10) compiles typed code and
   falls back to JSC for the rest. ChadScript plus milojs is the same split, and
-  sharing the collector in step 4 is the first piece of a shared runtime. Not on
-  this plan; revisit after step 6.
+  sharing the collector in step 4 is the first piece of a shared runtime.
+  Revisit when the JIT design starts.
