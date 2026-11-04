@@ -212,8 +212,8 @@ fn reAddShorthand(cls: &mut ReClass, kind: u8) {
     } else if kind == 's' {
         cls.lo.push(' ' as i32)
         cls.hi.push(' ' as i32)
-        cls.lo.push(9 as i32)
-        cls.hi.push(13 as i32)
+        cls.lo.push(9)
+        cls.hi.push(13)
     }
 }
 
@@ -231,28 +231,28 @@ fn reAddShorthand(cls: &mut ReClass, kind: u8) {
 // over in this engine.
 fn reAddShorthandNeg(cls: &mut ReClass, kind: u8) {
     if kind == 'd' {
-        cls.lo.push(0 as i32)
-        cls.hi.push(47 as i32)
-        cls.lo.push(58 as i32)
-        cls.hi.push(0x10FFFF as i32)
+        cls.lo.push(0)
+        cls.hi.push(47)
+        cls.lo.push(58)
+        cls.hi.push(0x10FFFF)
     } else if kind == 'w' {
-        cls.lo.push(0 as i32)
-        cls.hi.push(47 as i32)
-        cls.lo.push(58 as i32)
-        cls.hi.push(64 as i32)
-        cls.lo.push(91 as i32)
-        cls.hi.push(94 as i32)
-        cls.lo.push(96 as i32)
-        cls.hi.push(96 as i32)
-        cls.lo.push(123 as i32)
-        cls.hi.push(0x10FFFF as i32)
+        cls.lo.push(0)
+        cls.hi.push(47)
+        cls.lo.push(58)
+        cls.hi.push(64)
+        cls.lo.push(91)
+        cls.hi.push(94)
+        cls.lo.push(96)
+        cls.hi.push(96)
+        cls.lo.push(123)
+        cls.hi.push(0x10FFFF)
     } else if kind == 's' {
-        cls.lo.push(0 as i32)
-        cls.hi.push(8 as i32)
-        cls.lo.push(14 as i32)
-        cls.hi.push(31 as i32)
-        cls.lo.push(33 as i32)
-        cls.hi.push(0x10FFFF as i32)
+        cls.lo.push(0)
+        cls.hi.push(8)
+        cls.lo.push(14)
+        cls.hi.push(31)
+        cls.lo.push(33)
+        cls.hi.push(0x10FFFF)
     }
 }
 
@@ -326,7 +326,7 @@ fn reAddPropTo(cls: &mut ReClass, resolved: &string, negated: bool) {
     }
     if prev <= 0x10FFFF {
         cls.lo.push(prev as i32)
-        cls.hi.push(0x10FFFF as i32)
+        cls.hi.push(0x10FFFF)
     }
 }
 
@@ -380,7 +380,7 @@ fn reHexVal(c: u8): i64 {
 // Returns a two-element vector [codePoint, bytesConsumedIncludingBackslash], or an
 // EMPTY vector when the escape at `at` is not one of these.
 fn reNumericEscape(p: &ReParse, at: i64): Vec<i64> {
-    var none: Vec<i64> = Vec.new()
+    let none: Vec<i64> = Vec.new()
     if at + 1 >= p.pat.len() {
         return none
     }
@@ -488,29 +488,29 @@ fn reUtf8Bytes(cp: i64, out: &mut Vec<u8>) {
 // 'b' and never a backspace.
 fn reEscapedCharInClass(e: u8): u8 {
     if e == 'b' {
-        return 8 as u8
+        return 8
     }
     return reEscapedChar(e)
 }
 
 fn reEscapedChar(e: u8): u8 {
     if e == 'n' {
-        return 10 as u8
+        return 10
     }
     if e == 't' {
-        return 9 as u8
+        return 9
     }
     if e == 'r' {
-        return 13 as u8
+        return 13
     }
     if e == 'f' {
-        return 12 as u8
+        return 12
     }
     if e == 'v' {
-        return 11 as u8
+        return 11
     }
     if e == '0' {
-        return 0 as u8
+        return 0
     }
     return e
 }
@@ -550,7 +550,7 @@ fn reParseClass(p: &mut ReParse): i64 {
         if p.pos >= p.pat.len() || p.pat[p.pos] == ']' {
             going = false
         } else {
-            var c = p.pat[p.pos]
+            let c = p.pat[p.pos]
             if c == 92 as u8 && p.pos + 1 < p.pat.len() {
                 let e = p.pat[p.pos + 1]
                 if (e == 'p' || e == 'P') && p.unicode {
@@ -1442,7 +1442,7 @@ fn reRun(re: &Regex, pcStart: i64, s: &string, spStart: i64, saves: &mut Vec<i64
     }
     var pc = pcStart
     var sp = spStart
-    var running = true
+    let running = true
     while running {
         var advanced = false
         let inst = re.prog[pc]
@@ -1688,6 +1688,6 @@ pub fn regexExec(re: &Regex, s: &string, startPos: i64): Vec<i64> {
         // second half of the é it was supposed to reject.
         start = start + reCharLen(s, start)
     }
-    var empty: Vec<i64> = Vec.new()
+    let empty: Vec<i64> = Vec.new()
     return empty
 }

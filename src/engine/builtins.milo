@@ -688,13 +688,13 @@ pub fn stringMethod(name: &string, s: &string, args: &RootedVec, st: &mut Interp
                     i = i + 2
                 } else {
                     wellFormed = false
-                    encodeCodepoint(&mut out, 65533 as i32)
+                    encodeCodepoint(&mut out, 65533)
                     i = i + 1
                 }
             } else if u >= 56320 && u <= 57343 {
                 // a low surrogate with no high one before it
                 wellFormed = false
-                encodeCodepoint(&mut out, 65533 as i32)
+                encodeCodepoint(&mut out, 65533)
                 i = i + 1
             } else {
                 out = out + utf16Slice(s, i, i + 1)
@@ -1172,35 +1172,35 @@ fn mjHexNibble(v: i64): u8 {
 }
 
 fn mjPushJsonEscaped(out: &mut string, s: &string) {
-    out.push(34 as u8)
+    out.push(34)
     var i: i64 = 0
     while i < s.len() {
         let c = s[i]
         if c == 34 as u8 {
-            out.push(92 as u8)
-            out.push(34 as u8)
+            out.push(92)
+            out.push(34)
         } else if c == 92 as u8 {
-            out.push(92 as u8)
-            out.push(92 as u8)
+            out.push(92)
+            out.push(92)
         } else if c == 10 as u8 {
-            out.push(92 as u8)
+            out.push(92)
             out.push('n')
         } else if c == 9 as u8 {
-            out.push(92 as u8)
+            out.push(92)
             out.push('t')
         } else if c == 13 as u8 {
-            out.push(92 as u8)
+            out.push(92)
             out.push('r')
         } else if c == 8 as u8 {
-            out.push(92 as u8)
+            out.push(92)
             out.push('b')
         } else if c == 12 as u8 {
-            out.push(92 as u8)
+            out.push(92)
             out.push('f')
         } else if c < 32 as u8 {
             // any other control character MUST be \uXXXX-escaped; emitting it raw
             // produces output no JSON parser will accept
-            out.push(92 as u8)
+            out.push(92)
             out.push('u')
             out.push('0')
             out.push('0')
@@ -1211,7 +1211,7 @@ fn mjPushJsonEscaped(out: &mut string, s: &string) {
         }
         i = i + 1
     }
-    out.push(34 as u8)
+    out.push(34)
 }
 
 pub fn mjJsonOmitted(v: &JSValue): bool {
@@ -1526,21 +1526,21 @@ fn mjParseString(s: &string, c: &mut JCur): string {
         if ch == 92 as u8 && c.pos + 1 < s.len() {
             let e = s[c.pos + 1]
             if e == 'n' {
-                out.push(10 as u8)
+                out.push(10)
             } else if e == 't' {
-                out.push(9 as u8)
+                out.push(9)
             } else if e == 'r' {
-                out.push(13 as u8)
+                out.push(13)
             } else if e == 34 as u8 {
-                out.push(34 as u8)
+                out.push(34)
             } else if e == 92 as u8 {
-                out.push(92 as u8)
+                out.push(92)
             } else if e == '/' {
                 out.push('/')
             } else if e == 'b' {
-                out.push(8 as u8)
+                out.push(8)
             } else if e == 'f' {
-                out.push(12 as u8)
+                out.push(12)
             } else if e == 'u' && c.pos + 5 < s.len() {
                 // \uXXXX — decode to a codepoint and UTF-8 encode it. This used
                 // to fall through to the default branch, which emitted a literal
@@ -2218,7 +2218,7 @@ fn expandRepl(repl: &string, s: &string, saves: &Vec<i64>, re: &Regex): string {
     return out
 }
 
-fn regexReplace(st: &mut Interp, s: &string, rid: i64, repl: &string): JSValue {
+fn regexReplace(st: &Interp, s: &string, rid: i64, repl: &string): JSValue {
     let global = st.regexes[rid].flagG
     var out = String.withCapacity(s.len())
     var last: i64 = 0
@@ -2589,7 +2589,7 @@ pub fn stringRegexOp(prog: &Prog, s: &string, name: &string, args: &RootedVec, s
                 return JSValue.Undefined
             }
         }
-        return regexReplace(&mut st, s, rid, repl)
+        return regexReplace(st, s, rid, repl)
     }
     if name == "match" {
         return regexStrMatch(&mut st, s, rid)

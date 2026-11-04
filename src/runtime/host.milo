@@ -78,7 +78,7 @@ pub fn doHttpFetch(method: &string, url: &string, headersRaw: &string, body: &st
         return "Eunsupported URL scheme: " + url.clone()
     }
     // host[:port] is up to the first '/'
-    var slash = jsIndexOf(rest, "/", 0)
+    let slash = jsIndexOf(rest, "/", 0)
     var authority = rest.clone()
     var path = "/"
     if slash >= 0 {
@@ -229,7 +229,7 @@ pub fn parseDottedQuad(host: &string): u32 {
             cur = 0
             digits = 0
         } else {
-            return ip4(127 as u8, 0 as u8, 0 as u8, 1 as u8)
+            return ip4(127, 0, 0, 1)
         }
         i = i + 1
     }
@@ -237,7 +237,7 @@ pub fn parseDottedQuad(host: &string): u32 {
         parts.push(cur)
     }
     if parts.len() != 4 {
-        return ip4(127 as u8, 0 as u8, 0 as u8, 1 as u8)
+        return ip4(127, 0, 0, 1)
     }
     return ip4(parts[0] as u8, parts[1] as u8, parts[2] as u8, parts[3] as u8)
 }
@@ -259,7 +259,7 @@ pub fn parseDottedQuad(host: &string): u32 {
 // interpreter loop owns the OS main thread and never parks.
 pub fn readChildToCompletion(child: Child): string {
     var text = ""
-    var buf: [u8; 4096] = [0; 4096]
+    let buf: [u8; 4096] = [0; 4096]
     var reading = true
     while reading {
         var n: i64 = 0

@@ -441,7 +441,7 @@ fn toPrimitiveDefault(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     pushTemp(&mut st, JSValue.Obj(h))
     let vf = getMemberDyn(prog, h, "valueOf", &mut st)
     if isCallableIn(st, vf) {
-        var noA = RootedVec.new()
+        let noA = RootedVec.new()
         let r = callValue(prog, vf, noA, JSValue.Obj(h), &mut st)
         if objHandle(r) < 0 && funcHandle(r) < 0 {
             popTemp(&mut st)
@@ -450,7 +450,7 @@ fn toPrimitiveDefault(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     }
     let tf = getMemberDyn(prog, h, "toString", &mut st)
     if isCallableIn(st, tf) {
-        var noB = RootedVec.new()
+        let noB = RootedVec.new()
         let r2 = callValue(prog, tf, noB, JSValue.Obj(h), &mut st)
         if objHandle(r2) < 0 && funcHandle(r2) < 0 {
             popTemp(&mut st)
@@ -477,7 +477,7 @@ fn ordinaryToPrimitive(prog: &Prog, st: &mut Interp, h: i64, stringFirst: bool):
             return JSValue.Undefined
         }
         if isCallableIn(st, f) {
-            var noA = RootedVec.new()
+            let noA = RootedVec.new()
             let r = callValue(prog, f, noA, JSValue.Obj(h), &mut st)
             if st.throwing {
                 popTemp(&mut st)
@@ -530,7 +530,7 @@ fn toPrimitiveString(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     pushTemp(&mut st, JSValue.Obj(h))
     let tf = getMemberDyn(prog, h, "toString", &mut st)
     if isCallableIn(st, tf) {
-        var noA = RootedVec.new()
+        let noA = RootedVec.new()
         let r = callValue(prog, tf, noA, JSValue.Obj(h), &mut st)
         if objHandle(r) < 0 && funcHandle(r) < 0 {
             popTemp(&mut st)
@@ -539,7 +539,7 @@ fn toPrimitiveString(prog: &Prog, v: &JSValue, st: &mut Interp): JSValue {
     }
     let vf = getMemberDyn(prog, h, "valueOf", &mut st)
     if isCallableIn(st, vf) {
-        var noB = RootedVec.new()
+        let noB = RootedVec.new()
         let r2 = callValue(prog, vf, noB, JSValue.Obj(h), &mut st)
         if objHandle(r2) < 0 && funcHandle(r2) < 0 {
             popTemp(&mut st)
@@ -1059,7 +1059,7 @@ pub fn getMemberDyn(prog: &Prog, o: i64, key: &string, st: &mut Interp): JSValue
     // napiFn index, which the value-only predicate does not recognise, so an
     // accessor defined by an addon never fired and read as undefined.
     if isCallableIn(st, g) {
-        var noArgs = RootedVec.new()
+        let noArgs = RootedVec.new()
         return callValue(prog, g, noArgs, JSValue.Obj(o), &mut st)
     }
     let direct = getMember(st, o, key)
@@ -1363,7 +1363,7 @@ fn objectDefineProperties(st: &mut Interp, o: i64, descs: i64): bool {
 // Reported rather than thrown because Reflect.defineProperty has to turn the
 // same rejection into a plain `false` — and it cannot do that by catching, since
 // a Test262Error raised by user code inside a proxy trap must still propagate.
-fn descRejectReason(st: &mut Interp, o: i64, key: &string, d: i64): string {
+fn descRejectReason(st: &Interp, o: i64, key: &string, d: i64): string {
     // Copied out of the AST before anything below can re-enter the
     // interpreter and move the program storage this reference points into.
     let keyCopy = key.clone()
@@ -1443,7 +1443,7 @@ fn descRejectReason(st: &mut Interp, o: i64, key: &string, d: i64): string {
 
 // The throwing spelling, for Object.defineProperty and friends.
 fn validDescriptor(st: &mut Interp, o: i64, key: &string, d: i64): bool {
-    let reason = descRejectReason(&mut st, o, key, d)
+    let reason = descRejectReason(st, o, key, d)
     if reason.len() == 0 {
         return true
     }
@@ -2018,7 +2018,7 @@ pub fn makeTypedArray(prog: &Prog, st: &mut Interp, kind: i64, args: &RootedVec)
         var b: Vec<u8> = Vec.new()
         var i: i64 = 0
         while i < len * w {
-            b.push(0 as u8)
+            b.push(0)
             i = i + 1
         }
         st.objExtras[st.objects[nb].extra].bytes = b
@@ -2143,7 +2143,7 @@ fn boundMethodNameOf(st: &Interp, v: &JSValue): string {
 // "size")` answered undefined, so anything reflecting over a builtin prototype
 // (test262's propertyHelper, feature detection, util.inspect clones) saw a
 // prototype with no shape at all.
-fn builtinAccessorValue(st: &mut Interp, o: i64, name: &string): JSValue {
+fn builtinAccessorValue(st: &Interp, o: i64, name: &string): JSValue {
     if name == "__mapSize" || name == "__setSize" {
         return JSValue.Number(st.objExtras[st.objects[o].extra].mapKeys.len() as f64)
     }
@@ -2415,7 +2415,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: &Root
         }
         let ah = objHandle(recv)
         if ah >= 0 {
-            return builtinAccessorValue(&mut st, ah, name)
+            return builtinAccessorValue(st, ah, name)
         }
         return JSValue.Undefined
     }
@@ -2458,7 +2458,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: &Root
         // a pristine date with neither shadowed may skip the lookup.
         let direct = st.dateProtoPristine && st.objects[dh].isDate && st.objects[dh].proto == st.dateProtoObj
             && objOwnIndex(st, dh, "valueOf") < 0 && objOwnIndex(st, dh, "toString") < 0
-        var dargs: RootedVec = RootedVec.new()
+        let dargs: RootedVec = RootedVec.new()
         if hint == "number" {
             if direct {
                 return dateMethod(&mut st, dh, "valueOf", dargs)
@@ -2501,7 +2501,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: &Root
             popTemp(&mut st)
             return throwErr(&mut st, "TypeError", "toISOString is not a function")
         }
-        var noArgs = RootedVec.new()
+        let noArgs = RootedVec.new()
         let r = callValue(prog, iso, noArgs, jo, &mut st)
         popTemp(&mut st)
         return r
@@ -2601,12 +2601,12 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: &Root
     if rwo >= 0 && isSymbolMethodName(name) && isWrapperObj(st, rwo) {
         let wsid = symIdOf(boxedPrimitive(st, rwo))
         if wsid >= 0 {
-            return symbolMethod(&mut st, wsid, name)
+            return symbolMethod(st, wsid, name)
         }
     }
     match recv {
         JSValue.Sym(sid) => {
-            return symbolMethod(&mut st, sid, name)
+            return symbolMethod(st, sid, name)
         }
         JSValue.Str(sv) => {
             // Array.prototype.map.call("abc", f) — an array method a string does
@@ -2709,7 +2709,7 @@ pub fn callBuiltinByName(prog: &Prog, recv: &JSValue, name: &string, args: &Root
                         if ci < st.objExtras[st.objects[o].extra].bytes.len() {
                             b.push(st.objExtras[st.objects[o].extra].bytes[ci])
                         } else {
-                            b.push(0 as u8)
+                            b.push(0)
                         }
                         ci = ci + 1
                     }
@@ -3591,7 +3591,7 @@ fn setMember(st: &mut Interp, o: i64, key: string, value: JSValue) {
 
 // One element of a value being destructured: `value[i]`. Arrays/array-likes go
 // through getMember by index; a string yields its i-th character.
-fn destructElement(_prog: &Prog, value: &JSValue, i: i64, st: &mut Interp): JSValue {
+fn destructElement(_prog: &Prog, value: &JSValue, i: i64, st: &Interp): JSValue {
     let vh = objHandle(value)
     if vh >= 0 {
         return getMember(st, vh, i64ToStr(i))
@@ -3661,7 +3661,7 @@ fn assignPattern(prog: &Prog, patId: ExprId, value: JSValue, st: &mut Interp, sc
                         assignTarget(prog, target, JSValue.Obj(rest), &mut st, scope)
                     }
                         _ => {
-                            let ev = destructElement(prog, items, i, &mut st)
+                            let ev = destructElement(prog, items, i, st)
                             assignTarget(prog, e, ev, &mut st, scope)
                         }
                     }
@@ -4008,7 +4008,7 @@ pub fn callNativeAsFunction(prog: &Prog, n: &Native, fo: i64, argVals: &RootedVe
     if nativeEq(n, Native.Fn(Builtin.Date)) {
         let nowObj = objHandle(callNativeProg(prog, n, fo, argVals, &mut st))
         if nowObj >= 0 {
-            var noArgs: RootedVec = RootedVec.new()
+            let noArgs: RootedVec = RootedVec.new()
             return dateMethod(&mut st, nowObj, "toString", noArgs)
         }
         return JSValue.Str("Invalid Date")
@@ -4133,7 +4133,7 @@ fn mapSetFill(id: Builtin, o: i64, src: &JSValue, st: &mut Interp) {
             st.thrownValue = makeError(&mut st, "TypeError", spreadErrText(src))
         }
         if !st.throwing {
-            var noArgs = RootedVec.new()
+            let noArgs = RootedVec.new()
             let iter = callValue(gProg, itFn, noArgs, cloneValue(src), &mut st)
             if !st.throwing {
                 pushTemp(&mut st, cloneValue(iter))
@@ -4147,7 +4147,7 @@ fn mapSetFill(id: Builtin, o: i64, src: &JSValue, st: &mut Interp) {
                     guard = guard + 1
                     var step = JSValue.Undefined
                     if isGen {
-                        var nA = RootedVec.new()
+                        let nA = RootedVec.new()
                         step = genNext(ih, nA, &mut st)
                     } else {
                         let nextFn = getMember(st, ih, "next")
@@ -4156,7 +4156,7 @@ fn mapSetFill(id: Builtin, o: i64, src: &JSValue, st: &mut Interp) {
                             st.thrownValue = makeError(&mut st, "TypeError", "iterator.next is not a function")
                             break
                         }
-                        var nArgs = RootedVec.new()
+                        let nArgs = RootedVec.new()
                         step = callValue(gProg, nextFn, nArgs, cloneValue(iter), &mut st)
                     }
                     if st.throwing {
@@ -4187,12 +4187,12 @@ fn mapSetFill(id: Builtin, o: i64, src: &JSValue, st: &mut Interp) {
                     st.throwing = false
                     st.thrownValue = JSValue.Undefined
                     if isGen {
-                        var rArgs = RootedVec.new()
+                        let rArgs = RootedVec.new()
                         let _r = genResume(ih, rArgs, 2, &mut st)
                     } else {
                         let retFn = getMemberDyn(gProg, ih, "return", &mut st)
                         if !st.throwing && isCallableIn(st, retFn) {
-                            var rArgs = RootedVec.new()
+                            let rArgs = RootedVec.new()
                             let _r = callValue(gProg, retFn, rArgs, cloneValue(iter), &mut st)
                         }
                     }
@@ -4973,7 +4973,7 @@ fn callBuiltin(id: Builtin, argVals: &RootedVec, st: &mut Interp): JSValue {
         match res {
             Result.Ok(child) => {
                 var text = ""
-                var buf: [u8; 4096] = [0; 4096]
+                let buf: [u8; 4096] = [0; 4096]
                 var reading = true
                 while reading {
                     // The raw-buffer read is the only shape Child exposes for
@@ -5023,7 +5023,7 @@ fn callBuiltin(id: Builtin, argVals: &RootedVec, st: &mut Interp): JSValue {
         if idx < 0 || idx >= st.conns.len() || !st.connOpen[idx] {
             return JSValue.Str("")
         }
-        var buf: [u8; 65536] = [0; 65536]
+        let buf: [u8; 65536] = [0; 65536]
         var n: i64 = 0
         unsafe {
             let fd = st.conns[idx].rawFd()
@@ -5112,7 +5112,7 @@ fn callBuiltin(id: Builtin, argVals: &RootedVec, st: &mut Interp): JSValue {
         var got = ""
         unsafe {
             let fd = st.conns[idx].rawFd()
-            var buf: [u8; 65536] = [0; 65536]
+            let buf: [u8; 65536] = [0; 65536]
             let n = readFd(fd, buf, 65536)
             var i: i64 = 0
             while i < n {
@@ -5781,7 +5781,7 @@ fn callBuiltin(id: Builtin, argVals: &RootedVec, st: &mut Interp): JSValue {
         let pos = toNum(argVals.get(4)) as i64
         let fdn = toNum(argVals.get(0)) as i32
         if pos >= 0 {
-            lseek(fdn, pos, 0 as i32)
+            lseek(fdn, pos, 0)
         }
         var n: i64 = -1
         unsafe {
@@ -5802,7 +5802,7 @@ fn callBuiltin(id: Builtin, argVals: &RootedVec, st: &mut Interp): JSValue {
         let pos = toNum(argVals.get(4)) as i64
         let fdn = toNum(argVals.get(0)) as i32
         if pos >= 0 {
-            lseek(fdn, pos, 0 as i32)
+            lseek(fdn, pos, 0)
         }
         var n: i64 = -1
         unsafe {
@@ -5901,17 +5901,17 @@ fn callBuiltin(id: Builtin, argVals: &RootedVec, st: &mut Interp): JSValue {
         if argVals.len() > 0 {
             uport = numToIndex(toNum(argVals.get(0)))
         }
-        var uaddr: u32 = 0 as u32
+        var uaddr: u32 = 0
         if argVals.len() > 1 {
             uaddr = (numToIndex(toNum(argVals.get(1))) & 4294967295) as u32
         }
-        let fd = socket(2 as i32, 2 as i32, 0 as i32)
+        let fd = socket(2, 2, 0)
         if fd < 0 as i32 {
             return JSValue.Number(0.0 - 1.0)
         }
-        var one: i32 = 1
-        setsockopt(fd, solSocket(), soReuseaddr(), one, 4 as u32)
-        var sa = makeSockaddr(uport as u16, uaddr)
+        let one: i32 = 1
+        setsockopt(fd, solSocket(), soReuseaddr(), one, 4)
+        let sa = makeSockaddr(uport as u16, uaddr)
         // A UDP socket is a bare number on the JS side, so the raw-fd calls are ours to
         // vouch for: `fd` was created just above and nothing else holds it.
         var bound: i32 = -1
@@ -5940,7 +5940,7 @@ fn callBuiltin(id: Builtin, argVals: &RootedVec, st: &mut Interp): JSValue {
         var da = makeSockaddr(dport as u16, daddr)
         var sent: i64 = -1
         unsafe {
-            sent = sendto(sfd, payload, payload.len(), 0 as i32,
+            sent = sendto(sfd, payload, payload.len(), 0,
                           (da.addrOf()) as *SockAddr, sockAddrInLen())
         }
         return JSValue.Number(sent as f64)
@@ -5953,12 +5953,12 @@ fn callBuiltin(id: Builtin, argVals: &RootedVec, st: &mut Interp): JSValue {
             return JSValue.Null
         }
         let rfd = toNum(argVals.get(0)) as i32
-        var buf: [u8; 65536] = [0; 65536]
+        let buf: [u8; 65536] = [0; 65536]
         var src = makeZeroedSockaddr()
         var slen: u32 = sockAddrInLen()
         var n: i64 = -1
         unsafe {
-            n = recvfrom(rfd, buf, 65536, 0 as i32,
+            n = recvfrom(rfd, buf, 65536, 0,
                          (src.addrOf()) as *SockAddr, slen.addrOf() as *u32)
         }
         if n < 0 {
@@ -6162,7 +6162,7 @@ fn callBuiltin(id: Builtin, argVals: &RootedVec, st: &mut Interp): JSValue {
         if argVals.len() < 1 {
             return JSValue.Number(-22.0)
         }
-        match makeDir(toStr(argVals.get(0)), 511 as i32) {
+        match makeDir(toStr(argVals.get(0)), 511) {
             Result.Ok(_v) => {
                 return JSValue.Bool(true)
             }
@@ -6569,7 +6569,7 @@ fn callBuiltin(id: Builtin, argVals: &RootedVec, st: &mut Interp): JSValue {
         if argVals.len() == 0 {
             return JSValue.Number(jsNan())
         }
-        var year = toNum(argVals.get(0))
+        let year = toNum(argVals.get(0))
         if year != year {
             return JSValue.Number(jsNan())
         }
@@ -6629,7 +6629,7 @@ fn callBuiltin(id: Builtin, argVals: &RootedVec, st: &mut Interp): JSValue {
             // implemented at all: the first argument fell through to the
             // milliseconds path, so `new Date(2020, 4, 17)` produced 2020ms past
             // the epoch.
-            var cy = toNum(argVals.get(0))
+            let cy = toNum(argVals.get(0))
             if cy != cy {
                 st.objExtras[st.objects[o].extra].dateMs = jsNan()
             } else {
@@ -6952,7 +6952,7 @@ fn callBuiltin(id: Builtin, argVals: &RootedVec, st: &mut Interp): JSValue {
         var b: Vec<u8> = Vec.new()
         var i: i64 = 0
         while i < n {
-            b.push(0 as u8)
+            b.push(0)
             i = i + 1
         }
         st.objExtras[st.objects[bo].extra].bytes = b
@@ -9392,7 +9392,7 @@ fn evalUnArm(prog: &Prog, op: &string, a: ExprId, st: &mut Interp, scope: i64): 
             if vh >= 0 {
                 let itFn = getMemberDyn(prog, vh, symIteratorKey(), &mut st)
                 if isCallableIn(st, itFn) {
-                    var noArgs = RootedVec.new()
+                    let noArgs = RootedVec.new()
                     iter = callValue(prog, itFn, noArgs, cloneValue(va), &mut st)
                 }
             }
@@ -10425,7 +10425,7 @@ fn spreadIntoArms(prog: &Prog, out: &mut RootedVec, v: &JSValue, st: &mut Interp
         var guard: i64 = 0
         while !st.throwing && guard < 100000000 {
             guard = guard + 1
-            var nA = RootedVec.new()
+            let nA = RootedVec.new()
             let step = genNext(h, nA, &mut st)
             let sh = objHandle(step)
             if sh < 0 || truthy(getMemberDyn(prog, sh, "done", &mut st)) || st.throwing {
@@ -10464,7 +10464,7 @@ fn spreadIntoArms(prog: &Prog, out: &mut RootedVec, v: &JSValue, st: &mut Interp
             return
         }
         if isCallableIn(st, itFn) {
-            var noArgs = RootedVec.new()
+            let noArgs = RootedVec.new()
             let iter = callValue(prog, itFn, noArgs, cloneValue(v), &mut st)
             pushTemp(&mut st, cloneValue(iter))
             let ih = objHandle(iter)
@@ -10490,7 +10490,7 @@ fn spreadIntoArms(prog: &Prog, out: &mut RootedVec, v: &JSValue, st: &mut Interp
                     st.thrownValue = makeError(&mut st, "TypeError", "iterator.next is not a function")
                     guard = 100000000
                 } else {
-                    var nArgs = RootedVec.new()
+                    let nArgs = RootedVec.new()
                     let step = callValue(prog, nextFn, nArgs, cloneValue(iter), &mut st)
                     let sh = objHandle(step)
                     // getMemberDyn, not getMember: an iterator result may expose
@@ -10531,7 +10531,7 @@ fn spreadIntoArms(prog: &Prog, out: &mut RootedVec, v: &JSValue, st: &mut Interp
         if fbag >= 0 {
             let fit = getMember(st, fbag, symIteratorKey())
             if isCallableIn(st, fit) {
-                var fNoArgs = RootedVec.new()
+                let fNoArgs = RootedVec.new()
                 let fIter = callValue(prog, fit, fNoArgs, cloneValue(v), &mut st)
                 if !st.throwing {
                     spreadInto(prog, &mut out, fIter, &mut st)
@@ -10768,9 +10768,9 @@ fn inspectQuoteStr(s: &string): string {
     var q = 39 as u8
     if hasSingle {
         if !hasDouble {
-            q = 34 as u8
+            q = 34
         } else if !hasBack {
-            q = 96 as u8
+            q = 96
         }
     }
     var out = String.withCapacity(s.len() + 2)
@@ -10779,25 +10779,25 @@ fn inspectQuoteStr(s: &string): string {
     while k < s.len() {
         let c = s[k]
         if c == q || c == 92 as u8 {
-            out.push(92 as u8)
+            out.push(92)
             out.push(c)
         } else if c == 10 as u8 {
-            out.push(92 as u8)
+            out.push(92)
             out.push('n')
         } else if c == 9 as u8 {
-            out.push(92 as u8)
+            out.push(92)
             out.push('t')
         } else if c == 13 as u8 {
-            out.push(92 as u8)
+            out.push(92)
             out.push('r')
         } else if c == 8 as u8 {
-            out.push(92 as u8)
+            out.push(92)
             out.push('b')
         } else if c == 12 as u8 {
-            out.push(92 as u8)
+            out.push(92)
             out.push('f')
         } else if c < 32 as u8 || c == 127 as u8 {
-            out.push(92 as u8)
+            out.push(92)
             out.push('x')
             out.push(mjInspectHexUpper(((c as i64) >> 4) & 15))
             out.push(mjInspectHexUpper((c as i64) & 15))
@@ -11954,7 +11954,7 @@ fn vecHasStr(v: &Vec<string>, s: &string): bool {
 // IsCompatiblePropertyDescriptor: may `d` be applied over the existing
 // descriptor `tdh`? Both are descriptor OBJECTS here, which is why this cannot
 // reuse descRejectReason — that one answers about a live property slot.
-fn descCompatible(st: &mut Interp, extensible: bool, d: i64, tdh: i64): bool {
+fn descCompatible(st: &Interp, extensible: bool, d: i64, tdh: i64): bool {
     if tdh < 0 {
         return extensible
     }
@@ -12416,7 +12416,7 @@ fn ordinaryDefineOwn(st: &mut Interp, v: &JSValue, key: &string, d: i64): bool {
     if o < 0 {
         return false
     }
-    let reason = descRejectReason(&mut st, o, key, d)
+    let reason = descRejectReason(st, o, key, d)
     if st.throwing {
         return false
     }
@@ -12464,7 +12464,7 @@ pub fn definePropOf(prog: &Prog, st: &mut Interp, v: &JSValue, key: &string, d: 
         if tdh < 0 {
             bad = !ext || settingConfigFalse
         } else {
-            bad = !descCompatible(&mut st, ext, d, tdh)
+            bad = !descCompatible(st, ext, d, tdh)
             if !bad && settingConfigFalse && truthy(getMember(st, tdh, "configurable")) {
                 bad = true
             }
@@ -12593,7 +12593,7 @@ fn newTargetProto(prog: &Prog, st: &mut Interp, ctor: &JSValue, newTarget: &JSVa
     if st.throwing || r < 0 || r == st.curRealm {
         return -1
     }
-    return defaultProtoInRealm(&mut st, ctor, r)
+    return defaultProtoInRealm(st, ctor, r)
 }
 
 // GetFunctionRealm: a bound function or a proxy answers its target's realm, a
@@ -12618,7 +12618,7 @@ fn functionRealm(st: &mut Interp, f: &JSValue): i64 {
 // The prototype `ctor` gives an instance by default, taken from realm r
 // instead of ctor's own: r's %Map.prototype% for Map, and so on. -1 when there
 // is no counterpart, which leaves the caller's default in place.
-fn defaultProtoInRealm(st: &mut Interp, ctor: &JSValue, r: i64): i64 {
+fn defaultProtoInRealm(st: &Interp, ctor: &JSValue, r: i64): i64 {
     match ctor {
         JSValue.Native(n, _fo) => {
             let other = nativeObjInRealm(st, n, r)
@@ -12931,7 +12931,7 @@ fn reflectGet(prog: &Prog, st: &mut Interp, target: &JSValue, key: &string, rece
                 if !isCallableIn(st, getter) {
                     return JSValue.Undefined
                 }
-                var gargs = RootedVec.new()
+                let gargs = RootedVec.new()
                 return callValue(prog, getter, gargs, cloneValue(receiver), &mut st)
             }
             return cloneValue(st.objects[cur].props[pi].value)
@@ -13346,7 +13346,7 @@ fn isSymbolMethodName(name: &string): bool {
     return name == "toString" || name == "valueOf" || name == "description" || name == symToPrimitiveKey()
 }
 
-fn symbolMethod(st: &mut Interp, id: i64, name: &string): JSValue {
+fn symbolMethod(st: &Interp, id: i64, name: &string): JSValue {
     if name == "toString" {
         return JSValue.Str(symbolDisplay(st, id))
     }
@@ -13427,7 +13427,7 @@ fn napiServiceTsfn(st: &mut Interp) {
     if !napiHasTsfn() {
         return
     }
-    var q = napiPollTsfn()
+    let q = napiPollTsfn()
     var i: i64 = 0
     while i < q.len() {
         let _r = napiRunTsfnCall(q[i])
@@ -13491,7 +13491,7 @@ fn fileHandleClosedOnGc(prog: &Prog, fo: FdOwner, st: &mut Interp) {
 
 // Apply promise settlements an addon requested while it held control.
 fn napiDrainSettlements(st: &mut Interp) {
-    var q = napiTakePending()
+    let q = napiTakePending()
     var i: i64 = 0
     while i < q.len() {
         settlePromise(&mut st, q[i].promise, q[i].state, cloneValue(q[i].value))
@@ -13554,7 +13554,7 @@ fn spawnActivation(callee: &JSValue, argVals: &RootedVec, thisVal: JSValue, st: 
     // the task body owns its own registered copy; the activation table keeps another that collect traces
     var rootedArgs = argVals.clone()
     let rootedThis = cloneValue(thisVal)
-    var args = argVals.clone()
+    let args = argVals.clone()
     let taskCallee = cloneValue(callee)
     let body = Task.spawnWithStack(move(): void => {
         // gProg/gInterp rather than captured references: a task body cannot hold
@@ -15714,7 +15714,7 @@ fn instantiateClass(prog: &Prog, classIdx: i64, st: &mut Interp, scope: i64): JS
         if sfName.len() == 0 {
             // a `static { }` block, not a field: run it with `this` bound to the
             // class and keep nothing
-            var sbArgs = RootedVec.new()
+            let sbArgs = RootedVec.new()
             let _r = callValue(prog, sfVal, sbArgs, cloneValue(classVal), &mut st)
         } else {
             objSet(&mut st, statics, sfName, sfVal)
@@ -16709,7 +16709,7 @@ fn callMemberArms(prog: &Prog, recv: JSValue, name: &string, argsIdx: ArgListId,
                 return JSValue.Obj(bo)
             }
             if name == "call" || name == "apply" {
-                var argVals = evalArgs(prog, argsIdx, &mut st, scope)
+                let argVals = evalArgs(prog, argsIdx, &mut st, scope)
                 // An argument expression that threw ABORTS the call: without this the
                 // callee still ran with the arguments evaluated so far, so
                 // `arr.push(boom())` pushed a value and a Promise executor's
@@ -17128,7 +17128,7 @@ fn errorStackFrames(st: &Interp): string {
 // True while `console.<name>` still holds the builtin this fast path implements.
 // A user assignment replaces it with a Func/Obj, and then the call has to go
 // through ordinary property dispatch or the assignment is silently ignored.
-fn consoleMethodIsPristine(st: &mut Interp, scope: i64, name: &string): bool {
+fn consoleMethodIsPristine(st: &Interp, scope: i64, name: &string): bool {
     // Copied out of the AST before anything below can re-enter the
     // interpreter and move the program storage this reference points into.
     let nameCopy = name.clone()
@@ -17246,7 +17246,7 @@ fn evalCallArms(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Inte
                             }
                         }
                         if fillMapSet {
-                            var emptyArgs = RootedVec.new()
+                            let emptyArgs = RootedVec.new()
                             let built = constructValue(prog, &mut st, baseVal, emptyArgs, baseVal)
                             if st.throwing {
                                 return JSValue.Undefined
@@ -17325,7 +17325,7 @@ fn evalCallArms(prog: &Prog, calleeId: ExprId, argsIdx: ArgListId, st: &mut Inte
                 // call went straight to the builtin and the replacement was
                 // never consulted. Monkey-patching console is how loggers,
                 // test harnesses and output capture all work.
-                if objName == "console" && (name == "log" || name == "error" || name == "warn" || name == "info" || name == "debug" || name == "trace" || name == "dir") && consoleMethodIsPristine(&mut st, scope, name) {
+                if objName == "console" && (name == "log" || name == "error" || name == "warn" || name == "info" || name == "debug" || name == "trace" || name == "dir") && consoleMethodIsPristine(st, scope, name) {
                     let argVals = evalArgs(prog, argsIdx, &mut st, scope)
                     // An argument expression that threw ABORTS the call: without this the
                     // callee still ran with the arguments evaluated so far, so
@@ -17763,7 +17763,7 @@ pub fn runDisposals(prog: &Prog, st: &mut Interp, scopeIdx: i64) {
         st.throwing = false
         st.thrownValue = JSValue.Undefined
         pushTemp(&mut st, savedThrow)
-        var args = RootedVec.new()
+        let args = RootedVec.new()
         let dres = callValue(prog, fns.get(i), args, recvs.get(i), &mut st)
         // An async disposer returns a promise. Awaiting it here is what makes
         // `await using` sequence correctly; a sync disposer returns undefined and
@@ -17991,7 +17991,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
             if isForAwait && srcH >= 0 && !asyncIter {
                 let aFn = getMember(st, srcH, symAsyncIteratorKey())
                 if isCallableIn(st, aFn) {
-                    var aArgs = RootedVec.new()
+                    let aArgs = RootedVec.new()
                     iterVal = callValue(prog, aFn, aArgs, cloneValue(ov), &mut st)
                     let aH = objHandle(iterVal)
                     // GetIterator(async): what @@asyncIterator returns must be an
@@ -18012,7 +18012,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 // a Proxy keeps Symbol.iterator behind its `get` trap
                 let itFn = getMemberDyn(prog, srcH, symIteratorKey(), &mut st)
                 if isCallableIn(st, itFn) {
-                    var noArgs = RootedVec.new()
+                    let noArgs = RootedVec.new()
                     iterVal = callValue(prog, itFn, noArgs, cloneValue(ov), &mut st)
                     // GetIterator: what @@iterator returns must be an object, so
                     // `{[Symbol.iterator]() { return 5 }}` is a TypeError rather
@@ -18046,7 +18046,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                 while running && !st.throwing && iterH >= 0 {
                     var step = JSValue.Undefined
                     if isGen {
-                        var nArgs = RootedVec.new()
+                        let nArgs = RootedVec.new()
                         if st.objects[iterH].isAsyncGenerator {
                             step = genResumeAsync(iterH, nArgs, 0, &mut st)
                         } else {
@@ -18059,7 +18059,7 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                             st.thrownValue = makeError(&mut st, "TypeError", "iterator has no next method")
                             running = false
                         } else {
-                            var nArgs = RootedVec.new()
+                            let nArgs = RootedVec.new()
                             step = callValue(prog, nextFn, nArgs, cloneValue(iter), &mut st)
                         }
                     }
@@ -18145,12 +18145,12 @@ pub fn execStmt(prog: &Prog, id: StmtId, st: &mut Interp, scope: i64): Flow {
                     st.throwing = false
                     st.thrownValue = JSValue.Undefined
                     if isGen {
-                        var rArgs = RootedVec.new()
+                        let rArgs = RootedVec.new()
                         let _r = genResume(iterH, rArgs, 2, &mut st)
                     } else {
                         let retFn = getMember(st, iterH, "return")
                         if isCallableIn(st, retFn) {
-                            var rArgs = RootedVec.new()
+                            let rArgs = RootedVec.new()
                             let _r = callValue(prog, retFn, rArgs, cloneValue(iter), &mut st)
                         }
                     }

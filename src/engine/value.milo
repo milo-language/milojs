@@ -459,7 +459,7 @@ pub fn wellKnownSymName(id: i64): string {
 // knows this encoding; everything else asks them.
 pub fn symKey(id: i64): string {
     var out = String.withCapacity(8)
-    out.push(255 as u8)
+    out.push(255)
     return out + i64ToStr(id)
 }
 
@@ -596,12 +596,12 @@ pub fn cloneValue(v: &JSValue): JSValue {
 
 pub fn jsNan(): f64 {
     // runtime 0/0 so constant folding can't reject it; IEEE floats don't trap
-    var z = 0.0
+    let z = 0.0
     return z / z
 }
 
 pub fn jsInf(): f64 {
-    var z = 0.0
+    let z = 0.0
     return 1.0 / z
 }
 
@@ -611,7 +611,7 @@ pub fn isFiniteF(n: f64): bool {
 }
 
 pub fn i64ToStr(n: i64): string {
-    var buf: [u8; 32] = [0; 32]
+    let buf: [u8; 32] = [0; 32]
     unsafe {
         snprintf(buf, 32, "%lld", n)
         return _cstrToString(buf as *u8)
@@ -619,7 +619,7 @@ pub fn i64ToStr(n: i64): string {
 }
 
 fn floatG(n: f64, prec: i32): string {
-    var buf: [u8; 40] = [0; 40]
+    let buf: [u8; 40] = [0; 40]
     unsafe {
         snprintf(buf, 40, "%.*g", prec, n)
         return stripExpZeros(_cstrToString(buf as *u8))
@@ -640,7 +640,7 @@ fn stripExpZeros(s: &string): string {
     if e < 0 || e + 2 >= s.len() {
         return s.clone()
     }
-    var signAt = e + 1
+    let signAt = e + 1
     if s[signAt] != '+' && s[signAt] != '-' {
         return s.clone()
     }
@@ -844,8 +844,8 @@ pub fn toUint32(v: &JSValue): i64 {
 // without moving it into a match
 pub fn jsInfinity(): f64 {
     // runtime 1/0 so constant folding can't reject it
-    var z = 0.0
-    var one = 1.0
+    let z = 0.0
+    let one = 1.0
     return one / z
 }
 
@@ -1166,7 +1166,7 @@ pub fn numToExponential(n: f64, digits: i64, haveDigits: bool): string {
     // can't disagree with JS.) The exponent just needs JS formatting: e+2, not
     // e+02.
     if haveDigits && digits > 17 && isFiniteF(n) {
-        var ebuf: [u8; 160] = [0; 160]
+        let ebuf: [u8; 160] = [0; 160]
         unsafe {
             snprintf(ebuf, 160, "%.*e", digits as i32, n)
             return stripExpZeros(_cstrToString(ebuf as *u8))
@@ -1178,7 +1178,7 @@ pub fn numToExponential(n: f64, digits: i64, haveDigits: bool): string {
     if !haveDigits && isFiniteF(n) {
         var k: i64 = 0
         while k <= 17 {
-            var sbuf: [u8; 64] = [0; 64]
+            let sbuf: [u8; 64] = [0; 64]
             unsafe {
                 snprintf(sbuf, 64, "%.*e", k as i32, n)
                 let s = _cstrToString(sbuf as *u8)
@@ -1352,7 +1352,7 @@ pub fn numToFixed(n: f64, digits: i64): string {
     while frac.len() < digits {
         frac = "0" + frac
     }
-    var out = whole + "." + frac
+    let out = whole + "." + frac
     if signNeg {
         return "-" + out
     }
@@ -1391,7 +1391,7 @@ fn jsParsePrefixNumEx(s: &string, radix: i64, autoHex: bool): f64 {
         i = i + 1
     }
     if i < n && s[i] == 'I' {
-        var want = "Infinity"
+        let want = "Infinity"
         var k: i64 = 0
         var hit = i + want.len() <= n
         while hit && k < want.len() {
@@ -1923,7 +1923,7 @@ fn startsWithInfinity(t: &string): bool {
     if i < t.len() && (t[i] == '+' || t[i] == '-') {
         i = i + 1
     }
-    var want = "Infinity"
+    let want = "Infinity"
     if t.len() - i != want.len() {
         return false
     }
@@ -1948,7 +1948,7 @@ fn isNumericLiteral(t: &string): bool {
     }
     // the Infinity keyword is a valid literal here
     if t[i] == 'I' {
-        var want = "Infinity"
+        let want = "Infinity"
         if n - i != want.len() {
             return false
         }

@@ -823,7 +823,7 @@ fn parsePrimary(p: &mut PState, prog: &mut Prog): ExprId {
             advance(&mut p)
             var ap: Vec<string> = Vec.new()
             ap.push(name)
-            var noPrelude: Vec<DeclItem> = Vec.new()
+            let noPrelude: Vec<DeclItem> = Vec.new()
             return makeArrow(&mut p, &mut prog, ap, false, noPrelude, -1, arrowStart)
         }
         advance(&mut p)
@@ -875,7 +875,7 @@ fn parsePrimary(p: &mut PState, prog: &mut Prog): ExprId {
             advance(&mut p)
             var ap1: Vec<string> = Vec.new()
             ap1.push(pname)
-            var noPrelude1: Vec<DeclItem> = Vec.new()
+            let noPrelude1: Vec<DeclItem> = Vec.new()
             return makeArrow(&mut p, &mut prog, ap1, true, noPrelude1, -1, arrowStart)
         }
         if nk == T_LPAREN {
@@ -1988,7 +1988,7 @@ fn parseStmt(p: &mut PState, prog: &mut Prog): StmtId {
                 var tinit: Option<ExprId> = Option.None
                 if peekKind(p) == T_EQ {
                     advance(&mut p)
-                    var initE = parseExpr(&mut p, &mut prog)
+                    let initE = parseExpr(&mut p, &mut prog)
                     // no spread wrapper any more: __iterSteps drives the
                     // iterator itself, so the temp holds the raw source
                     tinit = Option.Some(initE)
@@ -2624,7 +2624,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
                 // whole file, not just the class. Modelled as a static field
                 // with an EMPTY name whose initializer is a function; the class
                 // builder calls it with `this` = the class and stores nothing.
-                var sbParams: Vec<string> = Vec.new()
+                let sbParams: Vec<string> = Vec.new()
                 let sbSaved = p.strict
                 if bodyIsStrict(p) {
                     p.strict = true
@@ -2815,7 +2815,7 @@ fn parseClass(p: &mut PState, prog: &mut Prog): i64 {
         }
     }
     let defaultBlock = addBlock(&mut prog, defaultBody)
-    var noParams: Vec<string> = Vec.new()
+    let noParams: Vec<string> = Vec.new()
     prog.funcs.push(FuncDef {
         name: name.clone(), params: noParams, body: defaultBlock, paramPrelude: Option.None, isArrow: false, isAsync: false, restFrom: -1, isGenerator: false, isStrict: p.strict, isMethod: false, isClassCtor: false, srcStart: 0, srcEnd: 0, file: p.file.clone()
     }
@@ -3070,7 +3070,7 @@ fn parseExport(p: &mut PState, prog: &mut Prog, list: &mut Vec<StmtId>) {
         var reLocals: Vec<string> = Vec.new()
         var reNames: Vec<string> = Vec.new()
         while peekKind(p) != T_RBRACE && peekKind(p) != T_EOF {
-            var local = p.toks[p.pos].text.clone()
+            let local = p.toks[p.pos].text.clone()
             advance(&mut p)
             var exported = local.clone()
             if peekKind(p) == T_IDENT && p.toks[p.pos].text == "as" {

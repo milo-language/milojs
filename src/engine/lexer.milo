@@ -189,31 +189,31 @@ fn scanEscape(src: &string, i: i64, out: &mut string): i64 {
     let n = src.len()
     let e = src[i + 1]
     if e == 'n' {
-        out.push(10 as u8)
+        out.push(10)
         return i + 2
     }
     if e == 't' {
-        out.push(9 as u8)
+        out.push(9)
         return i + 2
     }
     if e == 'r' {
-        out.push(13 as u8)
+        out.push(13)
         return i + 2
     }
     if e == 'b' {
-        out.push(8 as u8)
+        out.push(8)
         return i + 2
     }
     if e == 'f' {
-        out.push(12 as u8)
+        out.push(12)
         return i + 2
     }
     if e == 'v' {
-        out.push(11 as u8)
+        out.push(11)
         return i + 2
     }
     if e == '0' && (i + 2 >= n || src[i + 2] < '0' || src[i + 2] > '9') {
-        out.push(0 as u8)
+        out.push(0)
         return i + 2
     }
     if e == 'x' && i + 3 < n {
@@ -490,8 +490,8 @@ fn scanTmplChunk(src: &string, start: i64, toks: &mut Vec<Token>): ChunkResult {
         } else if c == 13 as u8 {
             // a template literal normalizes CRLF and a lone CR to one LF, in the
             // cooked text and in raw alike
-            buf.push(10 as u8)
-            rawBuf.push(10 as u8)
+            buf.push(10)
+            rawBuf.push(10)
             i = i + 1
             if i < n && src[i] == 10 as u8 {
                 i = i + 1

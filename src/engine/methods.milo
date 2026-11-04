@@ -394,16 +394,16 @@ fn setLikeSize(prog: &Prog, st: &mut Interp, other: &JSValue): f64 {
 fn setLikeKeys(prog: &Prog, st: &mut Interp, other: &JSValue): JSValue {
     let h = objHandle(other)
     if h >= 0 && (st.objects[h].isSet || st.objects[h].isMap) {
-        var noArgs: RootedVec = RootedVec.new()
+        let noArgs: RootedVec = RootedVec.new()
         return mapMethod(prog, h, "keys", noArgs, &mut st)
     }
-    var noArgs: RootedVec = RootedVec.new()
+    let noArgs: RootedVec = RootedVec.new()
     return callObjMethod(prog, &mut st, other, "keys", noArgs)
 }
 
 // One step of an iterator: returns done via the out-param slot.
 fn iterStep(prog: &Prog, st: &mut Interp, iter: &JSValue, done: &mut bool): JSValue {
-    var noArgs: RootedVec = RootedVec.new()
+    let noArgs: RootedVec = RootedVec.new()
     let step = callObjMethod(prog, &mut st, iter, "next", noArgs)
     let sh = objHandle(step)
     if sh < 0 || st.throwing {
@@ -1626,7 +1626,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st
         var bytes: Vec<u8> = Vec.new()
         var bi: i64 = 0
         while bi < count * w {
-            bytes.push(0 as u8)
+            bytes.push(0)
             bi = bi + 1
         }
         st.objExtras[st.objects[nb].extra].bytes = bytes
@@ -1870,7 +1870,7 @@ pub fn typedArrayMethod(prog: &Prog, o: i64, name: &string, args: &RootedVec, st
     if name == "copyWithin" {
         // copies WITHIN the same buffer, so the ranges may overlap — snapshot
         // the source before writing, exactly as memmove would
-        var tgt = relIndex(toNumProg(prog, args.get(0), &mut st), n)
+        let tgt = relIndex(toNumProg(prog, args.get(0), &mut st), n)
         var cs: i64 = 0
         if args.len() > 1 {
             cs = relIndex(toNumProg(prog, args.get(1), &mut st), n)

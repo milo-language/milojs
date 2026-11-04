@@ -201,25 +201,25 @@ pub fn napiWriteHandle(p: *u8, h: i64) {
 // a C bool is 1. Writing the wrong width silently corrupts the addon's stack.
 fn napiWriteI32(p: *u8, v: i32) {
     unsafe {
-        var buf: [i32; 1] = [v; 1]
+        let buf: [i32; 1] = [v; 1]
         memcpy(p, buf as *u8, 4)
     }
 }
 
 fn napiWriteF64(p: *u8, v: f64) {
     unsafe {
-        var buf: [f64; 1] = [v; 1]
+        let buf: [f64; 1] = [v; 1]
         memcpy(p, buf as *u8, 8)
     }
 }
 
 fn napiWriteBool(p: *u8, v: bool) {
     unsafe {
-        var b: u8 = 0 as u8
+        var b: u8 = 0
         if v {
-            b = 1 as u8
+            b = 1
         }
-        var buf: [u8; 1] = [b; 1]
+        let buf: [u8; 1] = [b; 1]
         memcpy(p, buf as *u8, 1)
     }
 }
@@ -584,7 +584,7 @@ pub fn napi_get_cb_info(_env: *u8, cbinfo: i64, argc: *u8, argv: *u8, thisArg: *
     var want: i64 = 0
     unsafe {
         if (argv as i64) != 0 && (argc as i64) != 0 {
-            var abuf: [i64; 1] = [0; 1]
+            let abuf: [i64; 1] = [0; 1]
             memcpy(abuf as *u8, argc, 8)
             want = abuf[0]
             var i: i64 = 0
@@ -771,7 +771,7 @@ let NAPI_PD_ATTRIBUTES: i64 = 48
 
 pub fn napiLoadI64(p: *u8): i64 {
     unsafe {
-        var b: [i64; 1] = [0; 1]
+        let b: [i64; 1] = [0; 1]
         memcpy(b as *u8, p, 8)
         return b[0]
     }
@@ -779,7 +779,7 @@ pub fn napiLoadI64(p: *u8): i64 {
 
 fn napiLoadI32(p: *u8): i32 {
     unsafe {
-        var b: [i32; 1] = [0; 1]
+        let b: [i32; 1] = [0; 1]
         memcpy(b as *u8, p, 4)
         return b[0]
     }
@@ -1054,11 +1054,11 @@ pub fn napi_get_value_string_utf8(_env: *u8, value: i64, buf: *u8, bufsize: i64,
         }
         var i: i64 = 0
         while i < n {
-            var one: [u8; 1] = [s[i]; 1]
+            let one: [u8; 1] = [s[i]; 1]
             memcpy(((buf as i64) + i) as *u8, one as *u8, 1)
             i = i + 1
         }
-        var z: [u8; 1] = [0 as u8; 1]
+        let z: [u8; 1] = [0; 1]
         memcpy(((buf as i64) + n) as *u8, z as *u8, 1)
         if (result as i64) != 0 {
             napiWriteHandle(result, n)
@@ -1562,7 +1562,7 @@ fn napiEnsurePipe() {
         return
     }
     unsafe {
-        var fds: [i32; 2] = [0; 2]
+        let fds: [i32; 2] = [0; 2]
         if pipe(fds as *i32) != 0 {
             return
         }
@@ -1693,7 +1693,7 @@ pub fn napiPollTsfn(): Vec<NapiTsfnCall> {
     unsafe {
         var going = true
         while going {
-            var rec: [i64; 2] = [0; 2]
+            let rec: [i64; 2] = [0; 2]
             let n = read(gNapi.tsfnR, rec as *u8, 16)
             if n == 16 {
                 out.push(NapiTsfnCall {
@@ -1734,7 +1734,7 @@ extern fn usleep(_usec: u32): i32
 // burn a core for the whole duration of a query.
 pub fn napiWaitBriefly() {
     unsafe {
-        let _r = usleep(200 as u32)
+        let _r = usleep(200)
     }
 }
 
@@ -1805,7 +1805,7 @@ pub fn napi_get_last_error_info(_env: *u8, result: *u8): i32 {
             //   uint32_t engine_error_code; napi_status error_code; }
             // 8 + 8 + 4 + 4 = 24 bytes, zeroed: a null message and napi_ok.
             gNapi.lastErrorInfo = malloc(24)
-            let _z = memset(gNapi.lastErrorInfo, 0 as i32, 24)
+            let _z = memset(gNapi.lastErrorInfo, 0, 24)
         }
         if (result as i64) != 0 {
             napiWriteHandle(result, gNapi.lastErrorInfo as i64)
@@ -1982,30 +1982,30 @@ fn napiTypedArrayType(kind: i64): i32 {
     // (int8 0, uint8 1, uint8_clamped 2, int16 3, uint16 4, int32 5, uint32 6,
     // float32 7, float64 8). The two disagree, so this is a real translation.
     if kind == 0 {
-        return 1 as i32
+        return 1
     }
     if kind == 1 {
-        return 0 as i32
+        return 0
     }
     if kind == 2 {
-        return 4 as i32
+        return 4
     }
     if kind == 3 {
-        return 3 as i32
+        return 3
     }
     if kind == 4 {
-        return 6 as i32
+        return 6
     }
     if kind == 5 {
-        return 5 as i32
+        return 5
     }
     if kind == 6 {
-        return 7 as i32
+        return 7
     }
     if kind == 8 {
-        return 2 as i32
+        return 2
     }
-    return 8 as i32
+    return 8
 }
 
 // napi_define_properties(env, object, count, descriptors)
@@ -2138,7 +2138,7 @@ pub fn napi_queue_async_work(_env: *u8, work: i64): i32 {
         if comp != 0 {
             // (env, napi_status status, void* data); status 0 is napi_ok
             let c = (comp as *u8) as extern (*u8, i32, *u8) => void
-            c(0 as *u8, 0 as i32, data as *u8)
+            c(0 as *u8, 0, data as *u8)
         }
     }
     return NAPI_OK

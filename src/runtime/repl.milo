@@ -145,7 +145,7 @@ fn sprCharAt(row: &string, c: i64): u8 {
     if c < row.len {
         return row[c]
     }
-    return 32 as u8
+    return 32
 }
 
 fn emit(buf: &mut string, s: &string): void {
@@ -216,7 +216,7 @@ fn banner(): void {
                 emit(&mut buf, "▄")
             } else {
                 emit(&mut buf, "\x1b[49m")
-                buf.push(32 as u8)
+                buf.push(32)
             }
         }
         emit(&mut buf, Ansi.reset())
@@ -252,11 +252,11 @@ fn escapeEntry(s: &string): string {
     var out = ""
     for i in 0..s.len() {
         if s[i] == 10 as u8 {
-            out.push(92 as u8)
+            out.push(92)
             out.push('n')
         } else if s[i] == 92 as u8 {
-            out.push(92 as u8)
-            out.push(92 as u8)
+            out.push(92)
+            out.push(92)
         } else {
             out.push(s[i])
         }
@@ -270,12 +270,12 @@ fn unescapeEntry(s: &string): string {
     while i < s.len() {
         if s[i] == 92 as u8 && i + 1 < s.len() {
             if s[i + 1] == 'n' {
-                out.push(10 as u8)
+                out.push(10)
                 i = i + 2
                 continue
             }
             if s[i + 1] == 92 as u8 {
-                out.push(92 as u8)
+                out.push(92)
                 i = i + 2
                 continue
             }
@@ -346,7 +346,7 @@ fn flattenEntry(s: &string): string {
     var out = ""
     for i in 0..s.len() {
         if s[i] == 10 as u8 {
-            out.push(32 as u8)
+            out.push(32)
         } else {
             out.push(s[i])
         }
@@ -494,7 +494,7 @@ fn csiFinal(c: u8, num: i64): i64 {
 // forms (`ESC [ … final`, including the `ESC [ 1 ; 5 C` modifier form terminals
 // send for Ctrl-arrow) and the Alt-<letter> forms readline binds to word motion.
 fn readEscapeKey(): i64 {
-    var buf: [u8; 4] = [0; 4]
+    let buf: [u8; 4] = [0; 4]
     var nr1: i64 = 0
     // stdin is open for the life of the process, so its number is always ours.
     unsafe { nr1 = readFd(0, buf, 1) }
@@ -560,7 +560,7 @@ fn padTo(s: &string, w: i64): string {
     var out = s.clone()
     var i = s.len()
     while i < w {
-        out.push(32 as u8)
+        out.push(32)
         i = i + 1
     }
     return out
@@ -637,7 +637,7 @@ fn readLineEdited(prompt: &string, history: &Vec<string>, st: &Interp, builtinCo
     // history.len() == "editing a fresh line", below that indexes older entries
     var navIdx = history.len()
     var ctrlcArmed = false
-    var buf: [u8; 3] = [0; 3]
+    let buf: [u8; 3] = [0; 3]
     // insertion point, as a byte offset into `line`; line.len() == at the end
     var cur: i64 = 0
 
