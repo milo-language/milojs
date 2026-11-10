@@ -101,6 +101,7 @@ opening several.
 | `docs/conformance-reports.md` | how to produce revision-attributed test262 and QuickJS reports |
 | `docs/backlog.md` | the OPEN list: known gaps, ranked, with repro and why each is not a one-liner. A fixed item is deleted, not archived |
 | `docs/node-compat.md` | per-module Node compatibility. **Generated** — export diff against node plus the sweep's per-area pass rate; never edit by hand |
+| `docs/north-star.md` | target design for the engine core and the Node runtime, what is kept, order of work. Newer than the roadmap and direction docs where they disagree |
 | `docs/milojs-roadmap.md` | staged plan, what "done" means, scope decisions |
 | `docs/milojs-gc-boundary.md` | project direction: whole engine and Node-compatible runtime in Milo; GC roots, finalizers, stale refs come first |
 | `docs/milojs-async-suspension.md` | await/park/resume, green tasks, the event loop |
